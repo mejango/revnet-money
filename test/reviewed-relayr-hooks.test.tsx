@@ -5,6 +5,7 @@ import { relayrPaymentReview } from "@/lib/relayr-payment-review";
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import type { TransactionActivity } from "@/lib/transaction-activity";
 import type { TransactionReviewRequest } from "@/lib/transaction-review";
+import { SAVED_ATTEMPT_CHECK_LINE } from "@bananapus/nana-sdk-core/review";
 import {
   RELAYR_PAYMENT_EVENT,
   RelayrPaymentNotSentError,
@@ -2809,12 +2810,38 @@ describe("Safe execution bundles", () => {
     });
     mocks.rawRequest.mockResolvedValue(encodeAbiParameters([{ type: "uint256" }], [8n]));
     mocks.rawRequest.mockClear();
-    await expect(hooks.checkRelayrSession(saved.id)).rejects.toThrow(/malformed recovery history/);
+    const failure = await hooks.checkRelayrSession(saved.id).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toMatch(/malformed recovery history/);
     expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
       relayrSafeState: "publishing",
       relayrPayments: malformed,
     });
     expect(mocks.rawRequest).not.toHaveBeenCalled();
+    expect(mocks.sendTransaction).not.toHaveBeenCalled();
+
+    // Never a dead end: the SDK's one check, which alone retires it, for every reload.
+    const check = await hooks.relayrSessionCheck(saved.id, failure);
+    expect(check).toMatchObject({ status: "check", line: SAVED_ATTEMPT_CHECK_LINE });
+    // A journal that can't be read never retires it: another tab may have saved its success.
+    const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(function (
+      this: Storage,
+      name: string,
+    ) {
+      if (name === "revnet:transaction-activities:v1") throw new Error("SecurityError");
+      return null;
+    });
+    await expect(hooks.retireCheckedRelayrSession(saved.id, check!)).resolves.toMatchObject({
+      retired: false,
+    });
+    read.mockRestore();
+    expect(activity.transactionActivitySnapshot().find((row) => row.id === saved.id)).toBeDefined();
+    await expect(hooks.retireCheckedRelayrSession(saved.id, check!)).resolves.toMatchObject({
+      retired: true,
+    });
+    expect(
+      activity.transactionActivitySnapshot().find((row) => row.id === saved.id),
+    ).toBeUndefined();
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 

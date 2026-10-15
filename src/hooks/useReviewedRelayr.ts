@@ -61,12 +61,18 @@ import {
 } from "@/lib/transaction-activity";
 import { requireTransactionReview, type TransactionReviewCall } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
+import { savedAttempts } from "@/lib/write-hold";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
 import {
   browserLocks,
   gasWithHeadroom,
   relayrDiscardLine,
   relayrHeldMessage as sharedHeldMessage,
+  writeIntentKey,
+  type SavedAttempt,
+  type SavedAttemptCheck,
+  type SavedAttemptRetired,
+  type WriteHoldClient,
 } from "@bananapus/nana-sdk-core/review";
 import {
   bindRelayrQuote,
@@ -1134,6 +1140,11 @@ export function discardRelayrSession(id: string): void {
   const activity = refreshTransactionActivities().find((row) => row.id === id);
   if (!activity || !isRelayrDiscardReason(activity.relayrDiscardable))
     throw new Error("Only an action whose earlier signatures can no longer run can be discarded.");
+  endRelayrSession(activity, activity.relayrDiscardable === "ran");
+}
+
+/** The session goes, never what its action saved; `ran`: its batch is reviewed again. */
+function endRelayrSession(activity: TransactionActivity, ran: boolean): void {
   const keys = new Set(activity.relayrCallKeys ?? []);
   const bundleUuid = activity.bundleUuid?.toLowerCase();
   const holds = (batch: MultichainBatch, round: BatchRound) =>
@@ -1144,14 +1155,73 @@ export function discardRelayrSession(id: string): void {
             !!batch.calls[index] &&
             keys.has(scopeKey(batch.account, batchCallScope(batch, batch.calls[index], index))),
         );
-  for (const batchId of releaseBatchRound(holds, activity.relayrDiscardable === "ran"))
+  for (const batchId of releaseBatchRound(holds, ran))
     updateTransactionActivity(batchId, {
       status: "failed",
       manualVerificationRequired: false,
       message: "This batch was discarded. Review it again.",
     });
   forgetQuote(activity.bundleUuid);
-  dismissTransactionActivity(id);
+  dismissTransactionActivity(activity.id);
+}
+
+/**
+ * A saved session as the SDK's saved-attempt recovery reads it, for when its own check can't show
+ * what became of it: held by the session's id, with the session row's strict re-read as the final
+ * say before the user's check retires it.
+ */
+function relayrAttemptOf(activity: TransactionActivity, reason: string): SavedAttempt<never> {
+  return {
+    chainId: activity.chainId ?? activity.chainStates?.[0]?.chainId ?? 1,
+    account: activity.account!,
+    namespaces: [writeIntentKey("relayr-session", { id: activity.id })],
+    saved: { started: true },
+    authenticate: async () => ({ result: "unknown", reason }),
+    confirmRetirable: async () => {
+      // A strict, fresh read: storage that can't be read throws, and refuses.
+      requireTransactionActivityPersistence();
+      const now = refreshTransactionActivities().find((row) => row.id === activity.id);
+      return !!now && now.status !== "success";
+    },
+  };
+}
+
+/**
+ * When a saved session's check can't show it (an unreadable record, unavailable evidence), the
+ * SDK's one check: its line, warning and the "I checked it" action, never a dead end.
+ */
+export async function relayrSessionCheck(
+  id: string,
+  cause: unknown,
+): Promise<SavedAttemptCheck | undefined> {
+  const activity = refreshTransactionActivities().find((row) => row.id === id);
+  if (!activity?.account) return;
+  const { wagmiConfig } = await import("@/lib/wagmiConfig");
+  const attempt = relayrAttemptOf(activity, cause instanceof Error ? cause.message : String(cause));
+  const client = getPublicClient(wagmiConfig, { chainId: attempt.chainId as never });
+  if (!client) return;
+  const outcome = await savedAttempts.recover(attempt, client as unknown as WriteHoldClient);
+  return outcome.status === "check" ? outcome : undefined;
+}
+
+/**
+ * The user's check of a saved session that can't be shown: retired through the SDK for every tab
+ * and reload, then the session goes as one that may have run, so its action is reviewed again.
+ */
+export async function retireCheckedRelayrSession(
+  id: string,
+  outcome: SavedAttemptCheck,
+  force?: "unreadable",
+): Promise<SavedAttemptRetired> {
+  const activity = refreshTransactionActivities().find((row) => row.id === id);
+  if (!activity?.account) return { retired: false };
+  const retired = await savedAttempts.retire(relayrAttemptOf(activity, outcome.reason), {
+    by: "check",
+    outcome,
+    ...(force ? { force } : {}),
+  });
+  if (retired.retired) endRelayrSession(activity, true);
+  return retired;
 }
 
 /** After an in-flow Discard of a session that may have run, the action is reviewed again. */

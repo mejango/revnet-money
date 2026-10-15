@@ -9,6 +9,8 @@ import { useCompleteAccountActivity } from "@/hooks/useCompleteBendystrawLists";
 import {
   checkRelayrSession,
   discardRelayrSession,
+  relayrSessionCheck,
+  retireCheckedRelayrSession,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
@@ -23,9 +25,19 @@ import {
   type TransactionActivity,
 } from "@/lib/transaction-activity";
 import { formatTransactionMessage } from "@/lib/utils";
+import { SUPPORTED_CHAINS } from "@/lib/wagmiTransports";
+import { writeHolds } from "@/lib/write-hold";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
+import {
+  checkedItLabel,
+  SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
+  SAVED_ATTEMPT_UNREADABLE_LINE,
+  type SavedAttemptCheck,
+} from "@bananapus/nana-sdk-core/review";
+import { HeldWritesNotice, useHeldWrites } from "@bananapus/nana-sdk-core/review/react";
 import { useMemo, useState } from "react";
 import type { Address } from "viem";
+import { usePublicClient } from "wagmi";
 
 const INITIAL_ITEMS = 25;
 const LOAD_MORE_COUNT = 25;
@@ -46,7 +58,34 @@ function useInFlightActivities(address: Address, enabled: boolean): TransactionA
   }, [all, address, enabled]);
 }
 
+/** Every write the SDK holds for this account on one chain, with its line and its release. */
+function HeldWritesOn({ chainId, account }: { chainId: number; account: Address }) {
+  const client = usePublicClient({ chainId });
+  const items = useHeldWrites({ hold: writeHolds, chainId, account, client });
+  return (
+    <HeldWritesNotice
+      items={items}
+      className="space-y-2 border border-melon-200 bg-melon-50 p-3 text-xs text-zinc-700 [&_button]:font-medium [&_button]:text-teal-700 [&_button]:underline"
+    />
+  );
+}
+
 function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isSelf: boolean }) {
+  /** A check that couldn't show the session: the SDK's one "I checked it" action. */
+  const [check, setCheck] = useState<SavedAttemptCheck>();
+  const [unreadable, setUnreadable] = useState(false);
+  const checked = (run: () => Promise<unknown>) =>
+    void run().catch(async (cause: unknown) =>
+      setCheck(await relayrSessionCheck(activity.id, cause).catch(() => undefined)),
+    );
+  const retire = (force?: "unreadable") => {
+    if (!check) return;
+    void retireCheckedRelayrSession(activity.id, check, force).then((retired) => {
+      // Retired: the session's card goes with it.
+      if (retired.retired) setCheck(undefined);
+      else setUnreadable(retired.reason === "unreadable");
+    });
+  };
   const resumable = isSelf && canCheckRelayrBundle(activity);
   // An unpaid session's signatures are checked onchain; one whose requests are all dead
   // is marked for Discard, and its line is the card's message (ruling R114 (e)). A
@@ -70,7 +109,7 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
           <button
             type="button"
             className="text-xs font-medium text-teal-700 underline"
-            onClick={() => void waitForRelayrBundle(activity.bundleUuid!).catch(() => undefined)}
+            onClick={() => checked(() => waitForRelayrBundle(activity.bundleUuid!))}
           >
             Check bundle
           </button>
@@ -79,7 +118,7 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
           <button
             type="button"
             className="text-xs font-medium text-teal-700 underline"
-            onClick={() => void checkRelayrSession(activity.id).catch(() => undefined)}
+            onClick={() => checked(() => checkRelayrSession(activity.id))}
           >
             Check signatures
           </button>
@@ -110,6 +149,28 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
         ) : null}
       </div>
       <p className="mt-1 text-xs text-zinc-600">{formatTransactionMessage(activity.message)}</p>
+      {check ? (
+        <div className="mt-2 grid gap-1 text-xs text-zinc-700">
+          <p>{check.line}</p>
+          <p>{check.warning}</p>
+          <button type="button" className="w-fit underline" onClick={() => retire()}>
+            {checkedItLabel()}
+          </button>
+          {unreadable ? (
+            <>
+              <p>{SAVED_ATTEMPT_UNREADABLE_LINE}</p>
+              <button
+                type="button"
+                className="w-fit underline"
+                onClick={() => retire("unreadable")}
+              >
+                {SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL}
+              </button>
+            </>
+          ) : null}
+        </div>
+      ) : null}
+
       {activity.chainStates?.length ? (
         <ul className="mt-2 space-y-0.5">
           {activity.chainStates.map((state) => (
@@ -193,6 +254,13 @@ export function AccountActivity({ address }: { address: Address }) {
   return (
     <section>
       <h2 className="mb-2 text-base font-semibold text-zinc-700">Activity</h2>
+      {isSelf ? (
+        <div className="mb-4 space-y-2 empty:hidden">
+          {SUPPORTED_CHAINS.map((chain) => (
+            <HeldWritesOn key={chain.id} chainId={chain.id} account={address} />
+          ))}
+        </div>
+      ) : null}
       {inFlight.length > 0 ? (
         <div className="mb-4 space-y-2">
           {inFlight.map((activity) => (

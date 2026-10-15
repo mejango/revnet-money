@@ -2,11 +2,19 @@ import Page from "@/app/create/page";
 import type { RevnetFormData } from "@/app/create/types";
 import type { ReviewedRelayrRequest } from "@/hooks/useReviewedRelayr";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import {
+  checkedItLabel,
+  HELD_CONFIRMING_LINE,
+  HELD_EXIT_LABEL,
+  SAVED_ATTEMPT_UNREADABLE_LINE,
+} from "@bananapus/nana-sdk-core/review";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { decodeFunctionData, encodeFunctionData, type Address } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PROTOCOL_DEPLOYMENTS, TEST_ACCOUNT, validRevnetForm } from "./fixtures/revnet";
+
+const CHECK_LABEL = checkedItLabel("Launch again");
 
 const TESTNETS: JBChainId[] = [11155111, 11155420, 84532, 421614];
 const DEPLOYMENT_HASH = `0x${"ab".repeat(32)}`;
@@ -232,6 +240,9 @@ describe("creation submit routing", () => {
         title: route === "Safe" ? "Safe proposal submitted" : "Revnet deployment submitted",
       }),
     );
+    // The normal path, as on main: one submit, one wallet send, and no recovery notice.
+    expect(mocks.toast).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("status")).toBeNull();
   });
 });
 
@@ -261,7 +272,7 @@ describe("a saved single-chain launch", () => {
     await submitFixture();
 
     // The chain can't show what became of it: the one explicit action, and nothing prepared.
-    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: CHECK_LABEL })).toBeVisible();
     expect(mocks.recoveryGuard).not.toHaveBeenCalled();
     expect(mocks.pinMetadata).not.toHaveBeenCalled();
     expect(mocks.creationFee).not.toHaveBeenCalled();
@@ -303,10 +314,10 @@ describe("a saved single-chain launch", () => {
       });
     await submitFixture();
 
-    expect(mocks.toast).toHaveBeenCalledWith(
-      expect.objectContaining({ variant: "destructive", description: expect.any(String) }),
-    );
-    expect(screen.queryByRole("button", { name: "I checked it. Launch again" })).toBeNull();
+    // The hold's own line, with no exit while the chain still has it pending.
+    expect(await screen.findByText(HELD_CONFIRMING_LINE)).toBeVisible();
+    expect(screen.queryByRole("button", { name: CHECK_LABEL })).toBeNull();
+    expect(screen.queryByRole("button", { name: HELD_EXIT_LABEL })).toBeNull();
     expect(mocks.pinMetadata).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();
   });
@@ -337,7 +348,7 @@ describe("a saved single-chain launch", () => {
       await import("@/app/create/helpers/launchIntent");
     const key = launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form));
     render(<Page />);
-    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    const check = await screen.findByRole("button", { name: CHECK_LABEL });
     // Another tab's recovery journals the earlier attempt's success while this check is shown.
     window.localStorage.setItem(
       key,
@@ -357,15 +368,15 @@ describe("a saved single-chain launch", () => {
   it("keeps the check and its button when the journal can't be read at the check", async () => {
     await savedEarlierLaunch();
     render(<Page />);
-    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    const check = await screen.findByRole("button", { name: CHECK_LABEL });
     const read = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
       throw new Error("SecurityError");
     });
     const removed = vi.spyOn(Storage.prototype, "removeItem");
     fireEvent.click(check);
 
-    expect(await screen.findByText("Couldn't check this transaction. Try again.")).toBeVisible();
-    expect(screen.getByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+    expect(await screen.findByText(SAVED_ATTEMPT_UNREADABLE_LINE)).toBeVisible();
+    expect(screen.getByRole("button", { name: CHECK_LABEL })).toBeVisible();
     expect(removed).not.toHaveBeenCalled();
     read.mockRestore();
     removed.mockRestore();
@@ -378,7 +389,7 @@ describe("a saved single-chain launch", () => {
       "{not json",
     );
     render(<Page />);
-    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    const check = await screen.findByRole("button", { name: CHECK_LABEL });
     expect(
       screen.queryByRole("button", { name: "I checked my wallet. Continue anyway" }),
     ).toBeNull();
@@ -389,9 +400,7 @@ describe("a saved single-chain launch", () => {
       ),
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "I checked my wallet. Continue anyway" }));
-    await waitFor(() =>
-      expect(screen.queryByRole("button", { name: "I checked it. Launch again" })).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByRole("button", { name: CHECK_LABEL })).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Submit launch fixture" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
   });
@@ -407,7 +416,7 @@ describe("a saved single-chain launch", () => {
     );
     await submitFixture();
 
-    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: CHECK_LABEL })).toBeVisible();
     expect(mocks.pinMetadata).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();
   });
@@ -418,27 +427,29 @@ describe("a saved single-chain launch", () => {
       await import("@/app/create/helpers/launchIntent");
     const key = launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form));
     render(<Page />);
-    const check = await screen.findByRole("button", { name: "I checked it. Launch again" });
+    const check = await screen.findByRole("button", { name: CHECK_LABEL });
     // Another tab checked it too, relaunched with a fresh salt, and its wallet has it now.
     const newer = { salt: `0x${"08".repeat(32)}`, fromBlock: "2000", namespaces: [], before: [] };
     window.localStorage.setItem(key, JSON.stringify(newer));
     fireEvent.click(check);
 
     await waitFor(() => expect(savedLaunchAt(key)).toMatchObject({ salt: newer.salt }));
-    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: CHECK_LABEL })).toBeVisible();
   });
 
   it("shows the check when the mount scan can't read the chain", async () => {
     await savedEarlierLaunch();
     render(<Page />);
-    expect(await screen.findByRole("button", { name: "I checked it. Launch again" })).toBeVisible();
+    expect(await screen.findByRole("button", { name: CHECK_LABEL })).toBeVisible();
   });
 
   it("launches anew, with a fresh salt, only after the user's check", async () => {
     await savedEarlierLaunch();
     mocks.pinMetadata.mockResolvedValue("bafy-metadata");
     await submitFixture();
-    fireEvent.click(await screen.findByRole("button", { name: "I checked it. Launch again" }));
+    fireEvent.click(await screen.findByRole("button", { name: CHECK_LABEL }));
+    // Retired, the form reopens.
+    await waitFor(() => expect(screen.queryByRole("button", { name: CHECK_LABEL })).toBeNull());
     mocks.setSubmitting.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Submit launch fixture" }));
     await waitFor(() => expect(mocks.setSubmitting).toHaveBeenLastCalledWith(false));

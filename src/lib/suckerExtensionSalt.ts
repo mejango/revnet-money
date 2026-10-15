@@ -1,5 +1,5 @@
-import { JOURNAL_UNREADABLE_LINE } from "@/lib/write-hold";
 import { createSalt } from "@bananapus/nana-sdk-core";
+import { SAVED_ATTEMPT_UNREADABLE_LINE } from "@bananapus/nana-sdk-core/review";
 import type { Address } from "viem";
 
 /**
@@ -30,7 +30,7 @@ function attemptKey(sender: Address, projectId: bigint | number, targetChainId: 
 }
 
 /**
- * The saved salts. A store that can't be read or parsed throws JOURNAL_UNREADABLE_LINE: never
+ * The saved salts. A store that can't be read or parsed throws SAVED_ATTEMPT_UNREADABLE_LINE: never
  * taken for an empty one, since a write over it would drop salts already-deployed peers need.
  */
 function read(): SaltStore {
@@ -41,17 +41,17 @@ function read(): SaltStore {
   } catch {
     // Storage won't read: only the user's warned continue lets the attempt start afresh.
     if (discarded) return {};
-    throw new Error(JOURNAL_UNREADABLE_LINE);
+    throw new Error(SAVED_ATTEMPT_UNREADABLE_LINE);
   }
   discarded = false;
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw ?? "{}");
   } catch {
-    throw new Error(JOURNAL_UNREADABLE_LINE);
+    throw new Error(SAVED_ATTEMPT_UNREADABLE_LINE);
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-    throw new Error(JOURNAL_UNREADABLE_LINE);
+    throw new Error(SAVED_ATTEMPT_UNREADABLE_LINE);
   return parsed as SaltStore;
 }
 
@@ -59,7 +59,7 @@ function read(): SaltStore {
 let discarded = false;
 
 /**
- * The user's warned continue over saved salts that won't read (JOURNAL_DISCARD_ACTION): they go,
+ * The user's warned continue over saved salts that won't read (SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL): they go,
  * and the next extension starts with a fresh salt. Called only after an extension just failed on it.
  */
 export function discardUnreadableSalts(): void {

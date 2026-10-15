@@ -142,7 +142,9 @@ describe("extend to another chain confirm", () => {
 
   it("offers the warned continue only once the saved salts can't be read, and sends nothing until then", async () => {
     mocks.salt.mockImplementationOnce(() => {
-      throw new Error("Couldn't check this transaction. Try again.");
+      throw new Error(
+        "This browser can't read its saved transactions. Check your wallet before sending again.",
+      );
     });
     const confirm = await openConfirm();
     expect(

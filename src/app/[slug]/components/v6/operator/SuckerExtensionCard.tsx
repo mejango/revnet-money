@@ -13,7 +13,6 @@ import {
 } from "@/components/ui/select";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
-import { UnreadableJournalExit } from "@/components/ui/UnreadableJournalExit";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import {
@@ -22,7 +21,6 @@ import {
   saltForExtension,
 } from "@/lib/suckerExtensionSalt";
 import { formatWalletError } from "@/lib/utils";
-import { JOURNAL_UNREADABLE_LINE } from "@/lib/write-hold";
 import {
   JBChainId,
   JBCoreContracts,
@@ -30,6 +28,10 @@ import {
   revDeployerAbi,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
+import {
+  SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
+  SAVED_ATTEMPT_UNREADABLE_LINE,
+} from "@bananapus/nana-sdk-core/review";
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import { chainName, ChainProjectRow, publicClientFor, v6ContractAddress } from "./operatorLib";
@@ -336,13 +338,17 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
                 </SummaryRow>
                 <SummaryRow label="Pairs with">{existingChains}</SummaryRow>
                 <SummaryRow label="Transactions">{rows.length + 1}</SummaryRow>
-                {error === JOURNAL_UNREADABLE_LINE ? (
-                  <UnreadableJournalExit
-                    onContinue={() => {
+                {error === SAVED_ATTEMPT_UNREADABLE_LINE ? (
+                  <button
+                    type="button"
+                    className="w-fit text-sm text-zinc-700 underline"
+                    onClick={() => {
                       discardUnreadableSalts();
                       setError(null);
                     }}
-                  />
+                  >
+                    {SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL}
+                  </button>
                 ) : null}
               </TxConfirmDialog>
             ) : null}

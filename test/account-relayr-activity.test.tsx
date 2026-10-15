@@ -1,7 +1,13 @@
 import { AccountActivity } from "@/app/account/[id]/components/AccountActivity";
 import type { TransactionActivity } from "@/lib/transaction-activity";
 import { erc2771ForwarderAbi, jbContractAddress } from "@bananapus/nana-sdk-core";
-import { fireEvent, render, screen } from "@testing-library/react";
+import {
+  checkedItLabel,
+  SAVED_ATTEMPT_CHECK_LINE,
+  SAVED_ATTEMPT_CHECK_WARNING,
+  SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
+} from "@bananapus/nana-sdk-core/review";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 import { encodeFunctionData } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +20,9 @@ const mocks = vi.hoisted(() => ({
   waitForRelayrBundle: vi.fn(async () => undefined),
   checkRelayrSession: vi.fn(async () => undefined),
   discardRelayrSession: vi.fn(),
+  relayrSessionCheck: vi.fn(),
+  client: undefined as unknown,
+  retireCheckedRelayrSession: vi.fn(),
   dismiss: vi.fn(),
 }));
 
@@ -21,7 +30,10 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   waitForRelayrBundle: mocks.waitForRelayrBundle,
   checkRelayrSession: mocks.checkRelayrSession,
   discardRelayrSession: mocks.discardRelayrSession,
+  relayrSessionCheck: mocks.relayrSessionCheck,
+  retireCheckedRelayrSession: mocks.retireCheckedRelayrSession,
 }));
+vi.mock("wagmi", () => ({ usePublicClient: () => mocks.client }));
 vi.mock("@/hooks/useViewedAccount", () => ({ useViewedAccount: () => ({ address: ACCOUNT }) }));
 vi.mock("@/hooks/useCompleteBendystrawLists", () => ({
   useCompleteAccountActivity: () => ({ data: {}, isLoading: false, isError: false }),
@@ -62,6 +74,7 @@ function activity(overrides: Partial<TransactionActivity> = {}): TransactionActi
 }
 
 beforeEach(() => {
+  mocks.client = undefined;
   mocks.activities = [];
   mocks.indexed = [];
   mocks.checkRelayrSession.mockClear();
@@ -197,6 +210,50 @@ describe("account Relayr session rules (ruling R114 (e))", () => {
   });
 });
 
+describe("a saved session its check can't show", () => {
+  const CHECK = {
+    status: "check" as const,
+    reason: "malformed recovery history",
+    line: SAVED_ATTEMPT_CHECK_LINE,
+    warning: SAVED_ATTEMPT_CHECK_WARNING,
+    evidence: "{}",
+  };
+
+  it("offers the SDK's one check instead of a dead end, and the warned continue only once refused", async () => {
+    mocks.activities = [
+      activity({ relayrPaymentStatus: "unfunded", hash: undefined, ...signedRequest() }),
+    ];
+    mocks.checkRelayrSession.mockRejectedValueOnce(new Error("malformed recovery history"));
+    mocks.relayrSessionCheck.mockResolvedValue(CHECK);
+    mocks.retireCheckedRelayrSession
+      .mockResolvedValue({ retired: true, durable: true })
+      .mockResolvedValueOnce({ retired: false, reason: "unreadable" });
+    render(<AccountActivity address={ACCOUNT} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Check signatures" }));
+    expect(await screen.findByText(SAVED_ATTEMPT_CHECK_LINE)).toBeVisible();
+    expect(screen.getByText(SAVED_ATTEMPT_CHECK_WARNING)).toBeVisible();
+    expect(screen.queryByRole("button", { name: SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: checkedItLabel() }));
+    await waitFor(() =>
+      expect(mocks.retireCheckedRelayrSession).toHaveBeenCalledWith(
+        "relayr:bundle",
+        CHECK,
+        undefined,
+      ),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL }),
+    );
+    expect(mocks.retireCheckedRelayrSession).toHaveBeenLastCalledWith(
+      "relayr:bundle",
+      CHECK,
+      "unreadable",
+    );
+  });
+});
+
 describe("account Relayr recovery controls", () => {
   it.each(["unfunded", "reverted"] as const)(
     "does not offer a bundle check for %s payment",
@@ -277,4 +334,41 @@ describe("a Safe proposal whose result can't be confirmed here", () => {
       expect(mocks.dismiss).toHaveBeenCalledExactlyOnceWith("safe:unconfirmed");
     },
   );
+});
+
+describe("the account's held writes", () => {
+  it("shows every write the SDK holds for the account, with its line", async () => {
+    const node = {
+      getChainId: async () => 8453,
+      getBlockNumber: async () => 100n,
+      getBlock: async () => ({ number: 100n, hash: `0x${"bb".repeat(32)}` }),
+      getTransactionCount: async () => 3,
+      getTransaction: async () => {
+        throw new Error("not found");
+      },
+      getTransactionReceipt: async () => {
+        throw new Error("not found");
+      },
+      request: async () => null,
+    };
+    const { writeHolds } = await import("@/lib/write-hold");
+    // The wallet never answered: the hold keeps the write, with no hash.
+    await writeHolds
+      .open({
+        chainId: 8453,
+        account: ACCOUNT,
+        safe: false,
+        call: { to: ACCOUNT, data: "0x1234", value: 0n },
+      })
+      .send(node as never, async (gate) => {
+        await gate.beforeSend();
+        throw new Error("Wallet transport timed out");
+      })
+      .catch(() => undefined);
+    mocks.client = node;
+    render(<AccountActivity address={ACCOUNT} />);
+    expect(
+      await screen.findByText("Your earlier transaction hasn't confirmed yet. Check your wallet."),
+    ).toBeVisible();
+  });
 });

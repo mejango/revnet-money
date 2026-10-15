@@ -299,6 +299,7 @@ checks 126 passed, four skipped, inside the shared gate lock. All client JavaScr
 rises by the minimum 1 KiB to 2,646 KiB. 15 tests failed on the code before these commits.
 
 ## 2026-10-06 — Pretty queued Safe confirmations
+
 - [x] Extract the existing canonical protocol decoder without changing queue labels.
 - [x] Reuse decoded queued calldata for nested review cards in single execution, Relayr execution, and queued signing.
 - [x] Verify known actions, unknown/malformed fallback, and confirmation rendering; run focused tests and typecheck.
@@ -306,6 +307,7 @@ rises by the minimum 1 KiB to 2,646 KiB. 15 tests failed on the code before thes
 Review: 135 focused tests pass, including four-chain queued calldata and rendered consent/order regressions. Typecheck, changed-source lint, and wallet boundary checks pass. Cleared a stale generated Next route type after route-type regeneration. Independent review found no substantive issue. Changes are local; not deployed.
 
 ## 2026-10-06 — Paced Safe checks, final verification
+
 - [x] Overlap independent checks with a two-worker limit in queue preparation, Safe Relayr quoting, and payment rechecks.
 - [x] Preserve request order, sequential wallet signatures, and failure gating; drain pending checks before retry.
 - [x] Test concurrency limit, overlap, stable ordering, and payment blocking.
@@ -315,55 +317,62 @@ Final review: 1,567 tests passed in the full run; three live-schema tests initia
 Rebase verification: integrated origin/main c668b8ed and SDK 2.23.0, keeping SDK-owned canonical MultiSend decoding and the newer Relayr recovery checks. Readable actions now live in the shared TransactionReviewDialog. 2,138 local tests passed; three loopback RPC tests blocked by sandbox permissions passed on a permitted rerun. Typecheck, changed-file ESLint, and wallet boundary checks pass. Confirmed queued signing retains its readable metadata after conflict resolution.
 
 ## 2026-10-06 — Pending routing belongs to the destination
+
 - [x] Query and validate retained payments by destination project, preserving source metadata in retry calldata.
 - [x] Cover source 6 → destination 1, unrelated destinations, and multi-source incoming payments.
 - [x] Verify reader/component/operation tests, typecheck, and matching JBM correction.
-Plan review: correct the existing query owner and boundary validation; no contract behavior change.
+      Plan review: correct the existing query owner and boundary validation; no contract behavior change.
 
 Destination-routing review: 30 reader/component/operation tests passed; typecheck, changed-file ESLint, fixture syntax and diff checks pass. Query and validation use destination projectId; sourceProjectId remains unchanged in commitments and calldata. Query cache key distinguishes destination-scoped results. Browser fixture now uses source 6 / destination 1; browser scenario updated, not run.
 
 ## 2026-10-06 — One Relayr bundle for pending payments
+
 - [x] Preserve permissionless gateway retries as independent raw entries; allow repeated destination chains only for authenticated pending-routing calls.
 - [x] Quote and fund all eligible retries in one bundle, binding records by quote transaction ID rather than chain.
 - [x] Keep per-payment custody/receipt checks, pre-funding revalidation, and saved-bundle recovery; preserve forwarder nonce rules and Safe fallback.
 - [x] Update both clients' batch review and test same-chain bundles, cooldown exclusion, exact mapping, failures and resume.
-Plan review: use the existing raw Relayr lifecycle. Each payment remains its own destination transaction; no atomic multicall wrapper. Existing local simulation bounds remain; Relayr chooses the actual execution gas.
+      Plan review: use the existing raw Relayr lifecycle. Each payment remains its own destination transaction; no atomic multicall wrapper. Existing local simulation bounds remain; Relayr chooses the actual execution gas.
 
 - [x] Discover legacy saved routing attempts by their authenticated destination, preserving original scope, transport, hashes and resume state. Recover all-handled journals interrupted before completion.
 
 Review: 2,152 local tests passed and one skipped (live schema and loopback RPC suites excluded for the sandbox); final focused verification passed 74 tests after the saved-recovery correction. Typecheck, changed-file ESLint, wallet boundary checks, format ratchet and diff checks pass. JBM reports 2,542 tests passing plus typecheck, lint and source/inventory checks. Same-chain raw entries share one funding payment and retain per-call receipt mapping, including canonical reverted attempts. Saved source-6 attempts now appear on destination 1 without rewriting recovery records. Changes are local, not pushed.
 
 ## 2026-10-06 — Distinguish pending inventory from saved routing selection
+
 - [x] Split discovery from paced verification so indexed rows show immediately with a checking state.
 - [x] Label the resume button plainly and separate saved progress from the pending total.
 - [x] Preserve submission gates and resolved-row filtering; cover delayed seven-payment inventory plus three saved calls and per-row RPC errors.
-Review: 27 relevant tests pass; typecheck, changed-file ESLint and diff check pass. Both query stages share an invalidation prefix and use new cache keys for their new shapes. Follow-up remains local, not pushed.
+      Review: 27 relevant tests pass; typecheck, changed-file ESLint and diff check pass. Both query stages share an invalidation prefix and use new cache keys for their new shapes. Follow-up remains local, not pushed.
 
 ## 2026-10-06 — Replace untouched routing drafts
+
 - [x] Distinguish untouched drafts from submitted, funded, published, ambiguous or handled attempts.
 - [x] Review the full current selection and replace the exact draft under the account lock after reservation checks and an atomic journal comparison.
 - [x] Freeze reviewed identities, preserve recovery on failure, and require a fresh review after replacement errors.
-Review: 63 engine tests and 14 routing component tests pass; reviewed Relayr suite passed during engine validation. Typecheck and changed-file lint pass. Regression coverage includes late submission evidence, lost publication responses, cancellation, changed journals, and failed replacement retries. Changes remain local, not pushed.
+      Review: 63 engine tests and 14 routing component tests pass; reviewed Relayr suite passed during engine validation. Typecheck and changed-file lint pass. Regression coverage includes late submission evidence, lost publication responses, cancellation, changed journals, and failed replacement retries. Changes remain local, not pushed.
 
 ## 2026-10-06 — Read-only routing recovery checks
+
 - [x] Return saved calls and a specific state-based reason in recovery metadata; decode exact authenticated calls for the confirmation.
 - [x] Recheck once per saved selection and on request without signing/paying; reuse reservation proofs and reset only unpaid expired quoted rounds under account lock and journal comparison.
 - [x] Preserve unknown submissions/funding/missing evidence and freeze open review identity across checks.
-Review: 200 engine/Relayr tests pass; 17 UI tests and 15 pending-call tests pass, with typecheck, changed-file lint and diff checks. A screenshot cannot identify the local journal state; the UI now reports its real reason instead of generic zero-handled copy. Changes are local, not pushed.
+      Review: 200 engine/Relayr tests pass; 17 UI tests and 15 pending-call tests pass, with typecheck, changed-file lint and diff checks. A screenshot cannot identify the local journal state; the UI now reports its real reason instead of generic zero-handled copy. Changes are local, not pushed.
 
 ## 2026-10-06 — Prepare Safe execution on open and pace RPC egress
+
 - [x] Extract preparation without behavior change (19 baseline tests), then start it when Execute all opens.
 - [x] Keep explicit quote review and separate payment confirmation; show payment chain options and decoded actions.
 - [x] Pace browser RPC starts by 125ms across chains/retries without waiting for responses; all independent checks overlap and drain before error/payment.
 - [x] Test cancellation, delayed quote, account changes, retries, error ordering, queued abort and 429 cooldown.
-Review: 23 Safe dialog/card tests pass and 145 transport/check/Relayr tests pass. Broad sandbox-safe suite: 2,195 tests passed plus one skipped; sole failure was the stale copy-debt record from removing the pending-call middot, corrected and its six tests now pass. Live schema and loopback RPC files excluded. Typecheck, changed-file ESLint, format ratchet and wallet-boundary inventory pass; quote owner inventory updated from executeAll to prepareAll. JBM full suite: 2,576 tests pass. Not pushed.
+      Review: 23 Safe dialog/card tests pass and 145 transport/check/Relayr tests pass. Broad sandbox-safe suite: 2,195 tests passed plus one skipped; sole failure was the stale copy-debt record from removing the pending-call middot, corrected and its six tests now pass. Live schema and loopback RPC files excluded. Typecheck, changed-file ESLint, format ratchet and wallet-boundary inventory pass; quote owner inventory updated from executeAll to prepareAll. JBM full suite: 2,576 tests pass. Not pushed.
 
 ## 2026-10-06 — Resume saved Safe quotes instead of retrying creation
+
 - [x] Match complete chain/Safe/hash/nonce intent sets while keeping the original quote, UUIDs and signature calldata.
 - [x] Revalidate original calls and show their nested decoded review; preserve all historical alias keys.
 - [x] Protect legacy and current same-nonce reservations against changed signature/subset/alternative-hash attempts.
 - [x] Offer structured existing-bundle checks for incompatible/paid/ambiguous records instead of Retry checks.
-Review: 140 hook tests pass, plus 79 UI/activity/release/routing tests. Types and focused ESLint pass; wallet-boundary inventory remains unchanged. Existing quote recovery makes no new publication or payment. JBM has no equivalent persisted-unpaid-quote lookup deadlock. Local, not pushed.
+      Review: 140 hook tests pass, plus 79 UI/activity/release/routing tests. Types and focused ESLint pass; wallet-boundary inventory remains unchanged. Existing quote recovery makes no new publication or payment. JBM has no equivalent persisted-unpaid-quote lookup deadlock. Local, not pushed.
 
 ## 2026-10-06 — Replace unfunded Safe quotes for the current selection
 
@@ -384,7 +393,6 @@ Published-install verification: SDK 2.24.2 and the reified lockfile installation
 - **Evidence and unknowns:** The user's three-current/four-saved screenshot proves that the historical selection still blocks progress after 2.24.1; the agreed SDK contract replaces overlapping quote-only sessions after current-call review, retains them as quote-replaced, and protects fundingObserved or remote execution evidence. RNM will normalize legacy chainStates into shared records rather than classify statuses itself.
 - **Verification:** Exercise actual prepare/storage/reload for four-to-three replacement and missing quote responses, assert current exact calls are reviewed/posted before any wallet payment and funded once only after explicit consent, and retain malformed, submitted and hashless-funding refusal regressions.
 - **Resource budget:** Investigate RNM while the SDK policy is resolved in parallel; make the smallest adapter change, then run focused tests/types/lint against the preview. Repeat the full suite and static gates on the published 2.24.2 installation because npm reified dependency entries beyond the SDK archive; bound any subsequent rerun to a concrete failure.
-
 
 ## 2026-10-07 — Load operator accounts and Safe queues independently
 
@@ -456,7 +464,6 @@ Activity build review: controlled preview production and standalone builds pass 
 
 Official package qualification: both manifests pin published core2.24.4 with verified registry integrity. All753 distribution files equal the tested preview; unrelated dependencies and runtime source are unchanged. The measured production/standalone artifact remains valid under exact input comparison, with only approved version/lock metadata differences and the2663KiB aggregate ceiling. Final official-package rerun passes all51 activity tests, types, affected lint and full formatting ratchet. Hosted CI and exact live revision checks are tracked by the workspace release checklist.
 
-
 ## 2026-10-07 — Keep anonymous browsing free of wallet initialization
 
 - [x] Remove only the root provider's idle Para mount; preserve intent preload, sign-in/add-funds, and marked-session restoration.
@@ -494,6 +501,7 @@ Review: 16 focused suites pass231 tests, with typecheck, touched-file lint, full
 - [x] Record exact checks and commit the focused change for integration.
 
 Review: complete diagnostics now reuse the existing chain/project/operator query for ten seconds. No new owner, key or transport cache was added. Explicit Retry checks and unchanged-operator Check still refetch; A/B/A selection can reuse the exact fresh A result. Null deployment, unavailable checks, missing/incomplete indexer evidence and failed refreshes remain immediately retryable; prior data is never displayed/copied after a failed refresh. Baseline regressions reproduced extra reopen/remount requests. Final verification: 33 tests passed across project-diagnostics, project-diagnostics-route, project-diagnostics-loader and project-index-status; full typecheck, focused ESLint, complete formatting ratchet (two unchanged debt entries) and diff checks pass. Read-only independent policy review found no authority-safety blocker. Verification used installed Node 26.7.0, TanStack Query 5.101.4, Next 16.3.8 and Vitest 4.1.10; exact pinned-toolchain/dependency integration and production/browser checks remain coordinator-owned. No build, install, push or deployment ran here.
+
 ## 2026-10-07 — Server project-read performance
 
 Required workspace resources remain authoritative in this isolated checkout: `/Users/jango/Documents/jb/v6/evm/AGENTS.md`, `/Users/jango/Documents/jb/v6/evm/workflow/ponytail/SKILL.md`, `/Users/jango/Documents/jb/v6/evm/workflow/ponytail/README.md`, `/Users/jango/Documents/jb/v6/evm/docs/PLAN_REFINEMENT.md`, `/Users/jango/Documents/jb/v6/evm/tasks/lessons.md`, and this repository's `tasks/lessons.md`. Parent authorization and scope: `/Users/jango/Documents/jb/v6/evm/docs/WEBSITE_PERFORMANCE_IMPLEMENTATION.md`.
@@ -514,6 +522,7 @@ Required workspace resources remain authoritative in this isolated checkout: `/U
 - [x] Run focused checks and record exact commits, limitations and integration gates.
 
 Review: behavior-preserving layout extraction is commit 11c7b631; bounded display reuse is c881dc02. Header skeleton extraction is dda04735, with exact rendered HTML equality for both populated and empty hints checked before reuse. The final layout retains route/project existence checks before its own streaming boundary, shows the known identity while group/operator data waits, and renders start-time and chart failures locally. Group success eligibility includes the requested project; all production callers now use that normalized key. Explicit invalidation cancels exact and known-group fills, retains unrelated reads, and documents unknown peer/replica expiry rather than promising global consistency. An independent cache review found no remaining blocker. On pinned Node 26.5, all 71 focused tests across 8 suites, full typecheck, touched-file ESLint, source invariants, formatter ratchet and diff checks pass. Navigation identity-boundary wiring and combined production/browser/404 measurements remain parent integration work; no build, dependency install, push or deployment occurred in this worktree. The shared installed graph reports Vitest 4.1.10 versus manifest 4.1.9, so these focused checks do not replace the parent's locked-install integration qualification.
+
 ## 2026-10-07 — Retained project navigation
 
 Uses workspace AGENTS.md, workflow/ponytail/SKILL.md and docs/PLAN_REFINEMENT.md at /Users/jango/Documents/jb/v6/evm. Approved design and six-field refinement: /Users/jango/Documents/jb/v6/evm/docs/WEBSITE_PERFORMANCE_IMPLEMENTATION.md (gate passed).
@@ -656,12 +665,9 @@ Evidence lives under `/private/tmp/jb-performance-checks`: `revnet-activity-fina
 
 Preserved original artifact: `/private/tmp/jb-performance-tools-20261007/revnet-activity-2bd042fb-preserved/.next`; 3,351 files, no symlinks, every byte equal. Manifest: `/private/tmp/jb-performance-checks/revnet-activity-2bd042fb-artifact-preserved.json`, manifest SHA256 `ed6a07fc56427a3b8ca8e4be8da465dd29889fd3ababb0735a43560154b6e733`.
 
-
 Bounded sibling refinement: the reviewer reproduced actual MarketPriceChart and BridgesCard with persisted empty query results restored before hydration; both replace their SSR skeleton tree with client output and report React hydration errors. Root approved those display owners and the only other renderer of the same key, AmmCard (`v6AmmStates`); `v6Bridges` has no second renderer. Reuse the component snapshot, preserve disabled/no-chain behavior and all query policies, and require real-persister regressions before full gates. Other unrelated query owners remain outside this bounded release repair.
 
-
 Final bounded scope (root approved after independent proof): all 9 actual Market/Settlement consumers fail on pinned99569648 source with valid persisted data: MarketPriceChart, AmmCard, SplitHookCard, BridgesCard, AcrossChainsCard, GossipCard, QueuedMovementsCard, V6MarketSubtab ticker and V6SettlementSubtab ticker. Apply the same display-only per-component snapshot to these owners; keep query keys, enablement, polling, stale times, empty-chain behavior, mutation paths and SSR headings/skeletons unchanged. The permanent regression uses valid per-chain AMM/across-chain/gossip records and the actual persister. No further sibling discovery or unrelated query changes are part of this repair. Before evidence: `/private/tmp/jb-performance-checks/revnet-market-settlement-hydration-before.log`.
-
 
 ### Repair verification and handoff
 
@@ -676,7 +682,6 @@ The extraction is commit `99569648`; the independently reviewed runtime repair i
 Evidence is under `/private/tmp/jb-performance-checks`: `revnet-hydration-final-source.json` preserves the first gate batch; `revnet-hydration-final-network.json` records successful required audit/full coverage; `revnet-hydration-fixture-{correction,typecheck,lint,format}.log` qualifies the test-only correction; `revnet-hydration-build.json`, `revnet-hydration-full-browser.json`, and `revnet-hydration-returning.json` record final qualification. The first saved-cache precondition diagnostic is retained as `revnet-hydration-returning-precondition-5s.json`.
 
 Complete artifact manifest: `revnet-hydration-artifact.json`, 3,352 files, manifest SHA256 `8ff9caeb9c6f26a7a351e49a5e1c3dc475400880a1604a009662ff0857fe3d94`; tested source tree `e02fde16285da30859bd1c8a11784fbcaa4eb8dd`. The prior 2bd artifact and all earlier activity evidence remain retained separately. Browser ports were released to the performance owner after all local functional checks; this writer will not run concurrent builds/browsers during final timing. Root owns hosted CI, exact production promotion and public verification; no deployment or wallet transaction was performed by this writer.
-
 
 ## 2026-10-07 service-neutral transaction copy
 
@@ -700,7 +705,6 @@ Independent source review finds no remaining blocker and confirms unchanged auth
 
 Final consolidation on the reviewed source passes all564 affected tests across25 suites in one run, with zero skips or failures. Machine-readable evidence: `/private/tmp/jb-performance-checks/revnet-service-copy-final-tests.json`; companion log has the exact invocation. The final format ratchet initially required reflowing the shortened transaction-review expectation, then passed without changing the assertion.
 
-
 ## 2026-10-07 global-permission response repair
 
 ## Plan refinement
@@ -718,7 +722,6 @@ Final consolidation on the reviewed source passes all564 affected tests across25
 
 Required resources: /Users/jango/Documents/jb/v6/evm/AGENTS.md, /Users/jango/Documents/jb/v6/evm/workflow/ponytail/SKILL.md, /Users/jango/Documents/jb/v6/evm/workflow/ponytail/README.md, /Users/jango/Documents/jb/v6/evm/docs/PLAN_REFINEMENT.md and relevant root/app tasks/lessons.md. No descendant app AGENTS.md is present. Installed Next16.3.8 use-client and Link documentation was read before app edits. Owning release design: /Users/jango/Documents/jb/v6/evm/docs/WEBSITE_PERFORMANCE_RELEASE_FOLLOWUPS.md.
 
-
 ### Permission repair verification and handoff
 
 The new checkout is based on exact deployed merge `acaf540b901b565d0ae8b44fb19fc40a8066fc5c`; the qualified activity8691 worktree and build are unchanged. The physical dependency copy matches the verified locked graph byte-for-byte: 113,031 distinct files, 51 internal symlinks, SHA256 `8162a7426287213667b3547570717d2e3cf0a5c4d991e35888ccf937ef6734b3`. Node26.5.0/npm12.0.1 runs the checks.
@@ -728,7 +731,6 @@ Before runtime changes, six actual server-contract tests reject valid global gra
 The existing live schema contract passes3 tests against both published schemas and its real positive-project filter. Dependency integrity, full typecheck, ESLint, the unchanged formatting ratchet, source invariants, wallet-write inventory and `git diff --check` pass. No full build/browser or deployment was run here; root owns full hosted qualification of the final combined tree and exact-revision production verification, including the preserved failing returning-cache journey. Independent review of the scoped diff found no blocker on the returned valid global-grant data; final commit review remains part of root integration.
 
 Evidence under `/private/tmp/jb-performance-checks`: `revnet-permission-before.log`, `revnet-permission-focused.log`, `revnet-permission-live-schema.log`, `revnet-permission-{dependencies,typecheck,lint,format,source,wallet}.log`, and `revnet-permission-physical-provenance.json`. The original production failure and public differential remain preserved separately. No wallet action, push, deployment, local server or browser process was started.
-
 
 ## 2026-10-07 concise funding actions
 
@@ -903,7 +905,6 @@ The original invalid preview/archive and qualified baseline retain all verified 
 
 The aggregate threshold is2671 KiB with a three-line measured comment. An exact text comparison proves these are the bundle script's only changes:900 KiB per-route and1100 KiB route-referenced limits, asset counting/exclusions and all lazy-wallet assertions are unchanged. The owning bundle check now passes on the same official artifact at2,734,565 bytes; formatting and diff checks pass. No rebuild or repeated unit suite occurred. The original failed gate and invalid preview evidence remain intact. `/private/tmp/jb-performance-checks/revnet-official-budget-correction-verification.json` pins the scoped commit, approved analysis, artifact and successful gate/scope logs for independent exact-head review and root's final hosted CI.
 
-
 ## 2026-10-08 — Shared client RPC and Safe execution owners
 
 - [x] Replace duplicated RPC pacing with the shared SDK export.
@@ -921,7 +922,6 @@ The aggregate threshold is2671 KiB with a three-line measured comment. An exact 
 
 Refinement extension: transaction wording also shares the SDK review owner under `../sdk-client-reconciliation/tasks/transaction-message-plan.md`; the two current formatters differ, so first extract Revnet unchanged, then reconcile Juicebox's demonstrated presentation cases while preserving URL/identifier protection, diagnostics and all recovery warnings. JBM pending lookup/stamp/polling helpers move unchanged to the SDK because Sticky/Homerun adopt that exact policy; Revnet keeps its different lifecycle.
 
-
 ## Plan refinement
 
 - **Objective:** Finish the shared SDK caller migration and fix the reproduced browser RPC queue timeout: queued requests must wait through a server-directed cooldown before their transport timeout starts, while independent requests remain paced and overlap.
@@ -930,7 +930,6 @@ Refinement extension: transaction wording also shares the SDK review owner under
 - **Evidence and unknowns:** SDK investigation reproduced that fetch-level queuing begins after provider timeout creation and duplicates the provider response-slot limiter. Root approved moving pacing into SDK admission. Source extraction equivalence was verified first; this second phase intentionally fixes only admission timing, response concurrency and shared cooldown ownership. Final preview qualification remains pending SDK owner gates.
 - **Verification:** Actual viem transport tests must prove twelve unresolved requests can start 125ms apart, a 60-second Retry-After wait does not expire the 15-second request timeout, server origin and browser fetch receiver remain correct, and pinned-block retries still pass. Existing Safe proof, explicit non-batch rejection, error evidence and source gates remain required, followed by root-owned full builds/browser checks.
 - **Resource budget:** One limiter per browser module, no extra scheduler or dependency. SDK unit tests own abort and timer details; app integration tests own provider placement. Root stages the exact package into physical locked installs. Replan on changed server behavior, unreliable fake-time results, or any authority/recovery change.
-
 
 Reconciliation review in progress: qualified preview2 was installed with exact Node26.5/npm12, then a clean physical npm ci. The SDK owns provider pacing, transaction presentation and Safe transaction/execution matching; the adapter always passes Revnet's explicit batch policy, including its strict single-call rejection regression. The affected RPC/Safe/error suites passed36 cases. The reviewed-write boundary and durable pre-wallet-abort cleanup owner reports197 hook/batch cases plus types passing; its detailed refinement is tasks/reviewed-write-reconciliation.md. All10 local static gates passed (dependencies, dead-code, environment, deployment, types, lint, format ratchet, source, protocol fixture and wallet inventory), recorded in /private/tmp/rnm-client-static-results.json.
 
@@ -945,13 +944,11 @@ The first bounded full coverage run is preserved at /private/tmp/rnm-client-reco
 - **Verification:** Install exact wallet versions with npm12, inspect lock changes and perform physical npm ci. Run dependency tree, deployment policy, types/lint/format/source/inventory, complete coverage with authorized live read access and serialized production/browser gates on the final graph. Preserve any first failure and identify intentional runtime differences in artifact comparisons.
 - **Resource budget:** All Revnet readers are paused during mutation; one owner controls manifest/lock/runtime pins. No unrelated dependency upgrade, script execution, image publication or deployment. Replan on a concrete runtime incompatibility or unexpected lock churn.
 
-
 Release-candidate verification: the final SDK2.25.0 preview4 (sha512-DeJMW245XZq1QUs+0zzgE8E8ETah+s+D7QxJoh0KG5uTzyrQh3Jn3EWDRh69f/hi6mTOBCMR1txt8TWUf0RoMA==) was installed with npm12 and physical npm ci. Revnet now pins the sibling Node26.7.0/npm12.0.1/wagmi3.7.6/viem2.55.19 runtime. Only the SDK, wallet packages and their necessary ox/connectors/abitype resolution changed in the dependency graph; all1015 packages were reified physically. Docker uses the sibling's immutable Node26.7 digest, its policy gate agrees, and both CI workflows already read .nvmrc. Historical26.5 budget evidence remains unchanged.
 
 The final10 focused wallet/journal suites passed577 cases. The full authorized-network coverage run passed257 files and2622 cases, with only the pre-existing optional native-direct-pay live case skipped because its dedicated RPC URL is unset. All coverage floors passed: statements66.83%, branches61.16%, functions64.46%, lines68.95%. Existing live schema/RPC contract cases passed. All11 final static/audit gates passed, including dependency tree, dead-code, environment/deployment, native types, full lint, formatting ratchet, source/protocol/inventory and production audit. No assertions, timeouts, retries, coverage floors or audit exceptions were weakened. Evidence: /private/tmp/rnm-client-final-coverage.log and /private/tmp/rnm-client-final-static-results.json.
 
 Root owns comparison of every official SDK payload file to this frozen candidate, registry pin adoption and final production-build/budget/browser qualification. Those gates remain outstanding; this record claims only the completed source and release-candidate checks.
-
 
 ## Plan refinement
 
@@ -962,9 +959,7 @@ Root owns comparison of every official SDK payload file to this frozen candidate
 - **Verification:** Perform npm install of exact2.25.0 and physical npm ci, confirm registry resolution/integrity, rerun dependency, source, type and documentation-sensitive inventory checks, then require all hosted CI jobs on the exact pushed revision. Preserve first failures and fix their causes without weakening gates.
 - **Resource budget:** One owner mutates each dependency graph sequentially. Do not repeat identical full unit coverage; hosted CI runs final heavy gates while sibling local builds are serialized. Commit only inventoried reconciliation files, open both PRs and replan for any payload mismatch or unexpected dependency drift.
 
-
 Official adoption complete: exact registry SDK2.25.0 is pinned in the manifest and lockfile, with the verified published integrity above. A clean physical npm ci reified all1015 packages with pinned Node26.7.0/npm12.0.1. Registry resolution and installed version match, and final dependency, type, source and wallet-inventory gates pass; deployment/container policy also passes (plus Revnet formatting ratchet). Logs: /private/tmp/rnm-client-official-static-results.json. Current TESTING ownership documentation names the published shared owners. Full unit/coverage evidence above remains valid because the official package is byte-identical to the tested candidate; no full rerun was needed. Pull-request CI now owns final production-build, budgets, browser and OCI smoke evidence before root merges; these gates are not yet reported as passed.
-
 
 ## Plan refinement
 
@@ -1042,6 +1037,7 @@ Source references at inspected revision bbf678d17323d7f82fc31d0174635422de389988
 ## Pending routing confirmation recovery — 2026-10-09
 
 ## Plan refinement
+
 - **Objective:** A successfully submitted routing fee whose immediate confirmation is unavailable must retain recovery of the existing batch, display its full error/hash, and avoid offering fresh confirmation.
 - **System fit:** PendingRoutingPayments owns foreground review; useMultichainBatch owns durable identity and recovery; useReviewedRelayr/SDK retain canonical payment and destination proof. User reports the submission succeeded; no live hash is available to prove the specific timing failure.
 - **Reuse and simplicity:** Reuse getPendingBatch and savedSelection for recovery and TxError's existing wrap-anywhere presentation rule; preserve shared execution locks and payment verification.
@@ -1055,6 +1051,7 @@ Source references at inspected revision bbf678d17323d7f82fc31d0174635422de389988
 - [x] Run checks and record verified results and limits.
 
 ## Plan refinement
+
 - **Objective:** Also continue canonical reconciliation when the immediate post-broadcast confirmation check is temporarily unavailable.
 - **System fit:** useReviewedRelayr already owns waitForRelayrBundle, including bounded retry and exact payment/destination proof; start that observer on transient confirmation failures while preserving the saved submission and existing error/recovery lock.
 - **Reuse and simplicity:** Reuse the existing observer; no new polling logic, payment submission or proof bypass. Permanent RelayrVerificationError remains a held verification failure.
@@ -1063,6 +1060,7 @@ Source references at inspected revision bbf678d17323d7f82fc31d0174635422de389988
 - **Resource budget:** Delegate only the funding-hook/test change; main agent retains foreground recovery and message wrapping. Reuse current test mocks and bounded observer.
 
 ### Confirmation recovery review
+
 - Transient post-broadcast confirmation failures now start the existing canonical bundle observer; hard verification errors retain their previous held state.
 - Foreground unresolved routing adopts saved-batch continuation, passing its exact expectedBatchId without preparing fresh calls; confirmation errors expose an accessible alert and wrap full hashes.
 - Final verification: 432 tests passed across pending-routing-payments, ui-primitives, multichain-batch and reviewed-relayr-hooks; typecheck, changed-file ESLint, wallet-writes:check (142 sites), and git diff whitespace check passed.
@@ -1070,15 +1068,16 @@ Source references at inspected revision bbf678d17323d7f82fc31d0174635422de389988
 - Local changes only; no deployment or transactions. The particular failing RPC read in the screenshot remains unverified without its full transaction hash/provider logs.
 
 ## Compact pending-payment retry UI — 2026-10-09
+
 - Implemented collapsed inventory, verified readable amounts, exact source/destination project names, concise Retry review/actions and canonical network-fee payment ABI decoding.
 - Shared loading text uses fixed-width CSS dots with original accessible text and reduced-motion support.
 - Verified: 470 tests in9 focused files, full types, changed-file lint, source invariants, transaction-boundary checks and whitespace checks. Chromium native-disclosure/loading-motion check also passes; canonical payment/recovery tests remain green.
 - Refinement and cross-client evidence: ../../tasks/todo.md, latest Both-client pending payment experience record. No contracts or real transactions changed.
 
-
 ## Markee homepage visual prototype — 2026-10-12
 
 ## Plan refinement
+
 - **Objective:** Place the compact Markee message above Top with smaller text and the small bottom-left Takeover this advertisement action; preserve the preview dialog and previously raised hero.
 - **System fit:** HomepageDiscovery owns placement above the Top column; a small client component owns local preview state and reuses the existing accessible dialog. This visual prototype does not create a board, connect a wallet, submit a stream or change recipient/admin authority.
 - **Reuse and simplicity:** Reuse existing Melon/teal colors, mono font, buttons and dialog; one new component and one hero insertion, no dependencies or new contract logic. Show on dev/loopback only so production remains unchanged.
@@ -1113,10 +1112,10 @@ Action alignment refinement: change only the action row to justify-start for bot
 
 Takeover spacing refinement: reduce message bottom padding from 12px to 4px and action-row bottom padding from 8px to 4px; retain bottom-left alignment and the 44px hit area.
 
-
 ## Real Markee Rent integration — 2026-10-12
 
 ## Plan refinement
+
 - **Objective:** Replace the local advertisement demo with a real dev-first Rent view, live board data and reviewed wallet actions; retain a small secondary Preview and primary Takeover in the site’s existing modal style. User confirms no board exists yet.
 - **System fit:** Markee’s existing streaming contracts own ranking/refunds/deposits and beneficiary routing. One app module owns verified ABI/config/rate math/call builders, one hook owns reviewed multi-step execution and durable recovery, and the existing dialog displays those results. Board creation from the chosen admin is a real setup prerequisite; exact receipts/config must establish the board before any stream action. Team Safe receives ETHx directly.
 - **Reuse and simplicity:** Adapt pinned upstream streaming builders and reuse wagmi/Base, dialog, wallet button, reviewed-write engine and activity journal. No custom contract, wallet stack or fake success. Keep local message Preview inside the dialog; homepage reads only verified board content. Keep dev/loopback gating and production unchanged.
@@ -1136,6 +1135,7 @@ Bundle verification refinement: the complete Rent lifecycle adds client code; cu
 Browser verification refinement: full Playwright exposed stale pending-payment fixtures after the existing compact disclosure/source-name change. Keep production unchanged; explicitly model only the known source project 6 in the deterministic Project handler, and update the pending-routing browser test to expand the current disclosure before asserting its exact protocol/gateway-bound review actions. Preserve all unexpected-request rejection and exact network/transaction fixtures. The new advertisement action uses teal-700 to meet small-text contrast while retaining 10px quiet styling.
 
 ### Real Rent integration review
+
 - Replaced the visual demo with verified Base board/message reads, selected-admin board creation, reviewed message/approval/stream writes, updates, stop and deposit withdrawal. Durable exact-call recovery supports direct and Safe executions; full lifecycle Web Locks prevent cross-tab journal overwrite. Definite wallet refusal clears only the matching hashless submission; configuration drift cannot block immutable exit checks.
 - The compact card remains above Top with 16px message, quiet 10px bottom-left Takeover this advertisement action and accessible contrast. The existing modal now has secondary Preview and primary Takeover. Preview stays inside the modal and never replaces canonical homepage content. Uncreated setup has no fake board or sample price.
 - Independent review regressions cover ETHx decay during deferred rate review and recovered Safe execution evidence. Fixed shared native-dialog focus restoration with nested-dialog regressions. Corrected pre-existing split-loading-text test assertions, exact source-project routing fixture and collapsed-disclosure browser assertions; isolated HEAD reproduced the four original unit failures.
@@ -1149,6 +1149,7 @@ Browser verification refinement: full Playwright exposed stale pending-payment f
 ## Restore homepage hero and action wording — 2026-10-12
 
 ## Plan refinement
+
 - **Objective:** Restore the original hero spacing now that the advertisement sits above Top; spell every visible Markee action Take over.
 - **System fit:** HomepageDiscovery owns hero layout; MarkeeAdvertisement and its reviewed-status text own labels. Board reads, payments and recovery remain unchanged.
 - **Reuse and simplicity:** Remove the obsolete compact hero prop and conditional offsets; reuse the original static classes and existing modal buttons.
@@ -1162,6 +1163,7 @@ Browser verification refinement: full Playwright exposed stale pending-payment f
 ## Trending project chain membership — 2026-10-12
 
 ## Plan refinement
+
 - **Objective:** Show every supported member chain beside each composite Trending project, preserving the existing ranking and volume/payment display.
 - **System fit:** HomepageDiscovery owns ranked row presentation; the existing cached getSuckerGroup display reader owns cross-chain membership. Wallet authority, financial actions, and New project presentation are unchanged.
 - **Reuse and simplicity:** Reuse getSuckerGroup and ChainLogo, enrich only eight Trending rows, and deduplicate known chain IDs without introducing a new data or icon owner.
@@ -1173,6 +1175,7 @@ Browser verification refinement: full Playwright exposed stale pending-payment f
 - [x] Run focused regression/type/lint checks and record results.
 
 ### Trending chain review
+
 - Trending rows now reuse the cached indexed sucker-group reader to show every supported member chain, once, with accessible names. Eight row lookups run in parallel with the existing fingerprint reads; failed membership reads retain the known representative chain. Existing ranking order, payment counts, volume units, links and New launch-chain behavior remain unchanged.
 - Three rendered regressions pass: four-chain composite membership despite Base activity, duplicate/unsupported/wrong-group/version exclusion and unavailable-membership fallback. Repository typecheck, touched-file ESLint with zero warnings and Prettier pass. No public transactions or deployment were performed.
 
@@ -1185,6 +1188,7 @@ Responsive verification passes after the icon-only change: at 768px the row/deta
 ## Markee creation transaction preflight — 2026-10-13
 
 ## Plan refinement
+
 - **Objective:** Answer whether the current site creation action is ready to sign, using fresh live evidence for the exact selected-admin call and explicit wallet matching fields.
 - **System fit:** useMarkee owns the prepared creation call and final ENS/factory rechecks; reviewed-write owner controls wallet consent and account identity; canonical factory logs and board reads control acceptance. This verification adds no execution authority.
 - **Reuse and simplicity:** Reuse factory ABI, constants and readMarkeeFactory from the app, prior private-fork lifecycle evidence and focused creation/recovery tests; only read-only simulation and a small evidence record.
@@ -1207,6 +1211,7 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 - [x] After a failed send, the page recovers again (settlement found during the exit is the result); with nothing held, the saved attempt is retired so a wallet rejection never demands a check. Only the check action otherwise retires it; the next launch gets a fresh salt.
 
 ### Review
+
 `npm run check` green: 2904 unit tests, 144 browser tests, bundle 2743.8 of 2746 KiB (no budget change).
 
 ## Joint round 3: launch recovery invariants A-D (2026-10-14)
@@ -1217,6 +1222,7 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 - [x] `takeHeldExit` extracted unchanged from `sendUnderHold` so the page offers the same exit.
 
 ### Review
+
 `npm run check` green: 2911 unit tests, 144 browser tests, bundle 2743.9 of 2746 KiB (no budget change). Audited: Relayr multichain launch keeps its own signature-window gate (unchanged); legacy Safe proposal adoption refusal keeps the journal refusing, never permits a send.
 
 ## Joint round 4, finding 1: a known success is never discarded (2026-10-14)
@@ -1225,6 +1231,7 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 - [x] `recoverLaunch` follows a journaled settlement first; `LaunchConfirmingNotice` re-runs recovery. Markee and Relayr findings 2-4 are queued for the SDK engine migration (coordinator ruling).
 
 ### Review
+
 `npm run check` green: 2914 unit tests, 144 browser tests, bundle 2744.1 of 2746 KiB.
 
 ## Joint round 5, findings 2 and 3 (2026-10-14)
@@ -1233,6 +1240,7 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 - [x] Red first: a stale "I checked it" in one tab after another tab journaled the success keeps it and follows it ("Check again"). `releaseLaunch` re-reads the journal and refuses a saved success; the check, the SDK exit and a dropped reservation all release through it.
 
 ### Review
+
 `npm run check`: 2921 unit tests and every step green except one unrelated browser timing flake (project-shape alias tab, tablet-768); `npm run test:browser` rerun alone passed 144/144. Bundle 2744.2 of 2746 KiB.
 
 ## Joint round 6, finding 2: an unreadable journal is never released (2026-10-14)
@@ -1241,6 +1249,7 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 - [x] Audit of writes/deletes after forgiving reads: the sucker-extension salt store read a malformed store as `{}` and the next write replaced it, dropping salts deployed peers need; it now refuses and never writes or clears over it. Multichain batch journal already throws; transaction activity already stops writing after a failed read; the Safe batch tray is a convenience queue (no recovery); Markee is queued for the SDK engine migration.
 
 ### Review
+
 `npm run check` green in one pass: 2928 unit tests, 144 browser tests, bundle 2744.3 of 2746 KiB.
 
 ## The warned continue past an unreadable journal (SDK engine parity, 2026-10-14)
@@ -1249,6 +1258,7 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 - [x] The sucker salt store blocks every extension while unreadable, so it gets the same warned continue in its confirm dialog after an extension failed on it. Strings next to JOURNAL_UNREADABLE_LINE; one `UnreadableJournalExit` component for both.
 
 ### Review
+
 `npm run check` green: 2933 unit tests, 144 browser tests, bundle 2744.6 of 2746 KiB.
 
 ## Final joint round, item 2: a stale retirement never deletes a newer attempt (2026-10-14)
@@ -1257,4 +1267,45 @@ Shared rule: one recovery order on all four sites (held, settled success, no hol
 - [x] `releaseLaunch(key, snapshot)` is the one guard: a strict re-read, kept when the journal is now another salt or holds a success other than the snapshot's. Every retirement (recovery's reverted/launched, receipt success, check, exit, dropped reservation) goes through it; the warned discard re-reads and recovers instead when the record reads again.
 
 ### Review
+
 `npm run check` green: 2937 unit tests, 144 browser tests, bundle 2744.8 of 2746 KiB.
+
+# SDK 2.39 migration: one held write, one saved-attempt recovery (2026-10-14)
+
+Brief: ALIGN/migration-brief.md (step 3 of ALIGN/FINISH.md), rules frozen in ALIGN/recovery-rule.md. Branch feat/sdk-239 from origin/main 35ac6308.
+
+## Plan refinement
+
+- **Objective:** Revnet runs every held wallet write and every saved-attempt recovery through @bananapus/nana-sdk-core 2.39.0 (createHeldWriteView, followHeldWrite, createSavedAttemptRecovery) deletes its app copies (sendUnderHold, takeHeldExit, the "Your earlier transaction went through." gate, useWriteHoldWatch, the Safe follower, recoverLaunch/releaseLaunch/discardUnreadableLaunch, UnreadableJournalExit, Markee's exit and adoption glue, Relayr's checked-recovery dead ends) and adds no step, notice or wait to the normal pay, cash-out or launch path.
+- **System fit:** Outcome (nothing sent twice, nothing lost) -> SDK hold controller (writeHolds, unchanged) -> one held-write view per send (SDK) that owns the send gate, exit, away-success gate and follower -> app UI only displays the view (flow dialog, activity row, receipt hook) -> domain journals (launch salt, Markee step, Relayr session) stay as data and feed `authenticate`/`confirmRetirable` -> SDK recovery decides held/done/check/none. Unaffected: intent keys (SDK builders + frozen legacy-intents.ts passed as `legacy`), review dialogs, simulation, Relayr signing/funding controller, Bendystraw reads.
+- **Reuse and simplicity:** Reuse createHeldWriteView (the framework-free core useHeldWrite binds) inside the generic useWriteContract because its call is only known at send time; bind createSavedAttemptRecovery in the launch page with the same outcome/checkAction/unreadableAction shape useSavedAttempt returns. All copy comes from SDK constants. Delete rather than adapt; keep write-hold.ts only as the hold/recovery singletons and intent plumbing.
+- **Evidence and unknowns:** SDK 2.39.0 dist read in full for heldWrite.js and savedAttempt.js; CHANGELOG reviewed. Replanned: nana-sdk-react 53.0.0 cannot be imported by a wagmi 3 app (peer wagmi ^2; webpack fails with "'useToken' is not exported from 'wagmi'", verified by a probe build), so it is not added; its hooks are thin bindings of the core used here, and they swap in once the react package supports wagmi 3. Baseline with the bumped SDK: typecheck green, 5 Safe-follower tests fail on 2.39's new Safe pending rule (code being replaced). Bundle headroom is 1.2 KiB; the budget is bumped to fit (standing rule). The browser harness has no wallet, so the happy-path click/notice comparison runs in jsdom against the real hooks.
+- **Verification:** Red-first scenario tests ported to the SDK path (double-send, settled-while-away, unreadable storage, stale check, wallet rejection, reload between SDK hash and journal hash, main-era record); a grep gate in scripts/check-source-invariants.mjs naming the deleted helpers and app-side hold/journal localStorage keys; a happy-path test asserting one review and one wallet call with no added notice on pay, cash-out and launch; full `npm run check` (unit, coverage, build, bundle, standalone, every browser suite).
+- **Resource budget:** One worktree, no subagents, phases in order (deps, held send, follower and receipt hook, launch, Markee, Relayr, gate, tests), each closed by focused vitest runs before the next; one full `npm run check` at the end, rerun only failed suites. Replan if the react package can't build against wagmi 3 or the SDK view can't express a current flow without a new behaviour.
+
+## Checklist
+
+- [x] Deps: core 2.39.0 (Node 26, npm 12.0.1). react 53.0.0 not added: it can't build against wagmi 3.
+- [x] Held send: one SDK view per send (send gate, exit dialog, away-success "Send it again", follower kept until told); deleted sendUnderHold, takeHeldExit, WENT_THROUGH, hidesShownExit/offersExit/settledLine copies, adoptIntoHold, holdsHash, rememberHold.
+- [x] Safe follower and receipt hook read the view; deleted holdUntilResolved, watchSafeProposal and useWriteHoldWatch.
+- [x] Launch: launchIntent.ts keeps the journal as data; createSavedAttemptRecovery decides (launchRecovery.ts); LaunchCheckNotice shows the SDK check and the warned unreadable exit; LaunchHeldNotice shows the view and its exit on mount too; deleted recoverLaunch, releaseLaunch, discardUnreadableLaunch, UnreadableJournalExit.
+- [x] Markee: pending step recovered through the SDK (authenticate = Markee verification, confirmRetirable = journal re-read), held by a Markee intent key.
+- [x] Relayr: a saved session whose check throws gets the SDK's check and its retirement on the account page.
+- [x] Grep gate (scripts/app-hold-logic.mjs, source:check and its own test), ported scenario tests, happy-path test.
+- [ ] Full gate, push, PR (no merge).
+
+### Review
+
+`npm run check` green in one pass (Node 26.7.0, npm 12.0.1): dependency, dead-code, env, deployment, type, lint, format, source (with the new hold-logic gate), protocol, wallet-write (142 sites), coverage (2,883 tests passed, one skipped), browser build, standalone, bundle (2,742.1 of 2,746 KiB, down from 2,744.8) and browser (144 passed). Net diff about -1,600 lines (src -520).
+
+Rulings: nana-sdk-react 53.0.0 is not added (it can't build against wagmi 3: `useToken` is gone), so the SDK's framework-free cores are bound directly; swap in useHeldWrite/useSavedAttempt once the react package supports wagmi 3. The SDK view tells a settlement it first sees during a send's own check and its gate then lets that send through, so sendHeld refuses that send itself (SDK gap to close upstream). Markee steps are keyed by a new `markee` writeIntentKey (no SDK builder). Hold states take the SDK's copy (HELD_CONFIRMING_LINE and the rest). A success that settled while the page was closed asks "Send it again" (SDK rule).
+
+### Coordinator rulings (2026-10-14)
+
+- [x] (2) The Safe approvals count stays revnet's ("Waiting for your Safe's approvals: 1 of 2."), read from Safe's service and the Safe's current owners at most once a minute while a proposal awaits its signers; the SDK's copy is used only for hold states. Test red first.
+- [x] (4) A proposal journaled without its reviewed calls settles from the chain as on main (its execution via the SDK's waitForSafeExecutionHash, then the Safe's execution event in its receipt); unproven stays Unconfirmed with Dismiss. Main's test restored, red first.
+- [x] (1)/(5) SDK 2.40.0: core bumped (nana-sdk-react not added); sendHeld's own mid-send refusal deleted (the view's gate refuses it now); the launch page binds `useSavedAttempt` and its held notice `useHeldWrite` from `@bananapus/nana-sdk-core/review/react`; the account page shows `HeldWritesNotice` over `useHeldWrites` per supported chain. No pre-2.39 workaround existed. The generic `useWriteContract` keeps `createHeldWriteView` per send (its call is only known at send time, which a hook's fixed options can't take), and the receipt hook reads that send's view. Markee and the Relayr account check stay on the core recovery calls (imperative, one button each).
+
+#### SDK 2.40.0 review
+
+`npm run check` green: 2,885 unit tests, 144 browser tests, bundle 2,747.6 KiB under the aggregate ceiling raised from 2,746 to 2,750 KiB (route limits unchanged). A per-render `getPublicClient` restarted `useSavedAttempt`'s recovery in a loop under the test mock (heap exhaustion under coverage); the page now memoizes one client per attempt.

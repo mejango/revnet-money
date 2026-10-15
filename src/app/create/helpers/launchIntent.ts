@@ -1,5 +1,5 @@
 import { legacyIntents } from "@/lib/legacy-intents";
-import { JOURNAL_UNREADABLE_LINE, writeHolds } from "@/lib/write-hold";
+import { savedAttempts, writeHolds } from "@/lib/write-hold";
 import {
   getJBContractAddress,
   revDeployerAbi,
@@ -9,9 +9,9 @@ import {
 import {
   intent,
   launchIntent,
+  SAVED_ATTEMPT_UNREADABLE_LINE,
   type IntentValue,
-  type WriteHeldState,
-  type WriteHoldClient,
+  type SavedAttempt,
   type WriteHoldHandle,
 } from "@bananapus/nana-sdk-core/review";
 import { getAbiItem, keccak256, stringToHex, type Hex, type PublicClient } from "viem";
@@ -86,66 +86,45 @@ export function launchKeyOf(account: string, chainId: number, config: unknown): 
 /**
  * A single-chain launch the hold reserved for the wallet: its salt (the DeployRevnet event carries
  * it), the block it was sent after, the holds it is held by and the settlements they already showed
- * before it. The main-era build saved only the salt and the block.
+ * before it. The main-era build saved only the salt and the block. Domain data only: the SDK's
+ * saved-attempt recovery decides what may be sent.
  */
 type SavedLaunch = {
   salt: Hex;
   fromBlock?: string;
   namespaces?: string[];
   before?: string[];
-  /** The success a hold settled for it, journaled before anything about it was read. */
+  /** The success the hold settled for it, journaled once recovery found it. */
   settled?: { result: "success"; hash: Hex };
 };
 
 /**
  * The launch journaled at `key`: undefined only when none is kept. A journal storage won't read,
- * or a malformed record, throws JOURNAL_UNREADABLE_LINE: it is never taken for an absent one.
+ * or a malformed record, throws SAVED_ATTEMPT_UNREADABLE_LINE: it is never taken for an absent one.
  */
 export function savedLaunchAt(key: string): SavedLaunch | undefined {
   let raw: string | null;
   try {
     raw = window.localStorage.getItem(key);
   } catch {
-    // Storage won't read: only the user's warned continue lets it read as absent.
-    if (discarded.has(key)) return undefined;
-    throw new Error(JOURNAL_UNREADABLE_LINE);
+    throw new Error(SAVED_ATTEMPT_UNREADABLE_LINE);
   }
-  discarded.delete(key);
   if (raw === null) return undefined;
   let saved: SavedLaunch | undefined;
   try {
     saved = JSON.parse(raw) as SavedLaunch;
   } catch {
-    throw new Error(JOURNAL_UNREADABLE_LINE);
+    throw new Error(SAVED_ATTEMPT_UNREADABLE_LINE);
   }
-  if (!/^0x[0-9a-f]{64}$/i.test(saved?.salt ?? "")) throw new Error(JOURNAL_UNREADABLE_LINE);
+  if (!/^0x[0-9a-f]{64}$/i.test(saved?.salt ?? "")) throw new Error(SAVED_ATTEMPT_UNREADABLE_LINE);
   return saved;
-}
-
-/** Journals the user's warned continue let read as absent while storage won't read them. */
-const discarded = new Set<string>();
-
-/**
- * The user's warned continue over a journal that won't read (JOURNAL_DISCARD_ACTION): the record
- * goes, and the launch reopens with a fresh salt. Called only after a check just failed on it.
- */
-export function discardUnreadableLaunch(key: string): boolean {
-  try {
-    // It reads now: it is recovered again, never discarded unread.
-    savedLaunchAt(key);
-    return false;
-  } catch {
-    discarded.add(key);
-    removeLaunch(key);
-    return true;
-  }
 }
 
 function persist(key: string, saved: SavedLaunch): void {
   try {
     window.localStorage.setItem(key, JSON.stringify(saved));
   } catch {
-    // Storage refused: the hold still carries the settlement this pass followed.
+    // Storage refused: the hold still carries the settlement.
   }
 }
 
@@ -167,33 +146,6 @@ function removeLaunch(key: string): void {
     window.localStorage.removeItem(key);
   } catch {
     // Nothing kept.
-  }
-}
-
-/**
- * Every retirement of a journaled launch goes through here: its settlement was shown, the hold
- * proved it reverted or never reached the wallet, or the user took its exit or checked it. The
- * journal is read again right here, strictly: it is kept (false) when it is now another attempt
- * than `snapshot`, the one the caller decided on (another tab relaunched it with a new salt), or
- * holds a success other than the `snapshot`'s, which is followed instead. One that can't be read
- * throws JOURNAL_UNREADABLE_LINE and is kept. The next launch is a new one.
- */
-export function releaseLaunch(key: string, snapshot?: { salt: Hex; settled?: Hex }): boolean {
-  const now = savedLaunchAt(key);
-  if (!now) return true;
-  if (snapshot && now.salt.toLowerCase() !== snapshot.salt.toLowerCase()) return false;
-  if (now.settled && now.settled.hash.toLowerCase() !== snapshot?.settled?.toLowerCase())
-    return false;
-  removeLaunch(key);
-  return true;
-}
-
-/** Retires the journal recovery decided on, guarded; one another tab changed meanwhile is kept. */
-function settleLaunch(key: string, snapshot: { salt: Hex; settled?: Hex }): void {
-  try {
-    releaseLaunch(key, snapshot);
-  } catch {
-    // Unreadable: kept, and recovered as a check next time.
   }
 }
 
@@ -220,7 +172,7 @@ async function scanForLaunch(
   client: Pick<PublicClient, "getBlockNumber" | "getLogs">,
   chainId: number,
   account: string,
-  saved: SavedLaunch & { fromBlock: string },
+  saved: { salt: Hex; fromBlock: string },
 ): Promise<bigint | undefined> {
   const deployer = deployerOf(chainId);
   const head = await client.getBlockNumber();
@@ -252,23 +204,21 @@ export function launchNamespacesOf(chainId: number, account: Hex, config: unknow
   ];
 }
 
-/** Every hold a launch held by `namespaces` can be held by, from either kind of wallet. */
+/** Every hold a launch held by `namespaces` can be held by. */
 export function launchHoldsOf(
   chainId: number,
   account: string,
   namespaces: readonly string[],
 ): WriteHoldHandle[] {
   const to = deployerOf(chainId);
-  return [false, true].flatMap((safe) =>
-    namespaces.map((namespace) =>
-      writeHolds.open({
-        chainId,
-        account: account as Hex,
-        safe,
-        namespace,
-        call: { to, data: "0x" },
-      }),
-    ),
+  return namespaces.map((namespace) =>
+    writeHolds.open({
+      chainId,
+      account: account as Hex,
+      safe: false,
+      namespace,
+      call: { to, data: "0x" },
+    }),
   );
 }
 
@@ -280,96 +230,107 @@ export function settlementsOf(holds: readonly Pick<WriteHoldHandle, "peek">[]): 
   });
 }
 
-/** How recovering a saved launch ended. */
-export type LaunchRecovery =
-  /** No launch is journaled: a new one may be prepared. */
-  | { status: "none" }
-  /** Its hold holds it: nothing is counted; `state` is what the hold's exit is offered on. */
-  | { status: "held"; hold: WriteHoldHandle; state: WriteHeldState; salt: Hex }
-  /** The chain shows it launched this revnet: nothing is sent again. */
-  | { status: "launched"; revnetId: bigint }
-  /** It went through (`hash`), but its revnet can't be read yet: looked at again, never resent. */
-  | { status: "confirming"; hash: Hex }
-  /** What became of it can't be shown: the user checks it (`salt`, when it reads) before anything. */
-  | { status: "check"; salt?: Hex }
-  /** The hold proved it reverted at a final block: retired, a new one may be prepared. */
-  | { status: "clear" };
+type LaunchClient = Pick<PublicClient, "getBlockNumber" | "getLogs" | "getTransactionReceipt">;
 
-type LaunchClient = Pick<PublicClient, "getBlockNumber" | "getLogs" | "getTransactionReceipt"> &
-  WriteHoldClient;
+/** A journaled launch as the SDK's saved-attempt recovery reads it. */
+export type LaunchAttempt = SavedAttempt<bigint> & { key: string; salt?: Hex };
 
 /**
- * The one recovery rule for the launch journaled at `key`, run before anything else is prepared:
- * a hold that still holds it decides (asked of the chain first). A success a hold settled after it
- * was journaled always wins: it is journaled before anything about it is read, and from then on is
- * followed: its own DeployRevnet event with the saved salt names the revnet, and anything less (a
- * read that fails, empty logs, another salt) is `confirming`, never a check, discard or send. With no
- * hold record, the saved salt is scanned for; nothing found, no sent block, or any failure is
- * `check`. Only a shown settlement or a final revert retires it here; never throws.
+ * The launch journaled at `key` as a saved attempt: only what was saved, so it is recovered before
+ * anything else is prepared. Its domain check is its own DeployRevnet event with the saved salt
+ * (in the settled transaction, or scanned for from the block it was sent after); the journal's
+ * strict re-read is the final say before any check or exit retires it. A journal that won't read
+ * is still an attempt, held by `namespaces` (the form's, when the caller has it) or the main
+ * era's keys, and only the warned exit (`forceUnreadable`) may retire it.
  */
-export async function recoverLaunch(
+export function launchAttemptOf(
   key: string,
-  account: string,
+  account: Hex,
   client: LaunchClient,
-  open: typeof launchHoldsOf = launchHoldsOf,
-): Promise<LaunchRecovery> {
-  let read: SavedLaunch | undefined;
-  try {
-    read = savedLaunchAt(key);
-  } catch {
-    // Unreadable is not absent: the user checks it, and its release is refused until it reads.
-    return { status: "check" };
-  }
-  if (!read) return { status: "none" };
-  const saved = read;
+  namespaces?: readonly string[],
+  forceUnreadable: () => boolean = () => false,
+): LaunchAttempt {
   const [chainText, configHash] = key.slice(accountPrefix(account).length).split(":");
   const chainId = Number(chainText);
-  /** Follows a success that went through: the revnet, or still confirming. */
-  const follow = async (hash: Hex): Promise<LaunchRecovery> => {
-    const revnetId = await launchOfTransaction(client, chainId, account, saved.salt, hash).catch(
-      () => undefined,
-    );
-    if (revnetId === undefined) return { status: "confirming", hash };
-    settleLaunch(key, { salt: saved.salt, settled: hash });
-    return { status: "launched", revnetId };
-  };
-  const check = { status: "check", salt: saved.salt } as const;
-  if (saved.settled) return follow(saved.settled.hash);
+  let saved: SavedLaunch | undefined;
   try {
-    const namespaces = saved.namespaces ?? legacyIntents.launch(configHash as Hex);
-    const before = new Set((saved.before ?? []).map((hash) => hash.toLowerCase()));
-    let success: Hex | undefined;
-    let reverted = false;
-    for (const hold of open(chainId, account, namespaces)) {
-      let now = hold.peek();
-      if (now.status !== "clear") now = await hold.state(client).catch(() => now);
-      if (now.status !== "clear") return { status: "held", hold, state: now, salt: saved.salt };
-      const settled = now.settled;
-      if (!settled || !("hash" in settled) || before.has(settled.hash.toLowerCase())) continue;
-      if (settled.result === "success") success ??= settled.hash;
-      else reverted = true;
-    }
-    if (success) {
-      // Journaled first: whatever the reads below say, this success is never discarded.
-      persist(key, { ...saved, settled: { result: "success", hash: success } });
-      return follow(success);
-    }
-    if (reverted) {
-      // Kept when another tab's newer attempt took the key meanwhile: that one is recovered next.
-      if (!releaseLaunch(key, { salt: saved.salt })) return check;
-      return { status: "clear" };
-    }
-    if (!saved.fromBlock || !/^\d+$/.test(saved.fromBlock)) return check;
-    const revnetId = await scanForLaunch(client, chainId, account, {
-      ...saved,
-      fromBlock: saved.fromBlock,
-    });
-    if (revnetId === undefined) return check;
-    settleLaunch(key, { salt: saved.salt });
-    return { status: "launched", revnetId };
+    saved = savedLaunchAt(key);
   } catch {
-    return check;
+    saved = undefined;
   }
+  const salt = saved?.salt;
+  return {
+    key,
+    salt,
+    chainId,
+    account,
+    namespaces: saved?.namespaces?.length
+      ? saved.namespaces
+      : (namespaces ?? legacyIntents.launch(configHash as Hex)),
+    saved: {
+      started: true,
+      ...(saved?.settled ? { hash: saved.settled.hash } : {}),
+      ...(saved?.fromBlock && /^\d+$/.test(saved.fromBlock)
+        ? { fromBlock: BigInt(saved.fromBlock) }
+        : {}),
+      before: (saved?.before ?? []) as Hex[],
+    },
+    async authenticate(hash) {
+      if (!salt) return { result: "unknown", reason: SAVED_ATTEMPT_UNREADABLE_LINE };
+      const revnetId = hash
+        ? await launchOfTransaction(client, chainId, account, salt, hash)
+        : saved?.fromBlock && /^\d+$/.test(saved.fromBlock)
+          ? await scanForLaunch(client, chainId, account, { salt, fromBlock: saved.fromBlock })
+          : undefined;
+      return revnetId === undefined ? { result: "unknown" } : { result: "proven", value: revnetId };
+    },
+    async confirmRetirable() {
+      let now: SavedLaunch | undefined;
+      try {
+        now = savedLaunchAt(key);
+      } catch {
+        return forceUnreadable();
+      }
+      // Another tab's newer attempt took the key, or a success is journaled: kept.
+      return !now || (now.salt.toLowerCase() === salt?.toLowerCase() && !now.settled);
+    },
+  };
+}
+
+/**
+ * Journal the success the SDK's recovery found for a launch, before anything else reads it: from
+ * then on it is only followed, never discarded or sent again.
+ */
+export function journalLaunchSuccess(attempt: LaunchAttempt, hash: Hex): void {
+  let saved: SavedLaunch | undefined;
+  try {
+    saved = savedLaunchAt(attempt.key);
+  } catch {
+    return;
+  }
+  if (saved && !saved.settled)
+    persist(attempt.key, { ...saved, settled: { result: "success", hash } });
+}
+
+/**
+ * The journal goes once the SDK lets it (`canDiscard`): never while the hold holds the launch or a
+ * success it settled hasn't been followed. It only removes the attempt it was read for, and a
+ * journaled success only once that success (`settled`) was followed.
+ */
+export function discardLaunch(attempt: LaunchAttempt, settled?: Hex): boolean {
+  if (!savedAttempts.canDiscard(attempt)) return false;
+  let now: SavedLaunch | undefined;
+  try {
+    now = savedLaunchAt(attempt.key);
+  } catch {
+    removeLaunch(attempt.key);
+    return true;
+  }
+  if (!now) return true;
+  if (attempt.salt && now.salt.toLowerCase() !== attempt.salt.toLowerCase()) return false;
+  if (now.settled && now.settled.hash.toLowerCase() !== settled?.toLowerCase()) return false;
+  removeLaunch(attempt.key);
+  return true;
 }
 
 /** The revnet `hash` launched for `account` with `salt`: its own DeployRevnet event, if found. */

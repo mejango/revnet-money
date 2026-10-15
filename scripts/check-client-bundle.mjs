@@ -137,7 +137,10 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // SDK 2.38.0's shared intent builders, Safe batch identity, and the Safe follower handing every
 // unproven end to the hold measure 2742.1 KiB, with the largest route at 728.5 KiB. Raise only
 // the aggregate ceiling to 2746 KiB; route and lazy-load limits stay fixed.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2746);
+// SDK 2.40.0's React held-write hooks (useSavedAttempt, useHeldWrite, useHeldWrites and
+// HeldWritesNotice on the account page) replace the app's recovery and follower code and measure
+// 2747.6 KiB. Raise only the aggregate ceiling to 2750 KiB; route and lazy-load limits stay fixed.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2750);
 const routeBudget = routeBudgetKiB * 1024;
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
