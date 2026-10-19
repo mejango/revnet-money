@@ -62,13 +62,13 @@ export default function Page() {
             Shape that stands the test of time.
           </h2>
           <p className="mt-4">
-            A revnet receives money and shares tokens with the people who take part. Those tokens
+            A revnet receives money and shares incentives with the people who take part. Those incentives
             let holders claim money from its balance under rules set at launch.
           </p>
           <ol className="mt-6 ml-8 list-outside list-decimal space-y-3 sm:ml-10">
             <li>
-              Payments from fundraising, sales, and other sources create new tokens. They can buy
-              existing tokens when that returns more.
+              Payments from fundraising, sales, and other sources create new tokenized incentives,
+              or buyback existing ones from the market if available and more rewarding.
             </li>
             <li>The payer receives tokens. A set share can also go to builders and others.</li>
             <li>The revnet keeps money used to create tokens in its balance.</li>
