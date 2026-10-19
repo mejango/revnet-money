@@ -424,7 +424,6 @@ export function ActivityItemRow({
             <EtherscanLink type="tx" value={event.txHash} chain={chain}>
               <DateRelative timestamp={event.timestamp} />
             </EtherscanLink>
-            <span>on</span>
             {event.chains ? (
               <span className="isolate inline-flex items-center">
                 {event.chains.map((entry, index, chains) => (

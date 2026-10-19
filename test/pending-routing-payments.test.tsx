@@ -121,7 +121,7 @@ describe("payment recovery", () => {
         : [],
     );
     const rendered = setup(false);
-    const summary = await screen.findByText("1 payment awaiting processing.");
+    const summary = await screen.findByText("1 payment needs processing.");
     const details = rendered.container.querySelector("details")!;
     expect(details.open).toBe(false);
     fireEvent.click(summary);
@@ -199,7 +199,7 @@ describe("payment recovery", () => {
     mocks.indexed.mockResolvedValue([]);
     setup();
     await waitFor(() => expect(mocks.indexed).toHaveBeenCalledTimes(2));
-    await waitFor(() => expect(screen.queryByText("payments awaiting processing.")).toBeNull());
+    await waitFor(() => expect(screen.queryByText("payments need processing.")).toBeNull());
   });
 
   it("offers a per-payment review with the original beneficiary and no settlement claim", async () => {
@@ -465,7 +465,7 @@ describe("payment recovery", () => {
       return row(indexed.pendingCallId);
     });
     setup();
-    expect(await screen.findByText("7 payments awaiting processing.")).toBeTruthy();
+    expect(await screen.findByText("7 payments need processing.")).toBeTruthy();
     expect(screen.getAllByText("Checking payment amount")).toHaveLength(7);
     expect(screen.getByRole("button", { name: "Resume saved batch" })).toBeEnabled();
     expect(screen.getByText(/Saved batch: 0 of 3 attempts handled/)).toBeTruthy();

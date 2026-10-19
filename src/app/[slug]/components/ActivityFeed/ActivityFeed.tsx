@@ -124,7 +124,7 @@ function ActivityTypeFilter({
 
   return (
     <details className="group relative z-20">
-      <summary className="flex min-h-11 cursor-pointer list-none select-none items-center justify-between gap-2 border border-teal-200 bg-teal-50 px-3 text-sm text-zinc-600 transition-colors hover:border-teal-400 focus-visible:border-teal-500 focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-11 cursor-pointer list-none select-none items-center gap-2 text-sm text-zinc-600 transition-colors hover:text-zinc-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 [&::-webkit-details-marker]:hidden">
         <span>{selectedLabel}</span>
         <ChevronDown
           aria-hidden="true"

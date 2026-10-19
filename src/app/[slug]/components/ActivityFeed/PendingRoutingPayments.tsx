@@ -381,7 +381,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       <details className="border border-teal-200 p-3">
         <summary className="cursor-pointer text-sm font-medium">
           {rows.length
-            ? `${rows.length} ${rows.length === 1 ? "payment" : "payments"} awaiting processing.`
+            ? `${rows.length} ${rows.length === 1 ? "payment needs" : "payments need"} processing.`
             : resume
               ? "Saved payment batch"
               : "Checking pending payments…"}
@@ -427,7 +427,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
               disabled={!resume && (!ready.length || checking || unavailable)}
               onClick={() => void review(ready)}
             >
-              {resume ? "Resume saved batch" : checking ? "Checking pending payments…" : "Retry"}
+              {resume ? "Resume saved batch" : checking ? "Checking pending payments…" : "Retry all"}
             </ButtonWithWallet>
             {resume ? (
               <p className="mt-1 text-xs text-zinc-500">
@@ -487,7 +487,9 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
                 <div className="mt-2">
                   <ButtonWithWallet
                     targetChainId={indexed.chainId as JBChainId}
-                    variant="outline"
+                    variant="link"
+                    size="sm"
+                    className="h-8 px-0 text-xs text-teal-700 underline underline-offset-2"
                     aria-label={!result ? "Checking payment" : "Retry payment"}
                     loading={busy}
                     disabled={!payment?.ready || Boolean(resume) || checking || unavailable}

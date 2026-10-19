@@ -49,7 +49,7 @@ test("pending routing shows ready, cooldown, and final attempts above activity",
   expectSecurityHeaders(await page.goto("/eth:1", { waitUntil: "domcontentloaded" }));
   const disclosure = page
     .locator("details")
-    .filter({ has: page.locator("summary", { hasText: "3 payments awaiting processing." }) });
+    .filter({ has: page.locator("summary", { hasText: "3 payments need processing." }) });
   const section = disclosure.locator("..");
   await expect(disclosure.locator("summary")).toBeVisible();
   await expect(disclosure).not.toHaveAttribute("open");
