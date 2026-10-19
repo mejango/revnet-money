@@ -70,8 +70,8 @@ export default function Page() {
               Payments from fundraising, sales, and other sources create new tokenized incentives,
               or buyback existing ones from the market if available and more rewarding.
             </li>
-            <li>The payer receives tokens. A set share can also go to builders and others.</li>
-            <li>The revnet keeps money used to create tokens in its balance.</li>
+            <li>The payer receives incentives. A set share can also go to builders and others.</li>
+            <li>The revnet keeps money used to create tokenized incentives in its balance.</li>
             <li>
               Holders can give up tokens for money from the balance. This is a cash-out, and the
               revnet&apos;s rules determine how much it returns.
