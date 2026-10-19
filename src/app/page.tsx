@@ -68,7 +68,7 @@ export default function Page() {
           <ol className="mt-6 ml-8 list-outside list-decimal space-y-3 sm:ml-10">
             <li>
               Payments from fundraising, sales, and other sources create new tokenized incentives,
-              or buyback existing ones from the market if available and more rewarding.
+              or buyback better ones from the market if available.
             </li>
             <li>The payer receives incentives. A set share can also go to builders and others.</li>
             <li>The revnet keeps money used to create tokenized incentives in its balance.</li>
