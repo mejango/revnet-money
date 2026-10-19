@@ -1,4 +1,4 @@
-import type { ActivityEventsQuery } from "@/lib/bendystraw/types";
+import type { ActivityEventsQuery, EventToken } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
 import {
   commaNumber,
@@ -8,12 +8,23 @@ import {
   prettyNumber,
 } from "@/lib/number";
 import { isStickyHook } from "@/lib/sticky";
+import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { JBProjectToken, mergeCrossChainActivityGroups } from "@bananapus/nana-sdk-core";
 import { Address, formatUnits } from "viem";
 import { formatUsd, usdFromScaled } from "../v6/extras/projectPayers";
 import type { ActivityEvent } from "./ActivityItem";
 
 export type ActivityEventItem = ActivityEventsQuery["activityEvents"]["items"][number];
+
+/**
+ * The symbol and decimals of the token an event names: null when unknown or
+ * unresolved, undefined when the query did not select the field.
+ */
+function ownToken(asset: EventToken): { symbol: string; decimals: number } | null | undefined {
+  if (asset.token === undefined) return undefined;
+  const symbol = asset.token ? getTokenSymbolFromAddress(asset.token) : "TOKEN";
+  return symbol !== "TOKEN" && asset.decimals != null ? { symbol, decimals: asset.decimals } : null;
+}
 
 /** Holder permission grants are account history, not project activity. */
 export function isProjectFeedActivityEvent(event: ActivityEventItem): boolean {
@@ -243,12 +254,28 @@ export function mapActivityEvents(
   };
   // Several pays in one tx (a payer contract fanning out) read as one payment:
   // the payer's total, then who got what.
-  const payTotalsByTx = new Map<string, { count: number; amount: bigint; usd: bigint }>();
+  const payTotalsByTx = new Map<
+    string,
+    { count: number; amount: bigint; usd: bigint; asset: EventToken }
+  >();
   for (const event of items) {
     if (!event) continue;
     const key = projectTxKey(event);
     if (event.payEvent) {
-      const total = payTotalsByTx.get(key) ?? { count: 0, amount: 0n, usd: 0n };
+      const { token, decimals } = event.payEvent;
+      const total = payTotalsByTx.get(key) ?? {
+        count: 0,
+        amount: 0n,
+        usd: 0n,
+        asset: { token, decimals },
+      };
+      // A fan-out's total has a token only when every pay was in the same one.
+      if (
+        total.asset.token?.toLowerCase() !== token?.toLowerCase() ||
+        total.asset.decimals !== decimals
+      ) {
+        total.asset = { token: null, decimals: null };
+      }
       total.count += 1;
       total.amount += BigInt(event.payEvent.amount);
       total.usd += BigInt(event.payEvent.amountUsd ?? 0);
@@ -300,19 +327,30 @@ export function mapActivityEvents(
     const tokenContext = tokenContextFor(event);
     if (!tokenContext) continue;
 
-    const baseTokenSymbol = tokenContext.tokenSymbol ?? undefined;
-    const baseTokenDecimals = tokenContext.decimals ?? 18;
     const txKey = projectTxKey(event);
 
     // In USD mode a missing/zero indexed figure falls back to the chain's
-    // token so the row still shows a meaningful amount.
-    const flowAmount = (tokenAmount: string | number, usdAmount?: string | number | null) => {
-      const usd = tokenContext.denominateInUsd ? usdFromScaled(usdAmount) : null;
+    // token so the row still shows a meaningful amount. A terminal event names
+    // its own token: a project accepting ETH and USDC is labeled per event,
+    // never by the chain's last-set context, and an unknown or unresolved
+    // token shows USD (or nothing) instead.
+    const flowAmount = (
+      tokenAmount: string | number,
+      usdAmount?: string | number | null,
+      asset?: EventToken,
+    ) => {
+      const own = asset && ownToken(asset);
+      const baseTokenSymbol =
+        own === undefined ? (tokenContext.tokenSymbol ?? undefined) : own?.symbol;
+      const contextDecimals = own === undefined ? tokenContext.decimals : (own?.decimals ?? null);
+      const baseTokenDecimals = contextDecimals ?? 18;
+      const usd =
+        tokenContext.denominateInUsd || contextDecimals == null ? usdFromScaled(usdAmount) : null;
       if (usd) {
         // USD is the headline; the raw accounting amount is what a hover reveals. It can
         // only be shown when the context's decimals are known.
         const exact =
-          tokenContext.decimals == null
+          contextDecimals == null
             ? undefined
             : `${exactNumber(formatUnits(BigInt(tokenAmount), baseTokenDecimals))}${
                 baseTokenSymbol ? ` ${baseTokenSymbol}` : ""
@@ -322,7 +360,7 @@ export function mapActivityEvents(
       // Without the accounting context's decimals the raw amount cannot be scaled — showing
       // it at an assumed 18 would be off by 1e12 on a 6-decimal token. Keep the row and omit
       // the amount rather than invent a magnitude.
-      if (tokenContext.decimals == null) {
+      if (contextDecimals == null) {
         return { baseAmount: undefined, baseTokenSymbol: undefined, exactAmount: undefined };
       }
       const whole = formatUnits(BigInt(tokenAmount), baseTokenDecimals);
@@ -348,8 +386,8 @@ export function mapActivityEvents(
         beneficiary: (fanOut ? event.payEvent.from : event.payEvent.beneficiary) as Address,
         chainId,
         ...(fanOut
-          ? flowAmount(payTotal.amount.toString(), payTotal.usd.toString())
-          : flowAmount(event.payEvent.amount, event.payEvent.amountUsd)),
+          ? flowAmount(payTotal.amount.toString(), payTotal.usd.toString(), payTotal.asset)
+          : flowAmount(event.payEvent.amount, event.payEvent.amountUsd, event.payEvent)),
         payee: fanOut ? (event.payEvent.beneficiary as Address) : undefined,
         tokenCount,
         memo: event.payEvent.memo || undefined,
@@ -375,11 +413,17 @@ export function mapActivityEvents(
           : flowAmount(
               event.cashOutTokensEvent.reclaimAmount,
               event.cashOutTokensEvent.reclaimAmountUsd,
+              event.cashOutTokensEvent,
             )),
         tokenCount,
       });
     } else if (event.addToBalanceEvent) {
       const e = event.addToBalanceEvent;
+      const own =
+        ownToken(e) ??
+        (e.token === undefined
+          ? { symbol: tokenContext.tokenSymbol ?? undefined, decimals: tokenContext.decimals ?? 18 }
+          : null);
       events.push({
         id: event.id,
         type: "addToBalance",
@@ -387,8 +431,10 @@ export function mapActivityEvents(
         timestamp: e.timestamp,
         beneficiary: e.from as Address,
         chainId,
-        baseAmount: formatDecimals(Number(formatUnits(BigInt(e.amount), baseTokenDecimals))),
-        baseTokenSymbol,
+        baseAmount: own
+          ? formatDecimals(Number(formatUnits(BigInt(e.amount), own.decimals)))
+          : undefined,
+        baseTokenSymbol: own?.symbol,
         memo: e.memo || undefined,
       });
     } else if (event.mintTokensEvent) {
@@ -554,7 +600,7 @@ export function mapActivityEvents(
         timestamp: e.timestamp,
         beneficiary: e.from as Address,
         chainId,
-        ...flowAmount(e.amountPaidOut, e.amountPaidOutUsd),
+        ...flowAmount(e.amountPaidOut, e.amountPaidOutUsd, e),
       });
     } else if (event.sendReservedTokensToSplitsEvent) {
       const e = event.sendReservedTokensToSplitsEvent;
