@@ -330,7 +330,7 @@ function ProjectRows({
                   {detail(project)}
                 </span>
               </span>
-              <span className="grid shrink-0 grid-cols-2 items-center gap-0.5">
+              <span className="flex shrink-0 flex-col items-center -space-y-1">
                 {(project.chainIds ?? [chainId]).map((memberChainId) => (
                   <ChainLogo
                     key={memberChainId}
