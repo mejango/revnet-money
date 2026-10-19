@@ -7,7 +7,7 @@ import { HomepageDiscovery } from "./HomepageDiscovery";
 const WHY_REVNET_POINTS = [
   {
     lead: "Accept money across borders.",
-    detail: "Receive payments at any time, on supported chains.",
+    detail: "Receive payments anytime, from anyone.",
   },
   {
     lead: "Build your own website or app.",
