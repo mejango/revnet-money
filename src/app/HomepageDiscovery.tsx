@@ -331,14 +331,19 @@ function ProjectRows({
                 </span>
               </span>
               <span className="flex shrink-0 flex-col items-center -space-y-1">
-                {(project.chainIds ?? [chainId]).map((memberChainId) => (
-                  <ChainLogo
+                {(project.chainIds ?? [chainId]).map((memberChainId, index) => (
+                  <span
                     key={memberChainId}
-                    chainId={memberChainId}
-                    width={16}
-                    height={16}
-                    standalone
-                  />
+                    className="relative flex"
+                    style={{ zIndex: (project.chainIds?.length ?? 1) - index }}
+                  >
+                    <ChainLogo
+                      chainId={memberChainId}
+                      width={16}
+                      height={16}
+                      standalone
+                    />
+                  </span>
                 ))}
               </span>
             </ProjectLink>
