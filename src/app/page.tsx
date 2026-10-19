@@ -73,8 +73,8 @@ export default function Page() {
             <li>The payer receives incentives alongside the team and other splits.</li>
             <li>The revnet keeps money used to create tokenized incentives in its balance.</li>
             <li>
-              Holders can give up incentives for money from the balance. This is a cash-out, and the
-              revnet&apos;s rules determine how much it returns.
+              Holders can cash out incentives for money from the balance. The revnet&apos;s rules
+              determine how much is returned.
             </li>
             <li>
               Holders can also borrow against their incentives, then repay to get them back before the
