@@ -15,7 +15,7 @@ const WHY_REVNET_POINTS = [
   },
   {
     lead: "Use the same terms across chains.",
-    detail: "Connect the revnet across supported Ethereum chains, with money held on each chain.",
+    detail: "Connect the revnet across supported Ethereum chains, with your unified token backed by the full balance sheet.",
   },
   {
     lead: "Trade on open markets.",
