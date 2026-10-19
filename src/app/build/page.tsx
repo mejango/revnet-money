@@ -54,7 +54,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     },
     paragraphs: [
       "A contract owns every revnet and enforces its schedule. The operator can change details: contributor addresses, payment routes, names, bridges, and the shop.",
-      "Project builders can launch with an AI assistant or the launch form, without code. App builders use the SDK, a TypeScript library, and Bendystraw, an index of onchain records. Contract builders write Solidity.",
+      `Project builders can launch with an [AI assistant](#launch-with-an-agent) or the [launch form](/create), without code. App builders use the [SDK](${JB_BUILD}#apps-set-up-the-sdk), a TypeScript library, and [Bendystraw](${JB_BUILD}#apps-indexed-data), an index of onchain records. Contract builders write Solidity.`,
     ],
     links: [
       { href: "/learn", label: "How a revnet works" },
@@ -75,8 +75,8 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     summary:
       "Describe the revnet to an assistant and let it do the setup. You review what it prepared and sign.",
     paragraphs: [
-      "Connect it to the Juicebox MCP at https://juicebox.center/mcp. It reads revnets, models stages with you, pins the name and logo to IPFS once you approve the upload, and prepares the exact deployFor transaction for each chain. It holds no keys and signs nothing.",
-      "Or have it write a .jb draft. A .jb file is JSON: the launch form's fields in the units you see on screen (days, percentages from 0 to 100, whole token amounts). Import it at the top of the launch form, check every section, and launch from there. Every live revnet's Extras tab exports one rebuilt from the chain, the easiest way to compare what launched with what you meant.",
+      "Connect it to the [Juicebox MCP](https://juicebox.center/mcp). It reads revnets, models stages with you, pins the name and logo to IPFS once you approve the upload, and prepares the exact deployFor transaction for each chain. It holds no keys and signs nothing.",
+      "Or have it write a .jb draft. A .jb file is JSON: the [launch form](/create)'s fields in the units you see on screen (days, percentages from 0 to 100, whole token amounts). Import it at the top of the launch form, check every section, and launch from there. Every live revnet's Extras tab exports one rebuilt from the chain, the easiest way to compare what launched with what you meant.",
     ],
     points: [
       {
@@ -102,7 +102,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["founders"],
     title: "Launch without code",
     summary:
-      "The launch form has six sections. Save a draft, review the full schedule, then connect a wallet to launch. Check the launch cost on every selected network before signing.",
+      "The [launch form](/create) has six sections. Save a draft, review the full schedule, then connect a wallet to launch. Check the launch cost on every selected network before signing.",
     table: {
       label: "The six sections",
       rows: [
@@ -151,7 +151,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["founders", "frontend"],
     title: "What happens when you deploy",
     summary:
-      "The launch form prepares a deployFor call for each selected chain with matching terms and salts. Each chain gets its own project ID and completes on its own, even when the token address matches.",
+      "The [launch form](/create) prepares a deployFor call for each selected chain with matching terms and salts. Each chain gets its own project ID and completes on its own, even when the token address matches.",
     points: [
       {
         key: "Creation fee",
@@ -253,7 +253,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     links: [
       { href: `${SKILLS}/revnet-economics/SKILL.md`, label: "revnet-economics skill" },
       { href: `${SKILLS}/revnet-modeler/SKILL.md`, label: "revnet-modeler skill" },
-      { href: "https://github.com/mejango/rev-sim", label: "rev-sim (simulator)" },
+      { href: "https://github.com/mejango/rev-sim", label: "Revnet simulator" },
       { href: "/learn#three-prices", label: "First: the three prices" },
     ],
   },
@@ -280,7 +280,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     summary:
       "Revnets run on Juicebox contracts, so most app work is the same as for any Juicebox project. The Juicebox build guide covers it; this guide covers what only revnets have.",
     paragraphs: [
-      "Start with the SDK, reads, and the review flow there, then come back for stages, loans, and the operator. Two revnet differences apply throughout: a direct pool swap pays no split, and a registered bridge contract cashes out without the tax or the launch lock.",
+      `Start with the [SDK](${JB_BUILD}#apps-set-up-the-sdk), reads, and the review flow there, then come back for stages, loans, and the operator. Two revnet differences apply throughout: a direct pool swap pays no split, and a registered bridge contract cashes out without the tax or the launch lock.`,
     ],
     links: [
       { href: `${JB_BUILD}/first-payment`, label: "Your first test payment" },
@@ -307,8 +307,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "App builders",
     audience: ["frontend", "contracts"],
     title: "Every operation, in one table",
-    summary:
-      "The contract call and SDK builder behind each action. Some need a token approval, a chosen route, or several transactions.",
+    summary: `The contract call and [SDK](${JB_BUILD}#apps-set-up-the-sdk) builder behind each action. Some need a token approval, a chosen route, or several transactions.`,
     table: {
       label: "User action → contract call",
       rows: [
@@ -369,7 +368,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     points: [
       {
         key: "Addresses",
-        text: "deploy-all-v6 publishes one artifact per contract per chain (address, ABI, source name) under deployments/<chain>/. The SDK's jbContractAddress map and the skills library's chain-config.json come from it.",
+        text: `Juicebox [publishes one artifact per contract per chain](https://github.com/Bananapus/deploy-all-v6/tree/main/deployments): its address, ABI, and source name. The [SDK](${JB_BUILD}#apps-set-up-the-sdk)'s jbContractAddress map and the [skills library](https://github.com/mejango/juicebox-skills)'s chain-config.json come from it.`,
       },
       {
         key: "Chains",
@@ -377,14 +376,14 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Source",
-        text: "the -v6 repos are current; earlier Juicebox versions are not interchangeable with them.",
+        text: "[the V6 source](https://github.com/Bananapus/version-6) is current; earlier Juicebox versions are not interchangeable with it.",
       },
     ],
     links: [
-      { href: "https://github.com/Bananapus/deploy-all-v6", label: "deploy-all-v6 (addresses)" },
-      { href: "https://github.com/rev-net/revnet-core-v6", label: "revnet-core-v6" },
-      { href: "https://github.com/Bananapus/nana-core-v6", label: "nana-core-v6" },
-      { href: "https://github.com/Bananapus/version-6", label: "Every V6 repo" },
+      { href: "https://github.com/Bananapus/deploy-all-v6", label: "Deployed addresses" },
+      { href: "https://github.com/rev-net/revnet-core-v6", label: "Revnet contract source" },
+      { href: "https://github.com/Bananapus/nana-core-v6", label: "Core contract source" },
+      { href: "https://github.com/Bananapus/version-6", label: "Every V6 repository" },
     ],
   },
   {
@@ -535,7 +534,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ].join("\n"),
       },
     ],
-    note: "To give up the role, pass address(0); that is permanent. The launch form's off setting uses a dead address instead, which nobody controls but is not the zero address. Show the actual value and read permissions rather than trusting a label.",
+    note: "To give up the role, pass address(0); that is permanent. The [launch form](/create)'s off setting uses a dead address instead, which nobody controls but is not the zero address. Show the actual value and read permissions rather than trusting a label.",
   },
 
   // ------------------------------------------------------------------ Contract builders
@@ -839,13 +838,13 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
     ],
     paragraphs: [
-      "Foundry tests can extend TestBaseWorkflow for logic and revnet-core-v6's ForkTestBase against the deployed contracts. Then publish the addresses, source, transaction map, and a readable stage schedule so users can check your product against the contracts. The audit page has prompts for a whole-system review and for a single transaction.",
+      "Foundry tests can extend TestBaseWorkflow for logic and the revnet contracts' [ForkTestBase](https://github.com/rev-net/revnet-core-v6/tree/main/test) against the deployed contracts. Then publish the addresses, source, transaction map, and a readable stage schedule so users can check your product against the contracts. The audit page has prompts for a whole-system review and for a single transaction.",
     ],
     links: [
       { href: "/audit", label: "Audit prompts and source index" },
       {
         href: "https://github.com/rev-net/revnet-core-v6/tree/main/test",
-        label: "revnet-core-v6 tests",
+        label: "Revnet contract tests",
       },
       { href: `${JB_BUILD}#ship-test-what-can-surprise-you`, label: "Tests every project needs" },
     ],
