@@ -330,7 +330,7 @@ function ProjectRows({
                   {detail(project)}
                 </span>
               </span>
-              <span className="flex shrink-0 flex-col items-center gap-1 2xl:flex-row">
+              <span className="grid shrink-0 grid-cols-2 items-center gap-0.5">
                 {(project.chainIds ?? [chainId]).map((memberChainId) => (
                   <ChainLogo
                     key={memberChainId}
@@ -395,7 +395,7 @@ function HeroColumn() {
         >
           Create yours
         </Link>
-        <AuditPromptLink className="mt-4 text-xs text-zinc-600 sm:whitespace-nowrap 2xl:text-sm" />
+        <AuditPromptLink className="mt-7 text-xs text-zinc-600 sm:whitespace-nowrap 2xl:text-sm" />
       </div>
     </section>
   );
