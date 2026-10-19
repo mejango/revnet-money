@@ -20,7 +20,7 @@ const WHY_REVNET_POINTS = [
   {
     lead: "Trade on open markets.",
     detail:
-      "Anyone can offer tokens for sale. The available buyers and sellers determine the price.",
+      "Anyone can offer tokens for sale. The available buyers and sellers determine the price, within the revnet's issuance and cash out bounds.",
   },
   {
     lead: "Check the rules and the money.",
