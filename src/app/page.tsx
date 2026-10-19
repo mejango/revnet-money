@@ -73,11 +73,11 @@ export default function Page() {
             <li>The payer receives incentives. A set share can also go to builders and others.</li>
             <li>The revnet keeps money used to create tokenized incentives in its balance.</li>
             <li>
-              Holders can give up tokens for money from the balance. This is a cash-out, and the
+              Holders can give up incentives for money from the balance. This is a cash-out, and the
               revnet&apos;s rules determine how much it returns.
             </li>
             <li>
-              Holders can also borrow against their tokens, then repay to get them back before the
+              Holders can also borrow against their incentives, then repay to get them back before the
               loan expires.
             </li>
             <li>
