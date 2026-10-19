@@ -29,7 +29,7 @@ import {
   type PrettyStep,
   type V4PlanStep,
 } from "@bananapus/nana-sdk-core/review/decode";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { zeroAddress, type AbiFunction, type AbiParameter } from "viem";
 
 import { FeeBuybackNotice, useFeeBuybackReview } from "./FeeBuybackNotice";
@@ -371,12 +371,14 @@ function PrettyCall({
   index,
   total,
   nested = false,
+  headerAction,
 }: {
   call: TransactionReviewCall;
   index: number;
   total: number;
   /** One call inside a batch: numbered as a call, no chain chip of its own. */
   nested?: boolean;
+  headerAction?: ReactNode;
 }) {
   const fn = functionFromCall(call);
   const args = call.args ?? [];
@@ -392,14 +394,17 @@ function PrettyCall({
         </p>
       ) : null}
       {nested ? null : (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="flex items-center gap-1.5 border border-melon-300 bg-melon-100 px-2.5 py-1 text-xs font-medium leading-none text-melon-800">
-            {isSupportedChainId(call.chainId) ? (
-              <ChainLogo chainId={call.chainId} width={16} height={16} />
-            ) : null}
-            {chainDisplayName(call.chainId)}
-          </span>
-          <span className="font-mono text-[11px] text-zinc-500">chain {call.chainId}</span>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="flex items-center gap-1.5 border border-melon-300 bg-melon-100 px-2.5 py-1 text-xs font-medium leading-none text-melon-800">
+              {isSupportedChainId(call.chainId) ? (
+                <ChainLogo chainId={call.chainId} width={16} height={16} />
+              ) : null}
+              {chainDisplayName(call.chainId)}
+            </span>
+            <span className="font-mono text-[11px] text-zinc-500">chain {call.chainId}</span>
+          </div>
+          {headerAction}
         </div>
       )}
 
@@ -556,10 +561,7 @@ function ReviewModal({
       <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden border border-melon-700 bg-melon-25 shadow-2xl sm:max-h-[calc(100vh-4rem)]">
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-melon-300 bg-melon-50 px-4 py-4 sm:px-6">
           <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-amber-700">
-              Client safety check
-            </p>
-            <h2 id={titleId} className="mt-1 text-xl font-medium text-zinc-900">
+            <h2 id={titleId} className="text-xl font-medium text-zinc-900">
               {request.title ?? (isAuthorization ? "Review authorization" : "Review transaction")}
             </h2>
           </div>
@@ -587,20 +589,6 @@ function ReviewModal({
             </div>
           ) : null}
 
-          <div className="mt-5 flex justify-end">
-            <button
-              type="button"
-              onClick={copyPrompt}
-              className="min-h-[36px] border border-melon-600 bg-melon-100 px-4 text-xs font-bold hover:bg-melon-200"
-            >
-              {copyState === "copied"
-                ? "Prompt copied — paste into your LLM"
-                : copyState === "failed"
-                  ? "Could not copy prompt"
-                  : "[copy tx audit prompt]"}
-            </button>
-          </div>
-
           <div className="mt-4 space-y-4">
             {request.calls.map((call, index) => (
               <PrettyCall
@@ -608,6 +596,19 @@ function ReviewModal({
                 call={call}
                 index={index}
                 total={request.calls.length}
+                headerAction={index === 0 ? (
+                  <button
+                    type="button"
+                    onClick={copyPrompt}
+                    className="min-h-[36px] border border-melon-600 bg-melon-100 px-4 text-xs font-bold hover:bg-melon-200"
+                  >
+                    {copyState === "copied"
+                      ? "Prompt copied — paste into your LLM"
+                      : copyState === "failed"
+                        ? "Could not copy prompt"
+                        : "[copy tx audit prompt]"}
+                  </button>
+                ) : null}
               />
             ))}
           </div>
