@@ -1,6 +1,7 @@
 import { Nav } from "@/components/layout/Nav";
 import { ProjectHeaderSkeleton, ProjectPageSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
+import { REVNET_ONE_LINER } from "@/lib/one-liner";
 import { formatProjectPreviewBalance, projectPreviewSlogan } from "@/lib/project-link-preview";
 import { indexedGroupStatus } from "@/lib/projectIndexStatus";
 import { decodeProjectRouteSlug, slugFor } from "@/lib/slug";
@@ -86,7 +87,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const route = await resolveProjectRoute(encodedSlug ?? "");
   if (!route) {
     const title = "Revnet";
-    const description = "An autonomous business model for the open web. 100% open source.";
+    const description = REVNET_ONE_LINER;
     const imageUrl = new URL("/assets/img/revnet-social.png", assetOrigin).href;
     return buildMetadata({
       title,
@@ -126,8 +127,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return buildMetadata({
     title: project?.name ? `${project.name} | REVNET` : "Revnet",
     description:
-      projectPreviewSlogan(project?.projectTagline, project?.description) ||
-      "An autonomous business model for the open web. 100% open source.",
+      projectPreviewSlogan(project?.projectTagline, project?.description) || REVNET_ONE_LINER,
     imageUrl,
     url: canonicalUrl.href,
   });

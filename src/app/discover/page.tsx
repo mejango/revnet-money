@@ -14,6 +14,7 @@ type RevnetProject = {
 import { DiscoverGridSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ProjectLink } from "@/components/ProjectLink";
 import { Button } from "@/components/ui/button";
+import { REVNET_ONE_LINER } from "@/lib/one-liner";
 import { useQuery } from "@tanstack/react-query";
 import Image from "next/image";
 import Link from "next/link";
@@ -116,9 +117,7 @@ export default function Page() {
           alt="Revnet logo"
         />
         <span className="sr-only">Revnet</span>
-        <div className="text-xl md:text-2xl mt-8 font-medium text-left">
-          Tokenize revenues and fundraises. 100% autonomous.
-        </div>
+        <div className="text-xl md:text-2xl mt-8 font-medium text-left">{REVNET_ONE_LINER}</div>
         <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
           <div className="flex gap-4 mt-8">
             <Link href="/">

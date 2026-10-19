@@ -1,6 +1,7 @@
 import { getProject } from "@/app/[slug]/getProject";
 import { getSuckerGroup } from "@/app/[slug]/getSuckerGroup";
 import { ipfsUriToAppUrl } from "@/lib/ipfs";
+import { REVNET_ONE_LINER } from "@/lib/one-liner";
 import { formatProjectPreviewBalance, projectPreviewSlogan } from "@/lib/project-link-preview";
 import { ImageResponse } from "next/og";
 import type { NextRequest } from "next/server";
@@ -80,8 +81,7 @@ export async function GET(
   const paymentsCount = suckerGroup?.paymentsCount ?? 0;
   const name = project.name ?? `Project ${projectId}`;
   const tagline =
-    projectPreviewSlogan(project.projectTagline, project.description) ||
-    "An autonomous business model for the open web.";
+    projectPreviewSlogan(project.projectTagline, project.description) || REVNET_ONE_LINER;
 
   // Not `request.nextUrl.origin`: behind the platform proxy that is the container's bind
   // address, which this renderer cannot fetch, and the card silently loses its logo.

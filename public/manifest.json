@@ -1,7 +1,7 @@
 {
   "name": "Revnet",
   "short_name": "Revnet",
-  "description": "Tokenize revenues and fundraises. 100% autonomous.",
+  "description": "Tokenized incentives backed by a balance sheet, on a schedule fixed at launch.",
   "iconPath": "/assets/img/safe-app-icon.svg",
   "safe_apps_permissions": []
 }

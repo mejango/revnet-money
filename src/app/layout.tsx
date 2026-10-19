@@ -5,6 +5,7 @@ import { twMerge } from "tailwind-merge";
 import "./globals.css";
 import { Providers } from "./providers";
 
+import { REVNET_ONE_LINER } from "@/lib/one-liner";
 import localFont from "next/font/local";
 
 const simplonMono = localFont({
@@ -30,7 +31,7 @@ const assetOrigin =
     ? `https://${railwayDomain}`
     : siteOrigin);
 const siteTitle = "Revnet";
-const siteDescription = "An autonomous business model for the open web. 100% open source.";
+const siteDescription = REVNET_ONE_LINER;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -70,7 +71,7 @@ export async function generateMetadata(): Promise<Metadata> {
           url: imgUrl,
           width: 1428,
           height: 804,
-          alt: "Revnet — an autonomous business model for the open web",
+          alt: `Revnet: ${REVNET_ONE_LINER}`,
           type: "image/png",
         },
       ],
