@@ -6,21 +6,20 @@ const siteOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3002";
  */
 const LLMS_TXT = `# Revnet
 
-> A revnet shares revenue through tokens. Its token and cash out rules follow a
-> schedule fixed at launch. An operator can manage some details, but cannot rewrite
-> that schedule or withdraw the balance. Token value and revenue are not guaranteed.
-> This site works with revnets built on Juicebox V6 across Ethereum, Optimism, Base,
-> and Arbitrum. It reads contracts and Bendystraw, a service that indexes their records.
+> Tokenized incentives backed by a balance sheet, on a schedule fixed at launch.
+> An operator can manage details but cannot change the schedule or withdraw the
+> balance. This site runs revnets on Juicebox V6 across Ethereum, Optimism, Base,
+> and Arbitrum, reading the contracts and Bendystraw, an index of their records.
 
 ## URL grammar
 
-- \`/<chain>:<projectId>\` — a revnet by its chain-scoped id, e.g. \`/base:10\`.
+- \`/<chain>:<projectId>\`: a revnet by its chain-scoped id, e.g. \`/base:10\`.
   Chain slugs: \`eth\`, \`op\`, \`base\`, \`arb\`, plus \`sep\`, \`opsep\`, \`basesep\`, \`arbsep\` for testnets.
-- \`/@<handle>\` — the same revnet by its verified ENS handle. A handle is only served
+- \`/@<handle>\`: the same revnet by its verified ENS handle. A handle is only served
   when ENS and the JBProjectHandles registry agree that the revnet's current operator
   claimed it, so it names exactly one revnet.
 - Revnet subpages: \`/<slug>/owners\`, \`/<slug>/terms\`, \`/<slug>/shop\`, \`/<slug>/extras\`, \`/<slug>/operator\`.
-- \`/account/<address-or-ens>\` — holdings and roles for one account. Not indexed.
+- \`/account/<address-or-ens>\`: holdings and roles for one account. Not indexed.
 
 Each revnet page carries schema.org Organization JSON-LD with its canonical URL,
 identifier, description and logo.
@@ -38,18 +37,29 @@ identifier, description and logo.
 - [Three prices](${siteOrigin}/learn#three-prices): compare new tokens, existing tokens, and returning tokens for money.
 - [Inspect a project](https://juicebox.center/#apps/juicescan): identify a project by its network and ID; check transaction confirmation and any destination claim.
 - [Create](${siteOrigin}/create): the revnet launch flow.
-- [Audit](${siteOrigin}/audit): audits and security posture.
+- [Audit](${siteOrigin}/audit): source and review prompts.
+
+## For agents
+
+- [Juicebox MCP](https://juicebox.center/mcp): reads, quotes, metadata pinning, and unsigned
+  transaction plans. Holds no keys; the user signs.
+- [Juicebox Center API](https://juicebox.center/api): RPC, IPFS, and indexed data in one place.
+- [Juicebox V6 skills](https://github.com/mejango/juicebox-skills): instructions for launching,
+  paying, cashing out, loans, and integrations.
+- [Launch with an AI assistant](${siteOrigin}/build#launch-with-an-agent): the MCP or a .jb draft.
+- [Shared app work](${siteOrigin}/build#shared-with-juicebox): SDK, reads, payments, and signing.
+- [Audit prompts](${siteOrigin}/audit): review the whole system or one transaction.
 
 ## JSON endpoints
 
 Read-only, no key required, cached at the edge.
 
-- \`GET /api/discover-projects\` — every indexed V6 revnet, one entry per sucker group.
-- \`GET /api/top-projects\` — revnets ranked by secured reserves.
-- \`GET /api/search-projects?q=<text>\` — revnets matching a name, handle or id.
-- \`GET /api/project-name?chainId=<id>&projectId=<id>\` — canonical name and sucker group.
-- \`GET /api/homepage-activity\` — recent payments and cash outs.
-- \`GET /api/project-og/<chainId>/<projectId>\` — 1200x630 PNG link-preview card.
+- \`GET /api/discover-projects\`: every indexed V6 revnet, one entry per sucker group.
+- \`GET /api/top-projects\`: revnets ranked by balance.
+- \`GET /api/search-projects?q=<text>\`: revnets matching a name, handle or id.
+- \`GET /api/project-name?chainId=<id>&projectId=<id>\`: canonical name and sucker group.
+- \`GET /api/homepage-activity\`: recent payments and cash outs.
+- \`GET /api/project-og/<chainId>/<projectId>\`: 1200x630 PNG link-preview card.
 
 ## Source
 
