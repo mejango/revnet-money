@@ -81,8 +81,8 @@ export default function Page() {
               loan expires.
             </li>
             <li>
-              The launch plan can set different terms for later stages. A schedule can give earlier
-              payments more tokens for the same amount of money.
+              At launch, set different terms for later stages. A schedule can give earlier payments
+              more incentives.
             </li>
           </ol>
           <p className="mt-4">
