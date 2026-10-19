@@ -48,6 +48,7 @@ identifier, description and logo.
 
 ## For agents
 
+- [Agent skill](${siteOrigin}/skill.md): how to launch, check, pay, cash out, and borrow here.
 - [Juicebox MCP](${JUICEBOX_MCP_URL}): reads, quotes, metadata pinning, and unsigned
   transaction plans. Holds no keys; the user signs.
 - [Juicebox Center API](${JUICEBOX_CENTER_API_URL}): RPC, IPFS, and indexed data in one place.
