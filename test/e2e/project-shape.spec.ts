@@ -499,7 +499,11 @@ test("home and discover shells stay contained and deterministic", async ({ page,
   const discoverResponse = await page.goto("/discover", { waitUntil: "domcontentloaded" });
   expectSecurityHeaders(discoverResponse);
   await expect(page.getByRole("heading", { name: "Funding opportunities" })).toBeVisible();
-  await expect(page.getByText("Tokenized incentives backed by a balance sheet, on a schedule fixed at launch.")).toBeVisible();
+  await expect(
+    page.getByText(
+      "Tokenized incentives backed by a balance sheet, on a schedule fixed at launch.",
+    ),
+  ).toBeVisible();
   await expect(page.getByRole("link", { name: /Fixture Revnet/ })).toBeVisible();
   await expect(page.getByText("Protocol-backed and deterministic.")).toBeVisible();
   await expectContained(page, ["main", "footer", "h2"]);

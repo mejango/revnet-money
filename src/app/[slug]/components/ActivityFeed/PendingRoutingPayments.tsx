@@ -427,7 +427,11 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
               disabled={!resume && (!ready.length || checking || unavailable)}
               onClick={() => void review(ready)}
             >
-              {resume ? "Resume saved batch" : checking ? "Checking pending payments…" : "Retry all"}
+              {resume
+                ? "Resume saved batch"
+                : checking
+                  ? "Checking pending payments…"
+                  : "Retry all"}
             </ButtonWithWallet>
             {resume ? (
               <p className="mt-1 text-xs text-zinc-500">

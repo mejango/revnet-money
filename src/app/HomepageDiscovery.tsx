@@ -337,12 +337,7 @@ function ProjectRows({
                     className="relative flex"
                     style={{ zIndex: (project.chainIds?.length ?? 1) - index }}
                   >
-                    <ChainLogo
-                      chainId={memberChainId}
-                      width={16}
-                      height={16}
-                      standalone
-                    />
+                    <ChainLogo chainId={memberChainId} width={16} height={16} standalone />
                   </span>
                 ))}
               </span>

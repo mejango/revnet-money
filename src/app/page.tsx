@@ -15,7 +15,8 @@ const WHY_REVNET_POINTS = [
   },
   {
     lead: "Use the same terms across chains.",
-    detail: "Connect the revnet across supported Ethereum chains, with your unified token backed by the full balance sheet.",
+    detail:
+      "Connect the revnet across supported Ethereum chains, with your unified token backed by the full balance sheet.",
   },
   {
     lead: "Trade on open markets.",
@@ -62,8 +63,8 @@ export default function Page() {
             Shape that stands the test of time.
           </h2>
           <p className="mt-4">
-            A revnet receives money and shares incentives with the people who take part. Those incentives
-            let holders claim money from its balance under rules set at launch.
+            A revnet receives money and shares incentives with the people who take part. Those
+            incentives let holders claim money from its balance under rules set at launch.
           </p>
           <ol className="mt-6 ml-8 list-outside list-decimal space-y-3 sm:ml-10">
             <li>
@@ -77,8 +78,8 @@ export default function Page() {
               determine how much is returned.
             </li>
             <li>
-              Holders can also borrow against their incentives, then repay to get them back before the
-              loan expires.
+              Holders can also borrow against their incentives, then repay to get them back before
+              the loan expires.
             </li>
             <li>
               At launch, set different terms for later stages. A schedule can give earlier payments

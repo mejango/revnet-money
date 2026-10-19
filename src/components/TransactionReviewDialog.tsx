@@ -596,19 +596,21 @@ function ReviewModal({
                 call={call}
                 index={index}
                 total={request.calls.length}
-                headerAction={index === 0 ? (
-                  <button
-                    type="button"
-                    onClick={copyPrompt}
-                    className="min-h-[36px] border border-melon-600 bg-melon-100 px-4 text-xs font-bold hover:bg-melon-200"
-                  >
-                    {copyState === "copied"
-                      ? "Prompt copied — paste into your LLM"
-                      : copyState === "failed"
-                        ? "Could not copy prompt"
-                        : "[copy tx audit prompt]"}
-                  </button>
-                ) : null}
+                headerAction={
+                  index === 0 ? (
+                    <button
+                      type="button"
+                      onClick={copyPrompt}
+                      className="min-h-[36px] border border-melon-600 bg-melon-100 px-4 text-xs font-bold hover:bg-melon-200"
+                    >
+                      {copyState === "copied"
+                        ? "Prompt copied — paste into your LLM"
+                        : copyState === "failed"
+                          ? "Could not copy prompt"
+                          : "[copy tx audit prompt]"}
+                    </button>
+                  ) : null
+                }
               />
             ))}
           </div>
