@@ -4,15 +4,16 @@ import { Nav } from "@/components/layout/Nav";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+const description =
+  "Tokenized incentives backed by a balance sheet, on a schedule fixed at launch. Learn how payments, stages, cash outs, and loans work.";
+
 export const metadata: Metadata = {
   title: "Learn revnets",
-  description:
-    "How revnets share revenue, what their tokens let you do, and which terms to check before taking part.",
+  description,
   alternates: { canonical: "/learn" },
   openGraph: {
     title: "Learn revnets",
-    description:
-      "Understand payments, token terms, cash outs, and loans. Learn the basics or prepare your first revnet transaction.",
+    description,
     url: "/learn",
     type: "website",
     images: [{ url: "/assets/img/revnet-social.png", width: 1428, height: 804, alt: "Revnet" }],
@@ -20,8 +21,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "Learn revnets",
-    description:
-      "Understand payments, token terms, cash outs, and loans. Learn the basics or prepare your first revnet transaction.",
+    description,
     images: ["/assets/img/revnet-social.png"],
   },
 };
@@ -32,12 +32,11 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     aliases: ["start-here"],
     part: "The basics",
     title: "What a revnet is",
-    summary:
-      "A revnet shares revenue through tokens. Its rules set how people receive tokens and how holders can return them for money or use them to borrow. The schedule is fixed when the revnet launches.",
+    summary: "Tokenized incentives backed by a balance sheet, on a schedule fixed at launch.",
     paragraphs: [
-      "Customers and supporters pay the revnet. Their payment can create new tokens and add to its balance, or buy existing tokens from a market. Some tokens can go to contributors. The payment quote shows how many the payer receives and where the money goes.",
-      "A revnet can appoint someone to manage details such as its name, contributor addresses, shop, and market settings. This role is called the operator. The operator cannot rewrite the token schedule or withdraw the balance for themselves. The allowed changes still matter, so check the role's powers.",
-      "Revnets suit open source projects and businesses that want contributors and customers to share revenue under rules enforced by software.",
+      "Customers and supporters pay the revnet. Each payment adds to its balance sheet and gives the payer tokens, either newly created or bought from a market when that gets them more. Part of every new batch goes to contributors through the revnet's splits.",
+      "Holders can cash out, returning tokens for a share of the balance sheet, or borrow against their tokens. No team, founder, or operator can withdraw from it.",
+      "An operator can manage day-to-day details: the name, contributor addresses, the shop, and market settings. The operator can't change the schedule or withdraw from the balance sheet.",
     ],
     links: [
       { href: "/discover", label: "Explore live revnets" },
@@ -50,12 +49,12 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "The basics",
     title: "How money flows",
     summary:
-      "People pay in, then use their tokens to take money out or borrow. Returning tokens for money is called cashing out. Buying through a market or shop can send funds elsewhere.",
+      "People pay in, then use their tokens to take money out or borrow. Returning tokens for money is called cashing out.",
     diagrams: [
       {
         label: "The loop",
         description:
-          "A payment can create tokens and fund the balance, or buy existing tokens from a market. Some tokens can go to contributors. Cashing out destroys the returned tokens. Borrowing also destroys the tokens used to secure the loan, but repayment can restore them.",
+          "A payment creates tokens and funds the balance sheet, or buys existing tokens from a market. Some tokens go to contributors. Cashing out burns the returned tokens. Borrowing burns the tokens used to secure the loan until it is repaid.",
         lines: [
           "  1. Someone PAYS the revnet",
           "     └─▶ create tokens for the payer and contributors",
@@ -63,20 +62,17 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           "     └─▶ or the money buys existing tokens from a market",
           "",
           "  2. Holders CASH OUT",
-          "     └─▶ return tokens for money; those tokens are destroyed",
+          "     └─▶ return tokens for money; those tokens are burned",
           "     └─▶ the rules decide how much stays for other holders",
           "",
           "  3. Or holders BORROW against tokens instead of cashing out",
-          "",
-          "  simple backing per token = balance ÷ total number of tokens",
-          "  loans and other chains require additional accounting",
         ],
       },
     ],
     paragraphs: [
-      "For a revnet on one network with no loans, divide its balance by the total number of tokens, called the supply. This gives a simple measure of the funds behind each token, called its backing. Loans and funds on other networks can change the calculation. Backing is not the amount you can withdraw right now.",
-      "Creating tokens is called issuance. A payment that creates tokens adds both money and tokens, so backing per token can rise or fall. Tokens allocated without a payment add to supply without adding money. Cash outs can leave some money for remaining holders. Loans move money out until repayment or expiry changes the accounting.",
-      "Contributors receive tokens. To get ETH, USDC, or another asset, they must cash out, borrow, or find a buyer under the same terms as other holders. The team cannot choose to withdraw a separate spending budget.",
+      "Divide the balance sheet by the token supply and you get each token's backing. Loans and balances on other chains count too, so backing can be higher than what one chain can pay out right now.",
+      "Payments add money and tokens together. Splits and auto issuance add tokens without money. Cash outs remove both, and the cash out tax leaves part of the money behind for everyone who stays.",
+      "Contributors are paid in tokens. To turn them into ETH or USDC they cash out, borrow, or sell, on the same terms as everyone else. There's no separate team budget.",
     ],
   },
   {
@@ -84,37 +80,23 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "The basics",
     title: "The three prices",
     summary:
-      "You can buy newly created tokens, return tokens to the revnet, or trade existing tokens with others. Each has its own price. Compare current quotes for your amount and network.",
+      "You can buy new tokens from the revnet, return tokens to it, or trade existing tokens with other people. Each has its own price.",
     points: [
       {
         key: "Issuance price",
-        text: "what a newly created token costs. Any share set aside for contributors reduces the tokens the payer receives. When the rules create no new tokens, there is no price at which you can buy newly created ones.",
+        text: "what a new token costs from the revnet. It goes up each time issuance is cut. Once a stage stops issuance, there isn't one.",
       },
       {
         key: "Cash out price",
-        text: "what you receive by returning a given number of tokens to the revnet. The rules, total supply, backing, costs, and funds available on your network all affect the quote. The amount per token changes with the size of the cash out.",
+        text: "what the revnet pays per token you return. It depends on the balance sheet, the supply, the cash out tax, and how many you return.",
       },
       {
         key: "Market price",
-        text: "what other buyers and sellers offer. Trading can move the price, so a chart may differ from the amount you actually receive.",
-      },
-    ],
-    diagrams: [
-      {
-        label: "Compare routes, then compare the final quote",
-        description:
-          "If new tokens cost less than existing ones, a buyer may prefer new tokens. If returning tokens pays more than selling them, a holder may prefer to cash out. Trading costs, limited funds, delays, and price changes can prevent either choice from being worthwhile.",
-        lines: [
-          "  BUY   compare newly created tokens with existing ones",
-          "  SELL  compare returning tokens with selling them",
-          "",
-          "  compare the amount you receive after all costs",
-          "  market prices can move beyond either reference price",
-        ],
+        text: "what other people pay. It moves with every trade.",
       },
     ],
     paragraphs: [
-      "Charts may call the new-token price a ceiling and the cash out price a floor. Neither guarantees a market limit. Limited funds, costs, waiting periods, and price changes can keep trades outside those reference prices. Use the quote for the amount you intend to trade.",
+      "The issuance price is a ceiling: why pay a market more when the revnet sells new tokens for less? The cash out price is a floor: why sell for less when the revnet pays more? The market trades between them. Fees and thin pools can push a trade outside that band, so check the final quote.",
     ],
   },
   {
@@ -122,15 +104,15 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "The basics",
     title: "Stages",
     summary:
-      "The rules can change over time along a schedule fixed at launch. Each period is called a stage. Read the whole schedule to see what applies now and later.",
+      "A revnet's rules change on a schedule fixed at launch. Each period is a stage, and the whole schedule is public from day one.",
     paragraphs: [
-      "Each stage sets its start and token creation rate. A recurring drop in that rate is an issuance cut. The share for contributors is the split share. The setting that leaves money for remaining holders during a cash out is the cash out tax. Fixed tokens claimable without paying are auto issuance.",
+      "Like Bitcoin's halvings, issuance cuts are scheduled in advance. Earlier supporters get more tokens for the same money, and everyone can see when the next cut lands.",
     ],
     diagrams: [
       {
         label: "Example schedule",
         description:
-          "Illustrative schedule: stage one starts on day zero, issues 1,000 tokens per ETH before a 30% split, cuts issuance by 10% every 30 days, and has a 20% cash out tax. Stage two starts on day 365, inherits the rate, cuts it by 5% every 90 days, and uses a 10% split and 50% tax. Stage three starts on day 1,825 with no new issuance and a 50% tax. The contracts determine each actual start time.",
+          "Illustrative schedule: stage one starts on day zero, issues 1,000 tokens per ETH before a 30% split, cuts issuance by 10% every 30 days, and has a 20% cash out tax. Stage two starts on day 365, inherits the rate, cuts it by 5% every 90 days, and uses a 10% split and 50% tax. Stage three starts on day 1,825 with no new issuance and a 50% tax.",
         lines: [
           "  STAGE 1  day 0      1,000 tokens per ETH, cut 10% every 30 days",
           "                      split 30% to contributors, cash out tax 20%",
@@ -144,38 +126,93 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
     ],
     points: [
+      { key: "Start", text: "when the stage begins." },
+      { key: "Issuance", text: "new tokens per ETH or USD paid." },
+      { key: "Issuance cut", text: "how much issuance drops, and how often." },
       {
-        key: "Start",
-        text: "the earliest time a stage can begin. Check the actual start shown in Terms.",
-      },
-      { key: "Issuance", text: "new tokens created per unit of the currency used for pricing." },
-      {
-        key: "Issuance cut",
-        text: "a recurring percentage drop in new tokens per payment, so earlier payers get more tokens for the same money.",
-      },
-      {
-        key: "Split share",
-        text: "the percentage of newly created tokens set aside for named recipients rather than the payer.",
+        key: "Splits",
+        text: "the share of new tokens that goes to contributors instead of the payer.",
       },
       {
         key: "Cash out tax",
-        text: "a setting that leaves some money for remaining holders. Its effect depends on the share of tokens returned; it is not a flat deduction.",
+        text: "how much of a cash out stays behind for remaining holders.",
       },
       {
         key: "Auto issuance",
-        text: "a fixed number of tokens set aside for named recipients without a payment. Someone must submit a claim after the stage starts; time alone does not create the tokens.",
+        text: "a fixed number of tokens a recipient can claim once the stage starts.",
       },
     ],
-    note: "Read later stages as carefully as the current one. Changes in token creation and cash out terms can affect your decision now.",
+    note: "Later stages apply to the tokens you hold today, so read the whole schedule.",
+  },
+  {
+    id: "operator",
+    part: "The basics",
+    title: "The operator",
+    summary:
+      "Every revnet is owned by a contract that enforces its schedule. A person or another contract can hold the operator role, to handle the details that need a human.",
+    points: [
+      {
+        key: "Can",
+        text: "rename the revnet and edit its description; change split recipients; choose its market and payment routes; manage bridges, and add chains if the launch allowed it. With a shop, the operator can also add items, set discounts, edit details, and mint copies.",
+      },
+      {
+        key: "Can't",
+        text: "change issuance, cuts, cash out taxes, split percentages, or stage timing, or withdraw from the balance sheet.",
+      },
+      {
+        key: "Can hand over",
+        text: "the role to someone else, or to nobody. Handing it to nobody is permanent.",
+      },
+    ],
+    note: "The operator's choices about recipients, markets, and the shop still affect holders, so check who holds the role on each chain.",
+  },
+  {
+    id: "your-first-transaction",
+    aliases: ["verify-before-trusting"],
+    part: "The basics",
+    title: "Your first transaction",
+    summary: "Pick a revnet, read its terms, and review the payment before you sign.",
+    points: [
+      {
+        key: "1. Choose a revnet",
+        text: "Open Discover and pick one. In Terms, read every stage, who receives splits, which assets it accepts, and what the operator can do.",
+      },
+      {
+        key: "2. Choose the chain and amount",
+        text: "Pay with an accepted asset on that chain, and keep some ETH for gas.",
+      },
+      {
+        key: "3. Review what you'll receive",
+        text: "Check your tokens, the split, the route, and the minimum you'll accept. Paying with a token like USDC needs an approval first, a separate step that lets the revnet spend it. Make sure your wallet shows what you reviewed.",
+      },
+      {
+        key: "4. Wait for confirmation",
+        text: "Keep the transaction link. A Safe proposal does nothing until it's executed.",
+      },
+      {
+        key: "5. Next steps",
+        text: "From your holdings you can quote a cash out or a loan. A zero quote usually means the balance on that chain is empty, or the revnet is still in a waiting period after launch.",
+      },
+    ],
+    links: [
+      { href: "/discover", label: "Find a revnet to explore" },
+      { href: "/audit", label: "Review contract and website audits" },
+      {
+        href: "https://juicebox.money/build/first-payment",
+        label: "Try a payment on a test network",
+      },
+      { href: "/build#draft-files", label: "Save a launch draft before deploying" },
+    ],
   },
   {
     id: "cash-out-tax",
     part: "Going deeper",
     title: "Cash outs and the cash out tax",
     summary:
-      "When you return tokens for money from the revnet, those tokens are destroyed, or burned. The rules can leave some of your proportional share for remaining holders. The setting that controls this is called the cash out tax.",
+      "When you cash out, you return tokens to the revnet and receive a share of its balance sheet. The returned tokens are burned. The cash out tax leaves part of your share behind for everyone who stays.",
     paragraphs: [
-      "In the simplified example below, a 0% tax returns 10% of the balance for 10% of the supply. A 20% tax parameter returns 8.2 ETH, not 8 ETH: the formula also accounts for the share being cashed out. This example excludes fees, loans, remote balances, and market routing.",
+      "Return 10% of the supply at a 0% tax and you get 10% of the balance sheet. Raise the tax and you get less, though not as much less as the rate suggests, because the formula also weighs how much of the supply you return.",
+      "Bigger cash outs get more per token. Splitting one cash out into several smaller ones returns less in total, and costs more gas. The tax is set per stage, so later stages can leave more or less behind. Fees, loans, and market routes change the final amount, so check the quote.",
     ],
     diagrams: [
       {
@@ -194,21 +231,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ],
       },
     ],
-    points: [
-      {
-        key: "Size changes the effective tax",
-        text: "for the same starting balance and supply, a larger share receives more per token. Splitting a withdrawal into smaller transactions does not create a discount; each transaction changes the state and adds gas costs.",
-      },
-      {
-        key: "The tax is set per stage",
-        text: "so later stages can leave more or less money for remaining holders.",
-      },
-    ],
     links: [
-      {
-        href: "https://github.com/Bananapus/nana-core-v6/blob/main/src/libraries/JBCashOuts.sol",
-        label: "Cash out formula in the contracts",
-      },
       { href: "/build#cash-out", label: "How an app quotes cash outs" },
       { href: "#fees", label: "Costs and where they go" },
     ],
@@ -216,66 +239,60 @@ const SECTIONS: readonly RevnetGuideSection[] = [
   {
     id: "splits-and-auto-issuance",
     part: "Going deeper",
-    title: "Sharing tokens with contributors",
+    title: "Splits: tokens for contributors",
     summary:
-      "A revnet can set aside part of each new token creation for contributors, partners, or other revnets. This portion is called the split share.",
+      "A revnet can send part of every new batch of tokens to contributors, partners, or other revnets. This is its split.",
     paragraphs: [
-      "The split share is a percentage of each issuance, fixed per stage. If the share is 30%, a payment that issues 1,000 tokens sends 700 to the payer and 300 to the split recipients. The recipients get tokens, never the balance itself.",
-      "The operator can change recipients once any locked allocations allow it, but cannot raise the share fixed at launch. A separate fixed token allocation, called auto issuance, can be claimed after its stage starts. Anyone can submit the claim; tokens still go to the named recipient.",
+      "With a 30% split, a payment that creates 1,000 tokens gives 700 to the payer and 300 to the split recipients. Recipients get tokens, never money from the balance sheet.",
+      "Each stage's split percentage is fixed at launch. The operator can change who receives it, unless a recipient is locked, but never how much. Recipients can differ by chain; the percentage can't.",
+      "Auto issuance is separate: a fixed number of tokens set aside at launch for named recipients, claimable once its stage starts. It adds tokens without adding money, so count any unclaimed auto issuance when you size up your share of the supply.",
     ],
-    note: "Both change who holds tokens. Payments that create tokens add money; auto issuance does not. Across networks the split percentage stays the same, but recipients can differ. Count unclaimed allocations when considering how your share of the supply may shrink.",
   },
   {
     id: "markets-and-buybacks",
     part: "Going deeper",
     title: "Markets and buybacks",
     summary:
-      "People can put assets into a shared market for others to trade. This is called a liquidity pool. During a payment, a revnet can buy existing tokens there when it offers a better rate, or combine that purchase with newly created tokens.",
+      "People can deposit tokens and money into a shared market, called a liquidity pool, for others to trade against. When you pay a revnet, it checks that pool and buys existing tokens for you when they're cheaper than new ones.",
     paragraphs: [
-      "The buyback hook is a contract called during a payment. Funds spent in the pool buy existing tokens from liquidity providers; they do not all enter the revnet's balance. The standard route applies the split share to the tokens obtained. Some integrations can opt out of splits on the purchased portion; newly minted tokens still follow the stage's split.",
-      "Buying directly from a pool skips the revnet's payment path and split share, but it is not always the best deal. Compare the tokens you receive after all costs, including price movement caused by your trade. A shop purchase may require the payment path to receive the item.",
-      "Cash outs can also use a configured pool when selling tokens there produces a better result. In that case the market supplies the funds; the treasury-only formula is not the complete quote. The confirmation should identify the route and enforce the minimum amount you accept.",
+      "Money spent in the pool goes to the sellers, not into the balance sheet. Tokens bought this way still go through the revnet's split. You can also trade on the pool directly, which skips the split. Shop items have to be bought through a payment.",
+      "Cash outs work the same way in reverse: if selling to the pool pays more, the cash out sells there, and the review shows which route it takes.",
     ],
-    note: "A pool may be absent or have too little liquidity for your amount. A displayed market price is not a promise of an executable trade. Check the live quote and its minimum output before signing.",
+    note: "A pool can be empty or too thin for your amount. Set a minimum you'll accept; the transaction fails rather than paying you less.",
   },
   {
     id: "loans",
     part: "Going deeper",
     title: "Loans",
     summary:
-      "A loan lets you borrow against your tokens and recover them by repaying. Tokens used to secure a loan are called collateral. They are destroyed while the loan is open, so you cannot also spend or cash them out.",
+      "Borrow against your tokens and get them back when you repay. The tokens you borrow against, your collateral, are burned while the loan is open.",
     diagrams: [
       {
         label: "Loan lifecycle",
         description:
-          "Borrowing destroys the collateral tokens and sends you money after costs. You receive a transferable loan record, called a loan NFT, that controls repayment and recovery. Repay the recorded debt, called principal, and any added borrowing cost before the 3,650-day expiry to recover tokens. After expiry anyone can close the record, removing the debt and collateral from accounting. A market price drop cannot force an earlier repayment.",
+          "Borrowing burns the collateral tokens and sends you money after costs. You receive a transferable loan NFT. Repay the debt, plus any time-based fee, before the 10-year expiry to get your tokens back. After expiry the collateral stays burned.",
         lines: [
           "  borrow",
           "     └─▶ your tokens are burned as collateral",
           "     └─▶ the revnet sends you funds, minus fees",
           "     └─▶ you receive a loan NFT as your receipt",
           "",
-          "  repay (before the 3,650-day expiry)",
-          "     └─▶ return principal plus any additional time-based fee",
-          "     └─▶ your collateral tokens are created again for you",
+          "  repay (before the 10-year expiry)",
+          "     └─▶ return the debt plus any time-based fee",
+          "     └─▶ your collateral tokens are minted back to you",
           "",
-          "  expiry (after 3,650 days)",
+          "  expiry (after 10 years)",
           "     └─▶ the loan is written off, collateral stays burned",
-          "     └─▶ closing the expired loan removes debt and collateral from accounting",
         ],
       },
     ],
     paragraphs: [
-      "The amount you can borrow uses the current cash out tax and the revnet's effective backing, then is capped by funds available on the selected chain. A loan does not bypass a high cash out tax. Compare net proceeds, repayment cost, and the token rights you want to recover.",
-      "You receive less than the recorded debt because borrowing costs are paid up front. Repayment is based on the full debt plus any extra cost for how long you borrow. The Fees section explains each cost and where it goes.",
-      "While a loan can be repaid, the calculation of backing includes the debt and the tokens that repayment can restore. After expiry, anyone can close the record to remove both. This does not add money or guarantee more backing per remaining token. Transferring the loan NFT gives its new owner control of the loan and the right to recover collateral.",
+      "How much you can borrow follows the cash out price: the same balance sheet and cash out tax, capped by what's available on your chain. A loan is no way around a high cash out tax.",
+      "Borrowing costs come out up front, so you receive less than you owe. Repay the debt, plus a time-based fee if you take longer than you prepaid, and your tokens are minted back to you. Open loans still count in the balance sheet and the supply until they're repaid or expire.",
+      "A falling price never liquidates a loan. After 10 years an unpaid loan expires and the collateral stays burned. The loan itself is an NFT: whoever holds it can repay it and recover the tokens.",
     ],
     links: [
       { href: "#fees", label: "Borrowing costs and where they go" },
-      {
-        href: "https://github.com/rev-net/revnet-core-v6/blob/main/src/REVLoans.sol",
-        label: "Loan rules and fee calculation",
-      },
       { href: "/build#operate-loans", label: "Integrate loan quotes and repayment" },
     ],
   },
@@ -284,52 +301,29 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Going deeper",
     title: "Fees and where they go",
     summary:
-      "Juicebox and Revnet fees support revnets that share their own tokens with the people paying them. A fee payment can give its named recipient tokens in those networks, under their current rules.",
+      "Two small protocol fees apply when money leaves a revnet. Each fee is a payment into another revnet, so the person paying it receives that revnet's tokens.",
     paragraphs: [
-      "The Juicebox fee goes to the Juicebox Protocol revnet, whose token is JBP6. The Revnet fee goes to the Revnet Network revnet, whose token is REV. These tokens let holders participate under each revnet's terms. They are not a cash refund or a promise of profit.",
-      "The cash out tax is different: it leaves money in the revnet you are cashing out of for its remaining holders. Loan borrowing costs can also pay that source revnet. Network transaction costs, market trades, card payments, and bridges can charge separately.",
+      "One fee goes to the Juicebox Protocol revnet (JBP6), the other to the Revnet Network revnet (REV). Paying into a revnet has no protocol fee.",
     ],
     points: [
-      {
-        key: "Payments and launch",
-        text: "a normal payment into a revnet has no standard Juicebox protocol fee. Launching a revnet uses the current project creation fee on each network. Check that live quote: its recipient and payment route determine whether it gives you tokens in a fee-receiving revnet.",
-      },
+      { key: "Launch", text: "a creation fee on each chain, up to 0.001 ETH." },
       {
         key: "Cash outs",
-        text: "the standard cash out from the revnet's balance with a positive cash out tax has a 2.5% Juicebox fee on the value withdrawn. The Revnet fee is calculated by valuing 2.5% of the tokens being cashed out. These use different bases, so they are not a flat 5% deduction. A market sale or an exempt route can differ. A 0% cash out tax removes the standard Revnet fee, but a Juicebox fee can still apply to funds received earlier through payouts that had not yet paid it.",
+        text: "with a cash out tax above 0%, 2.5% of the money you receive goes to JBP6. REV receives a fee worth 2.5% of the tokens you return.",
       },
       {
         key: "Loans",
-        text: "a standard new loan deducts a 2.5% Juicebox fee, a 1% REV fee when that fee payment is available, and a chosen borrowing cost of 2.5–50% paid up front to the lending revnet. Exemptions can change the quote. The amount you receive is smaller than the recorded debt, which is the basis for repayment.",
+        text: "2.5% to JBP6, 1% to REV, and a prepaid borrowing cost of 2.5% to 50% that goes to the revnet you borrow from.",
       },
       {
         key: "Time to repay",
-        text: "the prepaid borrowing cost buys a period with no added source-revnet cost: 2.5% covers 182.5 days; 50% covers all 3,650 days. After that period the extra cost rises until expiry. Repay before expiry to recover collateral.",
-      },
-      {
-        key: "Who receives the tokens",
-        text: "successful fee payments follow the receiving revnet's current token rules and chosen market route. For cash outs, JBP6 tokens go to the cash out recipient and REV tokens go to the holder returning tokens; those addresses can differ. For loans, fee-payment tokens go to the loan's named recipient. Check each payment's result instead of assuming a fixed number of tokens.",
-      },
-      {
-        key: "What to compare",
-        text: "use the live quote for the exact amount you receive, each cost, and the destination of each payment. For a loan, also check the full debt, repayment quote, and expiry. Do not subtract a flat percentage from a chart price.",
+        text: "the prepaid cost buys time with no extra charge. 2.5% covers about 6 months; 50% covers the full 10 years. After that, the cost rises until expiry.",
       },
     ],
+    note: "Check the quote for exact amounts.",
     links: [
       { href: "/eth:1#project-top", label: "Juicebox Protocol revnet" },
       { href: "/eth:3#project-top", label: "Revnet Network revnet" },
-      {
-        href: "https://github.com/Bananapus/nana-core-v6/blob/main/src/JBMultiTerminal.sol",
-        label: "Juicebox fee routing",
-      },
-      {
-        href: "https://github.com/rev-net/revnet-core-v6/blob/main/src/REVOwner.sol",
-        label: "Revnet cash out fees",
-      },
-      {
-        href: "https://github.com/rev-net/revnet-core-v6/blob/main/src/REVLoans.sol",
-        label: "Loan fees and recipients",
-      },
     ],
   },
   {
@@ -337,10 +331,10 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Going deeper",
     title: "Shops",
     summary:
-      "A revnet can sell items through a shop. A qualifying payment can give you revnet tokens plus a unique token recording the item, called an NFT. Check the price, available copies, and purchase terms.",
+      "A revnet can sell items through a shop. Buying one gives you the item, recorded as an NFT, plus the revnet's tokens.",
     paragraphs: [
-      "Items are organised into categories and can have supply limits, prices, token splits, discounts, and transfer rules. Some shop configurations route part of an item payment to another recipient, so check the purchase breakdown. The operator may keep powers to change shop settings or mint items.",
-      "An NFT is an on-chain record. Any promised physical item, service, access, delivery, or refund depends on the seller's stated terms; the token itself does not fulfil that promise. Read the item description and check the seller before buying.",
+      "Items have prices, limited copies, categories, and discounts. Some send part of the payment to another recipient, which the purchase breakdown shows. The operator may be able to add items or mint copies.",
+      "The NFT records your purchase onchain. Anything physical, like delivery or access, depends on the seller, so read the item description.",
     ],
   },
   {
@@ -348,87 +342,22 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Under the hood",
     title: "One revnet, many chains",
     summary:
-      "A revnet can run on several blockchain networks, or chains, at once. Each has its own balance and tokens, with the same stage schedule.",
+      "A revnet can run on several chains at once, such as Ethereum and Base. Each chain holds its own balance and tokens, on the same schedule.",
     paragraphs: [
-      "Payments and cash outs execute on the selected chain once the transaction is included. Ordinary cash out and loan accounting may include remote balances and supply, depending on the launch configuration, but actual withdrawals are limited by local funds.",
-      "A cross-chain move uses bridge contracts called suckers. They cash tokens out using the source chain's local backing without the normal cash out tax, move the corresponding funds, and allow tokens to be claimed on the destination. This is a separate registered bridge path, not a tax exemption on a holder's later cash out.",
-      "A move between networks takes several steps. The total balance can include funds waiting to move, in transit, or ready to claim on the other side.",
-      "Keep the source transaction and destination chain handy until the claim completes. A successful source transaction does not mean destination tokens are ready. Bridge messages, fees, and claim transactions can take additional time.",
+      "Payments and cash outs happen on the chain you pick. Quotes can count balances on every chain, but you can only withdraw what's on yours.",
+      "Moving tokens between chains takes three steps: send from one chain, wait for the bridge, then claim on the other. Your tokens carry their share of the balance with them, with no cash out tax. Keep the transaction link until you've claimed; a confirmed send doesn't mean the tokens have arrived.",
     ],
-  },
-  {
-    id: "operator",
-    part: "Under the hood",
-    title: "The operator",
-    summary:
-      "A contract called REVOwner owns the revnet and enforces its fixed schedule. A person or another contract can hold the operator role. Its powers are limited, but its choices about payments, recipients, and the shop still affect users.",
-    points: [
-      {
-        key: "Can",
-        text: "update names and descriptions; change contributor addresses; choose the payment contract, market pool, and the period used to average its price; manage bridge safety; and add networks if allowed at launch. With a shop, the role can also add items, set discounts, edit item details, and create copies.",
-      },
-      {
-        key: "Cannot",
-        text: "change issuance, cuts, cash out taxes, split percentages, or stage timing. Cannot withdraw the balance.",
-      },
-      { key: "Can hand over", text: "the role to another address, or to nobody." },
-    ],
-    note: "The zero address is the contract's explicit no-operator setting, and relinquishing to it is permanent. This site's create flow uses a dead address intended to be inaccessible when the operator is off. Inspect the actual address and permissions on every chain; do not infer control from an address label alone.",
   },
   {
     id: "built-on-juicebox",
     part: "Under the hood",
     title: "Built on Juicebox",
     summary:
-      "A V6 revnet uses Juicebox's payment and token contracts with REVOwner as its project owner. It selects a constrained set of Juicebox features and removes the ordinary owner's ability to change the committed economic rules.",
+      "Revnets run on Juicebox, an open protocol for collecting money, issuing tokens, and setting rules for funds. A revnet is a Juicebox project owned by a contract that locks in its schedule.",
     paragraphs: [
-      "Juicebox supplies the contracts for payments, tokens, shared allocations, cash outs, and transfers between networks. Revnet adds the fixed stage schedule, its cash out and loan terms, and limited operator powers.",
-      "The Juicebox guide explains these shared contracts and how projects use them.",
+      "Juicebox handles payments, tokens, splits, cash outs, and moving between chains. Revnet adds the fixed schedule, loans, and the operator's limited role.",
     ],
-    links: [
-      { href: "https://juicebox.money/learn", label: "Learn Juicebox" },
-      { href: "https://github.com/rev-net/revnet-core-v6", label: "Revnet V6 source" },
-      { href: "https://github.com/Bananapus/version-6", label: "Juicebox V6 source" },
-    ],
-  },
-  {
-    id: "your-first-transaction",
-    aliases: ["verify-before-trusting"],
-    part: "Try it",
-    title: "Your first transaction",
-    summary: "Choose a revnet, read its terms, and review the payment before signing.",
-    points: [
-      {
-        key: "1. Choose the revnet",
-        text: "Open Discover and check the revnet's network and project ID. In Terms, read every stage, who receives tokens, accepted assets, and the operator's powers. Check available funds and any open loans as well as the total balance.",
-      },
-      {
-        key: "2. Choose the chain and amount",
-        text: "Use an accepted asset on that network and leave enough for transaction costs. Moving money from another network is a separate action and may require a claim.",
-      },
-      {
-        key: "3. Review what you receive",
-        text: "Check the receiving address, contributor share, payment path, total cost, and minimum tokens you will accept. For a shop item, read the seller's delivery terms. Giving a contract spending permission is called approval; the payment may be a separate transaction. Check that the wallet request matches what you reviewed.",
-      },
-      {
-        key: "4. Wait for confirmation",
-        text: "Wait for the network to confirm the transaction. A proposal to a shared Safe wallet still needs to be executed. Keep the transaction link and check your holdings on that network if tokens do not appear.",
-      },
-      {
-        key: "5. Plan your next action",
-        text: "Use the holder controls to quote a cash out or loan. A zero quote can mean no available money, a waiting period after launch, or an unsupported payment path. Refresh the quote and check Terms before retrying. Do not accept less just to bypass an unexplained failure.",
-      },
-    ],
-    note: "Fixed rules do not guarantee token value, revenue, a buyer for your tokens, or delivery of a team's promises. Check the contracts, operator powers, and any markets or bridges your payment depends on.",
-    links: [
-      { href: "/discover", label: "Find a revnet to explore" },
-      { href: "/audit", label: "Review contract and website audits" },
-      {
-        href: "https://juicebox.money/build/first-payment",
-        label: "Try a payment on a test network",
-      },
-      { href: "/build#draft-files", label: "Save a launch draft before deploying" },
-    ],
+    links: [{ href: "https://juicebox.money/learn", label: "Learn Juicebox" }],
   },
   {
     id: "glossary",
@@ -437,119 +366,77 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     summary: "Start with the idea, then use the name when you need it.",
     points: [
       {
-        key: "Token",
-        text: "a unit recorded for its holder. Revnet tokens let holders take part under the revnet's rules; they do not automatically mean company ownership.",
+        key: "Incentives",
+        text: "what a revnet gives people who pay in or contribute. Here, incentives are tokens.",
       },
-      { key: "Balance / treasury", text: "the money held for a revnet by its payment contracts." },
+      { key: "Token", text: "a unit recorded for its holder and counted in the revnet's supply." },
+      { key: "Balance sheet / balance", text: "the money a revnet holds for its token holders." },
+      {
+        key: "Backing",
+        text: "the balance sheet divided by the token supply. Loans and other chains count too, so it can differ from what one chain pays out right now.",
+      },
+      { key: "Supply", text: "the total number of tokens, including tokens behind open loans." },
       {
         key: "Chain",
-        text: "a blockchain network, such as Ethereum or Base. Each keeps its own transaction records and balances.",
+        text: "a blockchain network, such as Ethereum or Base. Each keeps its own records and balances.",
       },
-      {
-        key: "Supply",
-        text: "the total number of tokens. For some calculations, tokens tied to open loans also count.",
-      },
-      {
-        key: "Issuance / mint",
-        text: "creating tokens. Mint is the contract term for creating them on a blockchain.",
-      },
+      { key: "Issuance", text: "creating new tokens, also called minting." },
+      { key: "Issuance cut", text: "a scheduled drop in how many tokens a payment creates." },
       {
         key: "Burn",
-        text: "destroying tokens. A loan can restore its burned collateral only through the allowed recovery steps.",
+        text: "destroying tokens. Cash outs burn tokens; loans burn collateral until it's repaid.",
       },
       {
-        key: "Split share",
-        text: "the percentage of newly created tokens set aside for named recipients rather than the payer.",
+        key: "Split",
+        text: "the share of new tokens that goes to contributors instead of the payer.",
       },
       {
         key: "Auto issuance",
-        text: "a fixed number of tokens set aside for someone without a payment. It can be claimed after a stage starts.",
+        text: "a fixed number of tokens set aside at launch, claimable once its stage starts.",
       },
       {
-        key: "Stage / ruleset",
-        text: "a scheduled set of token and cash out rules. Juicebox calls the underlying settings a ruleset.",
+        key: "Stage",
+        text: "one period in a revnet's schedule, with its own issuance, split, and cash out tax.",
       },
       {
-        key: "Cash out",
-        text: "return tokens for money under a revnet's rules. The quote can use its balance or a market sale.",
+        key: "Floor / ceiling",
+        text: "the cash out price and the issuance price, the band the market trades between.",
       },
-      {
-        key: "Cash out tax",
-        text: "the setting that leaves part of a proportional withdrawal for remaining holders. The effect depends on how much of the supply is returned. It is not a government tax.",
-      },
-      {
-        key: "Backing",
-        text: "the funds counted behind tokens. Loans and other networks can be included, so backing can differ from money available to withdraw now.",
-      },
+      { key: "Cash out", text: "return tokens for a share of the balance sheet." },
+      { key: "Cash out tax", text: "how much of a cash out stays behind for remaining holders." },
       {
         key: "Pool / liquidity",
-        text: "a shared market holding assets for trades, and the funds available for those trades.",
+        text: "a shared market holding tokens and money for trades, and the amount available to trade.",
       },
       {
-        key: "Slippage / minimum output",
-        text: "the difference between a quoted trade and its actual result, and the smallest amount you agree to receive.",
+        key: "Slippage / minimum",
+        text: "the gap between a quote and the result, and the least you agree to receive.",
       },
       {
         key: "Collateral",
-        text: "tokens used to secure a loan. They are destroyed while the loan is open and can be restored through repayment.",
+        text: "tokens you borrow against. They're burned while the loan is open and minted back when you repay.",
       },
       {
-        key: "Principal",
-        text: "the recorded loan debt before borrowing costs are deducted from the amount you receive.",
-      },
-      {
-        key: "NFT / loan NFT",
-        text: "a unique token. A loan NFT is the transferable record that controls a loan and recovery of its collateral.",
+        key: "Loan NFT",
+        text: "the transferable record of a loan. Whoever holds it can repay and recover the collateral.",
       },
       {
         key: "Liquidation",
-        text: "closing an expired loan so its debt and collateral no longer count. Revnet loans do not face early liquidation because a market price falls.",
+        text: "closing an expired loan. A falling price never liquidates a revnet loan.",
       },
       {
         key: "Operator",
-        text: "the person or contract allowed to manage some revnet settings. It cannot rewrite the fixed token schedule or withdraw the balance.",
+        text: "the person or contract that manages a revnet's details. It can't change the schedule or withdraw from the balance sheet.",
       },
       {
         key: "Credits / ERC-20",
-        text: "two ways to record a token balance. Credits work inside Juicebox. Claiming converts them into the standard tokens that compatible wallets and markets use, called ERC-20 tokens; it does not give you extra tokens.",
+        text: "two ways to hold tokens. Credits live inside the revnet; claiming turns them into ERC-20 tokens that wallets and markets use, one for one.",
       },
-      { key: "Terminal", text: "a contract that accepts payments and handles withdrawals." },
-      {
-        key: "Hook / buyback hook",
-        text: "a contract called during another action to change its result. A buyback hook can use a market instead of creating tokens or paying from the revnet's balance.",
-      },
-      {
-        key: "Bridge / sucker",
-        text: "a system for moving assets between networks. Juicebox calls its bridge contracts suckers.",
-      },
-      { key: "Gas", text: "the network cost of processing a transaction." },
+      { key: "Bridge", text: "a way to move tokens between chains." },
+      { key: "Gas", text: "the network cost of processing a transaction, usually paid in ETH." },
       {
         key: "Approval",
-        text: "permission for a contract to spend a specified token amount. Approval alone does not pay the revnet.",
-      },
-      {
-        key: "TWAP",
-        text: "time-weighted average price: a trading price averaged over a period. It helps compare payment paths. The current buyback hook creates tokens if a swap cannot meet this price floor; previous hooks can revert instead.",
-      },
-      {
-        key: "Router gateway",
-        text: "a payment entry selected by the revnet’s router registry on networks that have upgraded. It holds funds before routing them. Some failed protocol fee payments remain held for retry, or return to the source revnet after repeated failures; a held fee is still owed.",
-      },
-      {
-        key: "Beneficiary",
-        text: "the address named to receive tokens, money, or recovered collateral.",
-      },
-      {
-        key: "SDK / ABI",
-        text: "a software kit for working with the contracts, and the description of a contract's callable functions and data types.",
-      },
-      {
-        key: "Indexer / RPC",
-        text: "a service that organizes blockchain records for searching, and a connection an app uses to read a network or send a transaction.",
-      },
-      {
-        key: "Metadata / IPFS",
-        text: "details such as a name, description, and logo, and a system for storing those files by their contents.",
+        text: "permission for a contract to spend a set amount of your token. It's a separate step before paying with a token like USDC.",
       },
     ],
     links: [{ href: "#fees", label: "Fees and where they go" }],
@@ -577,23 +464,13 @@ export default function LearnPage() {
                 <Link
                   key={href}
                   href={href}
-                  className="inline-flex min-h-11 items-center rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 underline decoration-melon-400 underline-offset-4 hover:border-melon-500 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-900"
+                  className="inline-flex min-h-11 items-center rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 hover:border-melon-500 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-900"
                 >
                   {label}
                 </Link>
               ))}
             </nav>
-            <p className="text-base text-zinc-600">
-              Revnets are built on Juicebox. The{" "}
-              <Link
-                href="https://juicebox.money/learn"
-                className="underline decoration-melon-400 underline-offset-4"
-              >
-                Juicebox guide
-              </Link>{" "}
-              explains the protocol every revnet runs on.
-            </p>
-            <AgentSkillsNote skills={["revnet-economics", "revnet-modeler", "jb-revloans"]} />
+            <AgentSkillsNote />
           </>
         }
         companion={{
