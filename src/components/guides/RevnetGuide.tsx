@@ -1,4 +1,28 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
+
+const INLINE_LINK = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+
+/** Guide prose may link a word with `[label](href)`; everything else renders as text. */
+export function Inline({ text }: { text: string }) {
+  const parts: ReactNode[] = [];
+  let last = 0;
+  for (const match of text.matchAll(INLINE_LINK)) {
+    parts.push(
+      text.slice(last, match.index),
+      <a
+        key={match.index}
+        href={match[2]}
+        className="underline decoration-melon-500 underline-offset-4 hover:text-melon-700"
+      >
+        {match[1]}
+      </a>,
+    );
+    last = match.index + match[0].length;
+  }
+  parts.push(text.slice(last));
+  return <>{parts}</>;
+}
 
 type RevnetGuidePoint = string | { key: string; text: string };
 
@@ -196,13 +220,17 @@ export function RevnetGuide({
                       ))}
                     </p>
                   ) : null}
-                  <p className="mt-3 text-lg leading-relaxed text-zinc-700">{section.summary}</p>
+                  <p className="mt-3 text-lg leading-relaxed text-zinc-700">
+                    <Inline text={section.summary} />
+                  </p>
                 </div>
               </div>
 
               <div className="ml-0 mt-6 space-y-5 text-base leading-relaxed text-zinc-700 sm:ml-12 sm:text-lg">
                 {section.paragraphs?.map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
+                  <p key={paragraph}>
+                    <Inline text={paragraph} />
+                  </p>
                 ))}
 
                 {section.points?.length ? (
@@ -210,11 +238,11 @@ export function RevnetGuide({
                     {section.points.map((point) => (
                       <li key={typeof point === "string" ? point : point.key} className="pl-1">
                         {typeof point === "string" ? (
-                          point
+                          <Inline text={point} />
                         ) : (
                           <>
                             <strong className="font-semibold text-zinc-900">{point.key}:</strong>{" "}
-                            {point.text}
+                            <Inline text={point.text} />
                           </>
                         )}
                       </li>
@@ -331,7 +359,7 @@ export function RevnetGuide({
                         </h3>
                         {codePoint.description ? (
                           <p className="mt-2 text-base leading-relaxed text-zinc-700">
-                            {codePoint.description}
+                            <Inline text={codePoint.description} />
                           </p>
                         ) : null}
 
@@ -378,7 +406,7 @@ export function RevnetGuide({
 
                 {section.note ? (
                   <div className="border-l-4 border-peel-400 bg-peel-50 px-5 py-4 text-zinc-800">
-                    {section.note}
+                    <Inline text={section.note} />
                   </div>
                 ) : null}
 
