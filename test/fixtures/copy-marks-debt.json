@@ -13,7 +13,6 @@
   "src/app/[slug]/components/v6/shop/V6ShopTab.tsx": 1,
   "src/app/[slug]/components/v6/terms/StepChartBase.tsx": 1,
   "src/app/[slug]/owners/components/DistributeReservedTokensButton.tsx": 1,
-  "src/app/build/page.tsx": 17,
   "src/app/create/form/ChainSelect.tsx": 1,
   "src/app/create/form/StoreSection.tsx": 2,
   "src/app/create/helpers/feedReachability.ts": 3,
