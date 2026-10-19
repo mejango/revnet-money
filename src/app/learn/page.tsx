@@ -459,7 +459,7 @@ export default function LearnPage() {
                 { href: "#what-is-a-revnet", label: "Learn the basics" },
                 { href: "#your-first-transaction", label: "Use a revnet" },
                 { href: "#glossary", label: "Look up a term" },
-                { href: "/build#launch-without-code", label: "Launch without code" },
+                { href: "/build#launch-with-an-agent", label: "Launch a revnet" },
               ].map(({ href, label }) => (
                 <Link
                   key={href}

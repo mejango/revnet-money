@@ -54,11 +54,11 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     },
     paragraphs: [
       "A contract owns every revnet and enforces its schedule. The operator can change details: contributor addresses, payment routes, names, bridges, and the shop.",
-      "Project builders can launch from this site without code. App builders use the SDK, a TypeScript library, and Bendystraw, an index of onchain records. Contract builders write Solidity.",
+      "Project builders can launch with an AI assistant or the launch form, without code. App builders use the SDK, a TypeScript library, and Bendystraw, an index of onchain records. Contract builders write Solidity.",
     ],
     links: [
       { href: "/learn", label: "How a revnet works" },
-      { href: "#launch-without-code", label: "Launch without code" },
+      { href: "#launch-with-an-agent", label: "Launch a revnet" },
       { href: "#shared-with-juicebox", label: "Connect an app" },
       { href: "#extension-points", label: "Build a contract integration" },
       { href: "#words-for-builders", label: "Words for builders" },
@@ -66,6 +66,35 @@ const SECTIONS: readonly RevnetGuideSection[] = [
   },
 
   // ------------------------------------------------------------------ Project builders
+  {
+    id: "launch-with-an-agent",
+    aliases: ["draft-files"],
+    part: "Project builders",
+    audience: ["founders"],
+    title: "Launch with an AI assistant",
+    summary:
+      "Describe the revnet to an assistant and let it do the setup. You review what it prepared and sign.",
+    paragraphs: [
+      "Connect it to the Juicebox MCP at https://juicebox.center/mcp. It reads revnets, models stages with you, pins the name and logo to IPFS once you approve the upload, and prepares the exact deployFor transaction for each chain. It holds no keys and signs nothing.",
+      "Or have it write a .jb draft. A .jb file is JSON: the launch form's fields in the units you see on screen (days, percentages from 0 to 100, whole token amounts). Import it at the top of the launch form, check every section, and launch from there. Every live revnet's Extras tab exports one rebuilt from the chain, the easiest way to compare what launched with what you meant.",
+    ],
+    points: [
+      {
+        key: "Limits",
+        text: "up to 32 stages, 16 chains, 64 store items, 2 MB. Media cannot travel inside JSON; item images arrive as already-pinned ipfs:// URIs.",
+      },
+      {
+        key: "Skills",
+        text: "jb-deploy-ui for launch interfaces; revnet-economics and revnet-modeler for exploring terms. Check a generated draft against the current schema.",
+      },
+    ],
+    links: [
+      { href: "https://juicebox.center/mcp", label: "Juicebox MCP" },
+      { href: `${REFERENCE_ROOT}/src/lib/revnet-draft.ts`, label: "Draft format" },
+      { href: `${REFERENCE_ROOT}/src/app/create/types.ts`, label: "Every field" },
+      { href: `${SKILLS}/jb-deploy-ui/SKILL.md`, label: "Launch interface skill" },
+    ],
+  },
   {
     id: "launch-without-code",
     aliases: ["launch-from-the-wizard"],
@@ -114,33 +143,6 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         href: `${REFERENCE_ROOT}/src/app/create/helpers/parseDeployData.ts`,
         label: "How the form becomes a deployFor call",
       },
-    ],
-  },
-  {
-    id: "draft-files",
-    part: "Project builders",
-    audience: ["founders"],
-    title: "Draft files, and launching with an agent",
-    summary:
-      "Save the launch form as a .jb draft to reopen, share, or review before launch. An AI agent can prepare a draft; you check it and sign.",
-    paragraphs: [
-      "A .jb file is JSON: the form's fields in the units you see on screen (days, percentages from 0 to 100, whole token amounts). Import it at the top of the launch form and every section fills in. Every live revnet's Extras tab exports one rebuilt from the chain, the easiest way to compare what launched with what you meant.",
-      "An agent can launch two ways. It can write a .jb for you to import, check, and sign, which keeps the keys with you. Or it can call REVDeployer.deployFor itself through the SDK's buildDeployRevnetTx, for automated or scripted launches.",
-    ],
-    points: [
-      {
-        key: "Limits",
-        text: "up to 32 stages, 16 chains, 64 store items, 2 MB. Media cannot travel inside JSON; item images arrive as already-pinned ipfs:// URIs.",
-      },
-      {
-        key: "Skills",
-        text: "jb-deploy-ui for launch interfaces; revnet-economics and revnet-modeler for exploring terms. Check a generated draft against the current schema.",
-      },
-    ],
-    links: [
-      { href: `${REFERENCE_ROOT}/src/lib/revnet-draft.ts`, label: "Draft format" },
-      { href: `${REFERENCE_ROOT}/src/app/create/types.ts`, label: "Every field" },
-      { href: `${SKILLS}/jb-deploy-ui/SKILL.md`, label: "Launch interface skill" },
     ],
   },
   {
@@ -282,6 +284,10 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     ],
     links: [
       { href: `${JB_BUILD}/first-payment`, label: "Your first test payment" },
+      {
+        href: `${JB_BUILD}#apps-juicebox-center`,
+        label: "Juicebox Center: RPC, IPFS, and indexed data",
+      },
       { href: `${JB_BUILD}#apps-set-up-the-sdk`, label: "Set up the SDK" },
       { href: `${JB_BUILD}#apps-read-a-project`, label: "Read a project" },
       { href: `${JB_BUILD}#apps-indexed-data`, label: "Search indexed data with Bendystraw" },
@@ -916,9 +922,9 @@ export default function BuildPage() {
             <nav aria-label="Choose a building path" className="grid gap-3 sm:grid-cols-3">
               {[
                 {
-                  href: "#launch-without-code",
-                  title: "Launch without code",
-                  description: "Prepare a draft, model the terms, and review a deployment.",
+                  href: "#launch-with-an-agent",
+                  title: "Launch a revnet",
+                  description: "With an AI assistant or the launch form. No code needed.",
                 },
                 {
                   href: "#shared-with-juicebox",
