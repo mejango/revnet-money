@@ -233,7 +233,9 @@ type ActivityPayment = {
   distributionFromProjectId: number | null;
   projectId: number;
   project: ActivityProject | null;
-};
+} & EventToken;
+/** The token a terminal event moved. Null when the indexer could not tell (valued at 0 USD). */
+export type EventToken = { token?: string | null; decimals?: number | null };
 type ActivityCashOut = {
   id: string;
   timestamp: number;
@@ -245,7 +247,7 @@ type ActivityCashOut = {
   cashOutCount: BigNumberish;
   metadata: string;
   project: ActivityProject | null;
-};
+} & EventToken;
 type ActivityBase = { txHash: string; timestamp: number; from: string };
 
 export type ActivityEventsQueryVariables = {
@@ -266,7 +268,8 @@ export type ActivityEventsQuery = {
       project?: ActivityProject | null;
       payEvent: ActivityPayment | null;
       cashOutTokensEvent: ActivityCashOut | null;
-      addToBalanceEvent: (ActivityBase & { amount: BigNumberish; memo: string | null }) | null;
+      addToBalanceEvent:
+        (ActivityBase & EventToken & { amount: BigNumberish; memo: string | null }) | null;
       mintTokensEvent:
         | (ActivityBase & {
             id: string;
@@ -317,7 +320,7 @@ export type ActivityEventsQuery = {
             amount: BigNumberish;
             amountPaidOut: BigNumberish;
             amountPaidOutUsd: BigNumberish;
-          })
+          } & EventToken)
         | null;
       sendReservedTokensToSplitsEvent?: (ActivityBase & { tokenCount: BigNumberish }) | null;
       sendReservedTokensToSplitEvent?:

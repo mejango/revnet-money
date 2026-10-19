@@ -59,6 +59,8 @@ const ACTIVITY_EVENT_FIELDS = `
     from
     txHash
     amountUsd
+    token
+    decimals
     caller
     distributionFromProjectId
     projectId
@@ -72,11 +74,13 @@ const ACTIVITY_EVENT_FIELDS = `
     beneficiary
     reclaimAmount
     reclaimAmountUsd
+    token
+    decimals
     cashOutCount
     metadata
     project { id projectId handle version }
   }
-  addToBalanceEvent { txHash timestamp from amount memo }
+  addToBalanceEvent { txHash timestamp from amount memo token decimals }
   mintTokensEvent {
     id txHash timestamp from caller beneficiary beneficiaryTokenCount memo
   }
@@ -97,7 +101,7 @@ const ACTIVITY_EVENT_FIELDS = `
   buybackPoolEvent { txHash timestamp from caller }
   mintNftEvent { txHash timestamp from beneficiary hook tierId tokenId totalAmountPaid }
   sendPayoutsEvent {
-    txHash timestamp from caller amount amountPaidOut amountPaidOutUsd
+    txHash timestamp from caller amount amountPaidOut amountPaidOutUsd token decimals
   }
   sendReservedTokensToSplitsEvent { txHash timestamp from tokenCount }
   sendReservedTokensToSplitEvent {
