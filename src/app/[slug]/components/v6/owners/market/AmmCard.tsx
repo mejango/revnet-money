@@ -1,5 +1,7 @@
 "use client";
 
+import dynamic from "next/dynamic";
+
 import { ParticipantsPieChart } from "@/app/[slug]/owners/components/ParticipantsPieChart";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
@@ -59,7 +61,6 @@ import {
   explorerAddressUrl,
   fmtUnits,
 } from "../settlement/lib";
-import { EditPositionPanel } from "./EditPositionPanel";
 import { liquidityFormView, type LiquidityFormMode, type LiquidityFormSide } from "./formView";
 import {
   AmmChainState,
@@ -99,7 +100,17 @@ import {
   SummaryRow,
   type LiquidityStep,
 } from "./liquidityWrite";
-import { MarketEditPanel } from "./MarketEditPanel";
+
+// The edit panels load when first opened; hover or focus on Edit or Remove loads them early.
+const loadEditPosition = () => import("./EditPositionPanel");
+const loadMarketEdit = () => import("./MarketEditPanel");
+const EditPositionPanel = dynamic(
+  () => loadEditPosition().then((module) => module.EditPositionPanel),
+  { ssr: false },
+);
+const MarketEditPanel = dynamic(() => loadMarketEdit().then((module) => module.MarketEditPanel), {
+  ssr: false,
+});
 
 /** A plan's band on the display axis, "min – max PAIR/TOKEN". */
 function bandLabel(
@@ -1631,6 +1642,8 @@ function ChainPositionRows({
                 setEdited(null);
                 setEditing(position);
               }}
+              onPointerEnter={() => void loadEditPosition()}
+              onFocus={() => void loadEditPosition()}
             >
               Edit
             </button>
@@ -1736,6 +1749,8 @@ function ChainPositionRows({
                 setEdited(null);
                 setEditingMarket({ sides: group, startEmpty: false });
               }}
+              onPointerEnter={() => void loadMarketEdit()}
+              onFocus={() => void loadMarketEdit()}
             >
               Edit
             </button>
@@ -1748,6 +1763,8 @@ function ChainPositionRows({
                 setEdited(null);
                 setEditingMarket({ sides: group, startEmpty: true });
               }}
+              onPointerEnter={() => void loadMarketEdit()}
+              onFocus={() => void loadMarketEdit()}
             >
               Remove
             </button>

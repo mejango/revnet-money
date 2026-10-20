@@ -6,9 +6,9 @@ import { payTokenKey, V6PayTokenOption } from "@/lib/v6/pay";
 import {
   jb721TiersHookAbi,
   JBChainId,
-  jbContractAddress,
   JBCoreContracts,
   jbPricesAbi,
+  jbV6ContractAddress,
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
 import { BASE_CURRENCY_ETH, BASE_CURRENCY_USD } from "@bananapus/nana-sdk-core/v6";
@@ -139,7 +139,7 @@ export function usePayShopRoutes(
     staleTime: 60_000,
     retry: 1,
     queryFn: async (): Promise<Record<string, V6ShopPayRoute>> => {
-      const prices = jbContractAddress[6][JBCoreContracts.JBPrices][chainId];
+      const prices = jbV6ContractAddress[JBCoreContracts.JBPrices][chainId];
       const entries = await Promise.all(
         tokens.map(async (payToken) => {
           const key = payTokenKey(payToken);

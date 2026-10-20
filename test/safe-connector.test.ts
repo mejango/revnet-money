@@ -21,6 +21,7 @@ vi.mock("wagmi/actions", () => ({
 import {
   isSafeConnection,
   isSafeConnector,
+  safeWalletPeerSettled,
   useSafeConnection,
   watchSafeWalletPeer,
 } from "@/lib/safe-connector";
@@ -39,7 +40,7 @@ async function connect(connector: FakeConnector | undefined) {
   runtime.connector = connector;
   await act(async () => {
     runtime.onChange!({ connector });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await safeWalletPeerSettled();
   });
 }
 
@@ -79,7 +80,7 @@ describe("Safe connection", () => {
     let unwatch!: () => void;
     await act(async () => {
       unwatch = watchSafeWalletPeer(CONFIG);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await safeWalletPeerSettled();
     });
     expect(isSafeConnection(CONFIG)).toBe(true);
     expect(unwatch).toBe(runtime.unwatch);
@@ -109,6 +110,7 @@ describe("Safe connection", () => {
     await connect(walletConnect("https://www.safepal.com"));
     finish({ session: { peer: { metadata: { url: "https://app.safe.global" } } } });
     await act(async () => {
+      await vi.dynamicImportSettled();
       await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(isSafeConnection(CONFIG)).toBe(false);

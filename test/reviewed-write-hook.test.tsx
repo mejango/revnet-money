@@ -1266,6 +1266,40 @@ describe("reviewed write hook", () => {
     expect(activity.transactionActivityForHash(SAFEPAL_HASH)).toMatchObject({ kind: "direct" });
   });
 
+  it("chooses Safe{Wallet}'s gas for a send started before its peer check answered", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise(() => undefined)),
+    );
+    const { review, hooks } = await freshHarness();
+    const { watchSafeWalletPeer } = await import("@/lib/safe-connector");
+    review.registerTransactionReviewHandler(async () => true);
+    let answer!: (provider: unknown) => void;
+    mocks.account = {
+      address: ACCOUNT,
+      chainId: 11155111,
+      connector: {
+        id: "walletConnect",
+        name: "WalletConnect",
+        getProvider: () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+      },
+    };
+    watchSafeWalletPeer(mocks.config as never);
+    const { result } = renderHook(() => hooks.useWriteContract());
+
+    await act(async () => {
+      const sent = result.current.writeContractAsync(CALL as never);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(mocks.submit).not.toHaveBeenCalled();
+      answer({ session: { peer: { metadata: { url: "https://app.safe.global" } } } });
+      await sent;
+    });
+    expect(mocks.submit).toHaveBeenLastCalledWith(expect.objectContaining({ gas: 0n }));
+  });
+
   it.each([["succeeded", [executionLog(ACCOUNT, OTHER_PROPOSAL)], "success"]] as const)(
     "settles a Safe reply that is already an execution which %s from its receipt",
     async (_outcome, logs, status) => {

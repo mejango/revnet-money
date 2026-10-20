@@ -1,7 +1,7 @@
 import {
-  jbContractAddress,
   JBCoreContracts,
   jbPricesAbi,
+  jbV6ContractAddress,
   USD_CURRENCY_ID,
 } from "@bananapus/nana-sdk-core";
 import { getViemPublicClient, type transports } from "./wagmiTransports";
@@ -29,7 +29,7 @@ const FEED_CHAIN_IDS = [1, 8453, 10, 42161] as const;
 export async function readEthUsdPrice(): Promise<number> {
   const errors: string[] = [];
   for (const chainId of FEED_CHAIN_IDS) {
-    const prices = jbContractAddress["6"][JBCoreContracts.JBPrices]?.[chainId];
+    const prices = jbV6ContractAddress[JBCoreContracts.JBPrices]?.[chainId];
     if (!prices) continue;
     try {
       const client = getViemPublicClient(chainId as keyof typeof transports);

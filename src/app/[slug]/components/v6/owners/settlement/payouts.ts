@@ -2,7 +2,6 @@ import type { RawRuleset } from "@/lib/nana/rulesets";
 import { isStickyHook, stickyRecipientLabel } from "@/lib/sticky";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
-  jbContractAddress,
   jbControllerAbi,
   JBCoreContracts,
   jbDirectoryAbi,
@@ -13,6 +12,7 @@ import {
   jbRulesetsAbi,
   jbSplitsAbi,
   jbTerminalStoreAbi,
+  jbV6ContractAddress,
 } from "@bananapus/nana-sdk-core";
 import type { ExpectedPayoutReceipt } from "@bananapus/nana-sdk-core/v6";
 import {
@@ -94,7 +94,7 @@ export async function readPayoutOptions(
     return decodeFunctionResult({ abi, functionName, data: expected }) as T;
   };
   const directory = requiredAddress(
-    jbContractAddress[6][JBCoreContracts.JBDirectory][chainId] as Address,
+    jbV6ContractAddress[JBCoreContracts.JBDirectory][chainId] as Address,
     "Project directory",
   );
   const controller = requiredAddress(

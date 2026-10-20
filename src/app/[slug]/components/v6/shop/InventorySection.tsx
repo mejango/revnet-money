@@ -1,5 +1,7 @@
 "use client";
 
+import dynamic from "next/dynamic";
+
 import EtherscanLink from "@/components/EtherscanLink";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
@@ -7,14 +9,11 @@ import { cn } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { effectiveTierPrice, isRevnetOperator } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PublicClient } from "viem";
 import { usePublicClient } from "wagmi";
 import { usePayShopCredits } from "../pay/usePayShop";
 import { ProjectItem } from "../shared";
-import { AddItemsModal } from "./AddItemsModal";
-import { EditItemMediaModal } from "./EditItemMediaModal";
-import { MintItemModal } from "./MintItemModal";
 import {
   categoryLabel,
   describeTransferSchedule,
@@ -28,8 +27,26 @@ import {
   useTierCart,
 } from "./shopLib";
 import { canAdjust721Tiers, canMint721Tiers, canSet721Metadata } from "./shopPermissions";
-import { TierDetailModal } from "./TierDetailModal";
 import { TierMediaPreview } from "./TierMediaPreview";
+
+// Each modal loads when it first opens; hover or focus on what opens it loads it a moment early.
+const loadTierDetail = () => import("./TierDetailModal");
+const loadMintItem = () => import("./MintItemModal");
+const loadEditItemMedia = () => import("./EditItemMediaModal");
+const loadAddItems = () => import("./AddItemsModal");
+const TierDetailModal = dynamic(() => loadTierDetail().then((module) => module.TierDetailModal), {
+  ssr: false,
+});
+const MintItemModal = dynamic(() => loadMintItem().then((module) => module.MintItemModal), {
+  ssr: false,
+});
+const EditItemMediaModal = dynamic(
+  () => loadEditItemMedia().then((module) => module.EditItemMediaModal),
+  { ssr: false },
+);
+const AddItemsModal = dynamic(() => loadAddItems().then((module) => module.AddItemsModal), {
+  ssr: false,
+});
 
 const SHOP_CONFIG_ROWS: [keyof ShopConfigFlags, string][] = [
   ["preventOverspending", "Require exact payment"],
@@ -150,6 +167,13 @@ export function InventorySection({
   const mediaTier = shop.tiers.find((tier) => tier.id === mediaTierId);
   const mintTier =
     mintTierId == null ? null : (shop.tiers.find((tier) => tier.id === mintTierId) ?? null);
+  // An open item's Mint and Edit media actions open their modals from inside it.
+  const detailCanMint = !!(canMintItems && detailTier?.flags?.allowOwnerMint);
+  const detailCanEditMedia = !!(detailTier && canEditMedia);
+  useEffect(() => {
+    if (detailCanMint) void loadMintItem();
+    if (detailCanEditMedia) void loadEditItemMedia();
+  }, [detailCanMint, detailCanEditMedia]);
 
   return (
     <div className="space-y-5">
@@ -160,6 +184,8 @@ export function InventorySection({
             <button
               type="button"
               onClick={() => setAddItemsOpen(true)}
+              onPointerEnter={() => void loadAddItems()}
+              onFocus={() => void loadAddItems()}
               className="min-h-10 bg-teal-500 px-4 text-sm font-medium text-melon-950 transition-colors hover:bg-teal-600"
               title="Add items for sale (revnet operator only)"
             >
@@ -217,7 +243,11 @@ export function InventorySection({
                       {category.name}
                     </h3>
                   ) : null}
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div
+                    className="grid grid-cols-2 gap-3 sm:grid-cols-3"
+                    onPointerEnter={() => void loadTierDetail()}
+                    onFocusCapture={() => void loadTierDetail()}
+                  >
                     {category.tiers.map((tier) => (
                       <TierCard
                         key={tier.id}

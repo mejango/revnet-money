@@ -5,7 +5,6 @@ import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
 import { useHydrated } from "@/hooks/useHydrated";
 import type { JBChainId } from "@/lib/nana/types";
 import { rememberProjectNavigation } from "@/lib/project-navigation";
-import { parseProjectHandleInput } from "@/lib/projectHandles";
 import { formatEthAddress } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -42,6 +41,16 @@ type AccountResult = {
 
 const ENS_LABEL = "[a-z0-9](?:[a-z0-9-_]*[a-z0-9])?";
 const ENS_NAME_PATTERN = new RegExp(`^${ENS_LABEL}(?:\\.${ENS_LABEL})+$`, "iu");
+
+/** The route an @handle query opens, or null for an invalid handle. */
+async function routeForHandle(query: string): Promise<string | null> {
+  const { parseProjectHandleInput } = await import("@/lib/projectHandles");
+  try {
+    return `/@${parseProjectHandleInput(query).handle}`;
+  } catch {
+    return null;
+  }
+}
 
 function looksLikeEnsName(value: string) {
   return value.includes(".") && ENS_NAME_PATTERN.test(value);
@@ -84,14 +93,21 @@ export function RevnetSearch({
   const [searching, setSearching] = useState(false);
   const trimmedQuery = query.trim();
   const isHandleQuery = trimmedQuery.startsWith("@");
-  const handleRoute = (() => {
-    if (!isHandleQuery) return null;
-    try {
-      return `/@${parseProjectHandleInput(trimmedQuery).handle}`;
-    } catch {
-      return null;
-    }
-  })();
+  // Handle parsing normalizes through ENS, whose Unicode table loads only once the query is an
+  // @handle. Until it has parsed this query, the handle is neither valid nor invalid.
+  const [parsedHandle, setParsedHandle] = useState<{ query: string; route: string | null }>();
+  const handleParsed = parsedHandle?.query === trimmedQuery;
+  const handleRoute = isHandleQuery && handleParsed ? parsedHandle.route : null;
+  useEffect(() => {
+    if (!isHandleQuery) return;
+    let live = true;
+    void routeForHandle(trimmedQuery).then((route) => {
+      if (live) setParsedHandle({ query: trimmedQuery, route });
+    });
+    return () => {
+      live = false;
+    };
+  }, [isHandleQuery, trimmedQuery]);
 
   const isAddressQuery = isAddress(trimmedQuery);
   const ensCandidate =
@@ -215,6 +231,18 @@ export function RevnetSearch({
         role="search"
         action={handleRoute ?? undefined}
         onSubmit={(event) => {
+          if (isHandleQuery && !handleParsed) {
+            // Submitted before the handle parser loaded: parse, then go as the parsed form would.
+            event.preventDefault();
+            const query = trimmedQuery;
+            void routeForHandle(query).then((route) => {
+              setParsedHandle({ query, route });
+              if (!route) return;
+              clearSearch();
+              window.location.assign(route);
+            });
+            return;
+          }
           if (handleRoute) {
             // Capture the route before clearing controlled state, then force a
             // full navigation. A React rerender must not be able to remove the
@@ -288,7 +316,7 @@ export function RevnetSearch({
             <p className="px-4 py-3 text-xs text-zinc-400">Resolving name…</p>
           ) : null}
           {isHandleQuery ? (
-            handleRoute ? null : (
+            handleRoute || !handleParsed ? null : (
               <p className="px-4 py-3 text-sm text-zinc-600">Enter a valid @handle.</p>
             )
           ) : searching ? (

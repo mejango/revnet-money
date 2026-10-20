@@ -2,9 +2,9 @@ import { PayEventRatesOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import { getViemPublicClient, type transports } from "@/lib/wagmiTransports";
 import {
-  jbContractAddress,
   JBCoreContracts,
   jbPricesAbi,
+  jbV6ContractAddress,
   NATIVE_TOKEN,
   type JBChainId,
 } from "@bananapus/nana-sdk-core";
@@ -172,7 +172,7 @@ export async function fetchLiveBasePerAccountingToken(
   if (baseCurrency === undefined) return null;
   const accountingCurrency = tokenCurrencyId(accountingToken as Address);
   if (baseCurrency === accountingCurrency) return 1;
-  const prices = jbContractAddress["6"]?.[JBCoreContracts.JBPrices]?.[chainId];
+  const prices = jbV6ContractAddress[JBCoreContracts.JBPrices]?.[chainId];
   if (!prices) return null;
 
   const client = getViemPublicClient(chainId as keyof typeof transports);

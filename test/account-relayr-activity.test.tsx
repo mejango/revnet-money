@@ -7,7 +7,7 @@ import {
   SAVED_ATTEMPT_CHECK_WARNING,
   SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
 } from "@bananapus/nana-sdk-core/review";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { PropsWithChildren } from "react";
 import { encodeFunctionData } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -55,6 +55,15 @@ vi.mock("@/components/ProfilesContext", () => ({
 vi.mock("@/components/ProjectLink", () => ({
   ProjectLink: ({ children }: PropsWithChildren) => children,
 }));
+
+/** Renders the account's activity once its own pending-writes panel has loaded. */
+async function renderActivity() {
+  const rendered = render(<AccountActivity address={ACCOUNT} />);
+  await act(async () => {
+    await vi.dynamicImportSettled();
+  });
+  return rendered;
+}
 
 function activity(overrides: Partial<TransactionActivity> = {}): TransactionActivity {
   return {
@@ -113,7 +122,7 @@ function signedRequest(): Pick<TransactionActivity, "relayrExpectedTransactions"
 }
 
 describe("account Relayr session rules (ruling R114 (e))", () => {
-  it("renders legacy titles and recovery messages without rewriting the saved evidence", () => {
+  it("renders legacy titles and recovery messages without rewriting the saved evidence", async () => {
     const saved = Object.freeze(
       activity({
         title: "Relayr multi-chain bundle",
@@ -122,7 +131,7 @@ describe("account Relayr session rules (ruling R114 (e))", () => {
       }),
     );
     mocks.activities = [saved];
-    const { container } = render(<AccountActivity address={ACCOUNT} />);
+    const { container } = await renderActivity();
     expect(screen.getByText("Multi-chain bundle")).toBeVisible();
     expect(
       screen.getByText(
@@ -134,17 +143,17 @@ describe("account Relayr session rules (ruling R114 (e))", () => {
     expect(saved.message).toContain("Relayr funding is being submitted");
   });
 
-  it("checks an unpaid session's signatures", () => {
+  it("checks an unpaid session's signatures", async () => {
     mocks.activities = [
       activity({ relayrPaymentStatus: "unfunded", hash: undefined, ...signedRequest() }),
     ];
-    render(<AccountActivity address={ACCOUNT} />);
+    await renderActivity();
     fireEvent.click(screen.getByRole("button", { name: "Check signatures" }));
     expect(mocks.checkRelayrSession).toHaveBeenCalledExactlyOnceWith("relayr:bundle");
     expect(screen.queryByRole("button", { name: "Discard" })).not.toBeInTheDocument();
   });
 
-  it("offers Discard with its line for a session marked for it, and no other check", () => {
+  it("offers Discard with its line for a session marked for it, and no other check", async () => {
     const line = "This action's earlier signatures expired without running.";
     mocks.activities = [
       activity({
@@ -157,14 +166,14 @@ describe("account Relayr session rules (ruling R114 (e))", () => {
         ...signedRequest(),
       }),
     ];
-    render(<AccountActivity address={ACCOUNT} />);
+    await renderActivity();
     expect(screen.getByText(line)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Check signatures" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     expect(mocks.discardRelayrSession).toHaveBeenCalledExactlyOnceWith("relayr:bundle");
   });
 
-  it("never offers Discard on a completed bundle", () => {
+  it("never offers Discard on a completed bundle", async () => {
     mocks.activities = [
       activity({
         status: "success",
@@ -173,12 +182,12 @@ describe("account Relayr session rules (ruling R114 (e))", () => {
         ...signedRequest(),
       }),
     ];
-    render(<AccountActivity address={ACCOUNT} />);
+    await renderActivity();
     expect(screen.getByText("Update recipients")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Discard" })).not.toBeInTheDocument();
   });
 
-  it("never offers Discard on a session a new quote replaced", () => {
+  it("never offers Discard on a session a new quote replaced", async () => {
     mocks.activities = [
       activity({
         status: "failed",
@@ -190,12 +199,12 @@ describe("account Relayr session rules (ruling R114 (e))", () => {
         ...signedRequest(),
       }),
     ];
-    render(<AccountActivity address={ACCOUNT} />);
+    await renderActivity();
     expect(screen.getByText("Update recipients")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Discard" })).not.toBeInTheDocument();
   });
 
-  it("checks no signatures it can't classify, such as a raw call's", () => {
+  it("checks no signatures it can't classify, such as a raw call's", async () => {
     mocks.activities = [
       activity({
         relayrPaymentStatus: "unfunded",
@@ -205,7 +214,7 @@ describe("account Relayr session rules (ruling R114 (e))", () => {
         ],
       }),
     ];
-    render(<AccountActivity address={ACCOUNT} />);
+    await renderActivity();
     expect(screen.queryByRole("button", { name: "Check signatures" })).not.toBeInTheDocument();
   });
 });
@@ -228,7 +237,7 @@ describe("a saved session its check can't show", () => {
     mocks.retireCheckedRelayrSession
       .mockResolvedValue({ retired: true, durable: true })
       .mockResolvedValueOnce({ retired: false, reason: "unreadable" });
-    render(<AccountActivity address={ACCOUNT} />);
+    await renderActivity();
 
     fireEvent.click(screen.getByRole("button", { name: "Check signatures" }));
     expect(await screen.findByText(SAVED_ATTEMPT_CHECK_LINE)).toBeVisible();
@@ -257,9 +266,9 @@ describe("a saved session its check can't show", () => {
 describe("account Relayr recovery controls", () => {
   it.each(["unfunded", "reverted"] as const)(
     "does not offer a bundle check for %s payment",
-    (relayrPaymentStatus) => {
+    async (relayrPaymentStatus) => {
       mocks.activities = [activity({ relayrPaymentStatus })];
-      render(<AccountActivity address={ACCOUNT} />);
+      await renderActivity();
       expect(screen.getByText("Update recipients")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Check bundle" })).not.toBeInTheDocument();
     },
@@ -268,23 +277,23 @@ describe("account Relayr recovery controls", () => {
   it.each([
     { status: "failed" as const, manualVerificationRequired: false },
     { status: "success" as const, manualVerificationRequired: true },
-  ])("offers verification for funded $status bundles", (overrides) => {
+  ])("offers verification for funded $status bundles", async (overrides) => {
     mocks.activities = [activity(overrides)];
-    render(<AccountActivity address={ACCOUNT} />);
+    await renderActivity();
     fireEvent.click(screen.getByRole("button", { name: "Check bundle" }));
     expect(mocks.waitForRelayrBundle).toHaveBeenCalledExactlyOnceWith("bundle-1");
   });
 
-  it("keeps an unresolved bundle visible when its payment is already indexed", () => {
+  it("keeps an unresolved bundle visible when its payment is already indexed", async () => {
     mocks.activities = [activity({ status: "failed", manualVerificationRequired: true })];
     mocks.indexed = [{ id: "indexed-payment", txHash: HASH, chainId: 8453 }];
-    render(<AccountActivity address={ACCOUNT} />);
+    await renderActivity();
     expect(screen.getByRole("button", { name: "Check bundle" })).toBeInTheDocument();
   });
 });
 
 describe("a Safe proposal whose result can't be confirmed here", () => {
-  it("offers its account a Dismiss, and no other proposal one", () => {
+  it("offers its account a Dismiss, and no other proposal one", async () => {
     const proposal = {
       kind: "safe" as const,
       status: "safe-proposed" as const,
@@ -302,7 +311,7 @@ describe("a Safe proposal whose result can't be confirmed here", () => {
       }),
       activity({ ...proposal, id: "safe:pending", title: "Set the split" }),
     ];
-    render(<AccountActivity address={ACCOUNT} />);
+    await renderActivity();
 
     const dismiss = screen.getAllByRole("button", { name: "Dismiss" });
     expect(dismiss).toHaveLength(1);
@@ -312,7 +321,7 @@ describe("a Safe proposal whose result can't be confirmed here", () => {
 
   it.each(["hash", "executionHash"] as const)(
     "stays, with its Dismiss, once its %s is indexed",
-    (field) => {
+    async (field) => {
       mocks.activities = [
         activity({
           id: "safe:unconfirmed",
@@ -327,7 +336,7 @@ describe("a Safe proposal whose result can't be confirmed here", () => {
         }),
       ];
       mocks.indexed = [{ id: "indexed-execution", txHash: HASH, chainId: 8453 }];
-      render(<AccountActivity address={ACCOUNT} />);
+      await renderActivity();
 
       expect(screen.getByText("Make the market")).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
@@ -366,7 +375,7 @@ describe("the account's held writes", () => {
       })
       .catch(() => undefined);
     mocks.client = node;
-    render(<AccountActivity address={ACCOUNT} />);
+    await renderActivity();
     expect(
       await screen.findByText("Your earlier transaction hasn't confirmed yet. Check your wallet."),
     ).toBeVisible();

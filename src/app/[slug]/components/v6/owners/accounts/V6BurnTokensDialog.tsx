@@ -25,10 +25,10 @@ import {
   JB_CHAINS,
   JB_TOKEN_DECIMALS,
   JBChainId,
-  jbContractAddress,
   JBCoreContracts,
   jbDirectoryAbi,
   jbTokensAbi,
+  jbV6ContractAddress,
 } from "@bananapus/nana-sdk-core";
 import { burnIntent } from "@bananapus/nana-sdk-core/review";
 import { PropsWithChildren, useEffect, useState } from "react";
@@ -86,13 +86,13 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
       }
       const [latestBalance, latestController] = await Promise.all([
         publicClient.readContract({
-          address: jbContractAddress["6"][JBCoreContracts.JBTokens][row.chainId],
+          address: jbV6ContractAddress[JBCoreContracts.JBTokens][row.chainId],
           abi: jbTokensAbi,
           functionName: "totalBalanceOf",
           args: [holder, projectId],
         }),
         publicClient.readContract({
-          address: jbContractAddress["6"][JBCoreContracts.JBDirectory][row.chainId],
+          address: jbV6ContractAddress[JBCoreContracts.JBDirectory][row.chainId],
           abi: jbDirectoryAbi,
           functionName: "controllerOf",
           args: [projectId],
@@ -145,14 +145,14 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
     setSending(true);
     try {
       const freshBalance = await publicClient.readContract({
-        address: jbContractAddress["6"][JBCoreContracts.JBTokens][row.chainId],
+        address: jbV6ContractAddress[JBCoreContracts.JBTokens][row.chainId],
         abi: jbTokensAbi,
         functionName: "totalBalanceOf",
         args: [address, row.projectId],
       });
       if (count > freshBalance) throw new Error("Your token balance changed. Review the amount.");
       const controller = await publicClient.readContract({
-        address: jbContractAddress["6"][JBCoreContracts.JBDirectory][row.chainId],
+        address: jbV6ContractAddress[JBCoreContracts.JBDirectory][row.chainId],
         abi: jbDirectoryAbi,
         functionName: "controllerOf",
         args: [row.projectId],

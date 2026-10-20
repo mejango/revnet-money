@@ -1,9 +1,49 @@
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { gzipSync } from "node:zlib";
+import { appOrigin, deterministicEnvironment, fixtureOrigin } from "./lib/browser-environment.mjs";
+import { vendorWallets } from "./lib/vendor-wallets.mjs";
 
-const routeBudgetKiB = Number(process.env.CLIENT_ROUTE_GZIP_BUDGET_KIB ?? 900);
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
+// First-load JavaScript per route is what a visitor downloads before the page is
+// interactive: every non-`nomodule` script the server-rendered HTML references, in its
+// script tags and in the RSC payload the client hydrates from. Next's merged
+// client-reference manifests can't stand in for it. Inside a route group they give a
+// module two entries share the chunk list of whichever entry merged last, so a leak
+// from one route into another (the 404 page pulling the home bundle into every
+// project page, 29-86 KiB) read as no change at all. This check starts the built app
+// against the deterministic fixture, fetches each route and gzips what its HTML
+// references. Each ceiling is the route's measured size rounded up; lower it when a
+// change makes the route smaller.
+//
+// `route` is the app route `path` renders. Every shipped page route must be listed.
+const account = `0x${"1".repeat(40)}`;
+const routes = [
+  { route: "/", path: "/", kib: 388 },
+  { route: "/learn", path: "/learn", kib: 352 },
+  { route: "/build", path: "/build", kib: 354 },
+  { route: "/audit", path: "/audit", kib: 355 },
+  { route: "/discover", path: "/discover", kib: 338 },
+  { route: "/create", path: "/create", kib: 542 },
+  { route: "/[slug]", path: "/eth:1", kib: 564 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 563 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 669 },
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 624 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 570 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 564 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 418 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 408 },
+  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 384 },
+  { route: "/_not-found", path: "/no-such-page/x/y", kib: 299, status: 404 },
+];
+// Next renders its global error page only when the root layout itself throws; no URL reaches it.
+const unmeasuredRoutes = new Set(["/_global-error"]);
+// A JSON list of the same shape replaces the routes above (the checker's own tests).
+const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
+  ? JSON.parse(process.env.CLIENT_BUNDLE_ROUTES)
+  : routes;
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 920);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
@@ -140,30 +180,26 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // SDK 2.40.0's React held-write hooks (useSavedAttempt, useHeldWrite, useHeldWrites and
 // HeldWritesNotice on the account page) replace the app's recovery and follower code and measure
 // 2747.6 KiB. Raise only the aggregate ceiling to 2750 KiB; route and lazy-load limits stay fixed.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2750);
-const routeBudget = routeBudgetKiB * 1024;
+// The load-size pass (rendered-HTML gate, splitChunks, lazy dialogs and write machinery, SDK
+// 3.1.0) measures 2714.9 KiB, route-referenced 912.1 KiB. Every ceiling drops to its measure.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2725);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
-const buildManifestPath = resolve(buildDirectory, "build-manifest.json");
 const appRoutesManifestPath = resolve(buildDirectory, "app-path-routes-manifest.json");
-const clientReferenceDirectory = resolve(buildDirectory, "server", "app");
 
-for (const manifestPath of [buildManifestPath, appRoutesManifestPath]) {
-  if (!existsSync(manifestPath)) {
-    throw new Error(`Missing ${manifestPath}. Run \`npm run build\` before this check.`);
-  }
+if (!existsSync(appRoutesManifestPath)) {
+  throw new Error(`Missing ${appRoutesManifestPath}. Run \`npm run build:browser\` first.`);
 }
 
 const gzipSizes = new Map();
 
 function javascriptAsset(asset) {
-  if (typeof asset !== "string") return null;
   // Next appends deployment IDs to chunk URLs. URL decorations are not part
   // of the emitted filename or its identity for budgets and lazy SDK checks.
   // Decode only after removing the suffix, so encoded filename characters
   // remain part of the path and are never treated as URL delimiters.
-  const pathname = decodeURIComponent(asset.split(/[?#]/u, 1)[0]);
+  const pathname = decodeURIComponent(asset.split(/[?#]/u, 1)[0]).replace(/^\/_next\//u, "");
   if (!pathname.endsWith(".js")) return null;
   const relativePath = relative(buildDirectory, resolve(buildDirectory, pathname));
   if (
@@ -172,7 +208,7 @@ function javascriptAsset(asset) {
     relativePath.startsWith(`..${sep}`) ||
     isAbsolute(relativePath)
   ) {
-    throw new Error(`The build manifest references a client asset outside .next: ${asset}`);
+    throw new Error(`A page references a client asset outside .next: ${asset}`);
   }
   return relativePath.split(sep).join("/");
 }
@@ -183,7 +219,7 @@ function gzipSize(relativePath) {
 
   const absolutePath = resolve(buildDirectory, relativePath);
   if (!existsSync(absolutePath)) {
-    throw new Error(`The build manifest references a missing client asset: ${relativePath}`);
+    throw new Error(`A page references a missing client asset: ${relativePath}`);
   }
   const size = gzipSync(readFileSync(absolutePath), { level: 9 }).byteLength;
   gzipSizes.set(relativePath, size);
@@ -198,76 +234,131 @@ function filesBelow(directory) {
   });
 }
 
-const buildManifest = JSON.parse(readFileSync(buildManifestPath, "utf8"));
-const appRoutes = JSON.parse(readFileSync(appRoutesManifestPath, "utf8"));
-const rootMainFiles = [
-  ...new Set((buildManifest.rootMainFiles ?? []).map(javascriptAsset).filter(Boolean)),
-];
-const pages = Object.fromEntries(
-  filesBelow(clientReferenceDirectory)
-    .filter((file) => file.endsWith("_client-reference-manifest.js"))
-    .map((file) => {
-      const source = readFileSync(file, "utf8");
-      const assignment = source.match(/globalThis\.__RSC_MANIFEST\[("(?:\\.|[^"\\])*")\]=/u);
-      if (!assignment || assignment.index === undefined) {
-        throw new Error(`Could not read the client reference manifest: ${file}`);
-      }
+/**
+ * The client chunks a page loads up front: every `static/chunks/*.js` its HTML names, in
+ * script and preload tags or escaped inside the RSC payload, except in `nomodule` script tags,
+ * which modern browsers skip. Imports a page starts after hydration are not counted here.
+ */
+function referencedChunks(html) {
+  const unescaped = html
+    .replace(/\\"/gu, '"')
+    .replace(/\\u002F|\\\//gu, "/")
+    .replace(/<script\b[^>]*\bnomodule\b[^>]*>/giu, "");
+  return [
+    ...new Set(
+      [
+        ...unescaped.matchAll(
+          /(?:\/_next\/)?static\/chunks\/[^"'\s<>\\]+?\.js(?:[?#][^"'\s<>\\]*)?/gu,
+        ),
+      ]
+        .map(([reference]) => javascriptAsset(reference))
+        .filter(Boolean),
+    ),
+  ];
+}
 
-      const appPath = JSON.parse(assignment[1]);
-      const manifest = JSON.parse(
-        source.slice(assignment.index + assignment[0].length).replace(/;\s*$/u, ""),
-      );
-      const routeAssets = Object.values(manifest.clientModules ?? {}).flatMap(
-        (module) => module.chunks ?? [],
-      );
-      const javascript = [...new Set(routeAssets.map(javascriptAsset).filter(Boolean))];
-
-      return [appRoutes[appPath] ?? appPath, [...new Set([...rootMainFiles, ...javascript])]];
-    })
-    .filter(([, assets]) => assets.length > rootMainFiles.length),
-);
-
-// Routes from `page.browsertest.tsx` compile only into the deterministic
-// browser build (next.config.js) and never ship. Their own files, the chunks
-// under static/chunks/app/<route>/, are left out of every budget. Any other
-// chunk counts, even one only a proof route lists: a shipped route may load it
-// on demand.
+// Routes from `page.browsertest.tsx` compile only into the deterministic browser
+// build (next.config.js) and never ship. Their own files, the chunks under
+// static/chunks/app/<route>/, are left out of every budget. Any other chunk counts,
+// even one only a proof route uses: a shipped route may load it on demand.
 const appDirectory = resolve(process.cwd(), "src", "app");
 const proofRoutes = new Set(
   filesBelow(appDirectory)
     .filter((file) => file.endsWith(`${sep}page.browsertest.tsx`))
     .map((file) => `/${relative(appDirectory, dirname(file)).split(sep).join("/")}`),
 );
-const shippedPages = Object.entries(pages).filter(([route]) => !proofRoutes.has(route));
-const shippedAssets = new Set([...rootMainFiles, ...shippedPages.flatMap(([, assets]) => assets)]);
-const proofOnlyAssets = new Set(
-  Object.entries(pages)
-    .filter(([route]) => proofRoutes.has(route))
-    .flatMap(([route, assets]) =>
-      assets.filter((asset) => asset.startsWith(`static/chunks/app${route}/`)),
-    )
-    .filter((asset) => !shippedAssets.has(asset)),
-);
+const appRoutes = JSON.parse(readFileSync(appRoutesManifestPath, "utf8"));
+const shippedPageRoutes = Object.entries(appRoutes)
+  .filter(([appPath]) => appPath.endsWith("/page"))
+  .map(([, route]) => route)
+  .filter((route) => !proofRoutes.has(route));
 
-const routes = shippedPages
-  .map(([route, assets]) => {
-    const javascript = [...new Set(assets.filter((asset) => asset.endsWith(".js")))];
-    return {
-      route,
-      size: javascript.reduce((total, asset) => total + gzipSize(asset), 0),
-    };
-  })
-  .sort((left, right) => right.size - left.size);
-
-if (routes.length === 0) {
-  throw new Error("The client build manifest contains no app routes.");
+const failures = [];
+const listed = new Set(checkedRoutes.map((entry) => entry.route));
+for (const route of shippedPageRoutes.filter(
+  (route) => !listed.has(route) && !unmeasuredRoutes.has(route),
+)) {
+  failures.push(`${route} is a shipped page with no rendered-HTML budget in this check`);
 }
 
-const totalSize = [...gzipSizes.values()].reduce((total, size) => total + size, 0);
+async function waitFor(url, child, label) {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    if (child?.exitCode !== null && child?.exitCode !== undefined) {
+      throw new Error(`${label} exited before it was ready (status ${child.exitCode})`);
+    }
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
+      if (response.ok) return;
+    } catch {
+      // Not listening yet.
+    }
+    await new Promise((done) => setTimeout(done, 100));
+  }
+  throw new Error(`${label} did not become ready at ${url}`);
+}
+
+// CLIENT_BUNDLE_ORIGIN measures an app that is already running (the checker's own tests).
+const children = [];
+let origin = process.env.CLIENT_BUNDLE_ORIGIN;
+const measured = [];
+try {
+  if (!origin) {
+    const environment = { ...process.env, ...deterministicEnvironment };
+    const start = (args, label) => {
+      const child = spawn(process.execPath, args, { env: environment, stdio: "ignore" });
+      children.push(child);
+      return child;
+    };
+    const fixture = start(["scripts/browser-fixture-server.mjs"], "Browser fixture");
+    await waitFor(`${fixtureOrigin}/healthz`, fixture, "Browser fixture");
+    const app = start(["node_modules/next/dist/bin/next", "start"], "App");
+    await waitFor(`${appOrigin}/api/healthz`, app, "App");
+    origin = appOrigin;
+  }
+
+  for (const entry of checkedRoutes) {
+    const response = await fetch(new URL(entry.path, origin), {
+      signal: AbortSignal.timeout(120_000),
+    });
+    const html = await response.text();
+    const expected = entry.status ?? 200;
+    if (response.status !== expected) {
+      failures.push(`${entry.path} answered ${response.status}, expected ${expected}`);
+      continue;
+    }
+    const assets = referencedChunks(html);
+    if (assets.length === 0) {
+      failures.push(`${entry.path} references no client JavaScript`);
+      continue;
+    }
+    measured.push({
+      ...entry,
+      assets,
+      size: assets.reduce((total, asset) => total + gzipSize(asset), 0),
+    });
+  }
+} finally {
+  for (const child of children) child.kill("SIGTERM");
+}
+
+const kib = (bytes) => `${(bytes / 1024).toFixed(1)} KiB`;
+for (const entry of measured) {
+  console.log(
+    `${kib(entry.size).padStart(10)} / ${String(entry.kib).padStart(4)} KiB  ${String(entry.assets.length).padStart(3)} chunks  ${entry.route} (${entry.path})`,
+  );
+  if (entry.size > entry.kib * 1024) {
+    failures.push(`${entry.route} loads ${kib(entry.size)} (budget ${entry.kib} KiB)`);
+  }
+}
+
+const routeAssets = new Set(measured.flatMap((entry) => entry.assets));
+const totalSize = [...routeAssets].reduce((total, asset) => total + gzipSize(asset), 0);
+const proofOnlyAsset = (asset) =>
+  [...proofRoutes].some((route) => asset.startsWith(`static/chunks/app${route}/`)) &&
+  !routeAssets.has(asset);
 const allClientFiles = filesBelow(resolve(buildDirectory, "static", "chunks")).filter(
   (file) =>
-    file.endsWith(".js") &&
-    !proofOnlyAssets.has(relative(buildDirectory, file).split(sep).join("/")),
+    file.endsWith(".js") && !proofOnlyAsset(relative(buildDirectory, file).split(sep).join("/")),
 );
 if (allClientFiles.length === 0) {
   throw new Error("The production build contains no client JavaScript chunks.");
@@ -276,22 +367,14 @@ const allClientSize = allClientFiles.reduce(
   (total, file) => total + gzipSync(readFileSync(file), { level: 9 }).byteLength,
   0,
 );
-const kib = (bytes) => `${(bytes / 1024).toFixed(1)} KiB`;
-const largest = routes[0];
 
-console.log(`Largest app route: ${largest.route} (${kib(largest.size)} gzip)`);
-console.log(`Unique app JavaScript: ${kib(totalSize)} gzip`);
+console.log(`Route-referenced JavaScript: ${kib(totalSize)} gzip`);
 console.log(`All client JavaScript: ${kib(allClientSize)} gzip`);
 console.log(
-  `Budgets: ${routeBudgetKiB} KiB per route, ${totalBudgetKiB} KiB route-referenced, ${allClientBudgetKiB} KiB all client JavaScript`,
+  `Budgets: per-route ceilings above, ${totalBudgetKiB} KiB route-referenced, ${allClientBudgetKiB} KiB all client JavaScript`,
 );
-
-const failures = [];
-for (const route of routes.filter((entry) => entry.size > routeBudget)) {
-  failures.push(`${route.route} is ${kib(route.size)} (budget ${routeBudgetKiB} KiB)`);
-}
 if (totalSize > totalBudget) {
-  failures.push(`unique app JavaScript is ${kib(totalSize)} (budget ${totalBudgetKiB} KiB)`);
+  failures.push(`route-referenced JavaScript is ${kib(totalSize)} (budget ${totalBudgetKiB} KiB)`);
 }
 if (allClientSize > allClientBudget) {
   failures.push(
@@ -299,35 +382,23 @@ if (allClientSize > allClientBudget) {
   );
 }
 
-// Wagmi's `reconnect()` calls `getProvider()` on every configured connector, so
-// a vendor wallet SDK becomes an eager download the moment its `shouldRestore`
-// gate is dropped. Markers must be strings only the vendor bundle can contain —
-// never a connector id or display name, which our own source carries.
-const vendorWallets = [
-  ["WalletConnect", ["walletconnect.org", "wc@2:", "@reown/appkit"]],
-  ["Coinbase Wallet", ["CoinbaseWalletSDK", "keys.coinbase.com", "walletlink"]],
-  ["Safe", ["safe-apps-provider", "SafeAppProvider"]],
-];
 for (const [label, markers] of vendorWallets) {
-  const vendorAssets = new Set(
-    allClientFiles
-      .filter((file) => {
-        const source = readFileSync(file, "utf8");
-        return markers.some((marker) => source.includes(marker));
-      })
-      .map((file) => relative(buildDirectory, file).split(sep).join("/")),
-  );
-  if (vendorAssets.size === 0) continue;
-  const eager = Object.values(pages)
-    .flat()
-    .filter((asset) => vendorAssets.has(asset));
+  const vendorAssets = allClientFiles
+    .filter((file) => {
+      const source = readFileSync(file, "utf8");
+      return markers.some((marker) => source.includes(marker));
+    })
+    .map((file) => relative(buildDirectory, file).split(sep).join("/"));
+  if (vendorAssets.length === 0) continue;
+  const eager = vendorAssets.filter((asset) => routeAssets.has(asset));
   if (eager.length > 0) {
-    failures.push(`${label} SDK is eagerly loaded: ${[...new Set(eager)].join(", ")}`);
+    failures.push(`${label} SDK is eagerly loaded: ${eager.join(", ")}`);
   } else {
-    console.log(`${label} SDK is lazy-loaded`);
+    console.log(`${label} SDK is not in any route's HTML`);
   }
 }
 
 if (failures.length > 0) {
-  throw new Error(`Client bundle budget exceeded:\n- ${failures.join("\n- ")}`);
+  console.error(`Client bundle budget exceeded:\n- ${failures.join("\n- ")}`);
+  process.exit(1);
 }

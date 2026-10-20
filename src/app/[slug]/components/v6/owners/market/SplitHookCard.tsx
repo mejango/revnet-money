@@ -2,7 +2,7 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
-import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
+import { CardSkeleton } from "@/components/loading/CardSkeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";

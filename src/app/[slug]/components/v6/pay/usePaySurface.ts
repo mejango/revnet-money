@@ -4,9 +4,9 @@ import { routerEntriesFor } from "@/lib/protocol-rollout";
 import { payTokenCurrencyId, routerPayRouteWorks, V6PayTokenOption } from "@/lib/v6/pay";
 import {
   JBChainId,
-  jbContractAddress,
   JBCoreContracts,
   jbDirectoryAbi,
+  jbV6ContractAddress,
   NATIVE_TOKEN,
   USDC_ADDRESSES,
 } from "@bananapus/nana-sdk-core";
@@ -47,7 +47,7 @@ export function usePaySurface(chainId: JBChainId, projectId: bigint) {
     queryFn: async (): Promise<V6PaySurface> => {
       const client = publicClient as PublicClient;
       const nativeSymbol = "ETH";
-      const directory = jbContractAddress[6][JBCoreContracts.JBDirectory][chainId];
+      const directory = jbV6ContractAddress[JBCoreContracts.JBDirectory][chainId];
 
       const [contexts, ruleset, terminalsRaw] = await Promise.all([
         getAccountingContexts(client, { chainId, projectId }),

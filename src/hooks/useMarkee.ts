@@ -64,7 +64,6 @@ const RECOVERY_KEY = "revnet:markee-rent:recovery:v1";
 /** A saved submission that went through, whose Markee result still can't be verified. */
 const SETTLED_UNVERIFIED =
   "This transaction went through, but its Markee result couldn't be verified. Check the board before sending again.";
-const BOARD_KEY = "revnet:markee-rent:board:v1";
 /**
  * A Markee step's write intent: the account, the step and the contract it acts on, never the
  * rate, message or calldata a retry regenerates. No SDK builder covers it.
@@ -152,13 +151,8 @@ export function useMarkee(initialBoardAddress?: Address) {
     try {
       const saved = loadRecovery();
       setPending(!!saved?.pending);
-      const localBoard = window.localStorage.getItem(BOARD_KEY);
-      selected =
-        initialBoardAddress ??
-        boardAddress ??
-        (localBoard && isAddress(localBoard) ? localBoard : undefined);
-      if (localBoard && !isAddress(localBoard))
-        throw new Error("The saved Markee board address is invalid.");
+      const savedBoard = markee.savedMarkeeBoard();
+      selected = initialBoardAddress ?? boardAddress ?? savedBoard;
       if (!selected) {
         setBoard(undefined);
         setWallet(undefined);
@@ -320,7 +314,7 @@ export function useMarkee(initialBoardAddress?: Address) {
       throw new Error("The saved Markee submission changed during verification.");
     Object.assign(recovery, effects);
     if (step.kind === "board" && recovery.board) {
-      window.localStorage.setItem(BOARD_KEY, recovery.board);
+      window.localStorage.setItem(markee.MARKEE_BOARD_KEY, recovery.board);
       setBoardAddress(recovery.board);
     }
     delete recovery.pending;
@@ -490,7 +484,7 @@ export function useMarkee(initialBoardAddress?: Address) {
       const { client, account } = context();
       if (account.toLowerCase() !== markee.MARKEE_ADMIN.toLowerCase())
         throw new Error("Connect the selected Markee admin to create the board.");
-      if (boardAddress || window.localStorage.getItem(BOARD_KEY))
+      if (boardAddress || window.localStorage.getItem(markee.MARKEE_BOARD_KEY))
         throw new Error(
           "The Markee board is already configured. Refresh to use the existing board.",
         );

@@ -1,6 +1,5 @@
 "use client";
 
-import { isSafeWalletPeer } from "@bananapus/nana-sdk-core/safe-service";
 import { useSyncExternalStore } from "react";
 import type { Config, Connector } from "wagmi";
 import { getAccount, watchAccount } from "wagmi/actions";
@@ -9,6 +8,13 @@ import { getAccount, watchAccount } from "wagmi/actions";
 let safeWalletPeer = false;
 /** Counts session reads, so a slower read of an earlier connection never overwrites a newer answer. */
 let reads = 0;
+/** The latest peer check; settles once its answer, Safe{Wallet} or not, is recorded. */
+let latestCheck: Promise<void> = Promise.resolve();
+/** Settles when a newer check replaces `latestCheck`, so no caller waits on a superseded one. */
+let wakeReplaced = () => {};
+let replaced = new Promise<void>((resolve) => {
+  wakeReplaced = resolve;
+});
 const listeners = new Set<() => void>();
 
 /**
@@ -46,6 +52,27 @@ function subscribe(listener: () => void) {
 }
 
 /**
+ * Resolves once the latest WalletConnect peer check has recorded its answer, so a send that
+ * chooses gas by `isSafeConnection` never decides before the check (and its lazily loaded
+ * Safe service module) has. A check replaced by a newer connection's stops being waited on.
+ */
+export async function safeWalletPeerSettled(): Promise<void> {
+  let check: Promise<void>;
+  do {
+    check = latestCheck;
+    await Promise.race([check, replaced]);
+  } while (check !== latestCheck);
+}
+
+function startCheck(check: Promise<void>) {
+  latestCheck = check;
+  wakeReplaced();
+  replaced = new Promise<void>((resolve) => {
+    wakeReplaced = resolve;
+  });
+}
+
+/**
  * Follows `config`'s connection and records whether its WalletConnect peer is
  * Safe{Wallet}, which only the WalletConnect session tells. A re-read keeps the
  * previous answer until it lands, so a gas choice cannot flip mid-flow.
@@ -57,8 +84,14 @@ export function watchSafeWalletPeer(config: Config): () => void {
     let peer = false;
     if (connector?.id === "walletConnect") {
       try {
-        const provider = (await connector.getProvider()) as
-          { session?: { peer?: { metadata?: { url?: string } } } } | undefined;
+        // The SDK's Safe service module loads only for a WalletConnect connection, alongside the
+        // session read; the answer waits for both, and the previous answer holds until then.
+        const [provider, { isSafeWalletPeer }] = await Promise.all([
+          connector.getProvider() as Promise<
+            { session?: { peer?: { metadata?: { url?: string } } } } | undefined
+          >,
+          import("@bananapus/nana-sdk-core/safe-service"),
+        ]);
         peer = isSafeWalletPeer(provider?.session?.peer?.metadata?.url);
       } catch {
         // A session that cannot be read is not known to be Safe{Wallet}.
@@ -68,6 +101,10 @@ export function watchSafeWalletPeer(config: Config): () => void {
     safeWalletPeer = peer;
     for (const listener of listeners) listener();
   };
-  void check(getAccount(config).connector);
-  return watchAccount(config, { onChange: (account) => void check(account.connector) });
+  startCheck(check(getAccount(config).connector));
+  return watchAccount(config, {
+    onChange: (account) => {
+      startCheck(check(account.connector));
+    },
+  });
 }
