@@ -13,6 +13,7 @@ function pay(
   token: string | null,
   decimals: number | null,
   amount = "100000000000000",
+  tokenSymbol?: string | null,
 ) {
   return {
     id,
@@ -37,6 +38,7 @@ function pay(
       project: null,
       token,
       decimals,
+      tokenSymbol,
     },
   } as unknown as ActivityEventItem;
 }
@@ -58,6 +60,12 @@ describe("activity amounts use each event's own token", () => {
       undefined,
       undefined,
     ]);
+  });
+
+  it("labels a token by the event's own symbol before the app's known tokens", () => {
+    const token = "0x00000000000000000000000000000000000000aa";
+    expect(amountOf([pay("a", token, 18, "1000000000000000000", "WBTC")])).toEqual(["1", "WBTC"]);
+    expect(amountOf([pay("a", ETH, 18, "100000000000000", null)])).toEqual(["0.0001", "ETH"]);
   });
 
   it("labels a fan-out total only when every pay shares a token", () => {

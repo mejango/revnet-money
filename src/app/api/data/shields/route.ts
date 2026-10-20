@@ -1,10 +1,24 @@
+import { usdFromScaled } from "@/app/[slug]/components/v6/extras/projectPayers";
 import { ShieldGroupOperation, ShieldProjectOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
-import { fetchEthPrice } from "@/lib/ethPrice";
-import { NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
+import type { ShieldGroupQuery } from "@/lib/bendystraw/types";
+import { deploymentTokenBalances, formatProjectPreviewBalance } from "@/lib/project-link-preview";
 import { NextResponse } from "next/server";
+import { formatUnits } from "viem";
 
 type ChainId = 1 | 10 | 8453 | 42161;
+type ShieldDeployment = NonNullable<
+  NonNullable<ShieldGroupQuery["suckerGroup"]>["projects"]
+>["items"][number];
+
+/** The deployments' holdings as one number, only when they hold a single kind of token. */
+function singleTokenAmount(deployments: readonly ShieldDeployment[]): number | null {
+  const rows = deployments.flatMap(deploymentTokenBalances);
+  const kinds = new Set(rows.map((row) => `${row.tokenSymbol}:${row.decimals}`));
+  if (kinds.size !== 1 || rows[0]?.decimals == null) return null;
+  const decimals = rows[0].decimals;
+  return rows.reduce((sum, row) => sum + Number(formatUnits(BigInt(row.balance), decimals)), 0);
+}
 
 const JB_CHAINS: Record<ChainId, { name: string }> = {
   1: { name: "Ethereum" },
@@ -31,11 +45,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Missing or invalid projectId" }, { status: 400 });
   }
 
-  let totalBalance = 0;
-  // The accounting token(s) the summed balance is denominated in. A badge may only
-  // claim ETH — or convert at an ETH rate — when every context really is native.
-  const accountingTokens = new Set<string>();
-  const accountingSymbols = new Set<string>();
+  let totalUsd: number | null = null;
+  const deployments: ShieldDeployment[] = [];
   const results = [];
   let projectName = "Revnet"; // default fallback
   const visitedGroups = new Set<string>();
@@ -55,20 +66,15 @@ export async function GET(req: Request) {
 
       const surplus = await queryBendystraw(chainId, ShieldGroupOperation, { id: suckerGroupId });
       const items = surplus.suckerGroup?.projects?.items ?? [];
+      const groupUsd = usdFromScaled(surplus.suckerGroup?.balanceUsd);
+      if (groupUsd !== null) totalUsd = (totalUsd ?? 0) + groupUsd;
 
       projectName = items[0]?.name ?? projectName;
       for (const item of items) {
-        // `balance` is in the ACCOUNTING token's own decimals — 6 for a USDC revnet,
-        // not 18. Dividing by 1e18 unconditionally reports a USDC treasury as ~1e-12
-        // of its real size, and then prices that as ETH.
-        const itemBalance = Number(item.balance ?? 0) / 10 ** (item.decimals ?? 18);
-        totalBalance += itemBalance;
-        if (item.token) accountingTokens.add(item.token.toLowerCase());
-        if (item.tokenSymbol) accountingSymbols.add(item.tokenSymbol);
-
+        deployments.push(item);
         results.push({
           chainId: item.chainId,
-          balance: itemBalance,
+          balance: singleTokenAmount([item]),
           supporters: item.participants?.totalCount ?? 0,
           name: JB_CHAINS[item.chainId as ChainId]?.name ?? "Unknown",
           metadata: item.metadata,
@@ -85,18 +91,12 @@ export async function GET(req: Request) {
     }
   }
 
-  // Only a native-token treasury may be priced with an ETH quote. A USDC (or any
-  // other ERC-20) context has no ETH rate here, and multiplying by one would invent
-  // a number; the badge reports the token amount alone in that case.
-  const isNativeTreasury =
-    accountingTokens.size === 1 && [...accountingTokens][0] === NATIVE_TOKEN.toLowerCase();
-  const denomination = accountingSymbols.size === 1 ? [...accountingSymbols][0] : "tokens";
-
-  // This badge is embedded off-site, so a price outage must not publish a number. Null here
-  // falls through to the token-amount label below — the same path a non-native treasury takes
-  // — rather than reporting a $0 treasury to every README that renders it.
-  const ethPrice = isNativeTreasury ? await fetchEthPrice() : null;
-  const usdTvl = ethPrice === null ? null : totalBalance * ethPrice;
+  // Each token is labeled in its own units; a treasury holding several has no one-token total.
+  const totalBalance = singleTokenAmount(deployments);
+  const symbols = new Set(
+    deployments.flatMap(deploymentTokenBalances).flatMap((row) => row.tokenSymbol ?? []),
+  );
+  const denomination = symbols.size === 1 ? [...symbols][0] : "tokens";
 
   const host = req.headers.get("host");
   if (!host) {
@@ -108,18 +108,19 @@ export async function GET(req: Request) {
 
   const markdown = `[![revnet badge](${badgeUrl})](${publicBase}/base:${projectId})`;
 
-  const balanceLabel = `${totalBalance.toFixed(4)} ${denomination}`;
+  const balanceLabel = formatProjectPreviewBalance(deployments);
+  const colorValue = totalBalance ?? totalUsd ?? 0;
   return NextResponse.json({
     label: "Current value",
     message:
-      usdTvl !== null
-        ? `${usdTvl.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD • ${balanceLabel}`
+      totalUsd !== null
+        ? `${totalUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD • ${balanceLabel}`
         : balanceLabel,
-    tvlUsd: usdTvl,
-    /** The treasury in its accounting token — named by `denomination`, not always ETH. */
+    tvlUsd: totalUsd,
+    /** The treasury in its one token, named by `denomination`; null when it holds several. */
     tvlBalance: totalBalance,
     denomination,
-    color: totalBalance > 1 ? "green" : totalBalance > 0.1 ? "yellow" : "red",
+    color: colorValue > 1 ? "green" : colorValue > 0.1 ? "yellow" : "red",
     chains: results,
     badgeUrl,
     markdown,

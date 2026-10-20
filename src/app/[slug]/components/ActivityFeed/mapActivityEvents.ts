@@ -22,7 +22,9 @@ export type ActivityEventItem = ActivityEventsQuery["activityEvents"]["items"][n
  */
 function ownToken(asset: EventToken): { symbol: string; decimals: number } | null | undefined {
   if (asset.token === undefined) return undefined;
-  const symbol = asset.token ? getTokenSymbolFromAddress(asset.token) : "TOKEN";
+  const symbol = asset.token
+    ? asset.tokenSymbol || getTokenSymbolFromAddress(asset.token)
+    : "TOKEN";
   return symbol !== "TOKEN" && asset.decimals != null ? { symbol, decimals: asset.decimals } : null;
 }
 
@@ -58,6 +60,7 @@ export function projectFeedTokenContext(
     chainId: number;
     tokenSymbol: string | null;
     decimals: number | null;
+    accountingTokenCount?: number | null;
   }>,
 ): (item: ActivityEventItem) => ActivityTokenContext {
   const denominateInUsd = groupMixesTokens(projects);
@@ -257,12 +260,12 @@ export function mapActivityEvents(
     if (!event) continue;
     const key = projectTxKey(event);
     if (event.payEvent) {
-      const { token, decimals } = event.payEvent;
+      const { token, decimals, tokenSymbol } = event.payEvent;
       const total = payTotalsByTx.get(key) ?? {
         count: 0,
         amount: 0n,
         usd: 0n,
-        asset: { token, decimals },
+        asset: { token, decimals, tokenSymbol },
       };
       // A fan-out's total has a token only when every pay was in the same one.
       if (

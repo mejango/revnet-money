@@ -1,7 +1,21 @@
 type BigNumberish = string | number;
 export type BendystrawFilter = Record<string, unknown>;
 
+/** One token a project's terminals hold: the exact store balance and its value at the token's
+ *  latest indexed USD rate (18 decimals). `tokenSymbol` is null when unreadable. */
+export type ProjectTokenBalance = {
+  token: string;
+  tokenSymbol: string | null;
+  decimals: number;
+  balance: BigNumberish;
+  balanceUsd?: BigNumberish;
+  usdRate?: BigNumberish | null;
+};
+type ProjectTokenBalances = { projectTokenBalances?: { items: ProjectTokenBalance[] } | null };
+
 export type Project = {
+  /** More than one means the raw `balance` adds different token units. */
+  accountingTokenCount?: number | null;
   balance: BigNumberish;
   chainId: number;
   createdAt: number;
@@ -107,6 +121,7 @@ export type ProjectAccountingContextQuery = {
 
 type SuckerGroupProject = Pick<
   Project,
+  | "accountingTokenCount"
   | "balance"
   | "chainId"
   | "currency"
@@ -116,7 +131,7 @@ type SuckerGroupProject = Pick<
   | "tokenSymbol"
   | "version"
   | "suckerGroupId"
-> & { tokenSupply: BigNumberish };
+> & { tokenSupply: BigNumberish } & ProjectTokenBalances;
 
 export type SuckerGroupQueryVariables = { id: string };
 export type SuckerGroupQuery = {
@@ -131,6 +146,7 @@ export type SuckerGroupQuery = {
 
 export type IndexedProjectSummary = Pick<
   Project,
+  | "accountingTokenCount"
   | "chainId"
   | "createdAt"
   | "handle"
@@ -144,12 +160,13 @@ export type IndexedProjectSummary = Pick<
   | "tokenSymbol"
   | "version"
 > & {
-  volume: BigNumberish;
+  volumeUsd?: BigNumberish | null;
   currency?: BigNumberish | null;
   decimals?: number | null;
   trendingPaymentsCount?: number;
   trendingScore?: BigNumberish;
   trendingVolume?: BigNumberish;
+  trendingVolumeUsd?: BigNumberish | null;
 };
 export type IndexedProjectsQueryVariables = {
   where: BendystrawFilter;
@@ -235,7 +252,11 @@ type ActivityPayment = {
   project: ActivityProject | null;
 } & EventToken;
 /** The token a terminal event moved. Null when the indexer could not tell (valued at 0 USD). */
-export type EventToken = { token?: string | null; decimals?: number | null };
+export type EventToken = {
+  token?: string | null;
+  decimals?: number | null;
+  tokenSymbol?: string | null;
+};
 type ActivityCashOut = {
   id: string;
   timestamp: number;
@@ -561,8 +582,11 @@ export type CashOutTaxSnapshotsQuery = {
 
 export type SuckerGroupMoment = {
   timestamp: number;
+  /** Raw sum of every token's balance: mixes units when the group holds more than one token. */
   balance: BigNumberish;
-  volume: BigNumberish;
+  /** 18-dec USD: each token's balance at its latest indexed rate. */
+  balanceUsd?: BigNumberish | null;
+  volumeUsd?: BigNumberish | null;
   tokenSupply: BigNumberish;
   suckerGroupId: string;
   version: number;
@@ -581,7 +605,7 @@ export type SuckerGroupMomentsQuery = {
 export type AddToBalanceInflow = {
   suckerGroupId: string;
   timestamp: number;
-  amount: BigNumberish;
+  amountUsd: BigNumberish | null;
 };
 export type AddToBalanceInflowsQueryVariables = { after?: string };
 export type AddToBalanceInflowsQuery = {
@@ -591,22 +615,26 @@ export type AddToBalanceInflowsQuery = {
   };
 };
 
-export type ProjectMoment = {
+export type ProjectTokenBalanceMoment = {
   projectId: number;
   chainId: number;
   version: number;
+  token: string;
+  decimals: number;
   timestamp: number;
   balance: BigNumberish;
+  /** 18-dec USD per one whole token at this moment's block; null when unpriced. */
+  tokenUsdRate: BigNumberish | null;
 };
-export type ProjectMomentsQueryVariables = {
+export type ProjectTokenBalanceMomentsQueryVariables = {
   projectId: number;
   chainId: number;
   version: number;
   after?: string;
 };
-export type ProjectMomentsQuery = {
-  projectMoments: {
-    items: ProjectMoment[];
+export type ProjectTokenBalanceMomentsQuery = {
+  projectTokenBalanceMoments: {
+    items: ProjectTokenBalanceMoment[];
     pageInfo: { hasNextPage: boolean; endCursor: string | null };
   };
 };
@@ -617,25 +645,22 @@ export type TopSuckerGroupsQuery = {
     totalCount?: number;
     items: Array<{
       id: string;
-      balance: BigNumberish;
-      volume: BigNumberish;
+      balanceUsd: BigNumberish | null;
+      volumeUsd: BigNumberish | null;
       projects: {
         items: Array<
           Pick<
             Project,
-            | "balance"
-            | "decimals"
-            | "currency"
             | "chainId"
             | "name"
             | "projectTagline"
-            | "tokenSymbol"
             | "logoUri"
             | "metadataUri"
             | "projectId"
             | "version"
             | "isRevnet"
-          >
+          > &
+            ProjectTokenBalances
         >;
       } | null;
     }>;
@@ -937,34 +962,34 @@ export type PayEventRatesQuery = {
 export type ShieldGroupQueryVariables = { id: string };
 export type ShieldGroupQuery = {
   suckerGroup: {
-    balance: BigNumberish;
-    volume: BigNumberish;
+    balanceUsd: BigNumberish | null;
     volumeUsd: BigNumberish;
     projects: {
-      items: Array<{
-        balance: BigNumberish;
-        chainId: number;
-        isRevnet: boolean | null;
-        id: string;
-        name: string | null;
-        volumeUsd: BigNumberish;
-        volume: BigNumberish;
-        /** Accounting context: what the project is paid in, and at what scale. */
-        token: string | null;
-        tokenSymbol: string | null;
-        decimals: number | null;
-        participants: {
-          totalCount: number;
-          items: Array<{
-            address: string;
-            chainId: number;
-            projectId: number;
-            lastPaidTimestamp: number;
-            balance: BigNumberish;
-          }>;
-        } | null;
-        metadata: unknown;
-      }>;
+      items: Array<
+        {
+          balance: BigNumberish;
+          chainId: number;
+          isRevnet: boolean | null;
+          id: string;
+          name: string | null;
+          volumeUsd: BigNumberish;
+          /** Accounting context: what the project is paid in, and at what scale. */
+          token: string | null;
+          tokenSymbol: string | null;
+          decimals: number | null;
+          participants: {
+            totalCount: number;
+            items: Array<{
+              address: string;
+              chainId: number;
+              projectId: number;
+              lastPaidTimestamp: number;
+              balance: BigNumberish;
+            }>;
+          } | null;
+          metadata: unknown;
+        } & ProjectTokenBalances
+      >;
     } | null;
   } | null;
 };

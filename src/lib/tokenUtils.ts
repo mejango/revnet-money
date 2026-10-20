@@ -23,12 +23,17 @@ export function getTokenSymbolFromAddress(tokenAddress: string) {
 }
 
 /**
- * Whether a sucker group's per-chain accounting tokens differ, so its raw balances and
- * amounts add unlike units.
+ * Whether a sucker group's raw balances and amounts add unlike units: a chain accepts more
+ * than one token, or the chains' accounting tokens differ.
  */
 export function groupMixesTokens(
-  projects: ReadonlyArray<{ tokenSymbol?: string | null; decimals?: number | null }>,
+  projects: ReadonlyArray<{
+    tokenSymbol?: string | null;
+    decimals?: number | null;
+    accountingTokenCount?: number | null;
+  }>,
 ): boolean {
+  if (projects.some((project) => (project.accountingTokenCount ?? 0) > 1)) return true;
   const kinds = new Set(
     projects
       .filter((project) => project.tokenSymbol)

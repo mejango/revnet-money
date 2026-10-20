@@ -1,14 +1,13 @@
+import { usdFromScaled } from "@/app/[slug]/components/v6/extras/projectPayers";
 import { TopSuckerGroupsOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { TopSuckerGroupsQuery } from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
-import { fetchEthPrice } from "@/lib/ethPrice";
 import { ipfsUriToAppUrl } from "@/lib/ipfs";
 import { getIssuanceFingerprint } from "@/lib/issuanceFingerprint.server";
 import { fillIndexedMetadata } from "@/lib/projectMetadataFill.server";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { unstable_cache } from "next/cache";
-import { formatUnits } from "viem";
 
 export async function getTopProjects(limit = 8, offset = 0) {
   let top: TopSuckerGroupsQuery;
@@ -21,28 +20,11 @@ export async function getTopProjects(limit = 8, offset = 0) {
     return [];
   }
 
-  const needsEthPrice = top.suckerGroups.items.some(
-    (group) =>
-      group.projects?.items[0]?.isRevnet &&
-      group.projects.items[0].tokenSymbol?.toUpperCase() === "ETH",
-  );
-  // The ETH price only converts ETH-denominated balances for ranking. When the
-  // feed fails, drop those rows (they can't be ranked honestly) but keep the
-  // rows that never needed the price instead of blanking the whole table.
-  const ethPrice = needsEthPrice ? await fetchEthPrice() : null;
-
   const ranked = top.suckerGroups.items
     .map((group) => {
       const project = group.projects?.items[0];
-      if (!project || !project.isRevnet) return null;
-
-      const symbol = project.tokenSymbol?.toUpperCase();
-      if (symbol !== "ETH" && symbol !== "USDC") return null;
-      if (symbol === "ETH" && ethPrice === null) return null;
-
-      const balance = Number(formatUnits(BigInt(group.balance), project.decimals ?? 18));
-      const balanceUsd = symbol === "ETH" ? balance * (ethPrice ?? 0) : balance;
-
+      const balanceUsd = usdFromScaled(group.balanceUsd);
+      if (!project?.isRevnet || balanceUsd === null) return null;
       return { project, balanceUsd };
     })
     .filter((item) => item !== null)
@@ -87,7 +69,7 @@ const fetchTopProjects = unstable_cache(
     } while (items.length < totalCount);
     return { suckerGroups: { items, totalCount } };
   },
-  ["top-projects-v3"],
+  ["top-projects-v4"],
   { revalidate: 600 }, // 10 minutes
 );
 
@@ -97,8 +79,4 @@ export async function getHomepageSuckerGroups() {
   } catch {
     return [];
   }
-}
-
-export async function getHomepageEthPrice() {
-  return fetchEthPrice();
 }
