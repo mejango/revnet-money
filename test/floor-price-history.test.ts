@@ -79,8 +79,29 @@ describe("cash-out floor history", () => {
     });
   });
 
-  it("takes the USD path when the group's tokens could not be read", async () => {
-    mocks.group.mockResolvedValue(null);
+  it.each([
+    ["could not be read", null],
+    [
+      "are two tokens sharing a name",
+      {
+        projects: {
+          items: [
+            {
+              token: "0x00000000000000000000000000000000000000aa",
+              tokenSymbol: "CASH",
+              decimals: 18,
+            },
+            {
+              token: "0x00000000000000000000000000000000000000bb",
+              tokenSymbol: "CASH",
+              decimals: 18,
+            },
+          ],
+        },
+      },
+    ],
+  ])("takes the USD path when the group's tokens %s", async (_case, group) => {
+    mocks.group.mockResolvedValue(group);
 
     const points = await getFloorPriceHistory(options);
 

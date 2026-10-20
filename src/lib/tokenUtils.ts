@@ -22,23 +22,32 @@ export function getTokenSymbolFromAddress(tokenAddress: string) {
   return "TOKEN";
 }
 
+type TokenIdentity = {
+  token?: string | null;
+  tokenSymbol?: string | null;
+  decimals?: number | null;
+};
+
+/**
+ * Which rows are the same asset: ETH and USDC by symbol, so each chain's copy adds up;
+ * any other token also by its address, so two tokens sharing a name stay apart.
+ */
+export function tokenKindOf(row: TokenIdentity): string {
+  const kind = `${row.tokenSymbol?.trim().toUpperCase()}:${row.decimals ?? 18}`;
+  return row.token && getTokenSymbolFromAddress(row.token) === "TOKEN"
+    ? `${row.token.toLowerCase()}:${kind}`
+    : kind;
+}
+
 /**
  * Whether a sucker group's raw balances and amounts add unlike units: a chain accepts more
  * than one token, or the chains' accounting tokens differ.
  */
 export function groupMixesTokens(
-  projects: ReadonlyArray<{
-    tokenSymbol?: string | null;
-    decimals?: number | null;
-    accountingTokenCount?: number | null;
-  }>,
+  projects: ReadonlyArray<TokenIdentity & { accountingTokenCount?: number | null }>,
 ): boolean {
   if (projects.some((project) => (project.accountingTokenCount ?? 0) > 1)) return true;
-  const kinds = new Set(
-    projects
-      .filter((project) => project.tokenSymbol)
-      .map((project) => `${project.tokenSymbol}:${project.decimals ?? 18}`),
-  );
+  const kinds = new Set(projects.filter((project) => project.tokenSymbol).map(tokenKindOf));
   return kinds.size > 1;
 }
 

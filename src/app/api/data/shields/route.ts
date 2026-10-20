@@ -2,11 +2,8 @@ import { usdFromScaled } from "@/app/[slug]/components/v6/extras/projectPayers";
 import { ShieldGroupOperation, ShieldProjectOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { ShieldGroupQuery } from "@/lib/bendystraw/types";
-import {
-  deploymentTokenBalances,
-  formatProjectPreviewBalance,
-  tokenKindOf,
-} from "@/lib/project-link-preview";
+import { deploymentTokenBalances, formatProjectPreviewBalance } from "@/lib/project-link-preview";
+import { tokenKindOf } from "@/lib/tokenUtils";
 import { NextResponse } from "next/server";
 import { formatUnits } from "viem";
 

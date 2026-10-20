@@ -1,7 +1,7 @@
 import { formatUsd, usdFromScaled } from "@/app/[slug]/components/v6/extras/projectPayers";
 import type { Project, ProjectTokenBalance } from "@/lib/bendystraw/types";
 import { formatTokenAmount } from "@/lib/token";
-import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
+import { getTokenSymbolFromAddress, tokenKindOf } from "@/lib/tokenUtils";
 
 type BalanceDeployment = Pick<Project, "balance" | "decimals" | "tokenSymbol"> & {
   projectTokenBalances?: { items: ProjectTokenBalance[] } | null;
@@ -28,19 +28,6 @@ export function tokenSymbolOf(row: Pick<ProjectTokenBalance, "token" | "tokenSym
   if (row.tokenSymbol) return row.tokenSymbol;
   const known = getTokenSymbolFromAddress(row.token);
   return known === "TOKEN" ? null : known;
-}
-
-/**
- * Which rows are the same asset: ETH and USDC by symbol, so each chain's copy adds up;
- * any other token by its address, so two tokens sharing a name stay apart.
- */
-export function tokenKindOf(row: {
-  token?: string | null;
-  tokenSymbol: string | null;
-  decimals: number | null;
-}): string {
-  if (row.token && getTokenSymbolFromAddress(row.token) === "TOKEN") return row.token.toLowerCase();
-  return `${row.tokenSymbol?.trim().toUpperCase()}:${row.decimals}`;
 }
 
 type BalanceBucket = {

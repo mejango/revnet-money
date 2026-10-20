@@ -82,6 +82,32 @@ describe("project link preview balance", () => {
     expect(formatProjectPreviewBalance([deployment([unnamed])])).toBe("$12.00");
   });
 
+  it("keeps unknown tokens apart by address and decimals", () => {
+    const row = (token: string, tokenSymbol: string, decimals: number, balance: string) => ({
+      token,
+      tokenSymbol,
+      decimals,
+      balance,
+    });
+    const A = "0x00000000000000000000000000000000000000aa";
+    expect(
+      formatProjectPreviewBalance([
+        {
+          balance: "0",
+          decimals: 18,
+          tokenSymbol: "CASH",
+          projectTokenBalances: {
+            items: [
+              row(A, "CASH", 18, "1000000000000000000"),
+              row("0x00000000000000000000000000000000000000bb", "CASH", 18, "2000000000000000000"),
+              row(A, "OTHER", 6, "10000000"),
+            ],
+          },
+        },
+      ]).split(" + "),
+    ).toHaveLength(3);
+  });
+
   it("leaves out a token the project no longer holds", () => {
     expect(
       formatProjectPreviewBalance([
