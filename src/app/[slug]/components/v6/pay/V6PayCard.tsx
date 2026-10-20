@@ -382,6 +382,10 @@ export function V6PayCard() {
     address ?? "",
   ].join("|");
   const slippageBps = payerSlippage?.payment === paymentInputs ? payerSlippage.bps : undefined;
+  // A tolerance ends with the payment it was set on, even if the same inputs come back.
+  useEffect(() => {
+    if (payerSlippage && payerSlippage.payment !== paymentInputs) setPayerSlippage(null);
+  }, [payerSlippage, paymentInputs]);
 
   // ---- Debounced live preview via the best route (multi vs router) ----
   const {
@@ -1428,7 +1432,14 @@ export function V6PayCard() {
       {confirmMounted ? (
         <V6PayConfirmDialog
           open={confirmOpen}
-          onOpenChange={setConfirmOpen}
+          onOpenChange={(open) => {
+            setConfirmOpen(open);
+            // Closing the review abandons a loosened tolerance.
+            if (!open) {
+              setPayerSlippage(null);
+              setRetrySlippageBps(null);
+            }
+          }}
           prepared={prepared}
           phase={phase}
           mode={mode}

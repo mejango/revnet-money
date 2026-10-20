@@ -303,4 +303,24 @@ describe("a failed payment's reason and a looser minimum", () => {
     expect(mocks.cardSimulate.mock.calls.at(-1)?.[0]).toMatchObject({ blockNumber: 101n });
     expect(within(confirm).getByLabelText(/Custom maximum quote change/)).toHaveValue(2.5);
   });
+
+  it("drops a loosened tolerance when the review closes or the payment changes", async () => {
+    mocks.cardSimulate.mockRejectedValueOnce(underMin(970n * TOKEN, 990n * TOKEN));
+    const confirm = await payFromConfirm();
+    fireEvent.click(await within(confirm).findByRole("button", { name: "Review again" }));
+    await within(confirm).findByText(/^965 /);
+    expect(mocks.routeCalls.at(-1)?.slippageBps).toBe(350n);
+
+    // Change the amount away and back: the tolerance does not come back with it.
+    const amount = screen.getByLabelText("Amount");
+    fireEvent.change(amount, { target: { value: "2" } });
+    await within(confirm).findByText(/^990 /, {}, { timeout: 3_000 });
+    const calls = mocks.routeCalls.length;
+    fireEvent.change(amount, { target: { value: "1" } });
+    await waitFor(() => expect(mocks.routeCalls.length).toBeGreaterThan(calls), { timeout: 3_000 });
+    await within(confirm).findByText(/^990 /, {}, { timeout: 3_000 });
+    expect(mocks.routeCalls.slice(calls).every((call) => call.slippageBps === undefined)).toBe(
+      true,
+    );
+  });
 });
