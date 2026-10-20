@@ -2,7 +2,7 @@
 
 import { legacyBatchNamespace, legacyCallNamespace } from "@/lib/legacy-intents";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
-import { isSafeConnection } from "@/lib/safe-connector";
+import { isSafeConnection, safeWalletPeerSettled } from "@/lib/safe-connector";
 import { safeProposalAt, type ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
   contractTransactionKey,
@@ -622,6 +622,8 @@ export function useWriteContract(
   const writeContractAsync = useCallback(
     async (variables: Parameters<typeof mutation.writeContractAsync>[0]) => {
       requireNoViewAs();
+      // Safe{Wallet} over WalletConnect takes gas 0; its peer check must answer first.
+      await safeWalletPeerSettled();
       // Every call names its chain. The wallet is switched to that chain after
       // review; a call without one would go to whichever chain the wallet is on.
       const chainId = Number(variables.chainId);
