@@ -61,6 +61,9 @@ describe("search:account — RevnetSearch account routing", () => {
       });
       expect(screen.getByRole("searchbox")).toBeEnabled();
       fireEvent.change(screen.getByRole("searchbox"), { target: { value: "@fixture-revnet" } });
+      await act(async () => {
+        await vi.dynamicImportSettled();
+      });
       expect(screen.getByRole("search")).toHaveAttribute("action", "/@fixture-revnet");
       expect(screen.getByRole("link", { name: /Open revnet handle/i })).toHaveAttribute(
         "href",
@@ -178,5 +181,21 @@ describe("search:account — RevnetSearch account routing", () => {
 
     await typeQuery("@bad..handle");
     expect(screen.getByText("Enter a valid @handle.")).toBeInTheDocument();
+  });
+
+  it("goes to a handle submitted before its parser loaded, without flashing it as invalid", async () => {
+    render(<RevnetSearch />);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "@design.juicebox" } });
+    // The parser has not loaded yet: the handle is neither shown valid nor invalid.
+    expect(screen.queryByText("Enter a valid @handle.")).not.toBeInTheDocument();
+    expect(screen.getByRole("search")).not.toHaveAttribute("action");
+    const submit = new Event("submit", { bubbles: true, cancelable: true });
+    expect(screen.getByRole("search").dispatchEvent(submit)).toBe(false);
+    await act(async () => {
+      await vi.dynamicImportSettled();
+    });
+    // Only the navigating branch clears the search before `location.assign`.
+    expect(screen.getByRole("searchbox")).toHaveValue("");
+    expect(mocks.push).not.toHaveBeenCalled();
   });
 });
