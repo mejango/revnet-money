@@ -8,7 +8,7 @@ import {
   prettyNumber,
 } from "@/lib/number";
 import { isStickyHook } from "@/lib/sticky";
-import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
+import { getTokenSymbolFromAddress, groupMixesTokens } from "@/lib/tokenUtils";
 import { JBProjectToken, mergeCrossChainActivityGroups } from "@bananapus/nana-sdk-core";
 import { Address, formatUnits } from "viem";
 import { formatUsd, usdFromScaled } from "../v6/extras/projectPayers";
@@ -60,12 +60,7 @@ export function projectFeedTokenContext(
     decimals: number | null;
   }>,
 ): (item: ActivityEventItem) => ActivityTokenContext {
-  const tokenKinds = new Set(
-    projects
-      .filter((project) => project.tokenSymbol)
-      .map((project) => `${project.tokenSymbol}:${project.decimals ?? 18}`),
-  );
-  const denominateInUsd = tokenKinds.size > 1;
+  const denominateInUsd = groupMixesTokens(projects);
 
   return (event) => {
     const projectForChain = projects.find((project) => project.chainId === event.chainId);

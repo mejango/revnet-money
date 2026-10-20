@@ -23,6 +23,21 @@ export function getTokenSymbolFromAddress(tokenAddress: string) {
 }
 
 /**
+ * Whether a sucker group's per-chain accounting tokens differ, so its raw balances and
+ * amounts add unlike units.
+ */
+export function groupMixesTokens(
+  projects: ReadonlyArray<{ tokenSymbol: string | null; decimals: number | null }>,
+): boolean {
+  const kinds = new Set(
+    projects
+      .filter((project) => project.tokenSymbol)
+      .map((project) => `${project.tokenSymbol}:${project.decimals ?? 18}`),
+  );
+  return kinds.size > 1;
+}
+
+/**
  * Decimals for an accounting token, from its address and whatever the indexer reported.
  *
  * USDC is pinned to 6 on every chain `USDC_ADDRESSES` covers, because an indexed value
