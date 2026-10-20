@@ -44,9 +44,12 @@ import { useLiveRevnetOperators } from "./useLiveRevnetOperators";
 // The dialogs load when first opened; hover or focus on their buttons loads them early.
 const loadBatchDialog = () => import("./SafeBatchDialog");
 const loadPresetDialog = () => import("./SafeBatchPresetDialog");
-const SafeBatchDialog = dynamic(() => loadBatchDialog().then((module) => module.SafeBatchDialog));
-const SafeBatchPresetDialog = dynamic(() =>
-  loadPresetDialog().then((module) => module.SafeBatchPresetDialog),
+const SafeBatchDialog = dynamic(() => loadBatchDialog().then((module) => module.SafeBatchDialog), {
+  ssr: false,
+});
+const SafeBatchPresetDialog = dynamic(
+  () => loadPresetDialog().then((module) => module.SafeBatchPresetDialog),
+  { ssr: false },
 );
 
 /** The calls as an order-free key, so a reordered tray still matches its proposal. */

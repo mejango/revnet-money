@@ -11,7 +11,9 @@ import type { MarkeeCardState } from "./MarkeeRentDialog";
 // Renting runs reviewed wallet writes and durable recovery; that code loads only when a visitor
 // opens Take over (hover or focus loads it a moment early).
 const loadRentDialog = () => import("./MarkeeRentDialog");
-const MarkeeRentDialog = dynamic(() => loadRentDialog().then((module) => module.MarkeeRentDialog));
+const MarkeeRentDialog = dynamic(() => loadRentDialog().then((module) => module.MarkeeRentDialog), {
+  ssr: false,
+});
 
 /** The card's own read of the board it shows: the same board the rent dialog selects. */
 function useMarkeeCard(initialBoardAddress?: Address): MarkeeCardState {

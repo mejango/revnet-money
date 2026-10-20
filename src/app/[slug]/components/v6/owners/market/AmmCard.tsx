@@ -104,10 +104,13 @@ import {
 // The edit panels load when first opened; hover or focus on Edit or Remove loads them early.
 const loadEditPosition = () => import("./EditPositionPanel");
 const loadMarketEdit = () => import("./MarketEditPanel");
-const EditPositionPanel = dynamic(() =>
-  loadEditPosition().then((module) => module.EditPositionPanel),
+const EditPositionPanel = dynamic(
+  () => loadEditPosition().then((module) => module.EditPositionPanel),
+  { ssr: false },
 );
-const MarketEditPanel = dynamic(() => loadMarketEdit().then((module) => module.MarketEditPanel));
+const MarketEditPanel = dynamic(() => loadMarketEdit().then((module) => module.MarketEditPanel), {
+  ssr: false,
+});
 
 /** A plan's band on the display axis, "min – max PAIR/TOKEN". */
 function bandLabel(

@@ -17,8 +17,9 @@ import { useMemo, useState } from "react";
 import type { Address } from "viem";
 
 // Only the account itself sees its held and in-flight writes; their machinery loads for it alone.
-const AccountPendingWrites = dynamic(() =>
-  import("./AccountPendingWrites").then((module) => module.AccountPendingWrites),
+const AccountPendingWrites = dynamic(
+  () => import("./AccountPendingWrites").then((module) => module.AccountPendingWrites),
+  { ssr: false },
 );
 
 const INITIAL_ITEMS = 25;

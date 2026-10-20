@@ -87,8 +87,9 @@ import type { PreparedV6Pay, V6PayPhase } from "./V6PayConfirmDialog";
 import { V6PayShopStrip } from "./V6PayShopStrip";
 
 const loadPayConfirm = () => import("./V6PayConfirmDialog");
-const V6PayConfirmDialog = dynamic(() =>
-  loadPayConfirm().then((module) => module.V6PayConfirmDialog),
+const V6PayConfirmDialog = dynamic(
+  () => loadPayConfirm().then((module) => module.V6PayConfirmDialog),
+  { ssr: false },
 );
 
 function payChainName(chainId: JBChainId): string {

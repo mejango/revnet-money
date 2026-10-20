@@ -34,12 +34,19 @@ const loadTierDetail = () => import("./TierDetailModal");
 const loadMintItem = () => import("./MintItemModal");
 const loadEditItemMedia = () => import("./EditItemMediaModal");
 const loadAddItems = () => import("./AddItemsModal");
-const TierDetailModal = dynamic(() => loadTierDetail().then((module) => module.TierDetailModal));
-const MintItemModal = dynamic(() => loadMintItem().then((module) => module.MintItemModal));
-const EditItemMediaModal = dynamic(() =>
-  loadEditItemMedia().then((module) => module.EditItemMediaModal),
+const TierDetailModal = dynamic(() => loadTierDetail().then((module) => module.TierDetailModal), {
+  ssr: false,
+});
+const MintItemModal = dynamic(() => loadMintItem().then((module) => module.MintItemModal), {
+  ssr: false,
+});
+const EditItemMediaModal = dynamic(
+  () => loadEditItemMedia().then((module) => module.EditItemMediaModal),
+  { ssr: false },
 );
-const AddItemsModal = dynamic(() => loadAddItems().then((module) => module.AddItemsModal));
+const AddItemsModal = dynamic(() => loadAddItems().then((module) => module.AddItemsModal), {
+  ssr: false,
+});
 
 const SHOP_CONFIG_ROWS: [keyof ShopConfigFlags, string][] = [
   ["preventOverspending", "Require exact payment"],
