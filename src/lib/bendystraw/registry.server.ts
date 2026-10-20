@@ -82,7 +82,7 @@ const ACTIVITY_EVENT_FIELDS = `
     metadata
     project { id projectId handle version }
   }
-  addToBalanceEvent { txHash timestamp from amount memo token decimals tokenSymbol }
+  addToBalanceEvent { txHash timestamp from amount amountUsd memo token decimals tokenSymbol }
   mintTokensEvent {
     id txHash timestamp from caller beneficiary beneficiaryTokenCount memo
   }
@@ -755,7 +755,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
               projectId
               version
               isRevnet
-              projectTokenBalances { items { token tokenSymbol decimals balance usdRate } }
+              projectTokenBalances { items { token tokenSymbol decimals balance balanceUsd usdRate } }
             }
           }
         }

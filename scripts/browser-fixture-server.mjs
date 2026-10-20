@@ -456,7 +456,7 @@ const graphqlHandlers = {
     requireFixture(
       [32, 60, 250].includes(variables.limit) &&
         variables.offset === 0 &&
-        ["createdAt", "volume", "trendingScore"].includes(variables.orderBy) &&
+        ["createdAt", "volumeUsd", "trendingScore"].includes(variables.orderBy) &&
         variables.orderDirection === "desc" &&
         variables.where &&
         typeof variables.where === "object",
@@ -713,7 +713,13 @@ const graphqlHandlers = {
                   projectTagline: browserProject.metadata.projectTagline,
                   version: 6,
                   projectTokenBalances: {
-                    items: [{ ...fixtureTokenBalance, usdRate: "1000000000000000000" }],
+                    items: [
+                      {
+                        ...fixtureTokenBalance,
+                        balanceUsd: "1250000000000000000000",
+                        usdRate: "1000000000000000000",
+                      },
+                    ],
                   },
                 },
               ],

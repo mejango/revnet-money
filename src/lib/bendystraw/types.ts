@@ -290,7 +290,13 @@ export type ActivityEventsQuery = {
       payEvent: ActivityPayment | null;
       cashOutTokensEvent: ActivityCashOut | null;
       addToBalanceEvent:
-        (ActivityBase & EventToken & { amount: BigNumberish; memo: string | null }) | null;
+        | (ActivityBase &
+            EventToken & {
+              amount: BigNumberish;
+              amountUsd?: BigNumberish | null;
+              memo: string | null;
+            })
+        | null;
       mintTokensEvent:
         | (ActivityBase & {
             id: string;

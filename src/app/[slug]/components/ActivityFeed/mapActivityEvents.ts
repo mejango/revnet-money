@@ -1,12 +1,6 @@
 import type { ActivityEventsQuery, EventToken } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
-import {
-  commaNumber,
-  exactNumber,
-  formatCompact,
-  formatDecimals,
-  prettyNumber,
-} from "@/lib/number";
+import { commaNumber, exactNumber, formatCompact, prettyNumber } from "@/lib/number";
 import { isStickyHook } from "@/lib/sticky";
 import { getTokenSymbolFromAddress, groupMixesTokens } from "@/lib/tokenUtils";
 import { JBProjectToken, mergeCrossChainActivityGroups } from "@bananapus/nana-sdk-core";
@@ -43,9 +37,10 @@ export type ActivityTokenContext = {
   tokenSymbol?: string | null;
   decimals?: number | null;
   /**
-   * Denominate flow amounts in the indexer's 18-decimal USD figures instead of
-   * the chain's accounting token. The ecosystem convention: token amounts only
-   * when the project has exactly one accounting-token kind across its chains.
+   * Denominate flow amounts that name no known token in the indexer's 18-decimal
+   * USD figures instead of the chain's accounting token. The ecosystem
+   * convention: accounting-token amounts only when the project has exactly one
+   * accounting-token kind across its chains.
    */
   denominateInUsd?: boolean;
 } | null;
@@ -342,8 +337,11 @@ export function mapActivityEvents(
         own === undefined ? (tokenContext.tokenSymbol ?? undefined) : own?.symbol;
       const contextDecimals = own === undefined ? tokenContext.decimals : (own?.decimals ?? null);
       const baseTokenDecimals = contextDecimals ?? 18;
+      // An event that names a known token is shown in it; USD is for the rest.
       const usd =
-        tokenContext.denominateInUsd || contextDecimals == null ? usdFromScaled(usdAmount) : null;
+        !own && (tokenContext.denominateInUsd || contextDecimals == null)
+          ? usdFromScaled(usdAmount)
+          : null;
       if (usd) {
         // USD is the headline; the raw accounting amount is what a hover reveals. It can
         // only be shown when the context's decimals are known.
@@ -417,11 +415,6 @@ export function mapActivityEvents(
       });
     } else if (event.addToBalanceEvent) {
       const e = event.addToBalanceEvent;
-      const own =
-        ownToken(e) ??
-        (e.token === undefined
-          ? { symbol: tokenContext.tokenSymbol ?? undefined, decimals: tokenContext.decimals ?? 18 }
-          : null);
       events.push({
         id: event.id,
         type: "addToBalance",
@@ -429,10 +422,7 @@ export function mapActivityEvents(
         timestamp: e.timestamp,
         beneficiary: e.from as Address,
         chainId,
-        baseAmount: own
-          ? formatDecimals(Number(formatUnits(BigInt(e.amount), own.decimals)))
-          : undefined,
-        baseTokenSymbol: own?.symbol,
+        ...flowAmount(e.amount, e.amountUsd, e),
         memo: e.memo || undefined,
       });
     } else if (event.mintTokensEvent) {
