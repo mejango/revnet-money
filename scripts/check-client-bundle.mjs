@@ -19,23 +19,23 @@ import { vendorWallets } from "./lib/vendor-wallets.mjs";
 // `route` is the app route `path` renders. Every shipped page route must be listed.
 const account = `0x${"1".repeat(40)}`;
 const routes = [
-  { route: "/", path: "/", kib: 524 },
-  { route: "/learn", path: "/learn", kib: 526 },
-  { route: "/build", path: "/build", kib: 528 },
-  { route: "/audit", path: "/audit", kib: 529 },
-  { route: "/discover", path: "/discover", kib: 533 },
-  { route: "/create", path: "/create", kib: 597 },
-  { route: "/[slug]", path: "/eth:1", kib: 655 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 684 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 721 },
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 715 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 685 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 680 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 564 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 550 },
-  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 550 },
-  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 546 },
-  { route: "/_not-found", path: "/no-such-page/x/y", kib: 524, status: 404 },
+  { route: "/", path: "/", kib: 388 },
+  { route: "/learn", path: "/learn", kib: 352 },
+  { route: "/build", path: "/build", kib: 354 },
+  { route: "/audit", path: "/audit", kib: 355 },
+  { route: "/discover", path: "/discover", kib: 338 },
+  { route: "/create", path: "/create", kib: 542 },
+  { route: "/[slug]", path: "/eth:1", kib: 564 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 563 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 669 },
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 624 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 570 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 564 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 418 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 408 },
+  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 384 },
+  { route: "/_not-found", path: "/no-such-page/x/y", kib: 299, status: 404 },
 ];
 // Next renders its global error page only when the root layout itself throws; no URL reaches it.
 const unmeasuredRoutes = new Set(["/_global-error"]);
@@ -43,7 +43,7 @@ const unmeasuredRoutes = new Set(["/_global-error"]);
 const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
   ? JSON.parse(process.env.CLIENT_BUNDLE_ROUTES)
   : routes;
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 920);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
@@ -180,7 +180,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 1100);
 // SDK 2.40.0's React held-write hooks (useSavedAttempt, useHeldWrite, useHeldWrites and
 // HeldWritesNotice on the account page) replace the app's recovery and follower code and measure
 // 2747.6 KiB. Raise only the aggregate ceiling to 2750 KiB; route and lazy-load limits stay fixed.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2750);
+// The load-size pass (rendered-HTML gate, splitChunks, lazy dialogs and write machinery, SDK
+// 3.1.0) measures 2714.9 KiB, route-referenced 912.1 KiB. Every ceiling drops to its measure.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2725);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
