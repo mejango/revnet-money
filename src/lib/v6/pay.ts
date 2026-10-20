@@ -14,7 +14,7 @@ import { Address, formatUnits, PublicClient } from "viem";
 /** prepareUserPay's own default tolerance on its quote and fallback minimum. */
 export const PAY_DEFAULT_SLIPPAGE_BPS = 100;
 /** A payer's loosened tolerance stays below this, so the minimum never nears zero. */
-export const PAY_SLIPPAGE_LIMIT_BPS = 4_999;
+export const PAY_SLIPPAGE_LIMIT_PERCENT = 50;
 
 /**
  * The tolerance that would have let a payment through which fell short of the
@@ -32,7 +32,8 @@ export function payRetrySlippageBps(failure: PayFailure | null, currentBps: numb
     received !== undefined && minimum !== undefined && minimum > 0n && received < minimum
       ? Number(((minimum - received) * 10_000n + minimum - 1n) / minimum)
       : 100;
-  return Math.min(Math.ceil((currentBps + shortfallBps) / 50) * 50, 4_950);
+  const limit = PAY_SLIPPAGE_LIMIT_PERCENT * 100 - 50;
+  return Math.min(Math.ceil((currentBps + shortfallBps) / 50) * 50, limit);
 }
 
 /** The v6 pay card's modes: mint tokens, or top up the balance minting nothing. */

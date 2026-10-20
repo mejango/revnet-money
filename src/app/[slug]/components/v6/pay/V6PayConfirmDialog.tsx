@@ -12,7 +12,12 @@ import {
 import { SummaryRow } from "@/components/ui/TxConfirmDialog";
 import { TxSteps } from "@/components/ui/TxSteps";
 import { etherscanLink } from "@/lib/utils";
-import { formatPayAmount, PAY_SLIPPAGE_LIMIT_BPS, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
+import {
+  formatPayAmount,
+  PAY_SLIPPAGE_LIMIT_PERCENT,
+  V6PayMode,
+  V6PayTokenOption,
+} from "@/lib/v6/pay";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
@@ -242,7 +247,7 @@ export function V6PayConfirmDialog({
                           className=""
                           bps={retrySlippage.bps}
                           onChange={retrySlippage.onChange}
-                          maxBps={PAY_SLIPPAGE_LIMIT_BPS}
+                          limitPercent={PAY_SLIPPAGE_LIMIT_PERCENT}
                         />
                       ) : null}
                     </div>

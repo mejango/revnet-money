@@ -4,13 +4,13 @@
 export function MaxQuoteChange({
   bps,
   onChange,
-  maxBps = Infinity,
+  limitPercent = 100,
   className = "mt-4",
 }: {
   bps: number;
   onChange: (bps: number) => void;
-  /** The largest custom value accepted, in basis points. */
-  maxBps?: number;
+  /** The custom field accepts percents below this. */
+  limitPercent?: number;
   className?: string;
 }) {
   return (
@@ -36,15 +36,14 @@ export function MaxQuoteChange({
           <input
             type="number"
             min="0"
-            max={Number.isFinite(maxBps) ? maxBps / 100 : 99.99}
+            max={limitPercent - 0.01}
             step="0.1"
             inputMode="decimal"
             value={bps / 100}
             onChange={(event) => {
               const percent = Number(event.target.value);
-              const next = Math.round(percent * 100);
-              if (Number.isFinite(percent) && percent >= 0 && percent < 100 && next <= maxBps) {
-                onChange(next);
+              if (Number.isFinite(percent) && percent >= 0 && percent < limitPercent) {
+                onChange(Math.round(percent * 100));
               }
             }}
             className="min-w-0 flex-1 !border-0 !bg-transparent !p-0 text-right !shadow-none outline-none !ring-0 focus:!border-0 focus:!shadow-none focus:!ring-0"
