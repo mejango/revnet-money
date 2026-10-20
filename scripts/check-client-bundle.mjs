@@ -3,6 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { gzipSync } from "node:zlib";
 import { appOrigin, deterministicEnvironment, fixtureOrigin } from "./lib/browser-environment.mjs";
+import { vendorWallets } from "./lib/vendor-wallets.mjs";
 
 // First-load JavaScript per route is what a visitor downloads before the page is
 // interactive: every non-`nomodule` script the server-rendered HTML references, in its
@@ -233,19 +234,14 @@ function filesBelow(directory) {
 
 /**
  * The client chunks a page loads up front: every `static/chunks/*.js` its HTML names, in
- * script and preload tags or escaped inside the RSC payload, except `nomodule` scripts,
- * which modern browsers skip.
+ * script and preload tags or escaped inside the RSC payload, except in `nomodule` script tags,
+ * which modern browsers skip. Imports a page starts after hydration are not counted here.
  */
 function referencedChunks(html) {
-  const unescaped = html.replace(/\\"/gu, '"').replace(/\\u002F|\\\//gu, "/");
-  const skipped = new Set(
-    [...unescaped.matchAll(/<script\b[^>]*>/giu)]
-      .map(([tag]) => tag)
-      .filter((tag) => /\bnomodule\b/iu.test(tag))
-      .map((tag) => tag.match(/\bsrc="([^"]+)"/iu)?.[1])
-      .filter(Boolean)
-      .map(javascriptAsset),
-  );
+  const unescaped = html
+    .replace(/\\"/gu, '"')
+    .replace(/\\u002F|\\\//gu, "/")
+    .replace(/<script\b[^>]*\bnomodule\b[^>]*>/giu, "");
   return [
     ...new Set(
       [
@@ -254,7 +250,7 @@ function referencedChunks(html) {
         ),
       ]
         .map(([reference]) => javascriptAsset(reference))
-        .filter((asset) => asset && !skipped.has(asset)),
+        .filter(Boolean),
     ),
   ];
 }
@@ -384,15 +380,6 @@ if (allClientSize > allClientBudget) {
   );
 }
 
-// Wagmi's `reconnect()` calls `getProvider()` on every configured connector, so
-// a vendor wallet SDK becomes an eager download the moment its `shouldRestore`
-// gate is dropped. Markers must be strings only the vendor bundle can contain —
-// never a connector id or display name, which our own source carries.
-const vendorWallets = [
-  ["WalletConnect", ["walletconnect.org", "wc@2:", "@reown/appkit"]],
-  ["Coinbase Wallet", ["CoinbaseWalletSDK", "keys.coinbase.com", "walletlink"]],
-  ["Safe", ["safe-apps-provider", "SafeAppProvider"]],
-];
 for (const [label, markers] of vendorWallets) {
   const vendorAssets = allClientFiles
     .filter((file) => {
@@ -405,7 +392,7 @@ for (const [label, markers] of vendorWallets) {
   if (eager.length > 0) {
     failures.push(`${label} SDK is eagerly loaded: ${eager.join(", ")}`);
   } else {
-    console.log(`${label} SDK is lazy-loaded`);
+    console.log(`${label} SDK is not in any route's HTML`);
   }
 }
 

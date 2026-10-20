@@ -108,6 +108,12 @@ describe("rendered-HTML client bundle check", () => {
     expect(result.status).toBe(0);
   });
 
+  it("still counts a chunk a module script loads when a nomodule tag names it too", async () => {
+    const result = await fixture({ pages: { "/": page([pageChunk, polyfill]) } }).run();
+    expect(result.output).toContain("3 chunks  / (/)");
+    expect(result.status).toBe(0);
+  });
+
   it("fails a route over its ceiling", async () => {
     const result = await fixture().run([{ route: "/", path: "/", kib: 0 }]);
     expect(result.status).toBe(1);
@@ -184,7 +190,7 @@ describe("rendered-HTML client bundle check", () => {
         "static/chunks/vendor.js": 'globalThis.vendor = "SafeAppProvider";',
       },
     }).run();
-    expect(result.output).toContain("Safe SDK is lazy-loaded");
+    expect(result.output).toContain("Safe SDK is not in any route's HTML");
     expect(result.status).toBe(0);
   });
 
