@@ -2,6 +2,7 @@ import {
   decodeEventLog,
   encodeAbiParameters,
   encodeFunctionData,
+  isAddress,
   isAddressEqual,
   keccak256,
   parseAbi,
@@ -469,6 +470,17 @@ export async function readMarkeeFactory(client: PublicClient) {
     revNetTerminal: revNetTerminal as Address,
   };
 }
+/** Where this browser keeps the board it last set up or used. */
+export const MARKEE_BOARD_KEY = "revnet:markee-rent:board:v1";
+
+/** The board this browser saved, if any; a saved value that isn't an address is refused. */
+export function savedMarkeeBoard(): Address | undefined {
+  const saved = window.localStorage.getItem(MARKEE_BOARD_KEY);
+  if (!saved) return undefined;
+  if (!isAddress(saved)) throw new Error("The saved Markee board address is invalid.");
+  return saved;
+}
+
 export async function readMarkeeBoard(client: PublicClient, address: Address): Promise<BoardState> {
   const config = await readMarkeeFactory(client);
   const registered = await client.readContract({
