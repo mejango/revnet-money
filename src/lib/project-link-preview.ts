@@ -16,7 +16,7 @@ export function deploymentTokenBalances(
   deployment: BalanceDeployment,
 ): Array<
   Pick<Project, "balance" | "decimals" | "tokenSymbol"> &
-    Pick<Partial<ProjectTokenBalance>, "balanceUsd">
+    Pick<Partial<ProjectTokenBalance>, "token" | "balanceUsd">
 > {
   const rows = deployment.projectTokenBalances?.items;
   if (!rows?.length) return [deployment];
@@ -28,6 +28,19 @@ export function tokenSymbolOf(row: Pick<ProjectTokenBalance, "token" | "tokenSym
   if (row.tokenSymbol) return row.tokenSymbol;
   const known = getTokenSymbolFromAddress(row.token);
   return known === "TOKEN" ? null : known;
+}
+
+/**
+ * Which rows are the same asset: ETH and USDC by symbol, so each chain's copy adds up;
+ * any other token by its address, so two tokens sharing a name stay apart.
+ */
+export function tokenKindOf(row: {
+  token?: string | null;
+  tokenSymbol: string | null;
+  decimals: number | null;
+}): string {
+  if (row.token && getTokenSymbolFromAddress(row.token) === "TOKEN") return row.token.toLowerCase();
+  return `${row.tokenSymbol?.trim().toUpperCase()}:${row.decimals}`;
 }
 
 type BalanceBucket = {
@@ -63,7 +76,7 @@ export function formatProjectPreviewBalance(deployments: readonly BalanceDeploym
     if (!symbol) unnamedUsd += usdFromScaled(deployment.balanceUsd) ?? 0;
     if (!symbol || decimals == null || !Number.isSafeInteger(decimals) || decimals < 0) continue;
     try {
-      const key = `${symbol.toUpperCase()}:${decimals}`;
+      const key = tokenKindOf(deployment);
       const current = buckets.get(key);
       buckets.set(key, {
         symbol,

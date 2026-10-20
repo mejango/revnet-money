@@ -64,10 +64,10 @@ describe("shields badge", () => {
     expect(body.chains[0].balance).toBeNull();
   });
 
-  it("gives no one-token amount for tokens it cannot name", async () => {
+  it.each([null, "CASH"])("keeps distinct %s tokens apart", async (tokenSymbol) => {
     const unnamed = (token: string, balance: string) => ({
       token,
-      tokenSymbol: null,
+      tokenSymbol,
       decimals: 18,
       balance,
     });

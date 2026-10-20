@@ -2,7 +2,11 @@ import { usdFromScaled } from "@/app/[slug]/components/v6/extras/projectPayers";
 import { ShieldGroupOperation, ShieldProjectOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { ShieldGroupQuery } from "@/lib/bendystraw/types";
-import { deploymentTokenBalances, formatProjectPreviewBalance } from "@/lib/project-link-preview";
+import {
+  deploymentTokenBalances,
+  formatProjectPreviewBalance,
+  tokenKindOf,
+} from "@/lib/project-link-preview";
 import { NextResponse } from "next/server";
 import { formatUnits } from "viem";
 
@@ -14,7 +18,7 @@ type ShieldDeployment = NonNullable<
 /** The deployments' holdings as one number, only when they hold a single kind of token. */
 function singleTokenAmount(deployments: readonly ShieldDeployment[]): number | null {
   const rows = deployments.flatMap(deploymentTokenBalances);
-  const kinds = new Set(rows.map((row) => `${row.tokenSymbol}:${row.decimals}`));
+  const kinds = new Set(rows.map(tokenKindOf));
   if (kinds.size !== 1 || !rows[0]?.tokenSymbol || rows[0].decimals == null) return null;
   const decimals = rows[0].decimals;
   return rows.reduce((sum, row) => sum + Number(formatUnits(BigInt(row.balance), decimals)), 0);
@@ -93,10 +97,10 @@ export async function GET(req: Request) {
 
   // Each token is labeled in its own units; a treasury holding several has no one-token total.
   const totalBalance = singleTokenAmount(deployments);
-  const symbols = new Set(
-    deployments.flatMap(deploymentTokenBalances).flatMap((row) => row.tokenSymbol ?? []),
-  );
-  const denomination = symbols.size === 1 ? [...symbols][0] : "tokens";
+  const denomination =
+    totalBalance === null
+      ? "tokens"
+      : (deployments.flatMap(deploymentTokenBalances)[0]?.tokenSymbol ?? "tokens");
 
   const host = req.headers.get("host");
   if (!host) {

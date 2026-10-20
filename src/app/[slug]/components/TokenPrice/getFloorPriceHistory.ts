@@ -94,18 +94,20 @@ export async function getFloorPriceHistory(options: FloorPriceOptions): Promise<
     fetchAllMoments(chainId, suckerGroupId),
     getSuckerGroup(suckerGroupId, chainId, projectId),
   ]);
-  // A group holding more than one token has a raw balance that adds unlike units. Its floor
+  // A group holding more than one token (or one whose tokens could not be read) may have a raw
+  // balance that adds unlike units. Its floor
   // comes from the USD balance, expressed in the accounting token at that token's own indexed
   // rate in force at each moment; a moment before any such rate is left out.
-  const accountingRates = groupMixesTokens(group?.projects?.items ?? [])
-    ? (await fetchProjectTokenBalanceMoments(chainId, { projectId, chainId, version: 6 }))
-        .filter(
-          (moment) =>
-            moment.token.toLowerCase() === baseToken.toLowerCase() &&
-            usdRateOf(moment.tokenUsdRate) !== null,
-        )
-        .sort((a, b) => a.timestamp - b.timestamp)
-    : null;
+  const accountingRates =
+    !group || groupMixesTokens(group.projects?.items ?? [])
+      ? (await fetchProjectTokenBalanceMoments(chainId, { projectId, chainId, version: 6 }))
+          .filter(
+            (moment) =>
+              moment.token.toLowerCase() === baseToken.toLowerCase() &&
+              usdRateOf(moment.tokenUsdRate) !== null,
+          )
+          .sort((a, b) => a.timestamp - b.timestamp)
+      : null;
 
   const dataPoints: PriceDataPoint[] = [];
   const orderedMoments = [...moments].sort((a, b) => a.timestamp - b.timestamp);

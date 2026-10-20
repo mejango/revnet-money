@@ -79,6 +79,14 @@ describe("cash-out floor history", () => {
     });
   });
 
+  it("takes the USD path when the group's tokens could not be read", async () => {
+    mocks.group.mockResolvedValue(null);
+
+    const points = await getFloorPriceHistory(options);
+
+    expect(points.map((point) => point.floorPrice)).toEqual([0.002]);
+  });
+
   it("keeps the exact raw balance for a single-token group", async () => {
     mocks.group.mockResolvedValue({
       projects: { items: [{ tokenSymbol: "ETH", decimals: 18, accountingTokenCount: 1 }] },
