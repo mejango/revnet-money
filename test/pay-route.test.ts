@@ -184,7 +184,16 @@ describe("a looser tolerance after a payment fails", () => {
       message: "",
     });
     expect(payRetrySlippageBps(short(970n), 100)).toBe(350);
-    expect(payRetrySlippageBps(short(0n), 100)).toBe(4_950);
+    expect(payRetrySlippageBps(short(1n), 100)).toBe(4_950);
+    // Nothing short of a zero minimum lets a payment that returns no tokens through.
+    expect(payRetrySlippageBps(short(0n), 100)).toBeNull();
+    // Amounts that aren't bigints are not a shortfall's amounts.
+    expect(
+      payRetrySlippageBps(
+        { reason: "TERMINAL_UNDER_MIN", received: 5 as unknown as bigint, message: "" },
+        100,
+      ),
+    ).toBe(200);
     expect(payRetrySlippageBps({ reason: "BUYBACK_SLIPPAGE_EXCEEDED", message: "" }, 100)).toBe(
       200,
     );

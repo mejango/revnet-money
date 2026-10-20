@@ -30,6 +30,7 @@ import {
   formatStartCountdown,
   isNativePayToken,
   PAY_DEFAULT_SLIPPAGE_BPS,
+  payFailureMessage,
   payRetrySlippageBps,
   payTokenKey,
   V6PayMode,
@@ -911,7 +912,7 @@ export function V6PayCard() {
       setPhase("ready");
       // The revert's own reason, when known, and a looser minimum when that is the fix.
       const decoded = decodePayFailure(failure ?? err);
-      setTxError(decoded?.message ?? formatWalletError(err));
+      setTxError(decoded ? payFailureMessage(decoded) : formatWalletError(err));
       if (prepared.mode === "pay") {
         setRetrySlippageBps(payRetrySlippageBps(decoded, slippageBps ?? PAY_DEFAULT_SLIPPAGE_BPS));
       }

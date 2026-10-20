@@ -264,7 +264,7 @@ describe("a failed payment's reason and a looser minimum", () => {
   });
 
   it("caps the looser tolerance below half, so the minimum never nears zero", async () => {
-    mocks.cardSimulate.mockRejectedValueOnce(underMin(0n, 990n * TOKEN));
+    mocks.cardSimulate.mockRejectedValueOnce(underMin(1n, 990n * TOKEN));
     const confirm = await payFromConfirm();
     const field = await within(confirm).findByLabelText(/Custom maximum quote change/);
     expect(field).toHaveValue(49.5);
@@ -322,5 +322,13 @@ describe("a failed payment's reason and a looser minimum", () => {
     expect(mocks.routeCalls.slice(calls).every((call) => call.slippageBps === undefined)).toBe(
       true,
     );
+  });
+
+  it("says a payment would return no tokens, and offers no tolerance for it", async () => {
+    mocks.cardSimulate.mockRejectedValueOnce(underMin(0n, 990n * TOKEN));
+    const confirm = await payFromConfirm();
+    await within(confirm).findByText("This payment would return no tokens.");
+    expect(within(confirm).queryByLabelText(/Custom maximum quote change/)).toBeNull();
+    expect(within(confirm).getByRole("button", { name: "Pay" })).toBeInTheDocument();
   });
 });
