@@ -26,7 +26,19 @@ const mocks = vi.hoisted(() => ({
   minReturned: 99n * 10n ** 19n,
   shop: undefined as unknown,
   cart: [] as unknown[],
+  erc20: false,
+  ensureAllowance: vi.fn(),
 }));
+
+const TKN = "0x7777777777777777777777777777777777777777" as Address;
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
 
 const SHOP_HOOK = "0x4444444444444444444444444444444444444444" as Address;
 const SHOP = {
@@ -73,7 +85,8 @@ vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
   useAccount: () => ({ address: mocks.address, isConnected: true }),
-  usePublicClient: () => ({ simulateContract: mocks.simulate }),
+  // ERC-20 allowance reads answer zero, so every ERC-20 payment needs an approval.
+  usePublicClient: () => ({ simulateContract: mocks.simulate, readContract: async () => 0n }),
   // The chain's own receipt read, which a Safe proposal never makes.
   useWaitForTransactionReceipt: () => ({
     data: undefined,
@@ -102,7 +115,10 @@ vi.mock("@/components/GetFunds", () => ({
 }));
 vi.mock("@/components/IpfsImage", () => ({ ImageWithFallback: () => null }));
 vi.mock("@/hooks/useAllowance", () => ({
-  useAllowance: () => ({ ensureAllowance: vi.fn(), getApprovalReceipt: () => undefined }),
+  useAllowance: () => ({
+    ensureAllowance: mocks.ensureAllowance,
+    getApprovalReceipt: () => undefined,
+  }),
 }));
 vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>();
@@ -120,7 +136,10 @@ vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => {
 });
 vi.mock("@/hooks/useTokenBalances", () => ({
   useTokenBalances: () => ({
-    balances: new Map([["0x000000000000000000000000000000000000EEEe", 10n ** 20n]]),
+    balances: new Map([
+      ["0x000000000000000000000000000000000000EEEe", 10n ** 20n],
+      [TKN, 10n ** 20n],
+    ]),
     isLoading: false,
   }),
 }));
@@ -163,31 +182,26 @@ vi.mock("@/app/[slug]/components/v6/pay/usePayShop", async (importOriginal) => (
   usePayShopRoutes: () => ({
     data: mocks.shop
       ? {
-          "0x000000000000000000000000000000000000eeee:false": {
-            supported: true,
-            pricePerUnit: 10n ** 18n,
-          },
+          [`${mocks.erc20 ? TKN.toLowerCase() : "0x000000000000000000000000000000000000eeee"}:false`]:
+            {
+              supported: true,
+              pricePerUnit: 10n ** 18n,
+            },
         }
       : undefined,
     isLoading: false,
   }),
 }));
 vi.mock("@/app/[slug]/components/v6/pay/usePaySurface", () => {
-  const surface = {
-    tokens: [
-      {
-        token: "0x000000000000000000000000000000000000EEEe",
-        decimals: 18,
-        currency: 61166,
-        symbol: "ETH",
-        viaRouter: false,
-      },
-    ],
+  const surfaceOf = (token: string, symbol: string) => ({
+    tokens: [{ token, decimals: 18, currency: 61166, symbol, viaRouter: false }],
     rulesetStart: 0,
     pausePay: false,
     terminals: ["0x3333333333333333333333333333333333333333"],
-  };
-  return { usePaySurface: () => ({ data: surface, isError: false }) };
+  });
+  const eth = surfaceOf("0x000000000000000000000000000000000000EEEe", "ETH");
+  const tkn = surfaceOf("0x7777777777777777777777777777777777777777", "TKN");
+  return { usePaySurface: () => ({ data: mocks.erc20 ? tkn : eth, isError: false }) };
 });
 vi.mock("@/app/[slug]/components/v6/pay/V6PayShopStrip", () => ({ V6PayShopStrip: () => null }));
 
@@ -201,6 +215,8 @@ beforeEach(() => {
   mocks.minReturned = 99n * 10n ** 19n;
   mocks.shop = undefined;
   mocks.cart = [];
+  mocks.erc20 = false;
+  mocks.ensureAllowance.mockReset().mockResolvedValue(HASH);
   mocks.write.mockReset().mockResolvedValue(HASH);
   mocks.simulate.mockReset().mockResolvedValue({ request: {} });
 });
@@ -364,6 +380,111 @@ describe("a payment bound to the account it was prepared for", () => {
     await screen.findByText("You get about", undefined, { timeout: 3_000 });
     expect(screen.getByText("1,000 REV")).toBeInTheDocument();
     expect(screen.getByText("At least 500 REV")).toBeInTheDocument();
+  });
+
+  it("does not send a ready payment after its quote refresh fails", async () => {
+    const client = queryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText("You get at least");
+
+    mocks.routeError = new Error("buyback hookOf read failed");
+    await client.invalidateQueries({ queryKey: ["v6PayPreview"] });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await within(confirm).findByText(/Couldn.t verify what this payment returns/);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("stops a payment whose route moves to another terminal while it is being simulated", async () => {
+    const simulation = deferred<{ request: object }>();
+    mocks.simulate.mockReturnValueOnce(simulation.promise);
+    const client = queryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText("You get at least");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.simulate).toHaveBeenCalledTimes(1));
+
+    const moved = "0x6666666666666666666666666666666666666666";
+    mocks.terminal = moved;
+    await client.invalidateQueries({ queryKey: ["v6PayPreview"] });
+    simulation.resolve({ request: {} });
+
+    await within(confirm).findByText("The payment changed. Review it again.");
+    expect(mocks.write).not.toHaveBeenCalled();
+    await within(confirm).findByText("You get at least");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    expect(mocks.write.mock.calls[0]![0]).toMatchObject({ address: moved });
+  });
+
+  it("stops an ERC-20 item checkout whose cart changes while its approval is pending", async () => {
+    mocks.erc20 = true;
+    mocks.shop = SHOP;
+    mocks.cart = cartOf(1);
+    const approval = deferred<Hex>();
+    mocks.ensureAllowance.mockReturnValueOnce(approval.promise);
+    const client = queryClient();
+    const view = render(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText("Approve TKN access");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.ensureAllowance).toHaveBeenCalledTimes(1));
+    // The terminal being paid is the spender, for exactly the payment amount.
+    expect(mocks.ensureAllowance.mock.calls[0]!.slice(0, 3)).toEqual([
+      TKN,
+      mocks.terminal,
+      10n ** 17n,
+    ]);
+
+    mocks.cart = cartOf(2);
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    approval.resolve(HASH);
+
+    await within(confirm).findByText("The payment changed. Review it again.");
+    expect(mocks.simulate).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+    await within(confirm).findByText("2× Hat");
+    await within(confirm).findByText("You get at least");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    expect(mocks.ensureAllowance.mock.calls[1]!.slice(0, 3)).toEqual([
+      TKN,
+      mocks.terminal,
+      2n * 10n ** 17n,
+    ]);
+    const payment = mocks.write.mock.calls[0]![0] as { args: readonly unknown[]; value: bigint };
+    expect(payment.args[1]).toBe(TKN);
+    expect(payment.args[2]).toBe(2n * 10n ** 17n);
+    expect(payment.args[6]).toBe("0x02");
+    expect(payment.value).toBe(0n);
   });
 
   it("says to check an identical payment's unconfirmed Safe proposal in Safe instead of reporting it proposed", async () => {

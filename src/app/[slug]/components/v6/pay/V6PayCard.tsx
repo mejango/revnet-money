@@ -511,7 +511,27 @@ export function V6PayCard() {
   const preparationChanged =
     !!prepared &&
     (prepared.identity !== payIdentity ||
-      (prepared.mode === "pay" && quoteSettled && preview.terminal !== prepared.terminal));
+      (prepared.mode === "pay" &&
+        (previewError || (quoteSettled && preview.terminal !== prepared.terminal))));
+
+  // The latest render's inputs and settled quote, read across the awaits of a
+  // send: a preparation is sent only while it still matches both.
+  const currentPayRef = useRef({ identity: payIdentity, quoteTerminal: null as Address | null });
+  useEffect(() => {
+    currentPayRef.current = {
+      identity: payIdentity,
+      quoteTerminal: quoteSettled ? preview.terminal : null,
+    };
+  });
+  const requireCurrent = (p: PreparedV6Pay) => {
+    const current = currentPayRef.current;
+    if (
+      p.identity !== current.identity ||
+      (p.mode === "pay" && current.quoteTerminal?.toLowerCase() !== p.terminal.toLowerCase())
+    ) {
+      throw new PaymentChangedError();
+    }
+  };
 
   const openConfirm = () => {
     if (phase === "safe-proposed") return;
@@ -729,14 +749,9 @@ export function V6PayCard() {
       setPhase("preparing");
       return;
     }
-    if (preparationChanged || (prepared.mode === "pay" && previewLoading)) {
-      setPrepared(null);
-      setTxError(PAYMENT_CHANGED);
-      setPhase("preparing");
-      return;
-    }
     setTxError(null);
     try {
+      requireCurrent(prepared);
       // Simulate at the approval's block. Base RPC providers are load
       // balanced: a receipt can be visible on one backend while `latest` on a
       // sibling still predates that approval.
@@ -764,6 +779,8 @@ export function V6PayCard() {
           approvalBlock = approvalReceipt.blockNumber;
         }
         setPrepared((current) => (current ? { ...current, tokenApprovalComplete: true } : current));
+        await nextUiPaint();
+        requireCurrent(prepared);
       }
       setPhase("simulating");
       await nextUiPaint();
@@ -776,6 +793,8 @@ export function V6PayCard() {
         account: prepared.account,
         blockNumber: approvalBlock,
       } as unknown as Parameters<typeof publicClient.simulateContract>[0]);
+      await nextUiPaint();
+      requireCurrent(prepared);
       setPhase("signing");
       // Held by the project and beneficiary alone: one payment to a project at a time, whatever
       // the cart, token, route, amount or memo.
@@ -805,6 +824,13 @@ export function V6PayCard() {
       }
       setPhase("success");
     } catch (err) {
+      if (err instanceof PaymentChangedError) {
+        // Stop before the wallet and rebuild what is on screen for review.
+        setPrepared(null);
+        setTxError(PAYMENT_CHANGED);
+        setPhase("preparing");
+        return;
+      }
       if (isSafeProposalPendingError(err)) {
         setPhase("safe-proposed");
         setTxHash(err.hash);
@@ -1358,6 +1384,12 @@ async function needsApproval(
 }
 
 const PAYMENT_CHANGED = "The payment changed. Review it again.";
+
+class PaymentChangedError extends Error {
+  constructor() {
+    super(PAYMENT_CHANGED);
+  }
+}
 
 function nextUiPaint(): Promise<void> {
   return new Promise((resolve) => {
