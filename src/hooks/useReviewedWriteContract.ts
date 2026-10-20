@@ -39,6 +39,7 @@ import {
 import {
   browserLocks,
   gasWithHeadroom,
+  HELD_FAILED_LINE,
   HELD_RELEASED_LINE,
   isDefiniteWalletRejection,
   SAFE_PROPOSAL_EXECUTED_LINE,
@@ -1003,7 +1004,7 @@ export function useWaitForTransactionReceipt(
     if (!settled || !trackedId) return;
     updateTransactionActivity(trackedId, {
       status: settled.result === "success" ? "success" : "failed",
-      message: settled.result === "success" ? "Confirmed onchain." : WRITE_HOLD_REVERTED_LINE,
+      message: settled.result === "success" ? "Confirmed onchain." : HELD_FAILED_LINE,
     });
   }, [settled, trackedId]);
   const held =
@@ -1033,7 +1034,7 @@ export function useWaitForTransactionReceipt(
           : reverted
             ? new Error(`Transaction ${hash} reverted onchain.`)
             : heldFailed
-              ? new Error(WRITE_HOLD_REVERTED_LINE)
+              ? new Error(HELD_FAILED_LINE)
               : !tracked
                 ? query.error
                 : undefined,
