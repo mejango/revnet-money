@@ -27,7 +27,7 @@ export function getTokenSymbolFromAddress(tokenAddress: string) {
  * amounts add unlike units.
  */
 export function groupMixesTokens(
-  projects: ReadonlyArray<{ tokenSymbol: string | null; decimals: number | null }>,
+  projects: ReadonlyArray<{ tokenSymbol?: string | null; decimals?: number | null }>,
 ): boolean {
   const kinds = new Set(
     projects
