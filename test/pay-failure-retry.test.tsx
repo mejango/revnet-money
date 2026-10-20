@@ -290,18 +290,28 @@ describe("a failed payment's reason and a looser minimum", () => {
     expect(within(confirm).getByRole("button", { name: "Pay" })).toBeInTheDocument();
   });
 
-  it("replays a payment that reverted onchain at its block, and says why", async () => {
+  it("says a mined payment reverted, then quotes and simulates it again for a reason", async () => {
     mocks.receipt.mockResolvedValue({ status: "reverted", blockNumber: 101n });
-    // The send's simulation passes; the replay at the receipt's block reverts.
-    mocks.cardSimulate
-      .mockResolvedValueOnce({ request: {} })
-      .mockRejectedValueOnce(underMin(980n * TOKEN, 990n * TOKEN));
     const confirm = await payFromConfirm();
+    await within(confirm).findByText("The payment reverted.");
+    // No replay at the receipt's block: only the send's own simulation ran.
+    expect(mocks.cardSimulate).toHaveBeenCalledTimes(1);
+    expect(within(confirm).queryByLabelText(/Custom maximum quote change/)).toBeNull();
+
+    const quotes = mocks.routeCalls.length;
+    fireEvent.click(within(confirm).getByRole("button", { name: "Review again" }));
+    await waitFor(() => expect(mocks.routeCalls.length).toBeGreaterThan(quotes));
+    await within(confirm).findByText(/^990 /);
+
+    // The fresh simulation, at the latest block, is what names the reason.
+    mocks.cardSimulate.mockRejectedValueOnce(underMin(980n * TOKEN, 990n * TOKEN));
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await within(confirm).findByText(
       "This payment would get fewer tokens than your minimum, so lower your minimum or try again.",
     );
-    expect(mocks.cardSimulate.mock.calls.at(-1)?.[0]).toMatchObject({ blockNumber: 101n });
+    expect(mocks.cardSimulate.mock.calls.at(-1)?.[0]).not.toHaveProperty("blockNumber", 101n);
     expect(within(confirm).getByLabelText(/Custom maximum quote change/)).toHaveValue(2.5);
+    expect(mocks.submit).toHaveBeenCalledTimes(1);
   });
 
   it("drops a loosened tolerance when the review closes or the payment changes", async () => {

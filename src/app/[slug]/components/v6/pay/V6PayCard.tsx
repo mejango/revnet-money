@@ -162,6 +162,8 @@ export function V6PayCard() {
   const [payerSlippage, setPayerSlippage] = useState<{ bps: number; payment: string } | null>(null);
   /** The tolerance offered after a shortfall, until the payer reviews again with it. */
   const [retrySlippageBps, setRetrySlippageBps] = useState<number | null>(null);
+  /** The payment reverted onchain: quote and simulate it again before anything else is sent. */
+  const [revertedOnchain, setRevertedOnchain] = useState(false);
   const [tokenIndex, setTokenIndex] = useState(0);
   // True once the user explicitly picks a pay token. Until then the selection
   // auto-defaults to the project's accounting token (list[0]) so an ETH/USDC
@@ -577,6 +579,7 @@ export function V6PayCard() {
 
     setTxError(null);
     setRetrySlippageBps(null);
+    setRevertedOnchain(false);
     setTxHash(undefined);
     setPrepared(null);
     setPhase("preparing");
@@ -765,6 +768,7 @@ export function V6PayCard() {
       prepared.account.toLowerCase() !== address?.toLowerCase() ? ACCOUNT_CHANGED : PAYMENT_CHANGED,
     );
     setRetrySlippageBps(null);
+    setRevertedOnchain(false);
     setPrepared(null);
     setPhase("preparing");
   }, [confirmOpen, phase, prepared, preparationChanged, address]);
@@ -773,6 +777,7 @@ export function V6PayCard() {
   const reviewWithSlippage = (bps: number) => {
     setPayerSlippage({ bps, payment: paymentInputs });
     setRetrySlippageBps(null);
+    setRevertedOnchain(false);
     setTxError(null);
     setPrepared(null);
     setPhase("preparing");
@@ -782,6 +787,16 @@ export function V6PayCard() {
     if (!publicClient || !address) return;
     if (retrySlippageBps !== null) {
       reviewWithSlippage(retrySlippageBps);
+      return;
+    }
+    if (revertedOnchain) {
+      // A fresh quote, reviewed and simulated at the latest block; only that simulation's
+      // failure is a reason.
+      setRevertedOnchain(false);
+      setTxError(null);
+      setPrepared(null);
+      void refetchPreview();
+      setPhase("preparing");
       return;
     }
     if (!prepared) {
@@ -800,8 +815,6 @@ export function V6PayCard() {
     }
     setTxError(null);
     sendingRef.current = prepared;
-    /** Why the payment reverted, when the chain says. */
-    let failure: unknown;
     try {
       requireCurrent(prepared, currentPayRef.current);
       // Simulate at the approval's block. Base RPC providers are load
@@ -872,22 +885,7 @@ export function V6PayCard() {
       requireOnchainExecution(hash);
       const receipt = await waitForReceiptWithRetry(publicClient as PublicClient, hash);
       if (receipt.status !== "success") {
-        // A receipt carries no reason: the same call at its block says why it reverts there.
-        failure = await publicClient
-          .simulateContract({
-            address: paymentRequest.address,
-            abi: paymentRequest.abi,
-            functionName: paymentRequest.functionName,
-            args: paymentRequest.args as unknown[],
-            value: paymentRequest.value,
-            account: prepared.account,
-            blockNumber: receipt.blockNumber,
-          } as unknown as Parameters<typeof publicClient.simulateContract>[0])
-          .then(
-            () => undefined,
-            (error: unknown) => error,
-          );
-        throw new Error(`Transaction ${hash} reverted onchain.`);
+        throw new PaymentRevertedError();
       }
       setPhase("success");
     } catch (err) {
@@ -903,6 +901,13 @@ export function V6PayCard() {
         setTxHash(err.hash);
         return;
       }
+      if (err instanceof PaymentRevertedError) {
+        // A receipt carries no reason, and replaying it can't establish one.
+        setPhase("ready");
+        setTxError(err.message);
+        setRevertedOnchain(true);
+        return;
+      }
       if (isTransactionReceiptUnavailableError(err)) {
         setPhase("pending");
         setTxHash(err.hash);
@@ -911,7 +916,7 @@ export function V6PayCard() {
       }
       setPhase("ready");
       // The revert's own reason, when known, and a looser minimum when that is the fix.
-      const decoded = decodePayFailure(failure ?? err);
+      const decoded = decodePayFailure(err);
       setTxError(decoded ? payFailureMessage(decoded) : formatWalletError(err));
       if (prepared.mode === "pay") {
         setRetrySlippageBps(payRetrySlippageBps(decoded, slippageBps ?? PAY_DEFAULT_SLIPPAGE_BPS));
@@ -925,6 +930,7 @@ export function V6PayCard() {
     setConfirmOpen(false);
     setPayerSlippage(null);
     setRetrySlippageBps(null);
+    setRevertedOnchain(false);
     setPrepared(null);
     setPhase("preparing");
     setTxHash(undefined);
@@ -942,6 +948,7 @@ export function V6PayCard() {
       setTxError(null);
       setPayerSlippage(null);
       setRetrySlippageBps(null);
+      setRevertedOnchain(false);
       setAmount("");
       setDebouncedAmount("");
       setMemo("");
@@ -982,6 +989,7 @@ export function V6PayCard() {
       setPrepared(null);
       setTxError(null);
       setRetrySlippageBps(null);
+      setRevertedOnchain(false);
       setTxHash(undefined);
       setPhase("preparing");
     }
@@ -1439,12 +1447,14 @@ export function V6PayCard() {
             if (!open) {
               setPayerSlippage(null);
               setRetrySlippageBps(null);
+              setRevertedOnchain(false);
             }
           }}
           prepared={prepared}
           phase={phase}
           mode={mode}
           error={txError}
+          reviewAgain={revertedOnchain}
           retrySlippage={
             retrySlippageBps !== null
               ? { bps: retrySlippageBps, onChange: setRetrySlippageBps }
@@ -1479,6 +1489,12 @@ async function needsApproval(
 }
 
 const PAYMENT_CHANGED = "The payment changed. Review it again.";
+
+class PaymentRevertedError extends Error {
+  constructor() {
+    super("The payment reverted.");
+  }
+}
 
 class PaymentChangedError extends Error {
   constructor() {

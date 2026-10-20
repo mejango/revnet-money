@@ -97,6 +97,7 @@ export function V6PayConfirmDialog({
   phase,
   mode,
   error,
+  reviewAgain,
   retrySlippage,
   projectTokenSymbol,
   txHash,
@@ -109,6 +110,8 @@ export function V6PayConfirmDialog({
   phase: V6PayPhase;
   mode: V6PayMode;
   error: string | null;
+  /** The payment reverted onchain: the button quotes and reviews it again. */
+  reviewAgain?: boolean;
   /** After a minimum shortfall: the looser tolerance the payment is reviewed again with. */
   retrySlippage?: { bps: number; onChange: (bps: number) => void } | null;
   projectTokenSymbol: string;
@@ -264,7 +267,11 @@ export function V6PayConfirmDialog({
                       onClick={onConfirm}
                       className="bg-teal-500 text-melon-950 hover:bg-teal-600"
                     >
-                      {retrySlippage ? "Review again" : mode === "pay" ? "Pay" : "Add to balance"}
+                      {retrySlippage || reviewAgain
+                        ? "Review again"
+                        : mode === "pay"
+                          ? "Pay"
+                          : "Add to balance"}
                     </Button>
                   </div>
                 </>
