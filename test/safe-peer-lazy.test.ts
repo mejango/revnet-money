@@ -11,6 +11,7 @@ const runtime = vi.hoisted(() => {
     release: () => release(),
     loaded: vi.fn(),
     connector: undefined as { id: string; getProvider: () => Promise<unknown> } | undefined,
+    onChange: undefined as ((account: unknown) => void) | undefined,
   };
 });
 
@@ -21,10 +22,13 @@ vi.mock("@bananapus/nana-sdk-core/safe-service", async () => {
 });
 vi.mock("wagmi/actions", () => ({
   getAccount: () => ({ connector: runtime.connector }),
-  watchAccount: () => () => undefined,
+  watchAccount: (_config: unknown, { onChange }: { onChange: (account: unknown) => void }) => {
+    runtime.onChange = onChange;
+    return () => undefined;
+  },
 }));
 
-import { isSafeConnection, watchSafeWalletPeer } from "@/lib/safe-connector";
+import { isSafeConnection, safeWalletPeerSettled, watchSafeWalletPeer } from "@/lib/safe-connector";
 
 const CONFIG = {} as never;
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -57,5 +61,20 @@ describe("Safe{Wallet} peer check with a lazily loaded Safe service", () => {
     await flush();
     expect(runtime.loaded).toHaveBeenCalledTimes(1);
     expect(isSafeConnection(CONFIG)).toBe(true);
+  });
+
+  it("stops waiting on a hung WalletConnect check once a newer connection's check settles", async () => {
+    runtime.connector = { id: "walletConnect", getProvider: () => new Promise(() => {}) };
+    watchSafeWalletPeer(CONFIG);
+    const settled = vi.fn();
+    void safeWalletPeerSettled().then(settled);
+    await flush();
+    expect(settled).not.toHaveBeenCalled();
+
+    runtime.connector = { id: "injected", getProvider: async () => ({}) };
+    runtime.onChange?.({ connector: runtime.connector });
+    await flush();
+    expect(settled).toHaveBeenCalledTimes(1);
+    expect(isSafeConnection(CONFIG)).toBe(false);
   });
 });

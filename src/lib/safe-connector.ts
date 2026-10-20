@@ -10,6 +10,11 @@ let safeWalletPeer = false;
 let reads = 0;
 /** The latest peer check; settles once its answer, Safe{Wallet} or not, is recorded. */
 let latestCheck: Promise<void> = Promise.resolve();
+/** Settles when a newer check replaces `latestCheck`, so no caller waits on a superseded one. */
+let wakeReplaced = () => {};
+let replaced = new Promise<void>((resolve) => {
+  wakeReplaced = resolve;
+});
 const listeners = new Set<() => void>();
 
 /**
@@ -49,10 +54,22 @@ function subscribe(listener: () => void) {
 /**
  * Resolves once the latest WalletConnect peer check has recorded its answer, so a send that
  * chooses gas by `isSafeConnection` never decides before the check (and its lazily loaded
- * Safe service module) has.
+ * Safe service module) has. A check replaced by a newer connection's stops being waited on.
  */
-export function safeWalletPeerSettled(): Promise<void> {
-  return latestCheck;
+export async function safeWalletPeerSettled(): Promise<void> {
+  let check: Promise<void>;
+  do {
+    check = latestCheck;
+    await Promise.race([check, replaced]);
+  } while (check !== latestCheck);
+}
+
+function startCheck(check: Promise<void>) {
+  latestCheck = check;
+  wakeReplaced();
+  replaced = new Promise<void>((resolve) => {
+    wakeReplaced = resolve;
+  });
 }
 
 /**
@@ -84,10 +101,10 @@ export function watchSafeWalletPeer(config: Config): () => void {
     safeWalletPeer = peer;
     for (const listener of listeners) listener();
   };
-  latestCheck = check(getAccount(config).connector);
+  startCheck(check(getAccount(config).connector));
   return watchAccount(config, {
     onChange: (account) => {
-      latestCheck = check(account.connector);
+      startCheck(check(account.connector));
     },
   });
 }
