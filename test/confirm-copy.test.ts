@@ -89,5 +89,6 @@ describe("confirm copy", () => {
       visit(source);
     }
     expect(offenders).toEqual([]);
-  });
+    // Parses every component; the default 10 s timed out under a loaded full run.
+  }, 30_000);
 });

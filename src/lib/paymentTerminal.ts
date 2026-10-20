@@ -34,8 +34,10 @@ export async function resolveBestV6PayRoute(args: {
   amount: bigint;
   beneficiary: Address;
   attachedTerminals?: readonly Address[];
+  /** The payer's tolerance on the SDK's quote and minimum; the SDK default when unset. */
+  slippageBps?: bigint;
 }): Promise<V6PayRoute | null> {
-  const { client, chainId, projectId, token, amount, beneficiary } = args;
+  const { client, chainId, projectId, token, amount, beneficiary, slippageBps } = args;
 
   const previews = await Promise.all(
     v6PayRouteCandidates(chainId, args.attachedTerminals).map(async (route) => {
@@ -47,6 +49,7 @@ export async function resolveBestV6PayRoute(args: {
           token,
           amount,
           beneficiary,
+          ...(slippageBps !== undefined ? { slippageBps } : {}),
         });
         return { ...route, ...prepared };
       } catch {

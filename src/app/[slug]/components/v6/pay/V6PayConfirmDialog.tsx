@@ -1,5 +1,6 @@
 "use client";
 
+import { AllowedDecreaseField } from "@/components/AllowedDecreaseField";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -13,6 +14,7 @@ import { TxSteps } from "@/components/ui/TxSteps";
 import { etherscanLink } from "@/lib/utils";
 import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { PAY_MAX_SLIPPAGE_BPS } from "@bananapus/nana-sdk-core/v6";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
@@ -91,6 +93,8 @@ export function V6PayConfirmDialog({
   phase,
   mode,
   error,
+  reviewAgain,
+  retrySlippage,
   projectTokenSymbol,
   txHash,
   onConfirm,
@@ -102,6 +106,10 @@ export function V6PayConfirmDialog({
   phase: V6PayPhase;
   mode: V6PayMode;
   error: string | null;
+  /** The payment reverted onchain: the button quotes and reviews it again. */
+  reviewAgain?: boolean;
+  /** After a minimum shortfall: the looser tolerance the payment is reviewed again with. */
+  retrySlippage?: { bps: number; onChange: (bps: number) => void } | null;
   projectTokenSymbol: string;
   txHash: `0x${string}` | undefined;
   onConfirm: () => void;
@@ -233,6 +241,14 @@ export function V6PayConfirmDialog({
                         </p>
                       ) : null}
                       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+                      {retrySlippage ? (
+                        <AllowedDecreaseField
+                          className=""
+                          bps={retrySlippage.bps}
+                          onChange={retrySlippage.onChange}
+                          maxBps={Number(PAY_MAX_SLIPPAGE_BPS)}
+                        />
+                      ) : null}
                     </div>
                   ) : error ? (
                     <p className="py-4 text-sm text-red-600">{error}</p>
@@ -247,7 +263,11 @@ export function V6PayConfirmDialog({
                       onClick={onConfirm}
                       className="bg-teal-500 text-melon-950 hover:bg-teal-600"
                     >
-                      {mode === "pay" ? "Pay" : "Add to balance"}
+                      {retrySlippage || reviewAgain
+                        ? "Review again"
+                        : mode === "pay"
+                          ? "Pay"
+                          : "Add to balance"}
                     </Button>
                   </div>
                 </>

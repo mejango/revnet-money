@@ -6,6 +6,14 @@ import {
 import type { CashOutRoute } from "@bananapus/nana-sdk-core/v6";
 import { describe, expect, it } from "vitest";
 
+// SDK 3.4 reads a revert only with its arguments, as a simulation's error carries them.
+function revert(selector: string) {
+  const word = (value: bigint) => value.toString(16).padStart(64, "0");
+  return Object.assign(new Error("cashOutTokensOf reverted"), {
+    data: `${selector}${word(1n)}${word(2n)}`,
+  });
+}
+
 describe("cash-out chain and presentation adapters", () => {
   it("defaults one available chain and drops a stale remembered selection", () => {
     expect(resolveCashOutChainId([8453], undefined)).toBe("8453");
@@ -15,15 +23,15 @@ describe("cash-out chain and presentation adapters", () => {
   });
 
   it("explains the buyback slippage selector", () => {
-    expect(
-      cashOutExecutionErrorMessage(new Error("cashOutTokensOf reverted with signature 0xe2d708a9")),
-    ).toMatch(/pool moved below your protected minimum/i);
+    expect(cashOutExecutionErrorMessage(revert("0xe2d708a9"))).toMatch(
+      /pool moved below your protected minimum/i,
+    );
   });
 
   it("explains terminal minimum failures and ignores unrelated errors", () => {
-    expect(
-      cashOutExecutionErrorMessage(new Error("cashOutTokensOf reverted with signature 0x6b2bb382")),
-    ).toMatch(/project cash-out fell below your protected minimum/i);
+    expect(cashOutExecutionErrorMessage(revert("0x6b2bb382"))).toMatch(
+      /project cash-out fell below your protected minimum/i,
+    );
     expect(cashOutExecutionErrorMessage(new Error("wallet disconnected"))).toBeNull();
   });
 

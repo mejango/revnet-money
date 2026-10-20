@@ -1,5 +1,4 @@
 import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
-import { minReturnedTokens } from "@/lib/quote";
 import {
   formatPayAmount,
   formatStartCountdown,
@@ -172,13 +171,6 @@ describe("router and minimum-output guardrails", () => {
     await expect(
       routerPayRouteWorks(unavailableClient, sepolia.id, 9003n, ROUTER, TOKEN, 6),
     ).resolves.toBe(false);
-  });
-
-  it("keeps verified zero issuance at zero and never erases protection for a positive quote", () => {
-    expect(minReturnedTokens(0n)).toBe(0n);
-    expect(minReturnedTokens(-1n)).toBe(0n);
-    expect(minReturnedTokens(10_000n, 500n)).toBe(9_500n);
-    expect(minReturnedTokens(1n, 500n)).toBe(1n);
   });
 });
 

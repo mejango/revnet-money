@@ -8,8 +8,8 @@ import {
 } from "@/lib/transaction-activity";
 import { holdInputOf, writeHolds } from "@/lib/write-hold";
 import {
+  HELD_FAILED_LINE,
   HELD_RELEASED_ELSEWHERE_LINE,
-  WRITE_HOLD_REVERTED_LINE,
   type WriteHoldClient,
 } from "@bananapus/nana-sdk-core/review";
 import { useHeldWrite } from "@bananapus/nana-sdk-core/review/react";
@@ -72,7 +72,7 @@ function HeldRowFollower({ row }: { row: TransactionActivity }) {
       )
         updateTransactionActivity(row.id, {
           status: settled.result === "success" ? "success" : "failed",
-          message: settled.result === "success" ? "Confirmed onchain." : WRITE_HOLD_REVERTED_LINE,
+          message: settled.result === "success" ? "Confirmed onchain." : HELD_FAILED_LINE,
         });
       return;
     }
