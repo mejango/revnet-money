@@ -1,6 +1,7 @@
 import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
+import { MaxQuoteChange } from "@/components/MaxQuoteChange";
 import {
   Dialog,
   DialogContent,
@@ -542,44 +543,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     </div>
                   ) : null}
 
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <span className="shrink-0 text-sm text-zinc-700">Max quote change</span>
-                    <div className="flex flex-wrap items-center gap-1">
-                      {[50, 100, 300].map((bps) => (
-                        <button
-                          key={bps}
-                          type="button"
-                          onClick={() => setSlippageBps(bps)}
-                          className={
-                            slippageBps === bps
-                              ? "h-7 px-2 text-sm rounded-md border border-teal-500 bg-teal-500 text-melon-950"
-                              : "h-7 px-2 text-sm rounded-md border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100"
-                          }
-                        >
-                          {bps / 100}%
-                        </button>
-                      ))}
-                      <label className="flex h-7 w-[4.75rem] shrink-0 items-center border border-melon-300 bg-melon-25 px-2 text-sm text-zinc-700 focus-within:border-teal-600">
-                        <span className="sr-only">Custom maximum quote change, percent</span>
-                        <input
-                          type="number"
-                          min="0"
-                          max="99.99"
-                          step="0.1"
-                          inputMode="decimal"
-                          value={slippageBps / 100}
-                          onChange={(event) => {
-                            const percent = Number(event.target.value);
-                            if (Number.isFinite(percent) && percent >= 0 && percent < 100) {
-                              setSlippageBps(Math.round(percent * 100));
-                            }
-                          }}
-                          className="min-w-0 flex-1 !border-0 !bg-transparent !p-0 text-right !shadow-none outline-none !ring-0 focus:!border-0 focus:!shadow-none focus:!ring-0"
-                        />
-                        <span>%</span>
-                      </label>
-                    </div>
-                  </div>
+                  <MaxQuoteChange bps={slippageBps} onChange={setSlippageBps} />
 
                   {!directSell && poolBufferBps !== null ? (
                     <div className="mt-2 text-sm text-zinc-500">
