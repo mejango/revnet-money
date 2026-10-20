@@ -100,6 +100,25 @@ describe("cash-out floor history", () => {
         },
       },
     ],
+    [
+      "include one without a readable symbol",
+      {
+        projects: {
+          items: [
+            {
+              token: "0x00000000000000000000000000000000000000aa",
+              tokenSymbol: "CASH",
+              decimals: 18,
+            },
+            {
+              token: "0x00000000000000000000000000000000000000bb",
+              tokenSymbol: null,
+              decimals: 18,
+            },
+          ],
+        },
+      },
+    ],
   ])("takes the USD path when the group's tokens %s", async (_case, group) => {
     mocks.group.mockResolvedValue(group);
 

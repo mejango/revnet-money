@@ -47,7 +47,9 @@ export function groupMixesTokens(
   projects: ReadonlyArray<TokenIdentity & { accountingTokenCount?: number | null }>,
 ): boolean {
   if (projects.some((project) => (project.accountingTokenCount ?? 0) > 1)) return true;
-  const kinds = new Set(projects.filter((project) => project.tokenSymbol).map(tokenKindOf));
+  const kinds = new Set(
+    projects.filter((project) => project.token || project.tokenSymbol).map(tokenKindOf),
+  );
   return kinds.size > 1;
 }
 
