@@ -30,7 +30,7 @@ ${REVNET_ONE_LINER} revnet.money runs revnets on Juicebox V6 across Ethereum, Op
 
 1. Launch: learn the goal. Get one start time from \`jb_suggest_revnet_start\`, model the stages from it with \`jb_model_economics\`, then prepare each chain with \`jb_prepare_revnet_deploy\` using that start, one salt, and one sender. A chain that lands after the start locks cash outs and loans there for 7 days. Or write a .jb draft for ${siteOrigin}/create, which prepares every chain with matching terms. Walk through every stage before the user signs. Without a shop config, the launch adds an empty NFT shop the operator runs. Ask before pinning the name and logo; without a pin the token keeps its name and ticker, but the revnet's page has none until the operator adds them with \`jb_prepare_set_project_uri\`. Guide: ${siteOrigin}/build#launch-with-an-agent
 2. Check before paying: stages, split, cash out tax, operator, chains, which token the balance holds (holders cash out in it), and who holds the most. \`jb_get_revnet\` names the operator. Say what a payer gets and how they get out.
-3. Pay: quote, and compare \`jb_quote_pool_buy\`, which skips the split. Set a minimum.
+3. Pay: quote with \`jb_quote_pay\`. When the buyback hook buys from the pool, the payer can set \`skipSplits\` to keep everything it buys, without the split. Also compare \`jb_quote_pool_buy\`. Prepare the better one with \`jb_prepare_pay\` or \`jb_prepare_pool_buy\`, with the minimum set from the simulated fill.
 4. Cash out: use the hook-aware quote. A higher tax keeps more for remaining holders.
 5. Borrow: amount, fees, repayment, and the 3,650-day limit.
 
