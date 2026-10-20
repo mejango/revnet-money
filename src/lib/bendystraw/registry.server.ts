@@ -227,7 +227,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
             version
             suckerGroupId
             accountingTokenCount
-            projectTokenBalances { items { token tokenSymbol decimals balance } }
+            projectTokenBalances { items { token tokenSymbol decimals balance balanceUsd } }
           }
         }
       }
@@ -1078,7 +1078,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
             token
             tokenSymbol
             decimals
-            projectTokenBalances { items { token tokenSymbol decimals balance } }
+            projectTokenBalances { items { token tokenSymbol decimals balance balanceUsd } }
             participants(limit: 100) {
               totalCount
               items { address chainId projectId lastPaidTimestamp balance }

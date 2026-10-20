@@ -51,6 +51,37 @@ describe("project link preview balance", () => {
     ).toBe("0.01 ETH + 20.00 USDC");
   });
 
+  it("shows a held token with an unreadable symbol in USD", () => {
+    const unnamed = {
+      token: "0x00000000000000000000000000000000000000aa",
+      tokenSymbol: null,
+      decimals: 18,
+      balance: "1000000000000000000",
+      balanceUsd: "12000000000000000000",
+    };
+    const deployment = (items: unknown[]) =>
+      ({
+        balance: "0",
+        decimals: 18,
+        tokenSymbol: "ETH",
+        projectTokenBalances: { items },
+      }) as never;
+    expect(
+      formatProjectPreviewBalance([
+        deployment([
+          {
+            token: "0x000000000000000000000000000000000000eeee",
+            tokenSymbol: "ETH",
+            decimals: 18,
+            balance: "1000000000000000000",
+          },
+          unnamed,
+        ]),
+      ]),
+    ).toBe("1 ETH + $12.00");
+    expect(formatProjectPreviewBalance([deployment([unnamed])])).toBe("$12.00");
+  });
+
   it("leaves out a token the project no longer holds", () => {
     expect(
       formatProjectPreviewBalance([

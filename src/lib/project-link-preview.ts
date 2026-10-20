@@ -1,3 +1,4 @@
+import { formatUsd, usdFromScaled } from "@/app/[slug]/components/v6/extras/projectPayers";
 import type { Project, ProjectTokenBalance } from "@/lib/bendystraw/types";
 import { formatTokenAmount } from "@/lib/token";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
@@ -13,7 +14,10 @@ type BalanceDeployment = Pick<Project, "balance" | "decimals" | "tokenSymbol"> &
  */
 export function deploymentTokenBalances(
   deployment: BalanceDeployment,
-): Array<Pick<Project, "balance" | "decimals" | "tokenSymbol">> {
+): Array<
+  Pick<Project, "balance" | "decimals" | "tokenSymbol"> &
+    Pick<Partial<ProjectTokenBalance>, "balanceUsd">
+> {
   const rows = deployment.projectTokenBalances?.items;
   if (!rows?.length) return [deployment];
   return rows.map((row) => ({ ...row, tokenSymbol: tokenSymbolOf(row) }));
@@ -51,9 +55,12 @@ export function projectPreviewSlogan(...values: Array<string | null | undefined>
 /** Keep unlike treasury assets separate instead of presenting a fake total. */
 export function formatProjectPreviewBalance(deployments: readonly BalanceDeployment[]): string {
   const buckets = new Map<string, BalanceBucket>();
+  // Holdings in a token whose symbol is unreadable are shown in USD.
+  let unnamedUsd = 0;
   for (const deployment of deployments.flatMap(deploymentTokenBalances)) {
     const symbol = deployment.tokenSymbol?.trim();
     const decimals = deployment.decimals;
+    if (!symbol) unnamedUsd += usdFromScaled(deployment.balanceUsd) ?? 0;
     if (!symbol || decimals == null || !Number.isSafeInteger(decimals) || decimals < 0) continue;
     try {
       const key = `${symbol.toUpperCase()}:${decimals}`;
@@ -70,9 +77,10 @@ export function formatProjectPreviewBalance(deployments: readonly BalanceDeploym
 
   // A token the project no longer holds is noise beside one it does.
   const held = [...buckets.values()].filter((bucket) => bucket.amount > 0n);
-  const values = (held.length ? held : [...buckets.values()])
+  const values = (held.length || unnamedUsd > 0 ? held : [...buckets.values()])
     .sort((left, right) => left.symbol.localeCompare(right.symbol))
-    .map((bucket) => `${formatTokenAmount(bucket.amount, bucket)} ${bucket.symbol}`);
+    .map((bucket) => `${formatTokenAmount(bucket.amount, bucket)} ${bucket.symbol}`)
+    .concat(unnamedUsd > 0 ? [formatUsd(unnamedUsd)] : []);
   if (!values.length) return "Unavailable";
   if (values.length <= 2) return values.join(" + ");
   return `${values.slice(0, 2).join(" + ")} + ${values.length - 2} more`;

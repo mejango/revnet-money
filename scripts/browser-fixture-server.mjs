@@ -337,6 +337,7 @@ const fixtureTokenBalance = {
   tokenSymbol: "USDC",
   decimals: 6,
   balance: "1250000000",
+  balanceUsd: "1250000000000000000000",
 };
 const fixtureSuckerGroup = {
   id: suckerGroupId,
@@ -713,13 +714,7 @@ const graphqlHandlers = {
                   projectTagline: browserProject.metadata.projectTagline,
                   version: 6,
                   projectTokenBalances: {
-                    items: [
-                      {
-                        ...fixtureTokenBalance,
-                        balanceUsd: "1250000000000000000000",
-                        usdRate: "1000000000000000000",
-                      },
-                    ],
+                    items: [{ ...fixtureTokenBalance, usdRate: "1000000000000000000" }],
                   },
                 },
               ],

@@ -64,6 +64,33 @@ describe("shields badge", () => {
     expect(body.chains[0].balance).toBeNull();
   });
 
+  it("gives no one-token amount for tokens it cannot name", async () => {
+    const unnamed = (token: string, balance: string) => ({
+      token,
+      tokenSymbol: null,
+      decimals: 18,
+      balance,
+    });
+    const body = await badge(
+      [
+        {
+          ...deployment,
+          balance: "11000000000000000000",
+          projectTokenBalances: {
+            items: [
+              unnamed("0x00000000000000000000000000000000000000aa", "1000000000000000000"),
+              unnamed("0x00000000000000000000000000000000000000bb", "10000000000000000000"),
+            ],
+          },
+        },
+      ],
+      null,
+    );
+
+    expect(body).toMatchObject({ tvlBalance: null, denomination: "tokens" });
+    expect(body.chains[0].balance).toBeNull();
+  });
+
   it("keeps a one-token amount and leaves out USD the indexer has not priced", async () => {
     const body = await badge(
       [{ ...deployment, balance: "1500000000000000000", projectTokenBalances: null }],

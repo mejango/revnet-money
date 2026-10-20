@@ -200,5 +200,22 @@ describe("homepage reserves", () => {
       { chainId: 1, valueUsd: 2000 },
       { chainId: 1, valueUsd: 4000 },
     ]);
+    // REV's fees value the unpriced moment at the last rate it had.
+    expect(reserves.feesUsd).toBe(4000);
+  });
+
+  it("leaves out the chain breakdown when a deployment's history is unavailable", async () => {
+    const query = mocks.query.getMockImplementation()!;
+    mocks.query.mockImplementation(async (chainId, operation, variables) => {
+      if (operation.id === "project-token-balance-moments.v1" && variables.chainId === 8453) {
+        throw new Error("index unavailable");
+      }
+      return query(chainId, operation, variables);
+    });
+
+    const reserves = await getHomepageReserves();
+
+    expect(reserves.totalUsd).toBe(2150);
+    expect(reserves.points.every((point) => point.chains.length === 0)).toBe(true);
   });
 });

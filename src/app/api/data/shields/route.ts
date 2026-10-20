@@ -15,7 +15,7 @@ type ShieldDeployment = NonNullable<
 function singleTokenAmount(deployments: readonly ShieldDeployment[]): number | null {
   const rows = deployments.flatMap(deploymentTokenBalances);
   const kinds = new Set(rows.map((row) => `${row.tokenSymbol}:${row.decimals}`));
-  if (kinds.size !== 1 || rows[0]?.decimals == null) return null;
+  if (kinds.size !== 1 || !rows[0]?.tokenSymbol || rows[0].decimals == null) return null;
   const decimals = rows[0].decimals;
   return rows.reduce((sum, row) => sum + Number(formatUnits(BigInt(row.balance), decimals)), 0);
 }

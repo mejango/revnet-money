@@ -188,26 +188,30 @@ const cachedReserves = unstable_cache(
           version: project.version,
           projectId: project.projectId,
           rows: project.projectTokenBalances?.items ?? [],
-          moments: await fetchProjectTokenBalanceMoments(mainnet.id, project).catch(() => []),
+          moments: await fetchProjectTokenBalanceMoments(mainnet.id, project).catch(() => null),
         })),
       ),
     );
     // One history per (deployment, token), each token valued in its own decimals.
     const tokenHistories = projectHistories.flatMap((project) => {
+      const projectMoments = project.moments ?? [];
       const tokens = new Set([
         ...project.rows.map((row) => row.token.toLowerCase()),
-        ...project.moments.map((moment) => moment.token.toLowerCase()),
+        ...projectMoments.map((moment) => moment.token.toLowerCase()),
       ]);
       return [...tokens].map((token) => {
         const row = project.rows.find((item) => item.token.toLowerCase() === token);
-        const moments = project.moments.filter((moment) => moment.token.toLowerCase() === token);
+        const moments = projectMoments.filter((moment) => moment.token.toLowerCase() === token);
         return {
           groupId: project.groupId,
           chainId: project.chainId,
           key: `${project.chainId}:${project.version}:${project.projectId}:${token}`,
           moments,
           currentUsd: row ? usd(row.balanceUsd) : null,
-          rate: usdRateOf(row?.usdRate) ?? usdRateOf(moments.at(-1)?.tokenUsdRate) ?? 0,
+          rate:
+            usdRateOf(row?.usdRate) ??
+            moments.map((moment) => usdRateOf(moment.tokenUsdRate)).findLast((rate) => rate) ??
+            0,
         };
       });
     });
@@ -252,9 +256,9 @@ const cachedReserves = unstable_cache(
     // history would silently read as zero. Only break out per-chain values when every token
     // either reported moments or holds nothing. An unpriced token counts as nothing, as it does
     // in the indexer's USD balance.
-    const chainHistoryIsComplete = tokenHistories.every(
-      (history) => history.moments.length > 0 || !history.currentUsd,
-    );
+    const chainHistoryIsComplete =
+      projectHistories.every((project) => project.moments !== null) &&
+      tokenHistories.every((history) => history.moments.length > 0 || !history.currentUsd);
     const latest = new Map<string, number>();
     const latestVolume = new Map<string, number>();
     const latestProjects = new Map<string, { chainId: number; valueUsd: number }>();
