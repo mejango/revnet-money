@@ -13,13 +13,13 @@ import { formatCompact } from "@/lib/number";
 import { fillIndexedMetadata } from "@/lib/projectMetadataFill.server";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import Image from "next/image";
-import Link from "next/link";
 import { Suspense, type ReactNode } from "react";
 import { formatUnits, isAddress, type Address } from "viem";
 import { getSuckerGroup } from "./[slug]/getSuckerGroup";
 import { getHomepageActivityPage } from "./getHomepageActivity";
-import { HomeAuditPromptLink } from "./HomeAuditPromptLink";
 import { getHomepageReserves } from "./getHomepageReserves";
+import { HomeAuditPromptLink } from "./HomeAuditPromptLink";
+import { HomeCreateLink } from "./HomeCreateLink";
 import { HomepageActivityFeed } from "./HomepageActivityFeed";
 import { HomepageDiscoveryLayout } from "./HomepageDiscoveryLayout";
 import { MarkeeAdvertisement } from "./MarkeeAdvertisement";
@@ -389,12 +389,9 @@ function HeroColumn() {
           A <RotatingTagline />
           <span className="block whitespace-nowrap">for the open web.</span>
         </p>
-        <Link
-          href="/create"
-          className="mt-7 inline-flex min-h-12 items-center bg-teal-500 px-5 text-lg hover:bg-teal-600"
-        >
+        <HomeCreateLink className="mt-7 inline-flex min-h-12 items-center bg-teal-500 px-5 text-lg hover:bg-teal-600">
           Create yours
-        </Link>
+        </HomeCreateLink>
         <HomeAuditPromptLink className="mt-7 text-xs text-zinc-600 sm:whitespace-nowrap 2xl:text-sm" />
       </div>
     </section>
