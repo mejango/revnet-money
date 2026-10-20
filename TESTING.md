@@ -22,6 +22,11 @@ npm run bundle:check
 npm run test:browser
 ```
 
+`npm run bundle:check` starts the built app against the browser fixture (ports
+4173/4174, so not alongside `test:browser`), fetches every page route and sums the
+gzip size of each script its HTML references. Per-route ceilings live at the top of
+`scripts/check-client-bundle.mjs`; lower them when a route gets smaller.
+
 After Chromium is installed, `npm run check` runs that complete deterministic
 sequence. `npm run test:watch` runs the focused Vitest loop. Tests use jsdom for
 rendering safety boundaries but should prefer pure functions and contract
