@@ -3,7 +3,6 @@ import {
   formatPayAmount,
   formatStartCountdown,
   isNativePayToken,
-  payRetrySlippageBps,
   payTokenCurrencyId,
   payTokenKey,
   routerPayRouteWorks,
@@ -172,47 +171,6 @@ describe("router and minimum-output guardrails", () => {
     await expect(
       routerPayRouteWorks(unavailableClient, sepolia.id, 9003n, ROUTER, TOKEN, 6),
     ).resolves.toBe(false);
-  });
-});
-
-describe("a looser tolerance after a payment fails", () => {
-  it("covers a minimum shortfall, rounded up to a half percent and capped below half", () => {
-    const short = (received: bigint) => ({
-      reason: "TERMINAL_UNDER_MIN" as const,
-      received,
-      minimum: 990n,
-      message: "",
-    });
-    expect(payRetrySlippageBps(short(970n), 100)).toBe(350);
-    expect(payRetrySlippageBps(short(1n), 100)).toBe(4_950);
-    // Nothing short of a zero minimum lets a payment that returns no tokens through.
-    expect(payRetrySlippageBps(short(0n), 100)).toBeNull();
-    // Amounts that aren't bigints are not a shortfall's amounts.
-    expect(
-      payRetrySlippageBps(
-        { reason: "TERMINAL_UNDER_MIN", received: 5 as unknown as bigint, message: "" },
-        100,
-      ),
-    ).toBe(200);
-    expect(payRetrySlippageBps({ reason: "BUYBACK_SLIPPAGE_EXCEEDED", message: "" }, 100)).toBe(
-      200,
-    );
-  });
-
-  it("offers nothing when a lower minimum is not the fix", () => {
-    expect(payRetrySlippageBps(null, 100)).toBeNull();
-    // Already at the limit: nothing looser to offer.
-    expect(
-      payRetrySlippageBps(
-        { reason: "TERMINAL_UNDER_MIN", received: 1n, minimum: 990n, message: "" },
-        4_950,
-      ),
-    ).toBeNull();
-    for (const reason of ["BUYBACK_DERIVED_FLOOR_NOT_MET", "ROUTER_SLIPPAGE_EXCEEDED"] as const) {
-      expect(
-        payRetrySlippageBps({ reason, received: 1n, minimum: 2n, message: "" }, 100),
-      ).toBeNull();
-    }
   });
 });
 

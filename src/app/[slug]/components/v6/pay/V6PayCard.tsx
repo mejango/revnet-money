@@ -29,9 +29,6 @@ import {
   formatPayAmount,
   formatStartCountdown,
   isNativePayToken,
-  PAY_DEFAULT_SLIPPAGE_BPS,
-  payFailureMessage,
-  payRetrySlippageBps,
   payTokenKey,
   V6PayMode,
 } from "@/lib/v6/pay";
@@ -54,6 +51,8 @@ import {
   buildPayTx,
   decodePayFailure,
   effectiveTierPrice,
+  PAY_DEFAULT_SLIPPAGE_BPS,
+  payRetrySlippageBps,
   prepareUserPay,
   resolvePaymentTerminal,
   type UserPayTiers,
@@ -917,9 +916,14 @@ export function V6PayCard() {
       setPhase("ready");
       // The revert's own reason, when known, and a looser minimum when that is the fix.
       const decoded = decodePayFailure(err);
-      setTxError(decoded ? payFailureMessage(decoded) : formatWalletError(err));
+      setTxError(decoded?.message ?? formatWalletError(err));
       if (prepared.mode === "pay") {
-        setRetrySlippageBps(payRetrySlippageBps(decoded, slippageBps ?? PAY_DEFAULT_SLIPPAGE_BPS));
+        // The tolerance of the attempt that failed, never a loosened one not yet sent.
+        const retry = payRetrySlippageBps(
+          decoded,
+          slippageBps === undefined ? PAY_DEFAULT_SLIPPAGE_BPS : BigInt(slippageBps),
+        );
+        setRetrySlippageBps(retry === null ? null : Number(retry));
       }
     } finally {
       sendingRef.current = null;

@@ -6,52 +6,9 @@ import {
   tierMediaImageUrl as sdkTierMediaImageUrl,
   TIER_UNLIMITED_SUPPLY,
   tokenCurrencyId,
-  type PayFailure,
   type TierMetadata,
 } from "@bananapus/nana-sdk-core/v6";
 import { Address, formatUnits, PublicClient } from "viem";
-
-/** prepareUserPay's own default tolerance on its quote and fallback minimum. */
-export const PAY_DEFAULT_SLIPPAGE_BPS = 100;
-/** A payer's loosened tolerance stays below this, so the minimum never nears zero. */
-export const PAY_SLIPPAGE_LIMIT_PERCENT = 50;
-
-/** A shortfall the payer's tolerance controls: the terminal's minimum or the buyback hook's. */
-function minimumShortfall(failure: PayFailure | null) {
-  if (failure?.reason !== "TERMINAL_UNDER_MIN" && failure?.reason !== "BUYBACK_SLIPPAGE_EXCEEDED") {
-    return null;
-  }
-  const { received, minimum } = failure;
-  return typeof received === "bigint" && typeof minimum === "bigint" ? { received, minimum } : {};
-}
-
-/** The sentence to show for a failed payment: the SDK's, unless the payment would return nothing. */
-export function payFailureMessage(failure: PayFailure): string {
-  return minimumShortfall(failure)?.received === 0n
-    ? "This payment would return no tokens."
-    : failure.message;
-}
-
-/**
- * The tolerance that would have let a payment through which fell short of the
- * minimum prepareUserPay set from `currentBps`, rounded up to a half percent,
- * or null when a lower minimum is not the fix: the hook's own TWAP floor, the
- * router's own conversion (it quotes for itself), a payment that would return
- * no tokens (no tolerance short of a zero minimum lets it through), or a
- * tolerance already at the limit.
- */
-export function payRetrySlippageBps(failure: PayFailure | null, currentBps: number): number | null {
-  const shortfall = minimumShortfall(failure);
-  if (!shortfall || shortfall.received === 0n) return null;
-  const { received, minimum } = shortfall;
-  const shortfallBps =
-    received !== undefined && minimum !== undefined && minimum > 0n && received < minimum
-      ? Number(((minimum - received) * 10_000n + minimum - 1n) / minimum)
-      : 100;
-  const limit = PAY_SLIPPAGE_LIMIT_PERCENT * 100 - 50;
-  const next = Math.min(Math.ceil((currentBps + shortfallBps) / 50) * 50, limit);
-  return next > currentBps ? next : null;
-}
 
 /** The v6 pay card's modes: mint tokens, or top up the balance minting nothing. */
 export type V6PayMode = "pay" | "addbalance";

@@ -4,13 +4,13 @@
 export function AllowedDecreaseField({
   bps,
   onChange,
-  limitPercent = 100,
+  maxBps = 9_999,
   className = "mt-4",
 }: {
   bps: number;
   onChange: (bps: number) => void;
-  /** The custom field accepts percents below this. */
-  limitPercent?: number;
+  /** The most the custom field accepts, in basis points. */
+  maxBps?: number;
   className?: string;
 }) {
   return (
@@ -36,14 +36,14 @@ export function AllowedDecreaseField({
           <input
             type="number"
             min="0"
-            max={limitPercent - 0.01}
+            max={maxBps / 100}
             step="0.1"
             inputMode="decimal"
             value={bps / 100}
             onChange={(event) => {
               const bps = Math.round(Number(event.target.value) * 100);
-              // Checked after rounding, so 49.999 can't round up to the limit.
-              if (Number.isFinite(bps) && bps >= 0 && bps < limitPercent * 100) onChange(bps);
+              // Checked after rounding, so a value can't round past the limit.
+              if (Number.isFinite(bps) && bps >= 0 && bps <= maxBps) onChange(bps);
             }}
             className="min-w-0 flex-1 !border-0 !bg-transparent !p-0 text-right !shadow-none outline-none !ring-0 focus:!border-0 focus:!shadow-none focus:!ring-0"
           />
