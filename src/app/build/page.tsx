@@ -280,7 +280,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     summary:
       "Revnets run on Juicebox contracts, so most app work is the same as for any Juicebox project. The Juicebox build guide covers it; this guide covers what only revnets have.",
     paragraphs: [
-      `Start with the [SDK](${JB_BUILD}#apps-set-up-the-sdk), reads, and the review flow there, then come back for stages, loans, and the operator. Two revnet differences apply throughout: a direct pool swap pays no split, and a registered bridge contract cashes out without the tax or the launch lock.`,
+      `Start with the [SDK](${JB_BUILD}#apps-set-up-the-sdk), reads, and the review flow there, then come back for stages, loans, and the operator. Two revnet differences apply throughout: a payment with skipSplits set gets pool-bought tokens without the split, and a registered bridge contract cashes out without the tax or the launch lock.`,
     ],
     links: [
       { href: `${JB_BUILD}/first-payment`, label: "Your first test payment" },
@@ -312,8 +312,8 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       label: "User action → contract call",
       rows: [
         ["Launch a revnet", "REVDeployer.deployFor (buildDeployRevnetTx)"],
-        ["Pay / buy tokens", "JBMultiTerminal.pay (buildPayTx)"],
-        ["Buy a shop item", "JBMultiTerminal.pay with 721 metadata (build721PayMetadata)"],
+        ["Pay / buy tokens", "JBMultiTerminal.pay (prepareUserPay, then buildPayTx)"],
+        ["Buy a shop item", "JBMultiTerminal.pay with 721 metadata (prepareUserPay with tiers)"],
         ["Add funds, no tokens", "JBMultiTerminal.addToBalanceOf"],
         ["Cash out", "JBMultiTerminal.cashOutTokensOf (prepareHookAwareCashOut)"],
         ["Claim credits as ERC-20", "JBController.claimTokensFor (buildClaimTokensTx)"],
@@ -325,7 +325,6 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           "REVLoans.reallocateCollateralFromLoan (buildReallocateCollateralTx)",
         ],
         ["Move tokens to another chain", "sucker.prepare → toRemote → claim"],
-        ["Trade on the pool directly", "Uniswap V4 Universal Router (buildDirectPaySwapTx)"],
         ["Add pool liquidity", "Uniswap V4 PositionManager.modifyLiquidities"],
         ["Operator: rename, redirect splits", "JBController.setUriOf / setSplitGroupsOf"],
         ["Operator: manage shop", "JB721TiersHook.adjustTiers / mintFor"],
@@ -783,7 +782,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Splits on the pool route",
-        text: "a terminal payment the buyback hook fills from the pool still pays the split: the bought tokens are burned and reissued. The payer can opt out with the third buyback metadata word, skipSplits. A direct swap on the Universal Router pays no split.",
+        text: "a terminal payment the buyback hook fills from the pool pays the split unless the third buyback metadata word, skipSplits, is set. With it, the bought tokens go to the payer whole. prepareUserPay sets it and the minimum the terminal enforces.",
       },
       {
         key: "Bridge cash outs",

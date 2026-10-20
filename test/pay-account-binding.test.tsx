@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   address: "0x1111111111111111111111111111111111111111" as string | undefined,
   write: vi.fn(),
   simulate: vi.fn(),
+  routeError: null as Error | null,
 }));
 
 vi.mock("wagmi", async (importOriginal) => ({
@@ -57,9 +58,6 @@ vi.mock("@/components/IpfsImage", () => ({ ImageWithFallback: () => null }));
 vi.mock("@/hooks/useAllowance", () => ({
   useAllowance: () => ({ ensureAllowance: vi.fn(), getApprovalReceipt: () => undefined }),
 }));
-vi.mock("@/hooks/useReviewedPermit2Signature", () => ({
-  useReviewedPermit2Signature: () => ({ signPermit2Async: vi.fn() }),
-}));
 vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>();
   return {
@@ -89,11 +87,16 @@ vi.mock("@/lib/nana/project", () => ({
 }));
 vi.mock("@/lib/nana/suckers", () => ({ useSuckers: () => ({ data: [] }) }));
 vi.mock("@/lib/paymentTerminal", () => ({
-  resolveBestV6PayRoute: async () => ({
-    address: "0x3333333333333333333333333333333333333333",
-    type: "multi",
-    preview: { beneficiaryTokenCount: 10n ** 21n, reservedTokenCount: 0n },
-  }),
+  resolveBestV6PayRoute: async () => {
+    if (mocks.routeError) throw mocks.routeError;
+    return {
+      address: "0x3333333333333333333333333333333333333333",
+      type: "multi",
+      preview: { beneficiaryTokenCount: 10n ** 21n, reservedTokenCount: 0n },
+      metadata: "0x5150",
+      minReturnedTokens: 99n * 10n ** 19n,
+    };
+  },
 }));
 vi.mock("@/providers/ParaAuthContext", () => ({
   useParaAuth: () => ({ requestSignIn: vi.fn() }),
@@ -106,10 +109,6 @@ vi.mock("@/app/[slug]/components/PayCard/SelectedSuckerContext", () => ({
 }));
 vi.mock("@/app/[slug]/components/v6/ShopCartContext", () => ({
   useShopCart: () => ({ items: [], remove: vi.fn(), setQuantity: vi.fn() }),
-}));
-vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/app/[slug]/components/v6/owners/market/lib")>()),
-  readPoolSnapshot: async () => ({ pool: null }),
 }));
 vi.mock("@/app/[slug]/components/v6/pay/usePayShop", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/[slug]/components/v6/pay/usePayShop")>()),
@@ -141,6 +140,7 @@ const queryClient = () => new QueryClient({ defaultOptions: { queries: { retry: 
 beforeEach(() => {
   window.localStorage.clear();
   mocks.address = A;
+  mocks.routeError = null;
   mocks.write.mockReset().mockResolvedValue(HASH);
   mocks.simulate.mockReset().mockResolvedValue({ request: {} });
 });
@@ -189,7 +189,29 @@ describe("a payment bound to the account it was prepared for", () => {
     expect(payment).toMatchObject({ chainId: 1 });
     // pay(projectId, token, amount, beneficiary, minReturnedTokens, memo, metadata)
     expect(payment.args[3]).toBe(B);
+    // The terminal is paid with exactly the prepared buyback metadata and minimum.
+    expect(payment.args[4]).toBe(99n * 10n ** 19n);
+    expect(payment.args[6]).toBe("0x5150");
     expect(mocks.simulate).toHaveBeenCalledWith(expect.objectContaining({ account: B }));
+  });
+
+  it("blocks the payment when the pay preparation fails, and lets it through once a retry succeeds", async () => {
+    mocks.routeError = new Error("buyback hookOf read failed");
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await screen.findByText(/Couldn.t check what you will receive/, undefined, { timeout: 3_000 });
+    expect(screen.getByRole("button", { name: "Pay" })).toBeDisabled();
+    expect(mocks.write).not.toHaveBeenCalled();
+
+    mocks.routeError = null;
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "2" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pay" })).toBeEnabled(), {
+      timeout: 3_000,
+    });
   });
 
   it("says to check an identical payment's unconfirmed Safe proposal in Safe instead of reporting it proposed", async () => {

@@ -243,8 +243,8 @@ vi.mock("@/hooks/useCashOutRoute", () => ({
     refetch: vi.fn(),
   }),
 }));
-vi.mock("@/lib/directPaySwap", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/directPaySwap")>()),
+vi.mock("@/lib/directSellSwap", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/directSellSwap")>()),
   quoteDirectSellSwap: async () =>
     mocks.directSell
       ? { poolKey: {}, zeroForOne: true, quotedOutput: 2n * 10n ** 17n, minimumOutput: 10n ** 17n }

@@ -1,4 +1,3 @@
-import { PaymentTerminalType } from "@/lib/paymentTerminal";
 import { V6PayMode } from "@/lib/v6/pay";
 
 /**
@@ -18,10 +17,6 @@ export function payPanelLayoutClasses({
   // a shop, which is most of them — a settled card that jumps is worse than
   // one that grows to fit something it turned out to have.
   return mode === "pay" && (shopTierCount ?? 0) > 0 ? "h-30 py-4" : "py-0";
-}
-
-export function paySettlementLabel(routeType: PaymentTerminalType) {
-  return routeType === "swap" ? "Swap" : "New tokens";
 }
 
 /**

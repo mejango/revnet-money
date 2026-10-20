@@ -3,7 +3,6 @@ import {
   defaultsToDollars,
   payButtonAction,
   payPanelLayoutClasses,
-  paySettlementLabel,
 } from "@/app/[slug]/components/v6/pay/payCardLayout";
 import { describe, expect, it } from "vitest";
 
@@ -22,16 +21,6 @@ describe("v6 pay card shop-strip spacing", () => {
 
   it("does not reserve shop-preview spacing in add-balance mode", () => {
     expect(payPanelLayoutClasses({ mode: "addbalance", shopTierCount: 3 })).toBe("py-0");
-  });
-});
-
-describe("v6 pay card settlement label", () => {
-  it("calls every router/AMM settlement a swap", () => {
-    expect(paySettlementLabel("swap")).toBe("Swap");
-  });
-
-  it("labels newly created tokens in plain language", () => {
-    expect(paySettlementLabel("multi")).toBe("New tokens");
   });
 });
 

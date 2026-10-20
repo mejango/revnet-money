@@ -28,7 +28,11 @@ const { previewPayMock } = vi.hoisted(() => ({ previewPayMock: vi.fn() }));
 
 vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
-  previewPay: previewPayMock,
+  prepareUserPay: async (...args: unknown[]) => ({
+    preview: await previewPayMock(...args),
+    metadata: "0x",
+    minReturnedTokens: 0n,
+  }),
 }));
 
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
@@ -76,7 +80,6 @@ describe("v6 payment route selection", () => {
         token: TOKEN,
         amount: 1_000_000n,
         beneficiary: TEST_ACCOUNT,
-        metadata: "0x",
       }),
     );
   });

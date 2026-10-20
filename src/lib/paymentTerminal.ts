@@ -7,10 +7,10 @@ import {
   JBRouterTerminalContracts,
   jbRouterTerminalRegistryAbi,
 } from "@bananapus/nana-sdk-core";
-import { PayPreview, previewPay } from "@bananapus/nana-sdk-core/v6";
+import { prepareUserPay, type PreparedUserPay } from "@bananapus/nana-sdk-core/v6";
 import { Address, PublicClient } from "viem";
 
-export type PaymentTerminalType = "multi" | "swap";
+type PaymentTerminalType = "multi" | "swap";
 
 type PaymentTerminal = {
   address: Address;
@@ -18,11 +18,11 @@ type PaymentTerminal = {
   type: PaymentTerminalType;
 };
 
-export type V6PayRoute = PaymentTerminal & { preview: PayPreview };
+export type V6PayRoute = PaymentTerminal & PreparedUserPay;
 
 /**
- * Resolve the best v6 pay route by previewing both the multi terminal and the router
- * terminal registry, keeping whichever mints the beneficiary the most project tokens.
+ * Resolve the best v6 pay route by preparing the payment on both the multi terminal and the
+ * router terminal registry, keeping whichever gives the beneficiary the most project tokens.
  * Candidates whose preview reverts (e.g. no accounting context for the token) are
  * skipped, so a surviving route always carries a live quote.
  */
@@ -40,16 +40,15 @@ export async function resolveBestV6PayRoute(args: {
   const previews = await Promise.all(
     v6PayRouteCandidates(chainId, args.attachedTerminals).map(async (route) => {
       try {
-        const preview = await previewPay(client, {
+        const prepared = await prepareUserPay(client, {
           chainId,
           terminal: route.address,
           projectId,
           token,
           amount,
           beneficiary,
-          metadata: "0x",
         });
-        return { ...route, preview };
+        return { ...route, ...prepared };
       } catch {
         return null;
       }
