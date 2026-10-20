@@ -206,7 +206,7 @@ const cachedReserves = unstable_cache(
           chainId: project.chainId,
           key: `${project.chainId}:${project.version}:${project.projectId}:${token}`,
           moments,
-          currentUsd: row ? usd(row.balanceUsd) : 0,
+          currentUsd: row ? usd(row.balanceUsd) : null,
           rate: usdRateOf(row?.usdRate) ?? usdRateOf(moments.at(-1)?.tokenUsdRate) ?? 0,
         };
       });
@@ -221,26 +221,31 @@ const cachedReserves = unstable_cache(
     );
     const latestAggregateTimestamp = events.at(-1)?.timestamp;
     const projectEvents = tokenHistories
-      .flatMap((history) => [
-        ...history.moments.map((moment) => ({
-          key: history.key,
-          chainId: history.chainId,
-          timestamp: moment.timestamp,
-          valueUsd:
-            Number(formatUnits(BigInt(moment.balance), moment.decimals)) *
-            (usdRateOf(moment.tokenUsdRate) ?? 0),
-        })),
-        ...(latestAggregateTimestamp == null
-          ? []
+      .flatMap((history) => {
+        // An unpriced moment carries the token's last known rate, else its latest one.
+        let rate = history.rate;
+        const points = history.moments.map((moment) => {
+          rate = usdRateOf(moment.tokenUsdRate) ?? rate;
+          return {
+            key: history.key,
+            chainId: history.chainId,
+            timestamp: moment.timestamp,
+            valueUsd: Number(formatUnits(BigInt(moment.balance), moment.decimals)) * rate,
+          };
+        });
+        // A token without a current row keeps its last moment instead of reading as zero.
+        return latestAggregateTimestamp == null || history.currentUsd === null
+          ? points
           : [
+              ...points,
               {
                 key: history.key,
                 chainId: history.chainId,
                 timestamp: latestAggregateTimestamp,
                 valueUsd: history.currentUsd,
               },
-            ]),
-      ])
+            ];
+      })
       .sort((a, b) => a.timestamp - b.timestamp);
 
     // A token with no moments only ever gets its synthetic current-balance point, so its
@@ -248,7 +253,7 @@ const cachedReserves = unstable_cache(
     // either reported moments or holds nothing. An unpriced token counts as nothing, as it does
     // in the indexer's USD balance.
     const chainHistoryIsComplete = tokenHistories.every(
-      (history) => history.moments.length > 0 || history.currentUsd === 0,
+      (history) => history.moments.length > 0 || !history.currentUsd,
     );
     const latest = new Map<string, number>();
     const latestVolume = new Map<string, number>();

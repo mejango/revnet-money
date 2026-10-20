@@ -166,4 +166,39 @@ describe("homepage reserves", () => {
     // REV's inflows: 1 ETH and 100 USDC, each at its own latest rate.
     expect(reserves.feesUsd).toBe(2100);
   });
+
+  it("keeps chain history usable through an unpriced moment and a missing current row", async () => {
+    mocks.groups.mockResolvedValue([
+      {
+        ...groups[0],
+        projects: {
+          items: [{ ...groups[0].projects.items[0], projectTokenBalances: { items: [] } }],
+        },
+      },
+    ]);
+    const query = mocks.query.getMockImplementation()!;
+    mocks.query.mockImplementation(async (chainId, operation, variables) =>
+      operation.id === "project-token-balance-moments.v1"
+        ? {
+            projectTokenBalanceMoments: page([
+              {
+                token: ETH,
+                decimals: 18,
+                timestamp: 100,
+                balance: e18(1),
+                tokenUsdRate: e18(2000),
+              },
+              { token: ETH, decimals: 18, timestamp: 200, balance: e18(2), tokenUsdRate: null },
+            ]),
+          }
+        : query(chainId, operation, variables),
+    );
+
+    const reserves = await getHomepageReserves();
+
+    expect(reserves.points.map((point) => point.chains[0])).toEqual([
+      { chainId: 1, valueUsd: 2000 },
+      { chainId: 1, valueUsd: 4000 },
+    ]);
+  });
 });
