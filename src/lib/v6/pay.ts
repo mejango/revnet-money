@@ -6,9 +6,34 @@ import {
   tierMediaImageUrl as sdkTierMediaImageUrl,
   TIER_UNLIMITED_SUPPLY,
   tokenCurrencyId,
+  type PayFailure,
   type TierMetadata,
 } from "@bananapus/nana-sdk-core/v6";
 import { Address, formatUnits, PublicClient } from "viem";
+
+/** prepareUserPay's own default tolerance on its quote and fallback minimum. */
+export const PAY_DEFAULT_SLIPPAGE_BPS = 100;
+/** A payer's loosened tolerance stays below this, so the minimum never nears zero. */
+export const PAY_SLIPPAGE_LIMIT_BPS = 4_999;
+
+/**
+ * The tolerance that would have let a payment through which fell short of the
+ * minimum prepareUserPay set from `currentBps`, rounded up to a half percent,
+ * or null when a lower minimum is not the fix (the hook's own TWAP floor, the
+ * router's own quote, or no shortfall). A router quotes for itself, so only
+ * the terminal's and the buyback hook's minimums answer to this tolerance.
+ */
+export function payRetrySlippageBps(failure: PayFailure | null, currentBps: number): number | null {
+  if (failure?.reason !== "TERMINAL_UNDER_MIN" && failure?.reason !== "BUYBACK_SLIPPAGE_EXCEEDED") {
+    return null;
+  }
+  const { received, minimum } = failure;
+  const shortfallBps =
+    received !== undefined && minimum !== undefined && minimum > 0n && received < minimum
+      ? Number(((minimum - received) * 10_000n + minimum - 1n) / minimum)
+      : 100;
+  return Math.min(Math.ceil((currentBps + shortfallBps) / 50) * 50, 4_950);
+}
 
 /** The v6 pay card's modes: mint tokens, or top up the balance minting nothing. */
 export type V6PayMode = "pay" | "addbalance";

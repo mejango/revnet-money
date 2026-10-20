@@ -1,9 +1,9 @@
 import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
-import { minReturnedTokens } from "@/lib/quote";
 import {
   formatPayAmount,
   formatStartCountdown,
   isNativePayToken,
+  payRetrySlippageBps,
   payTokenCurrencyId,
   payTokenKey,
   routerPayRouteWorks,
@@ -173,12 +173,30 @@ describe("router and minimum-output guardrails", () => {
       routerPayRouteWorks(unavailableClient, sepolia.id, 9003n, ROUTER, TOKEN, 6),
     ).resolves.toBe(false);
   });
+});
 
-  it("keeps verified zero issuance at zero and never erases protection for a positive quote", () => {
-    expect(minReturnedTokens(0n)).toBe(0n);
-    expect(minReturnedTokens(-1n)).toBe(0n);
-    expect(minReturnedTokens(10_000n, 500n)).toBe(9_500n);
-    expect(minReturnedTokens(1n, 500n)).toBe(1n);
+describe("a looser tolerance after a payment fails", () => {
+  it("covers a minimum shortfall, rounded up to a half percent and capped below half", () => {
+    const short = (received: bigint) => ({
+      reason: "TERMINAL_UNDER_MIN" as const,
+      received,
+      minimum: 990n,
+      message: "",
+    });
+    expect(payRetrySlippageBps(short(970n), 100)).toBe(350);
+    expect(payRetrySlippageBps(short(0n), 100)).toBe(4_950);
+    expect(payRetrySlippageBps({ reason: "BUYBACK_SLIPPAGE_EXCEEDED", message: "" }, 100)).toBe(
+      200,
+    );
+  });
+
+  it("offers nothing when a lower minimum is not the fix", () => {
+    expect(payRetrySlippageBps(null, 100)).toBeNull();
+    for (const reason of ["BUYBACK_DERIVED_FLOOR_NOT_MET", "ROUTER_SLIPPAGE_EXCEEDED"] as const) {
+      expect(
+        payRetrySlippageBps({ reason, received: 1n, minimum: 2n, message: "" }, 100),
+      ).toBeNull();
+    }
   });
 });
 

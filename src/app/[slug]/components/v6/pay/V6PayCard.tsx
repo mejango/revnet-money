@@ -29,6 +29,8 @@ import {
   formatPayAmount,
   formatStartCountdown,
   isNativePayToken,
+  PAY_DEFAULT_SLIPPAGE_BPS,
+  payRetrySlippageBps,
   payTokenKey,
   V6PayMode,
 } from "@/lib/v6/pay";
@@ -49,6 +51,7 @@ import {
 import { approvalIntent, payIntent } from "@bananapus/nana-sdk-core/review";
 import {
   buildPayTx,
+  decodePayFailure,
   effectiveTierPrice,
   prepareUserPay,
   resolvePaymentTerminal,
@@ -154,6 +157,10 @@ export function V6PayCard() {
   const [amount, setAmount] = useState("");
   const [debouncedAmount, setDebouncedAmount] = useState("");
   const [memo, setMemo] = useState("");
+  /** A tolerance the payer loosened after a shortfall, for the payment it was set on. */
+  const [payerSlippage, setPayerSlippage] = useState<{ bps: number; payment: string } | null>(null);
+  /** The tolerance offered after a shortfall, until the payer reviews again with it. */
+  const [retrySlippageBps, setRetrySlippageBps] = useState<number | null>(null);
   const [tokenIndex, setTokenIndex] = useState(0);
   // True once the user explicitly picks a pay token. Until then the selection
   // auto-defaults to the project's accounting token (list[0]) so an ETH/USDC
@@ -364,6 +371,18 @@ export function V6PayCard() {
       : undefined;
   const tiersKey = tiers ? `${tiers.metadataIdTarget}:${tiers.tierIdsToMint.join(",")}` : "";
 
+  // The tolerance prepareUserPay floors its quote by: the SDK default, or the
+  // one the payer loosened after this same payment fell short.
+  const paymentInputs = [
+    chainId,
+    projectId,
+    selected ? payTokenKey(selected) : "",
+    amountRaw,
+    tiersKey,
+    address ?? "",
+  ].join("|");
+  const slippageBps = payerSlippage?.payment === paymentInputs ? payerSlippage.bps : undefined;
+
   // ---- Debounced live preview via the best route (multi vs router) ----
   const {
     data: preview,
@@ -382,6 +401,7 @@ export function V6PayCard() {
       amountRaw.toString(),
       tiersKey,
       address ?? zeroAddress,
+      slippageBps ?? null,
     ],
     enabled: !!publicClient && !!selected && mode === "pay" && (amountRaw > 0n || cartCount > 0),
     placeholderData: (previous) => previous,
@@ -405,6 +425,7 @@ export function V6PayCard() {
           amount: amountRaw,
           beneficiary,
           tiers,
+          ...(slippageBps !== undefined ? { slippageBps: BigInt(slippageBps) } : {}),
         });
         return {
           ...p.preview,
@@ -422,6 +443,7 @@ export function V6PayCard() {
         token: selected!.token,
         amount: amountRaw,
         beneficiary,
+        ...(slippageBps !== undefined ? { slippageBps: BigInt(slippageBps) } : {}),
       });
       if (!route) throw new Error("No pay route with a live quote");
       return {
@@ -524,6 +546,7 @@ export function V6PayCard() {
     address ?? "",
     tiersKey,
     memo.trim(),
+    slippageBps ?? "",
   ].join("|");
   const quoteSettled = !!preview && !previewIsPrevious && !previewError && !previewLoading;
   const preparationChanged =
@@ -548,6 +571,7 @@ export function V6PayCard() {
     if (cartCount > 0 && (shopRoutesLoading || shopCreditsLoading || !shopMatchesToken)) return;
 
     setTxError(null);
+    setRetrySlippageBps(null);
     setTxHash(undefined);
     setPrepared(null);
     setPhase("preparing");
@@ -735,12 +759,26 @@ export function V6PayCard() {
     setTxError(
       prepared.account.toLowerCase() !== address?.toLowerCase() ? ACCOUNT_CHANGED : PAYMENT_CHANGED,
     );
+    setRetrySlippageBps(null);
     setPrepared(null);
     setPhase("preparing");
   }, [confirmOpen, phase, prepared, preparationChanged, address]);
 
+  /** Prepare the payment again with the tolerance the payer chose, and review it from the start. */
+  const reviewWithSlippage = (bps: number) => {
+    setPayerSlippage({ bps, payment: paymentInputs });
+    setRetrySlippageBps(null);
+    setTxError(null);
+    setPrepared(null);
+    setPhase("preparing");
+  };
+
   const confirm = async () => {
     if (!publicClient || !address) return;
+    if (retrySlippageBps !== null) {
+      reviewWithSlippage(retrySlippageBps);
+      return;
+    }
     if (!prepared) {
       // Preparing failed — retry with a fresh quote.
       setTxError(null);
@@ -757,6 +795,8 @@ export function V6PayCard() {
     }
     setTxError(null);
     sendingRef.current = prepared;
+    /** Why the payment reverted, when the chain says. */
+    let failure: unknown;
     try {
       requireCurrent(prepared, currentPayRef.current);
       // Simulate at the approval's block. Base RPC providers are load
@@ -827,6 +867,21 @@ export function V6PayCard() {
       requireOnchainExecution(hash);
       const receipt = await waitForReceiptWithRetry(publicClient as PublicClient, hash);
       if (receipt.status !== "success") {
+        // A receipt carries no reason: the same call at its block says why it reverts there.
+        failure = await publicClient
+          .simulateContract({
+            address: paymentRequest.address,
+            abi: paymentRequest.abi,
+            functionName: paymentRequest.functionName,
+            args: paymentRequest.args as unknown[],
+            value: paymentRequest.value,
+            account: prepared.account,
+            blockNumber: receipt.blockNumber,
+          } as unknown as Parameters<typeof publicClient.simulateContract>[0])
+          .then(
+            () => undefined,
+            (error: unknown) => error,
+          );
         throw new Error(`Transaction ${hash} reverted onchain.`);
       }
       setPhase("success");
@@ -850,8 +905,12 @@ export function V6PayCard() {
         return;
       }
       setPhase("ready");
-      const message = formatWalletError(err);
-      setTxError(message);
+      // The revert's own reason, when known, and a looser minimum when that is the fix.
+      const decoded = decodePayFailure(failure ?? err);
+      setTxError(decoded?.message ?? formatWalletError(err));
+      if (prepared.mode === "pay") {
+        setRetrySlippageBps(payRetrySlippageBps(decoded, slippageBps ?? PAY_DEFAULT_SLIPPAGE_BPS));
+      }
     } finally {
       sendingRef.current = null;
     }
@@ -859,6 +918,8 @@ export function V6PayCard() {
 
   const resetAfterSuccess = () => {
     setConfirmOpen(false);
+    setPayerSlippage(null);
+    setRetrySlippageBps(null);
     setPrepared(null);
     setPhase("preparing");
     setTxHash(undefined);
@@ -913,6 +974,7 @@ export function V6PayCard() {
     if (confirmOpen) {
       setPrepared(null);
       setTxError(null);
+      setRetrySlippageBps(null);
       setTxHash(undefined);
       setPhase("preparing");
     }
@@ -1369,6 +1431,11 @@ export function V6PayCard() {
           phase={phase}
           mode={mode}
           error={txError}
+          retrySlippage={
+            retrySlippageBps !== null
+              ? { bps: retrySlippageBps, onChange: setRetrySlippageBps }
+              : null
+          }
           projectTokenSymbol={projectTokenLabel}
           txHash={txHash}
           onConfirm={confirm}

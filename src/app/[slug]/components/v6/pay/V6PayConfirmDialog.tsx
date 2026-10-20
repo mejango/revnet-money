@@ -1,5 +1,6 @@
 "use client";
 
+import { MaxQuoteChange } from "@/components/MaxQuoteChange";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,7 +12,7 @@ import {
 import { SummaryRow } from "@/components/ui/TxConfirmDialog";
 import { TxSteps } from "@/components/ui/TxSteps";
 import { etherscanLink } from "@/lib/utils";
-import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
+import { formatPayAmount, PAY_SLIPPAGE_LIMIT_BPS, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
@@ -91,6 +92,7 @@ export function V6PayConfirmDialog({
   phase,
   mode,
   error,
+  retrySlippage,
   projectTokenSymbol,
   txHash,
   onConfirm,
@@ -102,6 +104,8 @@ export function V6PayConfirmDialog({
   phase: V6PayPhase;
   mode: V6PayMode;
   error: string | null;
+  /** After a minimum shortfall: the looser tolerance the payment is reviewed again with. */
+  retrySlippage?: { bps: number; onChange: (bps: number) => void } | null;
   projectTokenSymbol: string;
   txHash: `0x${string}` | undefined;
   onConfirm: () => void;
@@ -233,6 +237,14 @@ export function V6PayConfirmDialog({
                         </p>
                       ) : null}
                       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+                      {retrySlippage ? (
+                        <MaxQuoteChange
+                          className=""
+                          bps={retrySlippage.bps}
+                          onChange={retrySlippage.onChange}
+                          maxBps={PAY_SLIPPAGE_LIMIT_BPS}
+                        />
+                      ) : null}
                     </div>
                   ) : error ? (
                     <p className="py-4 text-sm text-red-600">{error}</p>
@@ -247,7 +259,7 @@ export function V6PayConfirmDialog({
                       onClick={onConfirm}
                       className="bg-teal-500 text-melon-950 hover:bg-teal-600"
                     >
-                      {mode === "pay" ? "Pay" : "Add to balance"}
+                      {retrySlippage ? "Review again" : mode === "pay" ? "Pay" : "Add to balance"}
                     </Button>
                   </div>
                 </>
