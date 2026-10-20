@@ -270,6 +270,8 @@ describe("a failed payment's reason and a looser minimum", () => {
     expect(field).toHaveValue(49.5);
     fireEvent.change(field, { target: { value: "100" } });
     expect(field).toHaveValue(49.5);
+    fireEvent.change(field, { target: { value: "49.999" } });
+    expect(field).toHaveValue(49.5);
   });
 
   it("names a failure a looser minimum cannot fix, and offers no tolerance", async () => {

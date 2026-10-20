@@ -192,6 +192,13 @@ describe("a looser tolerance after a payment fails", () => {
 
   it("offers nothing when a lower minimum is not the fix", () => {
     expect(payRetrySlippageBps(null, 100)).toBeNull();
+    // Already at the limit: nothing looser to offer.
+    expect(
+      payRetrySlippageBps(
+        { reason: "TERMINAL_UNDER_MIN", received: 1n, minimum: 990n, message: "" },
+        4_950,
+      ),
+    ).toBeNull();
     for (const reason of ["BUYBACK_DERIVED_FLOOR_NOT_MET", "ROUTER_SLIPPAGE_EXCEEDED"] as const) {
       expect(
         payRetrySlippageBps({ reason, received: 1n, minimum: 2n, message: "" }, 100),

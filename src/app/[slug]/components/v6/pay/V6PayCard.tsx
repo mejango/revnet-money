@@ -935,6 +935,8 @@ export function V6PayCard() {
     if (safeReceipt.isSuccess) {
       setPhase("success");
       setTxError(null);
+      setPayerSlippage(null);
+      setRetrySlippageBps(null);
       setAmount("");
       setDebouncedAmount("");
       setMemo("");

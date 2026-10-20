@@ -41,10 +41,9 @@ export function MaxQuoteChange({
             inputMode="decimal"
             value={bps / 100}
             onChange={(event) => {
-              const percent = Number(event.target.value);
-              if (Number.isFinite(percent) && percent >= 0 && percent < limitPercent) {
-                onChange(Math.round(percent * 100));
-              }
+              const bps = Math.round(Number(event.target.value) * 100);
+              // Checked after rounding, so 49.999 can't round up to the limit.
+              if (Number.isFinite(bps) && bps >= 0 && bps < limitPercent * 100) onChange(bps);
             }}
             className="min-w-0 flex-1 !border-0 !bg-transparent !p-0 text-right !shadow-none outline-none !ring-0 focus:!border-0 focus:!shadow-none focus:!ring-0"
           />

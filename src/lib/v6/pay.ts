@@ -20,7 +20,7 @@ export const PAY_SLIPPAGE_LIMIT_PERCENT = 50;
  * The tolerance that would have let a payment through which fell short of the
  * minimum prepareUserPay set from `currentBps`, rounded up to a half percent,
  * or null when a lower minimum is not the fix (the hook's own TWAP floor, the
- * router's own quote, or no shortfall). A router quotes for itself, so only
+ * router's own quote, no shortfall, or a tolerance already at the limit). A router quotes for itself, so only
  * the terminal's and the buyback hook's minimums answer to this tolerance.
  */
 export function payRetrySlippageBps(failure: PayFailure | null, currentBps: number): number | null {
@@ -33,7 +33,8 @@ export function payRetrySlippageBps(failure: PayFailure | null, currentBps: numb
       ? Number(((minimum - received) * 10_000n + minimum - 1n) / minimum)
       : 100;
   const limit = PAY_SLIPPAGE_LIMIT_PERCENT * 100 - 50;
-  return Math.min(Math.ceil((currentBps + shortfallBps) / 50) * 50, limit);
+  const next = Math.min(Math.ceil((currentBps + shortfallBps) / 50) * 50, limit);
+  return next > currentBps ? next : null;
 }
 
 /** The v6 pay card's modes: mint tokens, or top up the balance minting nothing. */
