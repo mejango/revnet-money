@@ -197,7 +197,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       ) {
         throw new Error("The bridge quote is incomplete.");
       }
-      if (slippageBps === undefined) throw new Error("Enter a valid maximum quote change.");
+      if (slippageBps === undefined) throw new Error("Enter a valid allowed decrease.");
 
       return quoteBridgePrepare(publicClient, {
         chainId: sourceChainId,
@@ -537,7 +537,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
             </div>
             <div>
               <Label htmlFor="bridge-slippage" className="text-zinc-900">
-                Max quote change
+                Allowed decrease
               </Label>
               <div className="relative">
                 <Input
@@ -592,7 +592,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                   {prepareQuote.error instanceof Error
                     ? prepareQuote.error.message
                     : slippageBps === undefined
-                      ? "Enter a maximum quote change from 0% to 5%."
+                      ? "Enter an allowed decrease from 0% to 5%."
                       : "Choose both networks and an amount to see the minimum funding moved."}
                 </span>
               )}

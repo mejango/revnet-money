@@ -1,6 +1,6 @@
 "use client";
 
-import { MaxQuoteChange } from "@/components/MaxQuoteChange";
+import { AllowedDecreaseField } from "@/components/AllowedDecreaseField";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -246,7 +246,7 @@ export function V6PayConfirmDialog({
                       ) : null}
                       {error ? <p className="text-sm text-red-600">{error}</p> : null}
                       {retrySlippage ? (
-                        <MaxQuoteChange
+                        <AllowedDecreaseField
                           className=""
                           bps={retrySlippage.bps}
                           onChange={retrySlippage.onChange}

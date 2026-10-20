@@ -1,7 +1,7 @@
 import { chainDisplayName } from "@/app/constants";
+import { AllowedDecreaseField } from "@/components/AllowedDecreaseField";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
-import { MaxQuoteChange } from "@/components/MaxQuoteChange";
 import {
   Dialog,
   DialogContent,
@@ -88,7 +88,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   // Where the amount came from: typed, a share option (Max), or the app's seed. The write's
   // intent keys an option by its name, since the amount it fills follows the balance.
   const [redeemAmount, setRedeemAmount] = useState<string>();
-  // Max quote change tolerance in basis points; protects both routes (terminal
+  // Allowed decrease tolerance in basis points; protects both routes (terminal
   // minimum on the treasury path, metadata minimum on the AMM path).
   const [slippageBps, setSlippageBps] = useState(100);
 
@@ -543,7 +543,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     </div>
                   ) : null}
 
-                  <MaxQuoteChange bps={slippageBps} onChange={setSlippageBps} />
+                  <AllowedDecreaseField bps={slippageBps} onChange={setSlippageBps} />
 
                   {!directSell && poolBufferBps !== null ? (
                     <div className="mt-2 text-sm text-zinc-500">
@@ -839,7 +839,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
             <SummaryRow label="Route">
               {directSell ? "Sell to other traders" : "Cash out from revnet funds"}
             </SummaryRow>
-            <SummaryRow label="Max quote change">{slippageBps / 100}%</SummaryRow>
+            <SummaryRow label="Allowed decrease">{slippageBps / 100}%</SummaryRow>
           </TxConfirmDialog>
         ) : null}
       </DialogContent>

@@ -1,7 +1,7 @@
 "use client";
 
-/** Presets and a custom percent for how far a quote may move before a transaction reverts. */
-export function MaxQuoteChange({
+/** How far a return may fall from its quote: presets plus a custom percent. */
+export function AllowedDecreaseField({
   bps,
   onChange,
   limitPercent = 100,
@@ -15,7 +15,7 @@ export function MaxQuoteChange({
 }) {
   return (
     <div className={`${className} flex flex-wrap items-center gap-2`}>
-      <span className="shrink-0 text-sm text-zinc-700">Max quote change</span>
+      <span className="shrink-0 text-sm text-zinc-700">Allowed decrease</span>
       <div className="flex flex-wrap items-center gap-1">
         {[50, 100, 300].map((preset) => (
           <button
@@ -32,7 +32,7 @@ export function MaxQuoteChange({
           </button>
         ))}
         <label className="flex h-7 w-[4.75rem] shrink-0 items-center border border-melon-300 bg-melon-25 px-2 text-sm text-zinc-700 focus-within:border-teal-600">
-          <span className="sr-only">Custom maximum quote change, percent</span>
+          <span className="sr-only">Custom allowed decrease percent</span>
           <input
             type="number"
             min="0"

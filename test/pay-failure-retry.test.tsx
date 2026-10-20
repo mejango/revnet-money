@@ -245,7 +245,7 @@ describe("a failed payment's reason and a looser minimum", () => {
       "This payment would get fewer tokens than your minimum, so lower your minimum or try again.",
     );
     // 20 short of 990 is 2.03%; on top of the 1% it was floored by, rounded up to a half percent.
-    const field = within(confirm).getByLabelText(/Custom maximum quote change/);
+    const field = within(confirm).getByLabelText(/Custom allowed decrease/);
     expect(field).toHaveValue(3.5);
     expect(mocks.submit).not.toHaveBeenCalled();
 
@@ -255,7 +255,7 @@ describe("a failed payment's reason and a looser minimum", () => {
     // The review shows the new minimum before anything is sent.
     await within(confirm).findByText(/^960 /);
     expect(mocks.routeCalls.at(-1)?.slippageBps).toBe(400n);
-    expect(within(confirm).queryByLabelText(/Custom maximum quote change/)).toBeNull();
+    expect(within(confirm).queryByLabelText(/Custom allowed decrease/)).toBeNull();
     expect(mocks.submit).not.toHaveBeenCalled();
 
     fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
@@ -266,7 +266,7 @@ describe("a failed payment's reason and a looser minimum", () => {
   it("caps the looser tolerance below half, so the minimum never nears zero", async () => {
     mocks.cardSimulate.mockRejectedValueOnce(underMin(1n, 990n * TOKEN));
     const confirm = await payFromConfirm();
-    const field = await within(confirm).findByLabelText(/Custom maximum quote change/);
+    const field = await within(confirm).findByLabelText(/Custom allowed decrease/);
     expect(field).toHaveValue(49.5);
     fireEvent.change(field, { target: { value: "100" } });
     expect(field).toHaveValue(49.5);
@@ -286,7 +286,7 @@ describe("a failed payment's reason and a looser minimum", () => {
     );
     const confirm = await payFromConfirm();
     await within(confirm).findByText("This project is not accepting payments right now.");
-    expect(within(confirm).queryByLabelText(/Custom maximum quote change/)).toBeNull();
+    expect(within(confirm).queryByLabelText(/Custom allowed decrease/)).toBeNull();
     expect(within(confirm).getByRole("button", { name: "Pay" })).toBeInTheDocument();
   });
 
@@ -296,7 +296,7 @@ describe("a failed payment's reason and a looser minimum", () => {
     await within(confirm).findByText("The payment reverted.");
     // No replay at the receipt's block: only the send's own simulation ran.
     expect(mocks.cardSimulate).toHaveBeenCalledTimes(1);
-    expect(within(confirm).queryByLabelText(/Custom maximum quote change/)).toBeNull();
+    expect(within(confirm).queryByLabelText(/Custom allowed decrease/)).toBeNull();
 
     const quotes = mocks.routeCalls.length;
     fireEvent.click(within(confirm).getByRole("button", { name: "Review again" }));
@@ -310,7 +310,7 @@ describe("a failed payment's reason and a looser minimum", () => {
       "This payment would get fewer tokens than your minimum, so lower your minimum or try again.",
     );
     expect(mocks.cardSimulate.mock.calls.at(-1)?.[0]).not.toHaveProperty("blockNumber", 101n);
-    expect(within(confirm).getByLabelText(/Custom maximum quote change/)).toHaveValue(2.5);
+    expect(within(confirm).getByLabelText(/Custom allowed decrease/)).toHaveValue(2.5);
     expect(mocks.submit).toHaveBeenCalledTimes(1);
   });
 
@@ -338,7 +338,7 @@ describe("a failed payment's reason and a looser minimum", () => {
     mocks.cardSimulate.mockRejectedValueOnce(underMin(0n, 990n * TOKEN));
     const confirm = await payFromConfirm();
     await within(confirm).findByText("This payment would return no tokens.");
-    expect(within(confirm).queryByLabelText(/Custom maximum quote change/)).toBeNull();
+    expect(within(confirm).queryByLabelText(/Custom allowed decrease/)).toBeNull();
     expect(within(confirm).getByRole("button", { name: "Pay" })).toBeInTheDocument();
   });
 });
