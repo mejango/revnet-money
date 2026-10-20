@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/dialog";
 import { SummaryRow } from "@/components/ui/TxConfirmDialog";
 import { TxSteps } from "@/components/ui/TxSteps";
-import { type DirectSwapQuote, type Permit2SignatureAuthorization } from "@/lib/directPaySwap";
 import { etherscanLink } from "@/lib/utils";
 import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
@@ -22,15 +21,14 @@ export type V6PayPhase =
   | "preparing"
   | "ready"
   | "approving-token"
-  | "approving-router"
   | "simulating"
   | "signing"
   | "pending"
   | "safe-proposed"
   | "success";
 
-export interface PreparedV6TransactionAction {
-  kind: "token-approval" | "router-approval" | "payment";
+interface PreparedV6TransactionAction {
+  kind: "token-approval" | "payment";
   label: string;
   request: {
     address: Address;
@@ -42,14 +40,10 @@ export interface PreparedV6TransactionAction {
   calldata: Hex;
 }
 
-interface PreparedV6SignatureAction {
-  kind: "router-signature";
-  label: string;
-  authorization: Permit2SignatureAuthorization;
-}
-
 /** A fully resolved, encodable pay/add-to-balance transaction. */
 export interface PreparedV6Pay {
+  /** The card inputs it was built from; a change means it needs review again. */
+  identity: string;
   /** The account it was built for: a payment's tokens go to it. */
   account: Address;
   mode: V6PayMode;
@@ -58,23 +52,13 @@ export interface PreparedV6Pay {
   amount: bigint;
   memo: string;
   terminal: Address;
-  /** True when the resolved route goes through the router registry (swap). */
-  viaRouterRoute: boolean;
-  /** True when payment bypasses the terminal for a better direct pool swap. */
-  directSwapRoute: boolean;
-  /** How a direct swap reaches the project's hooked V4 pool. */
-  swapInputRoute: DirectSwapQuote["inputRoute"] | null;
   /** Fresh previewed token return (null for add-to-balance). */
   expectedTokens: bigint | null;
   reservedTokens: bigint | null;
   minReturned: bigint;
   needsApproval: boolean;
-  needsPermit2Approval: boolean;
   tokenApprovalComplete: boolean;
-  routerAuthorizationComplete: boolean;
   tokenApproval: PreparedV6TransactionAction | null;
-  routerApproval: PreparedV6TransactionAction | null;
-  routerSignature: PreparedV6SignatureAction | null;
   cartRows: { tierId: number; quantity: number; name: string }[];
   request: {
     address: Address;
@@ -90,8 +74,6 @@ const PHASE_LABELS: Record<Exclude<V6PayPhase, "ready" | "safe-proposed" | "succ
   preparing: "Preparing…",
   "approving-token":
     "Confirm token access in your wallet. The payment will continue automatically…",
-  "approving-router":
-    "Sign or confirm the swap-router authorization in your wallet. The payment will continue automatically…",
   simulating: "Simulating the transaction…",
   signing: "Confirm in your wallet…",
   pending: "Transaction submitted, awaiting confirmation…",
@@ -129,7 +111,6 @@ export function V6PayConfirmDialog({
 }) {
   const busy =
     phase === "approving-token" ||
-    phase === "approving-router" ||
     phase === "simulating" ||
     phase === "signing" ||
     phase === "pending";
@@ -222,9 +203,7 @@ export function V6PayConfirmDialog({
                         {chainMeta?.name ?? String(prepared.chainId)}
                       </SummaryRow>
                       {prepared.mode === "pay" ? (
-                        <SummaryRow
-                          label={prepared.viaRouterRoute ? "You get at least" : "You get"}
-                        >
+                        <SummaryRow label="You get at least">
                           {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
                         </SummaryRow>
                       ) : (
@@ -232,12 +211,6 @@ export function V6PayConfirmDialog({
                           Adds money to the project without giving you tokens.
                         </SummaryRow>
                       )}
-                      {prepared.swapInputRoute && prepared.swapInputRoute.kind !== "single-v4" ? (
-                        <SummaryRow label="Route">
-                          {prepared.token.symbol} → {prepared.swapInputRoute.bridgeTokenSymbol} →{" "}
-                          {projectTokenSymbol}
-                        </SummaryRow>
-                      ) : null}
                       {prepared.cartRows.length > 0 ? (
                         <SummaryRow label="Items">
                           {prepared.cartRows
@@ -292,32 +265,15 @@ function walletActionSteps(prepared: PreparedV6Pay): string[] {
   if (prepared.needsApproval) {
     steps.push(`Approve ${prepared.token.symbol} access`);
   }
-  if (prepared.needsPermit2Approval) {
-    steps.push(
-      prepared.routerSignature
-        ? "Sign the swap authorization"
-        : "Authorize the Uniswap swap router",
-    );
-  }
-  steps.push(
-    prepared.mode === "pay"
-      ? prepared.directSwapRoute
-        ? "Execute the swap"
-        : "Execute the payment"
-      : "Add to the project balance",
-  );
+  steps.push(prepared.mode === "pay" ? "Execute the payment" : "Add to the project balance");
   return steps;
 }
 
 function activeStepIndex(prepared: PreparedV6Pay, phase: V6PayPhase): number {
   const steps = walletActionSteps(prepared);
   if (phase === "approving-token") return 0;
-  if (phase === "approving-router") return prepared.needsApproval ? 1 : 0;
   if (phase === "simulating" || phase === "signing" || phase === "pending") return steps.length - 1;
   if (phase === "success") return steps.length;
   if (prepared.needsApproval && !prepared.tokenApprovalComplete) return 0;
-  if (prepared.needsPermit2Approval && !prepared.routerAuthorizationComplete) {
-    return prepared.needsApproval ? 1 : 0;
-  }
   return steps.length - 1;
 }

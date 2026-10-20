@@ -1,19 +1,6 @@
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { chooseBestCashOutRoute, type CashOutRoute } from "@bananapus/nana-sdk-core/v6/cash-out";
-import {
-  addPermit2SignatureToDirectPaySwap,
-  buildDirectPaySwapTx,
-  NATIVE_SWAP_BY_CHAIN,
-  quoteDirectPaySwap,
-  type DirectPaySwapQuote,
-} from "@bananapus/nana-sdk-core/v6/direct-pay";
-import {
-  PERMIT2_ADDRESS,
-  permit2Abi,
-  permit2SignatureNeedsOnchainFallback,
-  permit2TypedData,
-  type Permit2SignatureAuthorization,
-} from "@bananapus/nana-sdk-core/v6/permit2";
+import { PERMIT2_ADDRESS, permit2Abi } from "@bananapus/nana-sdk-core/v6/permit2";
 import {
   buildUniswapV4ExactInputSwapTx,
   quoteUniswapV4ExactInputSingle,
@@ -23,30 +10,7 @@ import {
 } from "@bananapus/nana-sdk-core/v6/uniswap-v4";
 import type { Address, PublicClient } from "viem";
 
-export {
-  addPermit2SignatureToDirectPaySwap,
-  buildDirectPaySwapTx,
-  NATIVE_SWAP_BY_CHAIN,
-  PERMIT2_ADDRESS,
-  permit2Abi,
-  permit2SignatureNeedsOnchainFallback,
-  permit2TypedData,
-  quoteDirectPaySwap,
-  type Permit2SignatureAuthorization,
-};
-
-/** Backward-compatible app name for the SDK's direct-pay quote. */
-export type DirectSwapQuote = DirectPaySwapQuote;
-
-const SUPPORTED_CHAINS: readonly JBChainId[] = [1, 10, 8453, 42161, 84532, 421614, 11155111];
-
-export const UNIVERSAL_ROUTER_BY_CHAIN: Readonly<Partial<Record<JBChainId, Address>>> =
-  Object.fromEntries(
-    SUPPORTED_CHAINS.flatMap((chainId) => {
-      const router = uniswapV4Deployment(chainId)?.universalRouter;
-      return router ? [[chainId, router]] : [];
-    }),
-  );
+export { PERMIT2_ADDRESS, permit2Abi };
 
 export interface DirectSellQuote {
   poolKey: UniswapV4PoolKey;

@@ -41,7 +41,7 @@ import {
   PERMIT2_ADDRESS,
   permit2Abi,
   quoteDirectSellSwap,
-} from "@/lib/directPaySwap";
+} from "@/lib/directSellSwap";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { legacyIntents } from "@/lib/legacy-intents";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";

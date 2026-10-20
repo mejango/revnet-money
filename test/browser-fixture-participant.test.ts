@@ -6,6 +6,7 @@ import {
   jbMultiTerminalAbi,
   jbPermissionsAbi,
 } from "@bananapus/nana-sdk-core";
+import { buildUserPayMetadata } from "@bananapus/nana-sdk-core/v6";
 import {
   decodeFunctionResult,
   encodeFunctionData,
@@ -30,7 +31,8 @@ beforeEach(() => {
 });
 
 describe("browser fixture's unsigned payment draft", () => {
-  const args = [1n, usdc, 12_000_000n, zeroAddress, "0x"] as const;
+  const metadata = buildUserPayMetadata({ chainId: 1 });
+  const args = [1n, usdc, 12_000_000n, zeroAddress, metadata] as const;
 
   it("previews the $12 USDC draft with the fixture's issuance and reserved share", () => {
     const data = encodeFunctionData({
@@ -53,12 +55,12 @@ describe("browser fixture's unsigned payment draft", () => {
   });
 
   it.each([
-    [2n, usdc, 12_000_000n, zeroAddress, "0x", "projectId"],
-    [1n, otherAccount, 12_000_000n, zeroAddress, "0x", "token"],
-    [1n, usdc, 0n, zeroAddress, "0x", "amount"],
-    [1n, usdc, 12_000_001n, zeroAddress, "0x", "amount"],
-    [1n, usdc, 12_000_000n, participant, "0x", "beneficiary"],
-    [1n, usdc, 12_000_000n, zeroAddress, "0x00", "metadata"],
+    [2n, usdc, 12_000_000n, zeroAddress, metadata, "projectId"],
+    [1n, otherAccount, 12_000_000n, zeroAddress, metadata, "token"],
+    [1n, usdc, 0n, zeroAddress, metadata, "amount"],
+    [1n, usdc, 12_000_001n, zeroAddress, metadata, "amount"],
+    [1n, usdc, 12_000_000n, participant, metadata, "beneficiary"],
+    [1n, usdc, 12_000_000n, zeroAddress, "0x", "metadata"],
   ] as const)(
     "rejects an unsupported preview tuple %s/%s/%s/%s/%s",
     (projectId, token, amount, beneficiary, metadata, mismatch) => {

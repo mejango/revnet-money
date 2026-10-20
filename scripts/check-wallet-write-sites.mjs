@@ -40,12 +40,6 @@ const reviewedHookModules = {
       bindings: { signSafeTransactionAsync: "reviewed-safe-signature" },
     },
   },
-  "@/hooks/useReviewedPermit2Signature": {
-    useReviewedPermit2Signature: {
-      hookKind: "reviewed-permit2-signature-hook",
-      bindings: { signPermit2Async: "reviewed-permit2-signature" },
-    },
-  },
 };
 
 const rawWalletImports = {
@@ -116,7 +110,6 @@ const allowedRawBoundary = {
     "src/hooks/useReviewedRelayr.ts",
     "src/lib/safe-relayr.ts",
     "src/hooks/useReviewedSafeSignature.ts",
-    "src/hooks/useReviewedPermit2Signature.ts",
   ],
 };
 
