@@ -345,6 +345,7 @@ export function V6PayCard() {
     shop && tierIds.length > 0 && shopMatchesToken
       ? { metadataIdTarget: shop.idTarget, tierIdsToMint: tierIds }
       : undefined;
+  const tiersKey = tiers ? `${tiers.metadataIdTarget}:${tiers.tierIdsToMint.join(",")}` : "";
 
   // ---- Debounced live preview via the best route (multi vs router) ----
   const {
@@ -362,7 +363,7 @@ export function V6PayCard() {
       projectId.toString(),
       selected ? payTokenKey(selected) : "",
       amountRaw.toString(),
-      tiers ? `${tiers.metadataIdTarget}:${tiers.tierIdsToMint.join(",")}` : "",
+      tiersKey,
       address ?? zeroAddress,
     ],
     enabled: !!publicClient && !!selected && mode === "pay" && (amountRaw > 0n || cartCount > 0),
@@ -420,7 +421,8 @@ export function V6PayCard() {
   // unavailable preview blocks — never send blind.
   const previewReady =
     mode === "addbalance" || (!!preview && !previewError && !previewLoading && !previewIsPrevious);
-  const routeIsRouter = preview?.routeType === "swap";
+  // The preview is an estimate; the minimum is what the terminal enforces.
+  const previewIsEstimate = !!preview && preview.minReturned < preview.beneficiaryTokenCount;
 
   // ---- Wallet balance ----
   // Every accepted token, not only the selected one: whether this wallet can pay AT ALL is what
@@ -493,6 +495,24 @@ export function V6PayCard() {
 
   const creditOnlyCheckout = mode === "pay" && cartCount > 0 && cartAmountDue === 0n;
 
+  // Everything a preparation is built from. If any of it changes, the reviewed
+  // payment is no longer the one on screen.
+  const payIdentity = [
+    mode,
+    chainId,
+    projectId,
+    selected ? payTokenKey(selected) : "",
+    amountRaw,
+    address ?? "",
+    tiersKey,
+    memo.trim(),
+  ].join("|");
+  const quoteSettled = !!preview && !previewIsPrevious && !previewError && !previewLoading;
+  const preparationChanged =
+    !!prepared &&
+    (prepared.identity !== payIdentity ||
+      (prepared.mode === "pay" && quoteSettled && preview.terminal !== prepared.terminal));
+
   const openConfirm = () => {
     if (phase === "safe-proposed") return;
     if (!selected) return;
@@ -530,10 +550,13 @@ export function V6PayCard() {
         }
         // The card's live quote is the quote. Only a stale, missing, or
         // previous-amount quote is refetched here (fail closed either way).
+        // A failed refetch keeps the old data, so only a successful one counts.
         const quote =
-          preview && !previewIsPrevious && !previewError && !previewLoading && !previewIsStale
+          quoteSettled && !previewIsStale
             ? preview
-            : (await refetchPreview()).data;
+            : await refetchPreview().then((result) =>
+                result.isSuccess && !result.isPlaceholderData ? result.data : undefined,
+              );
         if (cancelled) return;
         if (!quote) {
           throw new Error("Couldn't verify what this payment returns. Nothing was sent.");
@@ -560,6 +583,7 @@ export function V6PayCard() {
           amountRaw,
         );
         next = {
+          identity: payIdentity,
           account: address,
           mode,
           chainId,
@@ -567,7 +591,6 @@ export function V6PayCard() {
           amount: amountRaw,
           memo: memo.trim(),
           terminal,
-          viaRouterRoute: quote.routeType === "swap",
           expectedTokens: quote.beneficiaryTokenCount,
           reservedTokens: quote.reservedTokenCount,
           minReturned: quote.minReturned,
@@ -620,6 +643,7 @@ export function V6PayCard() {
           amountRaw,
         );
         next = {
+          identity: payIdentity,
           account: address,
           mode,
           chainId,
@@ -627,7 +651,6 @@ export function V6PayCard() {
           amount: amountRaw,
           memo: memo.trim(),
           terminal,
-          viaRouterRoute: false,
           expectedTokens: null,
           reservedTokens: null,
           minReturned: 0n,
@@ -680,6 +703,16 @@ export function V6PayCard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [confirmOpen, phase, address, publicClient, chainId, selected, amountRaw, tiers, mode]);
 
+  // A changed input or route rebuilds the payment for review again.
+  useEffect(() => {
+    if (!confirmOpen || phase !== "ready" || !prepared || !preparationChanged) return;
+    setTxError(
+      prepared.account.toLowerCase() !== address?.toLowerCase() ? ACCOUNT_CHANGED : PAYMENT_CHANGED,
+    );
+    setPrepared(null);
+    setPhase("preparing");
+  }, [confirmOpen, phase, prepared, preparationChanged, address]);
+
   const confirm = async () => {
     if (!publicClient || !address) return;
     if (!prepared) {
@@ -693,6 +726,12 @@ export function V6PayCard() {
       // again for this one, and let the payer review that before it sends.
       setPrepared(null);
       setTxError(ACCOUNT_CHANGED);
+      setPhase("preparing");
+      return;
+    }
+    if (preparationChanged || (prepared.mode === "pay" && previewLoading)) {
+      setPrepared(null);
+      setTxError(PAYMENT_CHANGED);
       setPhase("preparing");
       return;
     }
@@ -1035,7 +1074,7 @@ export function V6PayCard() {
             {showPayReceipt ? (
               <div className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2.5">
                 <p className="text-sm text-zinc-500">
-                  {routeIsRouter ? "You get at least" : "You get"}
+                  {previewIsEstimate ? "You get about" : "You get"}
                 </p>
                 {preview && preview.beneficiaryTokenCount > 0n ? (
                   <p
@@ -1053,6 +1092,11 @@ export function V6PayCard() {
                     role="status"
                     aria-label="Calculating token return"
                   />
+                ) : null}
+                {previewIsEstimate ? (
+                  <p className="text-xs text-zinc-500">
+                    At least {formatPayAmount(preview.minReturned, 18)} {projectTokenLabel}
+                  </p>
                 ) : null}
 
                 {cartCount > 0 && shop ? (
@@ -1312,6 +1356,8 @@ async function needsApproval(
   });
   return allowance < amount;
 }
+
+const PAYMENT_CHANGED = "The payment changed. Review it again.";
 
 function nextUiPaint(): Promise<void> {
   return new Promise((resolve) => {

@@ -42,6 +42,8 @@ interface PreparedV6TransactionAction {
 
 /** A fully resolved, encodable pay/add-to-balance transaction. */
 export interface PreparedV6Pay {
+  /** The card inputs it was built from; a change means it needs review again. */
+  identity: string;
   /** The account it was built for: a payment's tokens go to it. */
   account: Address;
   mode: V6PayMode;
@@ -50,8 +52,6 @@ export interface PreparedV6Pay {
   amount: bigint;
   memo: string;
   terminal: Address;
-  /** True when the resolved route goes through the router registry (swap). */
-  viaRouterRoute: boolean;
   /** Fresh previewed token return (null for add-to-balance). */
   expectedTokens: bigint | null;
   reservedTokens: bigint | null;
@@ -203,9 +203,7 @@ export function V6PayConfirmDialog({
                         {chainMeta?.name ?? String(prepared.chainId)}
                       </SummaryRow>
                       {prepared.mode === "pay" ? (
-                        <SummaryRow
-                          label={prepared.viaRouterRoute ? "You get at least" : "You get"}
-                        >
+                        <SummaryRow label="You get at least">
                           {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
                         </SummaryRow>
                       ) : (
