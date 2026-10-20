@@ -1,5 +1,7 @@
 "use client";
 
+import dynamic from "next/dynamic";
+
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
@@ -37,9 +39,15 @@ import type { Address } from "viem";
 import { authorityIdentityQuery } from "./authorityIdentityQuery";
 import { chainName, publicClientFor, type ChainProjectRow } from "./operatorLib";
 import { OperatorSection } from "./OperatorSection";
-import { SafeBatchDialog } from "./SafeBatchDialog";
-import { SafeBatchPresetDialog } from "./SafeBatchPresetDialog";
 import { useLiveRevnetOperators } from "./useLiveRevnetOperators";
+
+// The dialogs load when first opened; hover or focus on their buttons loads them early.
+const loadBatchDialog = () => import("./SafeBatchDialog");
+const loadPresetDialog = () => import("./SafeBatchPresetDialog");
+const SafeBatchDialog = dynamic(() => loadBatchDialog().then((module) => module.SafeBatchDialog));
+const SafeBatchPresetDialog = dynamic(() =>
+  loadPresetDialog().then((module) => module.SafeBatchPresetDialog),
+);
 
 /** The calls as an order-free key, so a reordered tray still matches its proposal. */
 function callsKey(calls: readonly { to: Address; data: string; value: bigint }[]): string {
@@ -245,6 +253,8 @@ export function SafeBatchTray({
               size="sm"
               targetChainId={source.chainId}
               onClick={() => setDialog({ kind: "batch", chainId: source.chainId })}
+              onPointerEnter={() => void loadBatchDialog()}
+              onFocus={() => void loadBatchDialog()}
             >
               Review and propose on {chainName(source.chainId)}
             </ButtonWithWallet>
@@ -258,7 +268,13 @@ export function SafeBatchTray({
       )}
       <div className="mt-3 flex flex-wrap gap-1">
         {presetsAvailable ? (
-          <Button variant="ghost" size="sm" onClick={() => setDialog({ kind: "presets" })}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDialog({ kind: "presets" })}
+            onPointerEnter={() => void loadPresetDialog()}
+            onFocus={() => void loadPresetDialog()}
+          >
             Start from a preset
           </Button>
         ) : null}

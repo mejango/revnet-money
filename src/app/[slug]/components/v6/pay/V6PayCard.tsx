@@ -1,11 +1,14 @@
 "use client";
 
+import dynamic from "next/dynamic";
+
 import { useOnRamp } from "@/components/GetFunds";
 import { ImageWithFallback } from "@/components/IpfsImage";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAllowance } from "@/hooks/useAllowance";
+import { useOpenedOnce } from "@/hooks/useOpenedOnce";
 import {
   ACCOUNT_CHANGED,
   isSafeProposalPendingError,
@@ -80,8 +83,13 @@ import {
   usePayShopRoutes,
 } from "./usePayShop";
 import { usePaySurface } from "./usePaySurface";
-import { PreparedV6Pay, V6PayConfirmDialog, V6PayPhase } from "./V6PayConfirmDialog";
+import type { PreparedV6Pay, V6PayPhase } from "./V6PayConfirmDialog";
 import { V6PayShopStrip } from "./V6PayShopStrip";
+
+const loadPayConfirm = () => import("./V6PayConfirmDialog");
+const V6PayConfirmDialog = dynamic(() =>
+  loadPayConfirm().then((module) => module.V6PayConfirmDialog),
+);
 
 function payChainName(chainId: JBChainId): string {
   const compactNames: Partial<Record<JBChainId, string>> = {
@@ -484,6 +492,7 @@ export function V6PayCard() {
 
   // ---- Confirm + send flow ----
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const confirmMounted = useOpenedOnce(confirmOpen);
   const [prepared, setPrepared] = useState<PreparedV6Pay | null>(null);
   const [phase, setPhase] = useState<V6PayPhase>("preparing");
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
@@ -1275,6 +1284,9 @@ export function V6PayCard() {
             <Button
               disabled={payDisabled}
               loading={busy}
+              // Load the confirmation dialog on intent, so Pay opens it without waiting.
+              onPointerEnter={() => void loadPayConfirm()}
+              onFocus={() => void loadPayConfirm()}
               onClick={
                 {
                   signIn: requestSignIn,
@@ -1348,19 +1360,21 @@ export function V6PayCard() {
         </DialogContent>
       </Dialog>
 
-      <V6PayConfirmDialog
-        open={confirmOpen}
-        onOpenChange={setConfirmOpen}
-        prepared={prepared}
-        phase={phase}
-        mode={mode}
-        error={txError}
-        projectTokenSymbol={projectTokenLabel}
-        txHash={txHash}
-        onConfirm={confirm}
-        onSwitchChain={switchChain}
-        onDone={resetAfterSuccess}
-      />
+      {confirmMounted ? (
+        <V6PayConfirmDialog
+          open={confirmOpen}
+          onOpenChange={setConfirmOpen}
+          prepared={prepared}
+          phase={phase}
+          mode={mode}
+          error={txError}
+          projectTokenSymbol={projectTokenLabel}
+          txHash={txHash}
+          onConfirm={confirm}
+          onSwitchChain={switchChain}
+          onDone={resetAfterSuccess}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,12 +1,25 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import type { Project } from "@/lib/bendystraw/types";
 import { useJBProjectMetadataContext } from "@/lib/nana/project";
 import { getProjectLinks } from "@/lib/projectLinks";
-import { EditMetadataDialog } from "./EditMetadataDialog";
+import dynamic from "next/dynamic";
 import { ProjectLinks } from "./ProjectLinks";
 import { RichPreview } from "./RichPreview";
+
+// Only an account that can edit the metadata sees the editor, so it loads for that account.
+const EditMetadataDialog = dynamic(
+  () => import("./EditMetadataDialog").then((module) => module.EditMetadataDialog),
+  {
+    loading: () => (
+      <Button variant="outline" size="sm" disabled>
+        Edit metadata
+      </Button>
+    ),
+  },
+);
 
 interface Props {
   projects: Array<Pick<Project, "projectId" | "token" | "chainId">>;
