@@ -118,10 +118,18 @@ export function V6PayCard() {
   // Every wallet action confirms through the one transaction safety check —
   // the same shell every multi-step flow uses. The confirm dialog only shows
   // the intent summary and the step queue.
+  // The latest render's inputs and settled quote, read across the awaits of a
+  // send (the write hook's review and final simulation included): a
+  // preparation is sent only while it still matches both.
+  const currentPayRef = useRef<CurrentPay>({ identity: "", quoteTerminal: null });
+  const sendingRef = useRef<PreparedV6Pay | null>(null);
   const { writeContractAsync } = useWriteContract({
     transactionReview: {
       title: "Review the payment",
       confirmLabel: "Agree & send",
+    },
+    beforeSubmission: async () => {
+      if (sendingRef.current) requireCurrent(sendingRef.current, currentPayRef.current);
     },
   });
   const { ensureAllowance, getApprovalReceipt } = useAllowance(chainId);
@@ -514,24 +522,12 @@ export function V6PayCard() {
       (prepared.mode === "pay" &&
         (previewError || (quoteSettled && preview.terminal !== prepared.terminal))));
 
-  // The latest render's inputs and settled quote, read across the awaits of a
-  // send: a preparation is sent only while it still matches both.
-  const currentPayRef = useRef({ identity: payIdentity, quoteTerminal: null as Address | null });
   useEffect(() => {
     currentPayRef.current = {
       identity: payIdentity,
       quoteTerminal: quoteSettled ? preview.terminal : null,
     };
   });
-  const requireCurrent = (p: PreparedV6Pay) => {
-    const current = currentPayRef.current;
-    if (
-      p.identity !== current.identity ||
-      (p.mode === "pay" && current.quoteTerminal?.toLowerCase() !== p.terminal.toLowerCase())
-    ) {
-      throw new PaymentChangedError();
-    }
-  };
 
   const openConfirm = () => {
     if (phase === "safe-proposed") return;
@@ -750,8 +746,9 @@ export function V6PayCard() {
       return;
     }
     setTxError(null);
+    sendingRef.current = prepared;
     try {
-      requireCurrent(prepared);
+      requireCurrent(prepared, currentPayRef.current);
       // Simulate at the approval's block. Base RPC providers are load
       // balanced: a receipt can be visible on one backend while `latest` on a
       // sibling still predates that approval.
@@ -780,7 +777,7 @@ export function V6PayCard() {
         }
         setPrepared((current) => (current ? { ...current, tokenApprovalComplete: true } : current));
         await nextUiPaint();
-        requireCurrent(prepared);
+        requireCurrent(prepared, currentPayRef.current);
       }
       setPhase("simulating");
       await nextUiPaint();
@@ -794,7 +791,7 @@ export function V6PayCard() {
         blockNumber: approvalBlock,
       } as unknown as Parameters<typeof publicClient.simulateContract>[0]);
       await nextUiPaint();
-      requireCurrent(prepared);
+      requireCurrent(prepared, currentPayRef.current);
       setPhase("signing");
       // Held by the project and beneficiary alone: one payment to a project at a time, whatever
       // the cart, token, route, amount or memo.
@@ -845,6 +842,8 @@ export function V6PayCard() {
       setPhase("ready");
       const message = formatWalletError(err);
       setTxError(message);
+    } finally {
+      sendingRef.current = null;
     }
   };
 
@@ -1388,6 +1387,17 @@ const PAYMENT_CHANGED = "The payment changed. Review it again.";
 class PaymentChangedError extends Error {
   constructor() {
     super(PAYMENT_CHANGED);
+  }
+}
+
+type CurrentPay = { identity: string; quoteTerminal: Address | null };
+
+function requireCurrent(p: PreparedV6Pay, current: CurrentPay) {
+  if (
+    p.identity !== current.identity ||
+    (p.mode === "pay" && current.quoteTerminal?.toLowerCase() !== p.terminal.toLowerCase())
+  ) {
+    throw new PaymentChangedError();
   }
 }
 
