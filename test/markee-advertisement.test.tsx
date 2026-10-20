@@ -1,15 +1,23 @@
 // @vitest-environment jsdom
 import { MarkeeAdvertisement } from "@/app/MarkeeAdvertisement";
 import { MARKEE_ADMIN } from "@/lib/markee";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { state, account } = vi.hoisted(() => ({
+const { state, account, card } = vi.hoisted(() => ({
   state: { current: {} as Record<string, unknown> },
   account: { address: undefined as string | undefined, isConnected: false },
+  card: { client: undefined as unknown, rentLoaded: vi.fn() },
 }));
-vi.mock("@/hooks/useMarkee", () => ({ useMarkee: () => state.current }));
-vi.mock("wagmi", () => ({ useAccount: () => account }));
+vi.mock("@/hooks/useMarkee", () => {
+  card.rentLoaded();
+  return { useMarkee: () => state.current };
+});
+vi.mock("wagmi", () => ({ useAccount: () => account, usePublicClient: () => card.client }));
+vi.mock("@/lib/markee", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  readMarkeeBoard: async () => ({ message: "Read by the card" }),
+}));
 vi.mock("@/components/ButtonWithWallet", () => ({
   ButtonWithWallet: ({
     children,
@@ -50,13 +58,30 @@ beforeEach(() => {
   };
 });
 afterEach(cleanup);
-const open = () =>
+const open = async () => {
   fireEvent.click(screen.getByRole("button", { name: "Take over this advertisement" }));
+  await act(async () => {
+    await vi.dynamicImportSettled();
+  });
+};
 
 describe("real Markee advertisement", () => {
-  it("requires verified board setup and keeps Preview secondary without submitting a stream", () => {
+  it("shows the board from its own read and loads the rent dialog only when opened", async () => {
+    card.client = {};
+    render(
+      <MarkeeAdvertisement initialBoardAddress="0x1111111111111111111111111111111111111111" />,
+    );
+    expect(await screen.findByText("Read by the card")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(card.rentLoaded).not.toHaveBeenCalled();
+    await open();
+    expect(screen.getByRole("dialog", { name: "Rent this space" })).toBeTruthy();
+    card.client = undefined;
+  });
+
+  it("requires verified board setup and keeps Preview secondary without submitting a stream", async () => {
     render(<MarkeeAdvertisement />);
-    open();
+    await open();
     expect(
       screen.getByText("This advertisement needs to be set up before it can accept streams."),
     ).toBeTruthy();
@@ -76,7 +101,7 @@ describe("real Markee advertisement", () => {
     expect(state.current.createBoard).toHaveBeenCalledOnce();
   });
 
-  it("submits Take over through the owning hook while Preview never replaces onchain content", () => {
+  it("submits Take over through the owning hook while Preview never replaces onchain content", async () => {
     state.current = {
       ...state.current,
       boardAddress: "0x1111111111111111111111111111111111111111",
@@ -90,7 +115,7 @@ describe("real Markee advertisement", () => {
       canCreateBoard: false,
     };
     render(<MarkeeAdvertisement />);
-    open();
+    await open();
     fireEvent.change(screen.getByLabelText("Your message"), {
       target: { value: "New funded message" },
     });
@@ -102,7 +127,7 @@ describe("real Markee advertisement", () => {
     expect(screen.queryByText(/This demo/)).toBeNull();
   });
 
-  it("blocks a new Take over while an existing stream is active and exposes cancellation", () => {
+  it("blocks a new Take over while an existing stream is active and exposes cancellation", async () => {
     state.current = {
       ...state.current,
       boardAddress: "0x1111111111111111111111111111111111111111",
@@ -116,17 +141,17 @@ describe("real Markee advertisement", () => {
       canCreateBoard: false,
     };
     render(<MarkeeAdvertisement />);
-    open();
+    await open();
     fireEvent.change(screen.getByLabelText("Your message"), { target: { value: "Another" } });
     expect(screen.getByRole("button", { name: "Take over" }).hasAttribute("disabled")).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Stop stream" }));
     expect(state.current.stop).toHaveBeenCalledOnce();
   });
 
-  it("retains recovery and disables fresh payment while a saved transaction is pending", () => {
+  it("retains recovery and disables fresh payment while a saved transaction is pending", async () => {
     state.current = { ...state.current, pending: true, error: "Confirmation unavailable." };
     render(<MarkeeAdvertisement />);
-    open();
+    await open();
     expect(screen.getByRole("alert").textContent).toBe("Confirmation unavailable.");
     expect(
       screen.getByRole("button", { name: "Create advertisement" }).hasAttribute("disabled"),

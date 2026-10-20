@@ -1,71 +1,58 @@
 "use client";
 
-import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { WalletConnectButton } from "@/components/WalletButton";
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { useMarkee } from "@/hooks/useMarkee";
-import {
-  MARKEE_ADMIN,
-  MARKEE_CHAIN_ID,
-  parseMonthlyRate,
-  ratePerSecToMonthly,
-  recommendedTakeoverMonthlyRate,
-  roundUpToNearestThousandth,
-  validateMarkeeText,
-} from "@/lib/markee";
-import { useEffect, useState } from "react";
-import { formatEther, type Address } from "viem";
-import { useAccount } from "wagmi";
+import { useOpenedOnce } from "@/hooks/useOpenedOnce";
+import { MARKEE_CHAIN_ID, readMarkeeBoard, savedMarkeeBoard } from "@/lib/markee";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useState } from "react";
+import type { Address } from "viem";
+import { usePublicClient } from "wagmi";
+import type { MarkeeCardState } from "./MarkeeRentDialog";
+
+// Renting runs reviewed wallet writes and durable recovery; that code loads only when a visitor
+// opens Take over (hover or focus loads it a moment early).
+const loadRentDialog = () => import("./MarkeeRentDialog");
+const MarkeeRentDialog = dynamic(() => loadRentDialog().then((module) => module.MarkeeRentDialog));
+
+/** The card's own read of the board it shows: the same board the rent dialog selects. */
+function useMarkeeCard(initialBoardAddress?: Address): MarkeeCardState {
+  const client = usePublicClient({ chainId: MARKEE_CHAIN_ID });
+  const [state, setState] = useState<MarkeeCardState>({ loading: true });
+  useEffect(() => {
+    let live = true;
+    void (async () => {
+      if (!client) return setState({ loading: false });
+      setState({ loading: true });
+      try {
+        const boardAddress = initialBoardAddress ?? savedMarkeeBoard();
+        if (!boardAddress) return live && setState({ loading: false });
+        const board = await readMarkeeBoard(client, boardAddress);
+        if (live) setState({ boardAddress, board, loading: false });
+      } catch (cause) {
+        if (live)
+          setState({
+            loading: false,
+            error: cause instanceof Error ? cause.message : String(cause),
+          });
+      }
+    })();
+    return () => {
+      live = false;
+    };
+  }, [client, initialBoardAddress]);
+  return state;
+}
 
 export function MarkeeAdvertisement({ initialBoardAddress }: { initialBoardAddress?: Address }) {
-  const markee = useMarkee(initialBoardAddress);
-  const { address, isConnected } = useAccount();
+  const read = useMarkeeCard(initialBoardAddress);
+  // Once opened, the rent dialog's settled reads are the card's: they follow every change it
+  // makes. While the dialog reads again, the card keeps the last answer instead of a loading line.
+  const [fromDialog, setFromDialog] = useState<MarkeeCardState>();
+  const markee = fromDialog ?? read;
   const [open, setOpen] = useState(false);
-  const [message, setMessage] = useState("");
-  const [monthlyRate, setMonthlyRate] = useState("");
-  const [preview, setPreview] = useState(false);
-  const [recoveryHash, setRecoveryHash] = useState("");
-  const recommendedRate = markee.board
-    ? recommendedTakeoverMonthlyRate(markee.board.minimumMonthlyRate, markee.board.effectiveTopRate)
-    : undefined;
-
-  useEffect(() => {
-    if (recommendedRate !== undefined) {
-      setMonthlyRate((current) => current || formatEther(recommendedRate));
-    }
-  }, [recommendedRate]);
-
-  let validation: string | undefined;
-  let funding: ReturnType<typeof markee.quoteFunding> | undefined;
-  if (markee.board && monthlyRate) {
-    try {
-      if (message.trim()) validateMarkeeText(message.trim(), markee.board.maxMessageLength);
-      parseMonthlyRate(monthlyRate, markee.board.minimumMonthlyRate);
-      if (markee.wallet) funding = markee.quoteFunding(monthlyRate);
-    } catch (error) {
-      validation = error instanceof Error ? error.message : "Check your message and rate.";
-    }
-  }
-  const hasStream = Boolean(markee.wallet && markee.wallet.flowRate > 0n);
-  const canTakeover = Boolean(
-    markee.board &&
-    message.trim() &&
-    monthlyRate &&
-    !validation &&
-    !hasStream &&
-    !markee.pending &&
-    !markee.loading &&
-    !markee.error &&
-    (!markee.wallet || markee.wallet.deposit === 0n),
-  );
+  const mounted = useOpenedOnce(open);
+  const onCardState = useCallback((state: MarkeeCardState) => {
+    if (!state.loading) setFromDialog(state);
+  }, []);
 
   return (
     <section
@@ -82,246 +69,27 @@ export function MarkeeAdvertisement({ initialBoardAddress }: { initialBoardAddre
               : markee.board?.message || "Your message could be here."}
         </p>
       </div>
-      <Dialog
-        open={open}
-        onOpenChange={(nextOpen) => {
-          if (markee.busy && !nextOpen) return;
-          setOpen(nextOpen);
-          if (nextOpen) void markee.refresh();
-        }}
-      >
-        <div className="flex justify-start px-4 pb-1 sm:px-5">
-          <DialogTrigger asChild>
-            <button
-              type="button"
-              className="inline-flex min-h-11 items-center text-[10px] text-teal-700 underline-offset-4 hover:text-teal-800 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
-            >
-              Take over this advertisement
-            </button>
-          </DialogTrigger>
-        </div>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Rent this space</DialogTitle>
-            <DialogDescription>
-              Stream to feature your message. You can change or stop your stream.
-            </DialogDescription>
-          </DialogHeader>
-
-          {!markee.board && !markee.loading && !markee.boardAddress && (
-            <div className="space-y-3 border border-teal-200 bg-teal-50 p-4 text-sm">
-              <p>This advertisement needs to be set up before it can accept streams.</p>
-              {markee.canCreateBoard ? (
-                <Button
-                  type="button"
-                  onClick={() => void markee.createBoard()}
-                  disabled={markee.busy || markee.pending}
-                  className="w-full"
-                >
-                  Create advertisement
-                </Button>
-              ) : !isConnected ? (
-                <>
-                  <p className="break-words text-xs text-teal-700">
-                    Set up from the admin wallet {MARKEE_ADMIN}.
-                  </p>
-                  <WalletConnectButton label="Connect admin wallet" className="w-full" />
-                </>
-              ) : (
-                <p className="break-words text-xs text-teal-700">
-                  Connect the admin wallet {MARKEE_ADMIN} to create the board.
-                </p>
-              )}
-            </div>
-          )}
-
-          <form
-            className="space-y-5"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (canTakeover) void markee.takeover(message.trim(), monthlyRate);
-            }}
-          >
-            <div>
-              <label htmlFor="markee-message" className="mb-2 block text-sm">
-                Your message
-              </label>
-              <textarea
-                id="markee-message"
-                value={message}
-                onChange={(event) => {
-                  setMessage(event.target.value);
-                  setPreview(false);
-                }}
-                rows={3}
-                required
-                disabled={markee.busy}
-                placeholder="What would you like to say?"
-                className="w-full resize-y border border-teal-200 bg-teal-25 p-3 text-base focus:outline-none focus:ring-2 focus:ring-teal-600"
-              />
-            </div>
-            {preview && (
-              <div className="border border-teal-200 bg-teal-50 p-4">
-                <p className="mb-2 text-xs text-teal-700">Preview</p>
-                <p className="whitespace-pre-wrap break-words text-base">{message.trim()}</p>
-              </div>
-            )}
-            <div className="space-y-3 border border-teal-200 bg-teal-50 p-4">
-              <label htmlFor="markee-monthly-rate" className="block text-sm">
-                Your rate
-              </label>
-              <div className="flex items-center gap-3">
-                <input
-                  id="markee-monthly-rate"
-                  value={monthlyRate}
-                  onChange={(event) => setMonthlyRate(event.target.value)}
-                  inputMode="decimal"
-                  disabled={markee.busy}
-                  placeholder="0.00"
-                  className="min-w-0 flex-1 border border-teal-200 bg-teal-25 p-2 text-lg focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-                <span className="shrink-0 text-sm">ETH / month</span>
-              </div>
-              {markee.board && (
-                <dl className="space-y-1 text-xs text-teal-700">
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <dt>Minimum</dt>
-                    <dd>
-                      {formatEther(roundUpToNearestThousandth(markee.board.minimumMonthlyRate))} ETH
-                      / month
-                    </dd>
-                  </div>
-                  <div className="flex flex-wrap justify-between gap-2">
-                    <dt>Leading rate</dt>
-                    <dd>
-                      {formatEther(ratePerSecToMonthly(markee.board.effectiveTopRate))} ETH / month
-                    </dd>
-                  </div>
-                </dl>
-              )}
-              <p className="text-xs leading-relaxed text-teal-700">
-                The leading message is featured. Beneficiary proceeds stream as ETHx to team.rev.eth
-                on Base. Gas and refundable buffer deposits apply.
-              </p>
-              {funding && (
-                <p className="text-xs leading-relaxed text-teal-700">
-                  Wrap {formatEther(funding.wrapValue)} ETH into ETHx upfront, targeting one month
-                  of funding plus required buffers. Other streams share this balance. Unspent ETHx
-                  stays in your wallet.
-                </p>
-              )}
-            </div>
-            {validation && <p className="text-sm text-red-700">{validation}</p>}
-            {markee.error && (
-              <p role="alert" className="break-words text-sm text-red-700">
-                {markee.error}
-              </p>
-            )}
-            {markee.status && (
-              <p role="status" className="break-words text-sm text-teal-700">
-                {markee.status}
-              </p>
-            )}
-            {markee.pending && (
-              <div className="space-y-2">
-                <label htmlFor="markee-recovery-hash" className="block text-sm">
-                  Transaction hash, if the wallet reply was lost
-                </label>
-                <input
-                  id="markee-recovery-hash"
-                  value={recoveryHash}
-                  onChange={(event) => setRecoveryHash(event.target.value)}
-                  placeholder="0x…"
-                  className="w-full border border-teal-200 bg-teal-25 p-2 font-mono text-sm"
-                  disabled={markee.busy}
-                />
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void markee.recover(recoveryHash.trim() || undefined)}
-                  disabled={markee.busy}
-                >
-                  Check existing transaction
-                </Button>
-              </div>
-            )}
-            {markee.error && !markee.busy && (
-              <Button type="button" variant="outline" onClick={() => void markee.refresh()}>
-                Retry checks
-              </Button>
-            )}
-            {hasStream && (
-              <div className="space-y-2 text-sm">
-                <p>
-                  You already back a message on this board. Stop it and withdraw its buffer before
-                  creating a new one.
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void markee.stop()}
-                  disabled={markee.busy || markee.pending}
-                >
-                  Stop stream
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void markee.updateStream(monthlyRate)}
-                  disabled={markee.busy || markee.pending || !monthlyRate || !!validation}
-                >
-                  Update stream
-                </Button>
-              </div>
-            )}
-            {markee.wallet && markee.wallet.deposit > 0n && !hasStream && (
-              <div className="space-y-2">
-                <p className="text-sm">Withdraw the unused buffer before starting a new stream.</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => void markee.withdraw()}
-                  disabled={markee.busy || markee.pending}
-                >
-                  Withdraw unused deposit
-                </Button>
-              </div>
-            )}
-            <div className="flex justify-end gap-3">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setPreview(!preview)}
-                disabled={!message.trim() || markee.busy}
-              >
-                Preview
-              </Button>
-              <ButtonWithWallet
-                targetChainId={MARKEE_CHAIN_ID}
-                connectWalletText="Take over"
-                type="submit"
-                disabled={!canTakeover || markee.busy}
-              >
-                Take over
-              </ButtonWithWallet>
-            </div>
-          </form>
-          {markee.boardAddress && (
-            <a
-              href={`https://www.markee.xyz/markee/${markee.boardAddress}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="break-all text-xs text-teal-700 underline underline-offset-4"
-            >
-              View board on Markee
-            </a>
-          )}
-          {!address && markee.board && (
-            <p className="text-xs text-teal-700">Connect your wallet to rent this advertisement.</p>
-          )}
-        </DialogContent>
-      </Dialog>
+      <div className="flex justify-start px-4 pb-1 sm:px-5">
+        <button
+          type="button"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => setOpen(true)}
+          onPointerEnter={() => void loadRentDialog()}
+          onFocus={() => void loadRentDialog()}
+          className="inline-flex min-h-11 items-center text-[10px] text-teal-700 underline-offset-4 hover:text-teal-800 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-600"
+        >
+          Take over this advertisement
+        </button>
+      </div>
+      {mounted ? (
+        <MarkeeRentDialog
+          initialBoardAddress={initialBoardAddress}
+          open={open}
+          onOpenChange={setOpen}
+          onCardState={onCardState}
+        />
+      ) : null}
     </section>
   );
 }
