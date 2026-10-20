@@ -2,6 +2,7 @@ import { IpfsImage } from "@/components/IpfsImage";
 import { Revalidating } from "@/components/ui/Revalidating";
 import { Skeleton, SkeletonLines, SkeletonTable } from "@/components/ui/skeleton";
 import { type ProjectNavigationHint } from "@/lib/project-navigation";
+import { CardSkeleton } from "./CardSkeleton";
 
 function ActivityRows({ rows = 5 }: { rows?: number }) {
   return (
@@ -202,20 +203,6 @@ export function ProjectContentSkeleton({ segment }: { segment: string | null }) 
     default:
       return <OverviewContentSkeleton />;
   }
-}
-
-export function CardSkeleton({ rows = 3, className = "" }: { rows?: number; className?: string }) {
-  return (
-    <div
-      role="status"
-      aria-label="Loading content"
-      className={`border border-melon-100 bg-melon-50 p-4 ${className}`}
-    >
-      <span className="sr-only">Loading content</span>
-      <Skeleton className="mb-4 h-4 w-28" />
-      <SkeletonLines lines={rows} />
-    </div>
-  );
 }
 
 export function TableSkeleton({ rows = 4, columns = 4 }: { rows?: number; columns?: number }) {

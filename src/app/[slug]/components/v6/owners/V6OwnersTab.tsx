@@ -1,6 +1,6 @@
 "use client";
 
-import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
+import { CardSkeleton } from "@/components/loading/CardSkeleton";
 import { projectViewHref } from "@/lib/projectSubtabNavigation";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";

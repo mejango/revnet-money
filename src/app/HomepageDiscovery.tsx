@@ -1,4 +1,3 @@
-import { AuditPromptLink } from "@/components/AuditPromptLink";
 import { ChainLogo } from "@/components/ChainLogo";
 import { IpfsImage } from "@/components/IpfsImage";
 import { IssuanceFingerprint } from "@/components/IssuanceFingerprint";
@@ -19,6 +18,7 @@ import { Suspense, type ReactNode } from "react";
 import { formatUnits, isAddress, type Address } from "viem";
 import { getSuckerGroup } from "./[slug]/getSuckerGroup";
 import { getHomepageActivityPage } from "./getHomepageActivity";
+import { HomeAuditPromptLink } from "./HomeAuditPromptLink";
 import { getHomepageReserves } from "./getHomepageReserves";
 import { HomepageActivityFeed } from "./HomepageActivityFeed";
 import { HomepageDiscoveryLayout } from "./HomepageDiscoveryLayout";
@@ -395,7 +395,7 @@ function HeroColumn() {
         >
           Create yours
         </Link>
-        <AuditPromptLink className="mt-7 text-xs text-zinc-600 sm:whitespace-nowrap 2xl:text-sm" />
+        <HomeAuditPromptLink className="mt-7 text-xs text-zinc-600 sm:whitespace-nowrap 2xl:text-sm" />
       </div>
     </section>
   );

@@ -1,4 +1,4 @@
-import { CardSkeleton } from "@/components/loading/LoadingSkeletons";
+import { CardSkeleton } from "@/components/loading/CardSkeleton";
 import { notFound } from "next/navigation";
 import { Suspense, type ComponentProps } from "react";
 import { LazyTokenPriceChart } from "./components/TokenPrice/LazyTokenPriceChart";
