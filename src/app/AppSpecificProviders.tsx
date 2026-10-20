@@ -1,13 +1,11 @@
 "use client";
 
-import { HeldRowFollowers } from "@/components/HeldRowFollowers";
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { resumePendingRelayrBundles } from "@/hooks/useReviewedRelayr";
-import { resumeSafeProposalTracking } from "@/hooks/useReviewedWriteContract";
 import { IS_DETERMINISTIC_BROWSER, PARA_EMBEDDED_WALLET_ENABLED } from "@/lib/browserEnvironment";
 import { installQueryPersistence } from "@/lib/query-persist";
 import { watchSafeWalletPeer } from "@/lib/safe-connector";
+import { transactionActivitySnapshot, useTransactionActivities } from "@/lib/transaction-activity";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { connectParaSession } from "@/providers/para-bridge";
 import { verifyMarkedParaSession } from "@/providers/para-session";
@@ -23,6 +21,9 @@ import * as React from "react";
 import { useAccount, useConnect, useConnectors, WagmiProvider } from "wagmi";
 
 const ParaModalHost = React.lazy(() => import("@/providers/ParaModalHost"));
+const HeldRowFollowers = React.lazy(() =>
+  import("@/components/HeldRowFollowers").then((module) => ({ default: module.HeldRowFollowers })),
+);
 
 function createQueryClient() {
   const client = new QueryClient({
@@ -100,8 +101,16 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
 
   // Every page load follows the paid Relayr bundles and Safe proposals the
   // transaction journal still has in flight (HeldRowFollowers follows held proposals).
-  React.useEffect(() => resumePendingRelayrBundles(), []);
-  React.useEffect(() => resumeSafeProposalTracking(wagmiConfig), []);
+  // The journal is empty for most visitors, so the write machinery loads only for one
+  // that has rows.
+  React.useEffect(() => {
+    if (transactionActivitySnapshot().length === 0) return;
+    void import("@/hooks/useReviewedRelayr").then((module) => module.resumePendingRelayrBundles());
+    void import("@/hooks/useReviewedWriteContract").then((module) =>
+      module.resumeSafeProposalTracking(wagmiConfig),
+    );
+  }, []);
+  const journaled = useTransactionActivities().length > 0;
 
   const [paraHostLoaded, setParaHostLoaded] = React.useState(false);
   const [paraRequestId, setParaRequestId] = React.useState(0);
@@ -169,7 +178,11 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
           <TooltipProvider delayDuration={200} skipDelayDuration={100}>
             <TransactionReviewProvider>{children}</TransactionReviewProvider>
           </TooltipProvider>
-          <HeldRowFollowers />
+          {journaled ? (
+            <React.Suspense fallback={null}>
+              <HeldRowFollowers />
+            </React.Suspense>
+          ) : null}
           {paraConnectionError ? (
             <ParaConnectionNotice
               onDismiss={clearParaConnectionError}
