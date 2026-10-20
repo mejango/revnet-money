@@ -20,6 +20,7 @@ import {
   revDeployerAbi,
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
+import { buildUserPayMetadata } from "@bananapus/nana-sdk-core/v6";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import {
@@ -1177,7 +1178,11 @@ registerCall({
     requireFixture(token === usdc, `previewPayFor token=${token}`);
     requireFixture(amount === 12_000_000n, `previewPayFor amount=${amount}`);
     requireFixture(beneficiary === zeroAddress, `previewPayFor beneficiary=${beneficiary}`);
-    requireFixture(metadata === "0x", `previewPayFor metadata=${metadata}`);
+    // prepareUserPay previews with the pay card's skipSplits metadata.
+    requireFixture(
+      metadata === buildUserPayMetadata({ chainId }),
+      `previewPayFor metadata=${metadata}`,
+    );
 
     // The unsigned $12 USDC draft uses this fixture's USD-denominated weight,
     // 6-decimal accounting context, and 20% reserved share. Match the store's
