@@ -5,8 +5,8 @@ import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import {
   jbBuybackHookAbi,
   jbBuybackHookRegistryAbi,
-  jbContractAddress,
   jbRouterTerminalRegistryAbi,
+  jbV6ContractAddress,
   NATIVE_TOKEN,
   revOwnerAbi,
   USDC_ADDRESSES,
@@ -53,7 +53,7 @@ export type BatchStep = {
   values: BatchStepValues;
 };
 
-type ContractName = keyof (typeof jbContractAddress)["6"];
+type ContractName = keyof typeof jbV6ContractAddress;
 
 type StepKindDefinition = {
   kind: BatchStepKind;
@@ -172,7 +172,7 @@ export function contractAddressOn(contract: ContractName, chainId: number): Addr
   if (rollout && contract in rollout.contracts) {
     return rolloutAddress(contract as keyof typeof rollout.contracts, chainId) ?? undefined;
   }
-  const deployments = jbContractAddress["6"][contract] as Partial<Record<number, Address>>;
+  const deployments = jbV6ContractAddress[contract] as Partial<Record<number, Address>>;
   const address = deployments?.[chainId];
   return address ? getAddress(address) : undefined;
 }

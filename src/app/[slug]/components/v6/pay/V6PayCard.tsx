@@ -41,10 +41,10 @@ import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
   JB_CHAINS,
   JBChainId,
-  jbContractAddress,
   JBCoreContracts,
   jbMultiTerminalAbi,
   jbRouterTerminalRegistryAbi,
+  jbV6ContractAddress,
 } from "@bananapus/nana-sdk-core";
 import { approvalIntent, payIntent } from "@bananapus/nana-sdk-core/review";
 import {
@@ -657,7 +657,7 @@ export function V6PayCard() {
         if (selected.viaRouter) {
           throw new Error("Add to balance only supports tokens the project accepts directly.");
         }
-        const terminal = jbContractAddress[6][JBCoreContracts.JBMultiTerminal][chainId];
+        const terminal = jbV6ContractAddress[JBCoreContracts.JBMultiTerminal][chainId];
         const args = [projectId, selected.token, amountRaw, false, memo.trim(), "0x"] as const;
         const value = isNativePayToken(selected.token) ? amountRaw : 0n;
         const tokenApprovalNeeded = await needsApproval(

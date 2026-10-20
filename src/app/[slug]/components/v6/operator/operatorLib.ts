@@ -9,9 +9,9 @@ import {
   getJBContractAddress,
   JB_CHAINS,
   JBChainId,
-  jbContractAddress,
   JBCoreContracts,
   jbProjectsAbi,
+  jbV6ContractAddress,
   RevnetCoreContracts,
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
@@ -37,14 +37,14 @@ export function chainName(chainId: number): string {
 
 /** A v6 contract's address on a chain, or undefined where it isn't deployed. */
 export function v6ContractAddress(
-  contract: keyof (typeof jbContractAddress)["6"],
+  contract: keyof typeof jbV6ContractAddress,
   chainId: JBChainId,
 ): Address | undefined {
   const rollout = rolloutChain(chainId);
   if (rollout && contract in rollout.contracts) {
     return rolloutAddress(contract as keyof typeof rollout.contracts, chainId) ?? undefined;
   }
-  const deployments = jbContractAddress["6"][contract] as Partial<Record<number, Address>>;
+  const deployments = jbV6ContractAddress[contract] as Partial<Record<number, Address>>;
   return deployments?.[chainId];
 }
 

@@ -5,7 +5,6 @@ import {
   MAX_RESERVED_PERCENT,
   RevnetCoreContracts,
   jbBuybackHookRegistryAbi,
-  jbContractAddress,
   jbControllerAbi,
   jbDirectoryAbi,
   jbMultiTerminalAbi,
@@ -17,6 +16,7 @@ import {
   jbSplitsAbi,
   jbTerminalStoreAbi,
   jbTokensAbi,
+  jbV6ContractAddress,
   revDeployerAbi,
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
@@ -170,7 +170,7 @@ if (computedFixtureCid !== fixtureCid) {
 
 const routerDeployments = protocolRollout.chains[chainId];
 const addressOf = (contract) =>
-  getAddress(routerDeployments.contracts[contract] ?? jbContractAddress[6][contract][chainId]);
+  getAddress(routerDeployments.contracts[contract] ?? jbV6ContractAddress[contract][chainId]);
 const addresses = {
   buybackRegistry: addressOf(JBBuybackHookContracts.JBBuybackHookRegistry),
   controller: addressOf(JBCoreContracts.JBController),

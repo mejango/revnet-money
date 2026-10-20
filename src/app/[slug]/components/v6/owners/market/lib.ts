@@ -9,7 +9,6 @@ import {
   JBBuybackHookContracts,
   jbBuybackHookRegistryAbi,
   JBChainId,
-  jbContractAddress,
   jbControllerAbi,
   JBCoreContracts,
   jbDirectoryAbi,
@@ -18,6 +17,7 @@ import {
   jbPricesAbi,
   jbSplitsAbi,
   jbUniswapV4LpSplitHookAbi,
+  jbV6ContractAddress,
   NATIVE_TOKEN,
   RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
@@ -165,7 +165,7 @@ type PoolKey = UniswapV4PoolKey;
 // ── Buyback hook resolution ───────────────────────────────────────────────────
 
 function v6Address(contract: string, chainId: JBChainId): Address | null {
-  const byChain = (jbContractAddress[6] as Record<string, Record<string, string>>)[contract];
+  const byChain = (jbV6ContractAddress as Record<string, Record<string, string>>)[contract];
   return (byChain?.[String(chainId)] as Address | undefined) ?? null;
 }
 
@@ -181,7 +181,7 @@ async function projectDataHook(
   chainId: JBChainId,
   projectId: bigint,
 ): Promise<DataHookInfo | null> {
-  const directory = jbContractAddress[6][JBCoreContracts.JBDirectory][chainId] as Address;
+  const directory = jbV6ContractAddress[JBCoreContracts.JBDirectory][chainId] as Address;
   const controller = await client.readContract({
     address: directory,
     abi: jbDirectoryAbi,
@@ -2577,7 +2577,7 @@ export async function fetchSplitHookStates(chains: ChainProject[]): Promise<Spli
         const client = getViemPublicClient(chainId) as PublicClient;
         const info = await projectDataHook(client, chainId, projectId);
         if (!info) return null;
-        const splitsAddr = jbContractAddress[6][JBCoreContracts.JBSplits][chainId] as Address;
+        const splitsAddr = jbV6ContractAddress[JBCoreContracts.JBSplits][chainId] as Address;
         const splits = await client.readContract({
           address: splitsAddr,
           abi: jbSplitsAbi,

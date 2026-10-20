@@ -1,6 +1,6 @@
 import { chainDisplayName as chainName } from "@/app/constants";
 import { chainRevert } from "@/lib/contract-revert";
-import { jbContractAddress, type JBChainId } from "@bananapus/nana-sdk-core";
+import { jbV6ContractAddress, type JBChainId } from "@bananapus/nana-sdk-core";
 import {
   STICKY_CRITERIA_BASE,
   STICKY_DEFAULT_GROUP_ID,
@@ -186,7 +186,7 @@ export async function checkStickyToken(
   token: Address,
 ): Promise<StickyTokenCheck> {
   const where = chainName(chainId);
-  const hook = (jbContractAddress["6"].StickyHook as Partial<Record<number, Address>>)[chainId];
+  const hook = (jbV6ContractAddress.StickyHook as Partial<Record<number, Address>>)[chainId];
   if (!hook) return { ok: false, reason: `Sticky is not deployed on ${where}.` };
   let projectId: bigint;
   try {

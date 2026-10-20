@@ -2,10 +2,10 @@ import { routerEntriesFor } from "@/lib/protocol-rollout";
 import {
   getJBContractAddress,
   JBChainId,
-  jbContractAddress,
   jbMultiTerminalAbi,
   JBRouterTerminalContracts,
   jbRouterTerminalRegistryAbi,
+  jbV6ContractAddress,
 } from "@bananapus/nana-sdk-core";
 import { prepareUserPay, type PreparedUserPay } from "@bananapus/nana-sdk-core/v6";
 import { Address, PublicClient } from "viem";
@@ -92,7 +92,7 @@ function v6PayRouteCandidates(
       // Router registry not deployed on this chain.
     }
 
-  const multi = jbContractAddress[6].JBMultiTerminal[chainId];
+  const multi = jbV6ContractAddress.JBMultiTerminal[chainId];
   if (
     multi &&
     (!attachedTerminals ||
