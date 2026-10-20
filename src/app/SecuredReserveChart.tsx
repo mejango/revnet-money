@@ -107,7 +107,7 @@ export function SecuredReserveChart({
                 ))}
               </span>
             ) : (
-              <span className="text-zinc-400">Per-chain history unavailable</span>
+              <span className="text-zinc-500">Per-chain history unavailable</span>
             )}
           </>
         ) : null}
@@ -183,7 +183,7 @@ export function SecuredReserveChart({
               />
             </svg>
           </div>
-          <div className="mt-1 flex justify-between text-[10px] tabular-nums text-zinc-400">
+          <div className="mt-1 flex justify-between text-[10px] tabular-nums text-zinc-500">
             <span>{date(chart.minTime, true)}</span>
             <span>{date(chart.maxTime, true)}</span>
           </div>
