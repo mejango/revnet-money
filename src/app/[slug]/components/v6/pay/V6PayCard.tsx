@@ -173,7 +173,8 @@ export function V6PayCard() {
    *  Nothing is bought until they press Pay — the amount is theirs to type first. */
   const [payWithDollars, setPayWithDollars] = useState(false);
   /** The payer pressed Try again on a failed quote; a background refetch is not a retry. */
-  const [quoteRetrying, setQuoteRetrying] = useState(false);
+  // The quote the payer asked to read again; another amount's quote shows its own state.
+  const [retriedQuote, setRetriedQuote] = useState<unknown>(null);
   const [buyExplainerOpen, setBuyExplainerOpen] = useState(false);
   // The (address+route) identity of the user's pick, so a background refetch or
   // chain switch remaps the index to the same token rather than clobbering it.
@@ -1371,7 +1372,7 @@ export function V6PayCard() {
 
             {showQuoteFailed ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
-                {quoteRetrying ? (
+                {retriedQuote === preview ? (
                   <span role="status">Refreshing…</span>
                 ) : (
                   <>
@@ -1379,8 +1380,8 @@ export function V6PayCard() {
                     <button
                       type="button"
                       onClick={() => {
-                        setQuoteRetrying(true);
-                        void refetchPreview().finally(() => setQuoteRetrying(false));
+                        setRetriedQuote(preview);
+                        void refetchPreview().finally(() => setRetriedQuote(null));
                       }}
                       className="font-medium underline underline-offset-2"
                     >

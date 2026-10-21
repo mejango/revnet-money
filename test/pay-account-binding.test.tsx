@@ -418,6 +418,29 @@ describe("a payment bound to the account it was prepared for", () => {
     expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
   });
 
+  it("shows a new amount's failed quote while the last amount's retry is still reading", async () => {
+    mocks.quoteFailed = true;
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+
+    const gate = deferred<void>();
+    mocks.routeGate = gate.promise;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Refreshing…");
+
+    mocks.routeGate = null;
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "2" } });
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByText("Refreshing…")).toBeNull();
+    gate.resolve();
+  });
+
   it("hides the failed-quote line as soon as the amount changes, until that amount's quote arrives", async () => {
     mocks.quoteFailed = true;
     render(
