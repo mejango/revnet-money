@@ -1,6 +1,7 @@
 import { V6PayCard } from "@/app/[slug]/components/v6/pay/V6PayCard";
 import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { recordTransactionActivity, updateTransactionActivity } from "@/lib/transaction-activity";
+import { PAY_QUOTE_FAILED_MESSAGE } from "@bananapus/nana-sdk-core/v6";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -24,6 +25,8 @@ const mocks = vi.hoisted(() => ({
   routeError: null as Error | null,
   terminal: "0x3333333333333333333333333333333333333333",
   minReturned: 99n * 10n ** 19n,
+  quoteFailed: false,
+  routeCalls: 0,
   shop: undefined as unknown,
   cart: [] as unknown[],
   erc20: false,
@@ -153,8 +156,10 @@ vi.mock("@/lib/nana/project", () => ({
 vi.mock("@/lib/nana/suckers", () => ({ useSuckers: () => ({ data: [] }) }));
 vi.mock("@/lib/paymentTerminal", () => ({
   resolveBestV6PayRoute: async () => {
+    mocks.routeCalls += 1;
     if (mocks.routeError) throw mocks.routeError;
     return {
+      quoteFailed: mocks.quoteFailed,
       address: mocks.terminal,
       type: "multi",
       preview: { beneficiaryTokenCount: 10n ** 21n, reservedTokenCount: 0n },
@@ -213,6 +218,8 @@ beforeEach(() => {
   mocks.routeError = null;
   mocks.terminal = "0x3333333333333333333333333333333333333333";
   mocks.minReturned = 99n * 10n ** 19n;
+  mocks.quoteFailed = false;
+  mocks.routeCalls = 0;
   mocks.shop = undefined;
   mocks.cart = [];
   mocks.erc20 = false;
@@ -380,6 +387,26 @@ describe("a payment bound to the account it was prepared for", () => {
     await screen.findByText("You get about", undefined, { timeout: 3_000 });
     expect(screen.getByText("1,000 REV")).toBeInTheDocument();
     expect(screen.getByText("At least 500 REV")).toBeInTheDocument();
+  });
+
+  it("says when the minimum is only the mint rate because the pool price was unreadable, and retries the quote", async () => {
+    mocks.quoteFailed = true;
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+
+    mocks.quoteFailed = false;
+    const calls = mocks.routeCalls;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(mocks.routeCalls).toBeGreaterThan(calls));
+    await waitFor(() =>
+      expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull(),
+    );
   });
 
   it("does not send a ready payment after its quote refresh fails", async () => {

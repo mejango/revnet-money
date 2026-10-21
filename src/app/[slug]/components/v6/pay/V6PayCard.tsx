@@ -1345,7 +1345,10 @@ export function V6PayCard() {
               </p>
             ) : null}
 
-            {mode === "pay" && !previewError && preview?.quoteFailed ? (
+            {mode === "pay" &&
+            (amountRaw > 0n || cartCount > 0) &&
+            !previewError &&
+            preview?.quoteFailed ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
                 {PAY_QUOTE_FAILED_MESSAGE}{" "}
                 <button
