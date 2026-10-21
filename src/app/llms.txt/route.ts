@@ -63,7 +63,7 @@ identifier, description and logo.
 Read-only, no key required, cached at the edge.
 
 - \`GET /api/discover-projects\`: every indexed V6 revnet, one entry per sucker group.
-- \`GET /api/top-projects\`: revnets ranked by balance.
+- \`GET /api/top-projects?limit=<1-32>&offset=<n>\`: revnets ranked by balance.
 - \`GET /api/search-projects?q=<text>\`: revnets matching a name, handle or id.
 - \`GET /api/project-name?chainId=<id>&projectId=<id>\`: canonical name and sucker group.
 - \`GET /api/homepage-activity\`: recent payments and cash outs.
