@@ -16,7 +16,7 @@ export function deploymentTokenBalances(
   deployment: BalanceDeployment,
 ): Array<
   Pick<Project, "balance" | "decimals" | "tokenSymbol"> &
-    Pick<Partial<ProjectTokenBalance>, "token" | "balanceUsd">
+    Pick<Partial<ProjectTokenBalance>, "token" | "balanceUsd" | "usdRate">
 > {
   const rows = deployment.projectTokenBalances?.items;
   if (!rows?.length) return [deployment];

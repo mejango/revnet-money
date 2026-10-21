@@ -13,13 +13,58 @@ type ShieldDeployment = NonNullable<
   NonNullable<ShieldGroupQuery["suckerGroup"]>["projects"]
 >["items"][number];
 
-/** The deployments' holdings as one number, only when they hold a single kind of token. */
-function singleTokenAmount(deployments: readonly ShieldDeployment[]): number | null {
+type Denomination = { token: string | null; tokenSymbol: string | null; decimals: number };
+
+/**
+ * The deployments' holdings in one token: rows of that token as held, any other token
+ * converted through its latest USD rate. A token with no USD rate (or a denomination with
+ * none, for the others) cannot be converted, so it is left out and named in `excluded`.
+ * Null when the denomination itself is unknown.
+ */
+function treasuryIn(denomination: Denomination | null, deployments: readonly ShieldDeployment[]) {
+  if (!denomination?.tokenSymbol) return null;
+  const kind = tokenKindOf(denomination);
   const rows = deployments.flatMap(deploymentTokenBalances);
-  const kinds = new Set(rows.map(tokenKindOf));
-  if (kinds.size !== 1 || !rows[0]?.tokenSymbol || rows[0].decimals == null) return null;
-  const decimals = rows[0].decimals;
-  return rows.reduce((sum, row) => sum + Number(formatUnits(BigInt(row.balance), decimals)), 0);
+  const rateOf = (row: (typeof rows)[number]) => {
+    try {
+      const rate = row.usdRate == null ? 0n : BigInt(row.usdRate);
+      return rate > 0n ? Number(formatUnits(rate, 18)) : null;
+    } catch {
+      return null;
+    }
+  };
+  const denominationUsd =
+    rows
+      .filter((row) => tokenKindOf(row) === kind)
+      .map(rateOf)
+      .find((r) => r !== null) ?? null;
+
+  let amount = 0;
+  // By kind, so two tokens sharing a symbol are both named.
+  const excluded = new Map<string, { token: string | null; tokenSymbol: string | null }>();
+  for (const row of rows) {
+    const exclude = () =>
+      excluded.set(tokenKindOf(row), {
+        token: row.token ?? null,
+        tokenSymbol: row.tokenSymbol ?? null,
+      });
+    let held: number;
+    try {
+      held = row.decimals == null ? NaN : Number(formatUnits(BigInt(row.balance), row.decimals));
+    } catch {
+      held = NaN;
+    }
+    // An unreadable amount is unknown, not zero.
+    if (Number.isNaN(held)) exclude();
+    if (!(held > 0)) continue;
+    if (tokenKindOf(row) === kind) amount += held;
+    else {
+      const usd = rateOf(row);
+      if (usd !== null && denominationUsd !== null) amount += (held * usd) / denominationUsd;
+      else exclude();
+    }
+  }
+  return { amount, excluded: [...excluded.values()] };
 }
 
 const JB_CHAINS: Record<ChainId, { name: string }> = {
@@ -31,18 +76,24 @@ const JB_CHAINS: Record<ChainId, { name: string }> = {
 
 /** Each token one deployment holds, in its own units, for consumers that need more than the label. */
 function tokenBalances(deployment: ShieldDeployment) {
-  return deploymentTokenBalances(deployment).flatMap((row) =>
-    row.token && row.decimals != null
-      ? [
-          {
-            token: row.token,
-            tokenSymbol: row.tokenSymbol ?? null,
-            balance: Number(formatUnits(BigInt(row.balance), row.decimals)),
-            balanceUsd: usdFromScaled(row.balanceUsd),
-          },
-        ]
-      : [],
-  );
+  return deploymentTokenBalances(deployment).flatMap((row) => {
+    if (!row.token) return [];
+    let balance: number | null = null;
+    try {
+      // Without decimals the units are unknown: the row stays, with its USD value.
+      if (row.decimals != null) balance = Number(formatUnits(BigInt(row.balance), row.decimals));
+    } catch {
+      balance = null;
+    }
+    return [
+      {
+        token: row.token,
+        tokenSymbol: row.tokenSymbol ?? null,
+        balance,
+        balanceUsd: usdFromScaled(row.balanceUsd),
+      },
+    ];
+  });
 }
 
 // The badge links to this chain's project page when no chainId is given.
@@ -80,9 +131,15 @@ export async function GET(req: Request) {
   }
 
   const projectName = items[0]?.name ?? "Revnet";
+  // Totals are in the badged project's own accounting token.
+  const badged = items.find((item) => item.chainId === chainId) ?? items[0];
+  const denomination =
+    badged?.tokenSymbol && badged.decimals != null
+      ? { token: badged.token ?? null, tokenSymbol: badged.tokenSymbol, decimals: badged.decimals }
+      : null;
   const results = items.map((item) => ({
     chainId: item.chainId,
-    balance: singleTokenAmount([item]),
+    balance: treasuryIn(denomination, [item])?.amount ?? null,
     balances: tokenBalances(item),
     supporters: item.participants?.totalCount ?? 0,
     name: JB_CHAINS[item.chainId as ChainId]?.name ?? "Unknown",
@@ -95,12 +152,7 @@ export async function GET(req: Request) {
       (item.participants?.items?.length ?? 0) < (item.participants?.totalCount ?? 0),
   }));
 
-  // Each token is labeled in its own units; a treasury holding several has no one-token total.
-  const totalBalance = singleTokenAmount(items);
-  const denomination =
-    totalBalance === null
-      ? "tokens"
-      : (items.flatMap(deploymentTokenBalances)[0]?.tokenSymbol ?? "tokens");
+  const treasury = treasuryIn(denomination, items);
 
   const host = req.headers.get("host");
   if (!host) {
@@ -108,22 +160,40 @@ export async function GET(req: Request) {
   }
   const publicBase = `https://${host}`;
   const publicUrl = `${publicBase}/api/data/shields?projectId=${projectId}&chainId=${chainId}`;
-  const badgeUrl = `https://img.shields.io/badge/dynamic/json?url=${encodeURIComponent(publicUrl)}&query=%24.message&label=${encodeURIComponent(projectName)}&cacheSeconds=3600`;
-
-  const markdown = `[![revnet badge](${badgeUrl})](${publicBase}/${slugFor(chainId, projectId)})`;
+  // Shields' endpoint badge reads label, message and color from `format=endpoint`; the
+  // dynamic JSON badge (older READMEs) reads only `message` and keeps working.
+  const badgeUrl = `https://img.shields.io/endpoint?url=${encodeURIComponent(`${publicUrl}&format=endpoint`)}`;
+  const slug = slugFor(chainId, projectId);
+  const markdown = `[![revnet badge](${badgeUrl})](${slug ? `${publicBase}/${slug}` : publicBase})`;
 
   const balanceLabel = formatProjectPreviewBalance(items);
+  const message =
+    totalUsd !== null
+      ? `${totalUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD • ${balanceLabel}`
+      : balanceLabel;
+  const color = badgeColor(totalUsd);
+  if (searchParams.get("format") === "endpoint") {
+    // Exactly Shields' endpoint schema, which rejects other keys.
+    return NextResponse.json({
+      schemaVersion: 1,
+      label: projectName,
+      message,
+      color,
+      cacheSeconds: 3600,
+    });
+  }
   return NextResponse.json({
     label: "Current value",
-    message:
-      totalUsd !== null
-        ? `${totalUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD • ${balanceLabel}`
-        : balanceLabel,
+    message,
     tvlUsd: totalUsd,
-    /** The treasury in its one token, named by `denomination`; null when it holds several (see `chains[].balances`). */
-    tvlBalance: totalBalance,
-    denomination,
-    color: badgeColor(totalUsd, totalBalance),
+    /**
+     * The treasury in `denomination`, other tokens converted at their latest USD rate.
+     * Tokens with no rate are left out and listed in `tvlExcludedTokens`.
+     */
+    tvlBalance: treasury?.amount ?? null,
+    denomination: denomination?.tokenSymbol ?? "tokens",
+    tvlExcludedTokens: treasury?.excluded ?? [],
+    color,
     chains: results,
     badgeUrl,
     markdown,
@@ -131,12 +201,10 @@ export async function GET(req: Request) {
 }
 
 /**
- * Green, yellow or red by the treasury's USD value, so every token is judged on one
- * scale. ponytail: thresholds are round numbers, not tuned. A treasury the indexer has not
- * priced falls back to its one-token amount (1 and 0.1 whole tokens, as before).
+ * Green, yellow or red by the treasury's USD value, so every token is judged on one scale;
+ * grey when the indexer has not priced it. ponytail: thresholds are round numbers, not tuned.
  */
-function badgeColor(usd: number | null, oneTokenAmount: number | null) {
-  if (usd !== null) return usd >= 1000 ? "green" : usd >= 100 ? "yellow" : "red";
-  const amount = oneTokenAmount ?? 0;
-  return amount > 1 ? "green" : amount > 0.1 ? "yellow" : "red";
+function badgeColor(usd: number | null) {
+  if (usd === null) return "lightgrey";
+  return usd >= 1000 ? "green" : usd >= 100 ? "yellow" : "red";
 }
