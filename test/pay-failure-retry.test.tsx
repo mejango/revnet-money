@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   cardSimulate: vi.fn(),
   receipt: vi.fn(),
   routeCalls: [] as { slippageBps?: bigint }[],
+  quoteFailed: false,
   // The write hook's final simulation (wagmi/actions), and the wallet's send.
   hookSimulate: vi.fn(),
   submit: vi.fn(),
@@ -135,6 +136,7 @@ vi.mock("@/lib/paymentTerminal", () => ({
       preview: { beneficiaryTokenCount: 10n ** 21n, reservedTokenCount: 0n },
       metadata: "0x5150",
       minReturnedTokens: (10n ** 21n * (10_000n - bps)) / 10_000n,
+      quoteFailed: mocks.quoteFailed,
     };
   },
 }));
@@ -194,6 +196,7 @@ beforeEach(() => {
   mocks.terminal = FIRST;
   mocks.routeError = null;
   mocks.routeCalls = [];
+  mocks.quoteFailed = false;
   mocks.cardSimulate.mockReset().mockResolvedValue({ request: {} });
   mocks.receipt.mockReset().mockImplementation(() => new Promise(() => undefined));
   mocks.hookSimulate.mockReset().mockImplementation(async (_config, request) => ({ request }));
@@ -261,6 +264,19 @@ describe("a failed payment's reason and a looser minimum", () => {
     fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));
     expect((mocks.submit.mock.calls[0]![0] as { args: unknown[] }).args[4]).toBe(960n * TOKEN);
+  });
+
+  it("offers no looser tolerance for a failed quote's minimum, which is the mint rate", async () => {
+    mocks.quoteFailed = true;
+    mocks.cardSimulate.mockRejectedValueOnce(underMin(970n * TOKEN, 990n * TOKEN));
+    const confirm = await payFromConfirm();
+
+    await within(confirm).findByText(
+      "This payment would get fewer tokens than your minimum, so lower your minimum or try again.",
+    );
+    expect(within(confirm).queryByLabelText(/Custom allowed decrease/)).toBeNull();
+    expect(within(confirm).queryByRole("button", { name: "Review again" })).toBeNull();
+    expect(mocks.submit).not.toHaveBeenCalled();
   });
 
   it("caps the looser tolerance below half, so the minimum never nears zero", async () => {

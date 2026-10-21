@@ -172,6 +172,8 @@ export function V6PayCard() {
   /** "$" is picked in the token menu: the payer has dollars, not the token this project takes.
    *  Nothing is bought until they press Pay — the amount is theirs to type first. */
   const [payWithDollars, setPayWithDollars] = useState(false);
+  /** The payer pressed Try again on a failed quote; a background refetch is not a retry. */
+  const [quoteRetrying, setQuoteRetrying] = useState(false);
   const [buyExplainerOpen, setBuyExplainerOpen] = useState(false);
   // The (address+route) identity of the user's pick, so a background refetch or
   // chain switch remaps the index to the same token rather than clobbering it.
@@ -1037,7 +1039,9 @@ export function V6PayCard() {
     !notStarted &&
     !surfaceError &&
     !surface?.pausePay &&
-    !(insufficientBalance && selected && !payWithDollars);
+    // Buying ETH with dollars comes first; this payment's quote is not what Pay does yet.
+    !payWithDollars &&
+    !insufficientBalance;
 
   const hasShopStrip = Boolean(shop && shop.tiers.length > 0 && mode === "pay");
   const payPanelLayout = payPanelLayoutClasses({
@@ -1364,14 +1368,17 @@ export function V6PayCard() {
 
             {showQuoteFailed ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
-                {previewLoading ? (
+                {quoteRetrying ? (
                   <span role="status">Refreshing…</span>
                 ) : (
                   <>
                     {PAY_QUOTE_FAILED_MESSAGE}{" "}
                     <button
                       type="button"
-                      onClick={() => void refetchPreview()}
+                      onClick={() => {
+                        setQuoteRetrying(true);
+                        void refetchPreview().finally(() => setQuoteRetrying(false));
+                      }}
                       className="font-medium underline underline-offset-2"
                     >
                       Try again

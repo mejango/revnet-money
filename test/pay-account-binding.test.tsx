@@ -418,6 +418,28 @@ describe("a payment bound to the account it was prepared for", () => {
     expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
   });
 
+  it("keeps the failed-quote line through a background refetch the payer did not ask for", async () => {
+    mocks.quoteFailed = true;
+    const client = queryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+
+    const gate = deferred<void>();
+    mocks.routeGate = gate.promise;
+    const calls = mocks.routeCalls;
+    void client.refetchQueries({ queryKey: ["v6PayPreview"] });
+    await waitFor(() => expect(mocks.routeCalls).toBeGreaterThan(calls));
+    expect(screen.getByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByText("Refreshing…")).toBeNull();
+    gate.resolve();
+  });
+
   it("discloses a failed quote found at submit in the review, bound to the minimum it signs, and not on the card once sent", async () => {
     render(
       <QueryClientProvider client={queryClient()}>
