@@ -52,6 +52,7 @@ import {
   decodePayFailure,
   effectiveTierPrice,
   PAY_DEFAULT_SLIPPAGE_BPS,
+  PAY_QUOTE_FAILED_MESSAGE,
   payRetrySlippageBps,
   prepareUserPay,
   resolvePaymentTerminal,
@@ -171,6 +172,9 @@ export function V6PayCard() {
   /** "$" is picked in the token menu: the payer has dollars, not the token this project takes.
    *  Nothing is bought until they press Pay — the amount is theirs to type first. */
   const [payWithDollars, setPayWithDollars] = useState(false);
+  /** The payer pressed Try again on a failed quote; a background refetch is not a retry. */
+  // The quote the payer asked to read again; another amount's quote shows its own state.
+  const [retriedQuote, setRetriedQuote] = useState<unknown>(null);
   const [buyExplainerOpen, setBuyExplainerOpen] = useState(false);
   // The (address+route) identity of the user's pick, so a background refetch or
   // chain switch remaps the index to the same token rather than clobbering it.
@@ -437,6 +441,7 @@ export function V6PayCard() {
           ...p.preview,
           metadata: p.metadata,
           minReturned: p.minReturnedTokens,
+          quoteFailed: !!p.quoteFailed,
           terminal: resolved.address,
           routeType: resolved.isRouter ? "swap" : "multi",
         } as const;
@@ -456,6 +461,7 @@ export function V6PayCard() {
         ...route.preview,
         metadata: route.metadata,
         minReturned: route.minReturnedTokens,
+        quoteFailed: !!route.quoteFailed,
         terminal: route.address,
         routeType: route.type,
       } as const;
@@ -651,6 +657,7 @@ export function V6PayCard() {
           expectedTokens: quote.beneficiaryTokenCount,
           reservedTokens: quote.reservedTokenCount,
           minReturned: quote.minReturned,
+          quoteFailed: quote.quoteFailed,
           needsApproval: tokenApprovalNeeded,
           tokenApprovalComplete: false,
           tokenApproval: tokenApprovalNeeded
@@ -711,6 +718,7 @@ export function V6PayCard() {
           expectedTokens: null,
           reservedTokens: null,
           minReturned: 0n,
+          quoteFailed: false,
           needsApproval: tokenApprovalNeeded,
           tokenApprovalComplete: false,
           tokenApproval: tokenApprovalNeeded
@@ -917,7 +925,8 @@ export function V6PayCard() {
       // The revert's own reason, when known, and a looser minimum when that is the fix.
       const decoded = decodePayFailure(err);
       setTxError(decoded?.message ?? formatWalletError(err));
-      if (prepared.mode === "pay") {
+      // A failed quote's minimum is the mint rate, not a market price a looser tolerance widens.
+      if (prepared.mode === "pay" && !prepared.quoteFailed) {
         // The tolerance of the attempt that failed, never a loosened one not yet sent.
         const retry = payRetrySlippageBps(
           decoded,
@@ -1018,6 +1027,25 @@ export function V6PayCard() {
         (cartCount > 0 && (shopRoutesLoading || shopCreditsLoading || !shopMatchesToken)) ||
         (amountRaw <= 0n && !creditOnlyCheckout) ||
         (mode === "pay" && !previewReady)));
+
+  // The confirm discloses a failed quote itself; the card's line is for a payment not yet sent
+  // that nothing else already blocks.
+  const showQuoteFailed =
+    mode === "pay" &&
+    (amountRaw > 0n || cartCount > 0) &&
+    !previewError &&
+    !!preview?.quoteFailed &&
+    // Only the quote for what is typed now: not the last amount's, nor one still being debounced.
+    amount === debouncedAmount &&
+    !previewIsPrevious &&
+    !confirmOpen &&
+    !busy &&
+    !notStarted &&
+    !surfaceError &&
+    !surface?.pausePay &&
+    // Buying ETH with dollars comes first; this payment's quote is not what Pay does yet.
+    !payWithDollars &&
+    !insufficientBalance;
 
   const hasShopStrip = Boolean(shop && shop.tiers.length > 0 && mode === "pay");
   const payPanelLayout = payPanelLayoutClasses({
@@ -1339,6 +1367,34 @@ export function V6PayCard() {
             {mode === "pay" && previewError && (amountRaw > 0n || cartCount > 0) ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-red-600">
                 Couldn&apos;t check what you will receive. Try again once the preview loads.
+              </p>
+            ) : null}
+
+            {showQuoteFailed ? (
+              <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
+                {retriedQuote === preview ? (
+                  <span role="status">Refreshing…</span>
+                ) : (
+                  <>
+                    {PAY_QUOTE_FAILED_MESSAGE}{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const retried = preview;
+                        setRetriedQuote(retried);
+                        // A later retry of another amount keeps its own progress.
+                        void refetchPreview().finally(() =>
+                          setRetriedQuote((current: unknown) =>
+                            current === retried ? null : current,
+                          ),
+                        );
+                      }}
+                      className="font-medium underline underline-offset-2"
+                    >
+                      Try again
+                    </button>
+                  </>
+                )}
               </p>
             ) : null}
 

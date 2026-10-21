@@ -1,6 +1,7 @@
 import { V6PayCard } from "@/app/[slug]/components/v6/pay/V6PayCard";
 import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { recordTransactionActivity, updateTransactionActivity } from "@/lib/transaction-activity";
+import { PAY_QUOTE_FAILED_MESSAGE } from "@bananapus/nana-sdk-core/v6";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -24,6 +25,9 @@ const mocks = vi.hoisted(() => ({
   routeError: null as Error | null,
   terminal: "0x3333333333333333333333333333333333333333",
   minReturned: 99n * 10n ** 19n,
+  quoteFailed: false,
+  routeCalls: 0,
+  routeGate: null as Promise<void> | null,
   shop: undefined as unknown,
   cart: [] as unknown[],
   erc20: false,
@@ -153,8 +157,11 @@ vi.mock("@/lib/nana/project", () => ({
 vi.mock("@/lib/nana/suckers", () => ({ useSuckers: () => ({ data: [] }) }));
 vi.mock("@/lib/paymentTerminal", () => ({
   resolveBestV6PayRoute: async () => {
+    mocks.routeCalls += 1;
+    if (mocks.routeGate) await mocks.routeGate;
     if (mocks.routeError) throw mocks.routeError;
     return {
+      quoteFailed: mocks.quoteFailed,
       address: mocks.terminal,
       type: "multi",
       preview: { beneficiaryTokenCount: 10n ** 21n, reservedTokenCount: 0n },
@@ -213,6 +220,9 @@ beforeEach(() => {
   mocks.routeError = null;
   mocks.terminal = "0x3333333333333333333333333333333333333333";
   mocks.minReturned = 99n * 10n ** 19n;
+  mocks.quoteFailed = false;
+  mocks.routeCalls = 0;
+  mocks.routeGate = null;
   mocks.shop = undefined;
   mocks.cart = [];
   mocks.erc20 = false;
@@ -380,6 +390,145 @@ describe("a payment bound to the account it was prepared for", () => {
     await screen.findByText("You get about", undefined, { timeout: 3_000 });
     expect(screen.getByText("1,000 REV")).toBeInTheDocument();
     expect(screen.getByText("At least 500 REV")).toBeInTheDocument();
+  });
+
+  it("says when the minimum is only the mint rate, and shows progress instead while the quote is read again", async () => {
+    mocks.quoteFailed = true;
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+
+    const gate = deferred<void>();
+    mocks.routeGate = gate.promise;
+    mocks.quoteFailed = false;
+    const calls = mocks.routeCalls;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Refreshing…");
+    expect(mocks.routeCalls).toBeGreaterThan(calls);
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+
+    gate.resolve();
+    await waitFor(() => expect(screen.queryByText("Refreshing…")).toBeNull());
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+  });
+
+  it("shows a new amount's failed quote while the last amount's retry is still reading", async () => {
+    mocks.quoteFailed = true;
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+
+    const gate = deferred<void>();
+    mocks.routeGate = gate.promise;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Refreshing…");
+
+    mocks.routeGate = null;
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "2" } });
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByText("Refreshing…")).toBeNull();
+
+    // Retrying the new amount keeps its progress when the last amount's retry settles first.
+    const second = deferred<void>();
+    mocks.routeGate = second.promise;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Refreshing…");
+    gate.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByText("Refreshing…")).toBeInTheDocument();
+    second.resolve();
+  });
+
+  it("hides the failed-quote line as soon as the amount changes, until that amount's quote arrives", async () => {
+    mocks.quoteFailed = true;
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+
+    const gate = deferred<void>();
+    mocks.routeGate = gate.promise;
+    const calls = mocks.routeCalls;
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "2" } });
+    // Gone while the new amount is debounced...
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+    // ...and while its quote loads behind the last amount's.
+    await waitFor(() => expect(mocks.routeCalls).toBeGreaterThan(calls), { timeout: 3_000 });
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+
+    gate.resolve();
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+  });
+
+  it("keeps the failed-quote line through a background refetch the payer did not ask for", async () => {
+    mocks.quoteFailed = true;
+    const client = queryClient();
+    render(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+
+    const gate = deferred<void>();
+    mocks.routeGate = gate.promise;
+    const calls = mocks.routeCalls;
+    void client.refetchQueries({ queryKey: ["v6PayPreview"] });
+    await waitFor(() => expect(mocks.routeCalls).toBeGreaterThan(calls));
+    expect(screen.getByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    expect(screen.queryByText("Refreshing…")).toBeNull();
+    gate.resolve();
+  });
+
+  it("discloses a failed quote found at submit in the review, bound to the minimum it signs, and not on the card once sent", async () => {
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+
+    // The card looked healthy; the quote read again at submit could not read the pool.
+    mocks.quoteFailed = true;
+    mocks.minReturned = 7n * 10n ** 20n;
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText(PAY_QUOTE_FAILED_MESSAGE);
+    expect(within(confirm).getByText("700 REV")).toBeInTheDocument();
+    // Said once, in the review, not again on the card behind it.
+    expect(screen.getAllByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toHaveLength(1);
+
+    // A failed attempt's error stands alone; the quote line does not come back beside it.
+    mocks.simulate.mockRejectedValueOnce(new Error("Simulation failed"));
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(confirm.querySelector(".text-red-600")).not.toBeNull());
+    expect(within(confirm).queryByText(PAY_QUOTE_FAILED_MESSAGE)).toBeNull();
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    const payment = mocks.write.mock.calls[0]![0] as { args: readonly unknown[] };
+    expect(payment.args[4]).toBe(7n * 10n ** 20n);
+    await within(confirm).findByText("Your payment went through.");
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
   });
 
   it("does not send a ready payment after its quote refresh fails", async () => {
