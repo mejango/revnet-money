@@ -1380,8 +1380,14 @@ export function V6PayCard() {
                     <button
                       type="button"
                       onClick={() => {
-                        setRetriedQuote(preview);
-                        void refetchPreview().finally(() => setRetriedQuote(null));
+                        const retried = preview;
+                        setRetriedQuote(retried);
+                        // A later retry of another amount keeps its own progress.
+                        void refetchPreview().finally(() =>
+                          setRetriedQuote((current: unknown) =>
+                            current === retried ? null : current,
+                          ),
+                        );
                       }}
                       className="font-medium underline underline-offset-2"
                     >

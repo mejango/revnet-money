@@ -438,7 +438,16 @@ describe("a payment bound to the account it was prepared for", () => {
     await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
     expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
     expect(screen.queryByText("Refreshing…")).toBeNull();
+
+    // Retrying the new amount keeps its progress when the last amount's retry settles first.
+    const second = deferred<void>();
+    mocks.routeGate = second.promise;
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Refreshing…");
     gate.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByText("Refreshing…")).toBeInTheDocument();
+    second.resolve();
   });
 
   it("hides the failed-quote line as soon as the amount changes, until that amount's quote arrives", async () => {
