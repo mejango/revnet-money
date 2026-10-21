@@ -22,14 +22,15 @@ const deployment = {
   metadata: null,
 };
 
-async function badge(items: unknown[], balanceUsd: string | null) {
+async function badge(items: unknown[], balanceUsd: string | null, query = "projectId=8&chainId=1") {
+  mocks.query.mockReset();
   mocks.query.mockImplementation(async (...args: unknown[]) => {
     return (args[1] as { id: string }).id === "shield-project.v1"
       ? { project: { id: "p", suckerGroupId: "group" } }
       : { suckerGroup: { balanceUsd, volumeUsd: "0", projects: { items } } };
   });
   const response = await GET(
-    new Request("https://revnet.app/api/data/shields?projectId=8&chainId=1", {
+    new Request(`https://revnet.app/api/data/shields?${query}`, {
       headers: { host: "revnet.app" },
     }),
   );
@@ -62,6 +63,26 @@ describe("shields badge", () => {
       denomination: "tokens",
     });
     expect(body.chains[0].balance).toBeNull();
+    // Each token stays readable in its own units.
+    expect(body.chains[0].balances).toEqual([
+      { token: ETH, tokenSymbol: "ETH", balance: 0.01, balanceUsd: null },
+      { token: USDC, tokenSymbol: "USDC", balance: 20, balanceUsd: null },
+    ]);
+    // Colored by USD, one scale for every token: $37 is red.
+    expect(body.color).toBe("red");
+  });
+
+  it("reads one project's group, on Base unless a chain is named", async () => {
+    const body = await badge(
+      [{ ...deployment, balance: "0", projectTokenBalances: null }],
+      null,
+      "projectId=8",
+    );
+
+    // One project lookup and one group lookup: the same number on another chain is another project.
+    expect(mocks.query.mock.calls.map((call) => call[0])).toEqual([8453, 8453]);
+    expect(body.markdown).toContain("(https://revnet.app/base:8)");
+    expect(decodeURIComponent(body.badgeUrl)).toContain("projectId=8&chainId=8453");
   });
 
   it.each([null, "CASH"])("keeps distinct %s tokens apart", async (tokenSymbol) => {
