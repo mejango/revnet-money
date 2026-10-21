@@ -72,6 +72,7 @@ export async function getTopProjects(limit = 8, offset = 0) {
         projectId: project.projectId,
         chainId: chainId,
         chainSlug: JB_CHAINS[chainId]?.slug ?? "eth",
+        href: `/${JB_CHAINS[chainId]?.slug ?? "eth"}:${project.projectId}`,
         name: project.name ?? `Project #${project.projectId}`,
         tagline: project.projectTagline ?? null,
         logoUri: ipfsUriToAppUrl(project.logoUri) ? project.logoUri : null,
