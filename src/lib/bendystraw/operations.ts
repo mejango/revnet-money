@@ -384,7 +384,7 @@ export const TopSuckerGroupsOperation = operation<
   TopSuckerGroupsQuery,
   TopSuckerGroupsQueryVariables
 >(
-  "top-sucker-groups.v1",
+  "top-sucker-groups.v2",
   variablesWith({}, { limit: positiveLimit, offset }),
   hasRoot("suckerGroups", "items"),
 );

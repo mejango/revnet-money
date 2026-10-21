@@ -73,4 +73,50 @@ describe("top-project derivative availability", () => {
       expect.objectContaining({ balanceUsd: 6_000, chainSlug: "eth", projectId: 7, rank: 2 }),
     ]);
   });
+
+  it("links a cross-chain group to the member holding its balance", async () => {
+    mocks.request.mockResolvedValue({
+      suckerGroups: {
+        items: [
+          {
+            balanceUsd: "8985000000000000000000",
+            projects: {
+              items: [
+                project({ balanceUsd: "7600000000000000000" }),
+                project({ balanceUsd: "0", chainId: 10 }),
+                project({ balanceUsd: "8977000000000000000000", chainId: 8453 }),
+                project({ balanceUsd: "0", chainId: 42161 }),
+              ],
+            },
+          },
+          // Equal balances keep the first member.
+          {
+            balanceUsd: "20000000000000000000",
+            projects: {
+              items: [
+                project({ balanceUsd: "10000000000000000000", projectId: 8 }),
+                project({ balanceUsd: "10000000000000000000", chainId: 8453, projectId: 8 }),
+              ],
+            },
+          },
+          // Unpriced members keep the first member.
+          {
+            balanceUsd: "10000000000000000000",
+            projects: {
+              items: [
+                project({ balanceUsd: null, projectId: 9 }),
+                project({ chainId: 8453, projectId: 9 }),
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    await expect(getTopProjects()).resolves.toEqual([
+      expect.objectContaining({ chainId: 8453, chainSlug: "base", projectId: 7 }),
+      expect.objectContaining({ chainId: 1, chainSlug: "eth", projectId: 8 }),
+      expect.objectContaining({ chainId: 1, chainSlug: "eth", projectId: 9 }),
+    ]);
+  });
 });

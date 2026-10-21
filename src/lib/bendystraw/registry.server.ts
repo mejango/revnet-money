@@ -747,6 +747,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           id balanceUsd volumeUsd
           projects(limit: 8, orderBy: "chainId", orderDirection: "asc") {
             items {
+              balanceUsd
               chainId
               name
               projectTagline
