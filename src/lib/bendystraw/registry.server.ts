@@ -25,11 +25,11 @@ import {
   PermissionHoldersOperation,
   ProjectAccountingContextOperation,
   ProjectErc20TickersOperation,
-  ProjectMomentsOperation,
   ProjectOperation,
   ProjectOperatorOperation,
   ProjectPayersOperation,
   ProjectsByOwnerOperation,
+  ProjectTokenBalanceMomentsOperation,
   ProjectWithPermissionsOperation,
   RouterPendingCallsOperation,
   ShieldGroupOperation,
@@ -61,6 +61,7 @@ const ACTIVITY_EVENT_FIELDS = `
     amountUsd
     token
     decimals
+    tokenSymbol
     caller
     distributionFromProjectId
     projectId
@@ -76,11 +77,12 @@ const ACTIVITY_EVENT_FIELDS = `
     reclaimAmountUsd
     token
     decimals
+    tokenSymbol
     cashOutCount
     metadata
     project { id projectId handle version }
   }
-  addToBalanceEvent { txHash timestamp from amount memo token decimals }
+  addToBalanceEvent { txHash timestamp from amount amountUsd memo token decimals tokenSymbol }
   mintTokensEvent {
     id txHash timestamp from caller beneficiary beneficiaryTokenCount memo
   }
@@ -101,7 +103,7 @@ const ACTIVITY_EVENT_FIELDS = `
   buybackPoolEvent { txHash timestamp from caller }
   mintNftEvent { txHash timestamp from beneficiary hook tierId tokenId totalAmountPaid }
   sendPayoutsEvent {
-    txHash timestamp from caller amount amountPaidOut amountPaidOutUsd token decimals
+    txHash timestamp from caller amount amountPaidOut amountPaidOutUsd token decimals tokenSymbol
   }
   sendReservedTokensToSplitsEvent { txHash timestamp from tokenCount }
   sendReservedTokensToSplitEvent {
@@ -142,9 +144,11 @@ const INDEXED_PROJECT_FIELDS = `
   currency
   isRevnet
   createdAt
-  volume
+  volumeUsd
+  accountingTokenCount
   trendingScore
   trendingVolume
+  trendingVolumeUsd
   trendingPaymentsCount
 `;
 
@@ -222,6 +226,8 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
             tokenSymbol
             version
             suckerGroupId
+            accountingTokenCount
+            projectTokenBalances { items { token tokenSymbol decimals balance balanceUsd } }
           }
         }
       }
@@ -336,6 +342,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           from
           txHash
           amountUsd
+          token
+          decimals
+          tokenSymbol
           caller
           distributionFromProjectId
           projectId
@@ -359,6 +368,9 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
           beneficiary
           reclaimAmount
           reclaimAmountUsd
+          token
+          decimals
+          tokenSymbol
           cashOutCount
           metadata
           project { projectId handle version chainId name tokenSymbol decimals }
@@ -680,7 +692,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         limit: 1000
         after: $after
       ) {
-        items { timestamp balance volume tokenSupply suckerGroupId version accountingTokenUsdRate }
+        items { timestamp balance balanceUsd volumeUsd tokenSupply suckerGroupId version accountingTokenUsdRate }
         pageInfo { hasNextPage endCursor }
       }
     }`,
@@ -695,27 +707,27 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
         limit: 1000
         after: $after
       ) {
-        items { suckerGroupId timestamp amount }
+        items { suckerGroupId timestamp amountUsd }
         pageInfo { hasNextPage endCursor }
       }
     }`,
   },
-  [ProjectMomentsOperation.id]: {
-    operationName: "ProjectMoments",
-    query: `query ProjectMoments(
+  [ProjectTokenBalanceMomentsOperation.id]: {
+    operationName: "ProjectTokenBalanceMoments",
+    query: `query ProjectTokenBalanceMoments(
       $projectId: Int!
       $chainId: Int!
       $version: Int!
       $after: String
     ) {
-      projectMoments(
+      projectTokenBalanceMoments(
         where: { projectId: $projectId, chainId: $chainId, version: $version }
         orderBy: "timestamp"
         orderDirection: "asc"
         limit: 1000
         after: $after
       ) {
-        items { projectId chainId version timestamp balance }
+        items { projectId chainId version token decimals timestamp balance tokenUsdRate }
         pageInfo { hasNextPage endCursor }
       }
     }`,
@@ -732,21 +744,18 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
       ) {
         totalCount
         items {
-          id balance volume
+          id balanceUsd volumeUsd
           projects(limit: 8, orderBy: "chainId", orderDirection: "asc") {
             items {
-              balance
-              decimals
-              currency
               chainId
               name
               projectTagline
-              tokenSymbol
               logoUri
               metadataUri
               projectId
               version
               isRevnet
+              projectTokenBalances { items { token tokenSymbol decimals balance balanceUsd usdRate } }
             }
           }
         }
@@ -1056,8 +1065,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
     operationName: "ShieldGroup",
     query: `query ShieldGroup($id: String!) {
       suckerGroup(id: $id) {
-        balance
-        volume
+        balanceUsd
         volumeUsd
         projects {
           items {
@@ -1067,10 +1075,10 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
             id
             name
             volumeUsd
-            volume
             token
             tokenSymbol
             decimals
+            projectTokenBalances { items { token tokenSymbol decimals balance balanceUsd } }
             participants(limit: 100) {
               totalCount
               items { address chainId projectId lastPaidTimestamp balance }

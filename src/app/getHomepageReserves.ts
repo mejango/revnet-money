@@ -1,16 +1,23 @@
 import "server-only";
 
+import { usdFromScaled } from "@/app/[slug]/components/v6/extras/projectPayers";
+import { usdRateOf } from "@/lib/baseCurrencyRate";
 import {
   AddToBalanceInflowsOperation,
-  ProjectMomentsOperation,
   SuckerGroupMomentsOperation,
 } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
-import type { AddToBalanceInflow, ProjectMoment, SuckerGroupMoment } from "@/lib/bendystraw/types";
+import { fetchProjectTokenBalanceMoments } from "@/lib/bendystraw/tokenBalanceMoments.server";
+import type {
+  AddToBalanceInflow,
+  ProjectTokenBalanceMoment,
+  SuckerGroupMoment,
+} from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
+import { tokenSymbolOf } from "@/lib/project-link-preview";
 import { unstable_cache } from "next/cache";
 import { formatUnits } from "viem";
-import { getHomepageEthPrice, getHomepageSuckerGroups } from "./getTopProjects";
+import { getHomepageSuckerGroups } from "./getTopProjects";
 
 type ReservePoint = {
   timestamp: number;
@@ -18,10 +25,8 @@ type ReservePoint = {
   chains: Array<{ chainId: number; valueUsd: number }>;
 };
 export type HomepageReserves = {
-  eth: number;
-  usdc: number;
+  /** Every revnet's holdings, each token at its latest indexed USD rate. */
   totalUsd: number;
-  otherAssets: number;
   chains: Array<{
     chainId: number;
     eth: number;
@@ -29,7 +34,7 @@ export type HomepageReserves = {
     otherAssets: string[];
   }>;
   points: ReservePoint[];
-  /** All-time payment volume across revnets, valued at the current ETH price. */
+  /** All-time payment and add-to-balance volume across revnets, in USD at the time. */
   passedThroughUsd: number;
   volumePoints: ReservePoint[];
   /** REV's cumulative inflows — the fees it collects from revnet cash outs and
@@ -87,208 +92,184 @@ async function momentsFor(suckerGroupId: string): Promise<SuckerGroupMoment[]> {
   return items;
 }
 
-async function projectMomentsFor({
-  projectId,
-  chainId,
-  version,
-}: {
-  projectId: number;
-  chainId: number;
-  version: number;
-}): Promise<ProjectMoment[]> {
-  const items: ProjectMoment[] = [];
-  let after: string | undefined;
-  const cursors = new Set<string>();
-  for (;;) {
-    const result = await queryBendystraw(mainnet.id, ProjectMomentsOperation, {
-      projectId,
-      chainId,
-      version,
-      after,
-    });
-    items.push(...result.projectMoments.items);
-    const page = result.projectMoments.pageInfo;
-    after = page.hasNextPage ? (page.endCursor ?? undefined) : undefined;
-    if (!after || cursors.has(after)) break;
-    cursors.add(after);
-  }
-  return items;
+/** An 18-decimal indexer figure as a plain number; a missing figure counts as nothing. */
+function usd(value: SuckerGroupMoment["balanceUsd"] | undefined): number {
+  return usdFromScaled(value) ?? 0;
 }
 
-// REV only has a native-token accounting context, so balances are ETH.
+/**
+ * REV's cumulative inflows: the sum of its balance increases, each token valued at its
+ * latest indexed rate so a price move is never counted as a fee. REV's own cash outs don't
+ * subtract.
+ */
 function feePointsFrom(
-  histories: {
-    group: { id: string };
-    decimals: number;
-    moments: { timestamp: number; balance: SuckerGroupMoment["balance"] }[];
-  }[],
-  feeGroupIds: Set<string>,
-  ethPrice: number | null,
+  histories: { key: string; rate: number; moments: ProjectTokenBalanceMoment[] }[],
 ): ReservePoint[] {
   const events = histories
-    .filter((history) => feeGroupIds.has(history.group.id))
     .flatMap((history) =>
       history.moments.map((moment) => ({
-        groupId: history.group.id,
+        key: history.key,
         timestamp: moment.timestamp,
-        balance: Number(formatUnits(BigInt(moment.balance), history.decimals)),
+        valueUsd: Number(formatUnits(BigInt(moment.balance), moment.decimals)) * history.rate,
       })),
     )
     .sort((a, b) => a.timestamp - b.timestamp);
-  let totalEth = 0;
-  const lastBalance = new Map<string, number>();
+  let totalUsd = 0;
+  const latest = new Map<string, number>();
   return events.map((event) => {
-    const delta = event.balance - (lastBalance.get(event.groupId) ?? 0);
-    lastBalance.set(event.groupId, event.balance);
-    if (delta > 0) totalEth += delta;
-    return { timestamp: event.timestamp, valueUsd: totalEth * (ethPrice ?? 0), chains: [] };
+    const delta = event.valueUsd - (latest.get(event.key) ?? 0);
+    latest.set(event.key, event.valueUsd);
+    if (delta > 0) totalUsd += delta;
+    return { timestamp: event.timestamp, valueUsd: totalUsd, chains: [] };
   });
 }
 
 const cachedReserves = unstable_cache(
   async (): Promise<HomepageReserves> => {
-    const [groups, ethPrice, inflows] = await Promise.all([
+    const [groups, inflows] = await Promise.all([
       getHomepageSuckerGroups(),
-      getHomepageEthPrice(),
       addToBalanceInflows().catch(() => [] as AddToBalanceInflow[]),
     ]);
-    const addedByGroup = new Map<string, bigint>();
+    const supported = groups.filter((group) => group.projects?.items[0]?.isRevnet);
+    const supportedIds = new Set(supported.map((group) => group.id));
+    const addedByGroup = new Map<string, number>();
     for (const inflow of inflows) {
+      if (!supportedIds.has(inflow.suckerGroupId)) continue;
       addedByGroup.set(
         inflow.suckerGroupId,
-        (addedByGroup.get(inflow.suckerGroupId) ?? 0n) + BigInt(inflow.amount),
+        (addedByGroup.get(inflow.suckerGroupId) ?? 0) + usd(inflow.amountUsd),
       );
     }
-    const supported = groups.flatMap((group) => {
-      const project = group.projects?.items[0];
-      if (!project?.isRevnet || project.decimals == null || !project.tokenSymbol) return [];
-      return [
-        {
-          group,
-          symbol: project.tokenSymbol.replace(/^\$+/, "").toUpperCase(),
-          decimals: project.decimals,
-        },
-      ];
-    });
-    let eth = 0;
-    let usdc = 0;
+    let totalUsd = 0;
     let passedThroughUsd = 0;
-    const other = new Set<string>();
     const perChain = new Map<number, { eth: number; usdc: number; otherAssets: Set<string> }>(
       RESERVE_CHAIN_IDS.map(
         (chainId) => [chainId, { eth: 0, usdc: 0, otherAssets: new Set<string>() }] as const,
       ),
     );
-    for (const item of supported) {
-      const value = Number(formatUnits(BigInt(item.group.balance), item.decimals));
-      const volume = Number(
-        formatUnits(
-          BigInt(item.group.volume) + (addedByGroup.get(item.group.id) ?? 0n),
-          item.decimals,
-        ),
-      );
-      if (item.symbol === "ETH") {
-        eth += value;
-        passedThroughUsd += volume * (ethPrice ?? 0);
-      } else if (item.symbol === "USDC") {
-        usdc += value;
-        passedThroughUsd += volume;
-      } else other.add(item.symbol);
-
-      for (const project of item.group.projects?.items ?? []) {
+    for (const group of supported) {
+      totalUsd += usd(group.balanceUsd);
+      passedThroughUsd += usd(group.volumeUsd) + (addedByGroup.get(group.id) ?? 0);
+      for (const project of group.projects?.items ?? []) {
         const chain = perChain.get(project.chainId);
         if (!chain) continue;
-        const chainValue = Number(formatUnits(BigInt(project.balance), item.decimals));
-        if (item.symbol === "ETH") chain.eth += chainValue;
-        else if (item.symbol === "USDC") chain.usdc += chainValue;
-        else chain.otherAssets.add(item.symbol);
+        for (const row of project.projectTokenBalances?.items ?? []) {
+          const amount = Number(formatUnits(BigInt(row.balance), row.decimals));
+          if (!(amount > 0)) continue;
+          const symbol = (tokenSymbolOf(row) ?? "?").replace(/^\$+/, "").toUpperCase();
+          if (symbol === "ETH") chain.eth += amount;
+          else if (symbol === "USDC") chain.usdc += amount;
+          else chain.otherAssets.add(symbol);
+        }
       }
     }
     const histories = await Promise.all(
-      supported.map(async (item) => ({
-        ...item,
-        moments: await momentsFor(item.group.id).catch(() => []),
+      supported.map(async (group) => ({
+        groupId: group.id,
+        moments: await momentsFor(group.id).catch(() => []),
       })),
     );
     const events = histories
-      .flatMap((item) =>
-        item.moments.map((moment) => ({
-          groupId: item.group.id,
-          symbol: item.symbol,
+      .flatMap((history) =>
+        history.moments.map((moment) => ({
+          groupId: history.groupId,
           timestamp: moment.timestamp,
-          amount: Number(formatUnits(BigInt(moment.balance), item.decimals)),
-          volume: Number(formatUnits(BigInt(moment.volume), item.decimals)),
+          valueUsd: usd(moment.balanceUsd),
+          volumeUsd: usd(moment.volumeUsd),
         })),
       )
       .sort((a, b) => a.timestamp - b.timestamp);
 
-    const historicalProjects = supported.flatMap((item) =>
-      (item.group.projects?.items ?? []).map((project) => ({
-        key: `${project.chainId}:${project.version}:${project.projectId}:${item.symbol}`,
-        chainId: project.chainId,
-        projectId: project.projectId,
-        version: project.version,
-        symbol: item.symbol,
-        decimals: item.decimals,
-        currentAmount: Number(formatUnits(BigInt(project.balance), item.decimals)),
-      })),
-    );
     const projectHistories = await Promise.all(
-      historicalProjects.map(async (project) => ({
-        ...project,
-        moments: await projectMomentsFor(project).catch(() => []),
-      })),
+      supported.flatMap((group) =>
+        (group.projects?.items ?? []).map(async (project) => ({
+          groupId: group.id,
+          chainId: project.chainId,
+          version: project.version,
+          projectId: project.projectId,
+          rows: project.projectTokenBalances?.items ?? [],
+          moments: await fetchProjectTokenBalanceMoments(mainnet.id, project).catch(() => null),
+        })),
+      ),
     );
+    // One history per (deployment, token), each token valued in its own decimals.
+    const tokenHistories = projectHistories.flatMap((project) => {
+      const projectMoments = project.moments ?? [];
+      const tokens = new Set([
+        ...project.rows.map((row) => row.token.toLowerCase()),
+        ...projectMoments.map((moment) => moment.token.toLowerCase()),
+      ]);
+      return [...tokens].map((token) => {
+        const row = project.rows.find((item) => item.token.toLowerCase() === token);
+        const moments = projectMoments.filter((moment) => moment.token.toLowerCase() === token);
+        return {
+          groupId: project.groupId,
+          chainId: project.chainId,
+          key: `${project.chainId}:${project.version}:${project.projectId}:${token}`,
+          moments,
+          currentUsd: row ? usd(row.balanceUsd) : null,
+          rate:
+            usdRateOf(row?.usdRate) ??
+            moments.map((moment) => usdRateOf(moment.tokenUsdRate)).findLast((rate) => rate) ??
+            0,
+        };
+      });
+    });
     const revGroupIds = new Set(
       groups
         .filter((group) => group.projects?.items.some((project) => project.projectId === 3))
         .map((group) => group.id),
     );
-    const rawFeePoints = feePointsFrom(histories, revGroupIds, ethPrice);
+    const rawFeePoints = feePointsFrom(
+      tokenHistories.filter((history) => revGroupIds.has(history.groupId)),
+    );
     const latestAggregateTimestamp = events.at(-1)?.timestamp;
-    const projectEvents = projectHistories
-      .flatMap((project) => [
-        ...project.moments.map((moment) => ({
-          key: project.key,
-          chainId: project.chainId,
-          symbol: project.symbol,
-          timestamp: moment.timestamp,
-          amount: Number(formatUnits(BigInt(moment.balance), project.decimals)),
-        })),
-        ...(latestAggregateTimestamp == null
-          ? []
+    const projectEvents = tokenHistories
+      .flatMap((history) => {
+        // An unpriced moment carries the token's last known rate, else its latest one.
+        let rate = history.rate;
+        const points = history.moments.map((moment) => {
+          rate = usdRateOf(moment.tokenUsdRate) ?? rate;
+          return {
+            key: history.key,
+            chainId: history.chainId,
+            timestamp: moment.timestamp,
+            valueUsd: Number(formatUnits(BigInt(moment.balance), moment.decimals)) * rate,
+          };
+        });
+        // A token without a current row keeps its last moment instead of reading as zero.
+        return latestAggregateTimestamp == null || history.currentUsd === null
+          ? points
           : [
+              ...points,
               {
-                key: project.key,
-                chainId: project.chainId,
-                symbol: project.symbol,
+                key: history.key,
+                chainId: history.chainId,
                 timestamp: latestAggregateTimestamp,
-                amount: project.currentAmount,
+                valueUsd: history.currentUsd,
               },
-            ]),
-      ])
+            ];
+      })
       .sort((a, b) => a.timestamp - b.timestamp);
 
-    // A project with no moments only ever gets its synthetic current-balance
-    // point, so its history would silently read as zero. Only break out per-chain
-    // values when every project either reported moments or holds nothing.
-    const chainHistoryIsComplete = projectHistories.every(
-      (project) => project.moments.length > 0 || project.currentAmount === 0,
-    );
+    // A token with no moments only ever gets its synthetic current-balance point, so its
+    // history would silently read as zero. Only break out per-chain values when every token
+    // either reported moments or holds nothing. An unpriced token counts as nothing, as it does
+    // in the indexer's USD balance.
+    const chainHistoryIsComplete =
+      projectHistories.every((project) => project.moments !== null) &&
+      tokenHistories.every((history) => history.moments.length > 0 || !history.currentUsd);
     const latest = new Map<string, number>();
     const latestVolume = new Map<string, number>();
-    const latestProjects = new Map<string, { chainId: number; symbol: string; amount: number }>();
+    const latestProjects = new Map<string, { chainId: number; valueUsd: number }>();
     let projectEventIndex = 0;
     // The same inflows, replayed in order, so the curve reaches the headline.
-    const decimalsByGroup = new Map(supported.map((item) => [item.group.id, item.decimals]));
     const inflowEvents = inflows
-      .filter((inflow) => decimalsByGroup.has(inflow.suckerGroupId))
+      .filter((inflow) => supportedIds.has(inflow.suckerGroupId))
       .map((inflow) => ({
         groupId: inflow.suckerGroupId,
         timestamp: inflow.timestamp,
-        amount: Number(
-          formatUnits(BigInt(inflow.amount), decimalsByGroup.get(inflow.suckerGroupId)!),
-        ),
+        amount: usd(inflow.amountUsd),
       }))
       .sort((a, b) => a.timestamp - b.timestamp);
     const addedSoFar = new Map<string, number>();
@@ -296,8 +277,8 @@ const cachedReserves = unstable_cache(
     const raw: ReservePoint[] = [];
     const rawVolumePoints: ReservePoint[] = [];
     for (const event of events) {
-      latest.set(event.groupId, event.amount);
-      latestVolume.set(event.groupId, event.volume);
+      latest.set(event.groupId, event.valueUsd);
+      latestVolume.set(event.groupId, event.volumeUsd);
       while (
         inflowIndex < inflowEvents.length &&
         inflowEvents[inflowIndex].timestamp <= event.timestamp
@@ -311,46 +292,29 @@ const cachedReserves = unstable_cache(
         projectEvents[projectEventIndex].timestamp <= event.timestamp
       ) {
         const projectEvent = projectEvents[projectEventIndex];
-        latestProjects.set(projectEvent.key, {
-          chainId: projectEvent.chainId,
-          symbol: projectEvent.symbol,
-          amount: projectEvent.amount,
-        });
+        latestProjects.set(projectEvent.key, projectEvent);
         projectEventIndex += 1;
       }
       let valueUsd = 0;
       let volumeUsd = 0;
-      for (const item of supported) {
-        const amount = latest.get(item.group.id) ?? 0;
-        const volume =
-          (latestVolume.get(item.group.id) ?? 0) + (addedSoFar.get(item.group.id) ?? 0);
-        if (item.symbol === "ETH") {
-          valueUsd += amount * (ethPrice ?? 0);
-          volumeUsd += volume * (ethPrice ?? 0);
-        } else if (item.symbol === "USDC") {
-          valueUsd += amount;
-          volumeUsd += volume;
-        }
+      for (const group of supported) {
+        valueUsd += latest.get(group.id) ?? 0;
+        volumeUsd += (latestVolume.get(group.id) ?? 0) + (addedSoFar.get(group.id) ?? 0);
       }
       const chains = chainHistoryIsComplete
         ? RESERVE_CHAIN_IDS.map((chainId) => ({
             chainId,
-            valueUsd: [...latestProjects.values()].reduce((sum, project) => {
-              if (project.chainId !== chainId) return sum;
-              if (project.symbol === "ETH") return sum + project.amount * (ethPrice ?? 0);
-              if (project.symbol === "USDC") return sum + project.amount;
-              return sum;
-            }, 0),
+            valueUsd: [...latestProjects.values()].reduce(
+              (sum, project) => (project.chainId === chainId ? sum + project.valueUsd : sum),
+              0,
+            ),
           }))
         : [];
       raw.push({ timestamp: event.timestamp, valueUsd, chains });
       rawVolumePoints.push({ timestamp: event.timestamp, valueUsd: volumeUsd, chains: [] });
     }
     return {
-      eth,
-      usdc,
-      totalUsd: eth * (ethPrice ?? 0) + usdc,
-      otherAssets: other.size,
+      totalUsd,
       chains: RESERVE_CHAIN_IDS.map((chainId) => {
         const chain = perChain.get(chainId)!;
         return {
@@ -367,7 +331,7 @@ const cachedReserves = unstable_cache(
       feePoints: downsample(rawFeePoints),
     };
   },
-  ["revnet-homepage-reserves-v6"],
+  ["revnet-homepage-reserves-v7"],
   { revalidate: 600 },
 );
 
@@ -376,10 +340,7 @@ export async function getHomepageReserves(): Promise<HomepageReserves> {
     return await cachedReserves();
   } catch {
     return {
-      eth: 0,
-      usdc: 0,
       totalUsd: 0,
-      otherAssets: 0,
       chains: RESERVE_CHAIN_IDS.map((chainId) => ({
         chainId,
         eth: 0,

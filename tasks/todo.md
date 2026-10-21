@@ -1337,3 +1337,30 @@ Rulings: nana-sdk-react 53.0.0 is not added (it can't build against wagmi 3: `us
 ### 2.41.1 review
 
 Core 2.41.1. Both app-side stand-ins are gone: a direct write's receipt goes to its hold through the SDK's `onReceipt` (the sending view hears it through the shared listeners), and the root follower only shows a success it never saw held. The root follower now writes a direct write's settled result into its row (so a write that settles after a reload is shown, and told, there). The immediate second send passes through the SDK alone with the receipt landing at once and after the send ("releases the hold once the earlier send's receipt lands", and pay, cash-out and launch twice in a row).
+
+## 2026-10-20 — Bendystraw per-token data
+
+Brief: /private/tmp/claude-501/-Users-jango-Documents-jb-v6-evm/7d1fdce3-54c6-4145-93c3-bfa2558645d2/scratchpad/client-round-brief.md. Branch fix/bendystraw-per-token off origin/main bd260965.
+
+- [x] Registry: event `tokenSymbol` (activity + account beneficiary pay/cash-out rows also get `token decimals`); SuckerGroup projects `accountingTokenCount` + `projectTokenBalances`; indexed projects `volumeUsd trendingVolumeUsd accountingTokenCount`; TopSuckerGroups `balanceUsd volumeUsd` + per-project `projectTokenBalances`; SuckerGroupMoments `balanceUsd volumeUsd`; AddToBalanceInflows `amountUsd`; PayEventRates `token decimals`; ShieldGroup `balanceUsd` + `projectTokenBalances`; ProjectMoments replaced by ProjectTokenBalanceMoments.
+- [x] One home for native-unit rows: `lib/project-link-preview.ts` reads `projectTokenBalances` (raw balance only when the field is absent); link preview, OG card and shields label through it.
+- [x] Top projects rank on `suckerGroup.balanceUsd`; ETH price feed removed from home and shields (`lib/ethPrice.ts` deleted if unused).
+- [x] Homepage reserves: per-token rows for ETH/USDC/other per chain, `balanceUsd` total, `volumeUsd` + add-to-balance `amountUsd` passed through, history from moment `balanceUsd`/`volumeUsd`, per-chain history and REV fees from per-token balance moments.
+- [x] Floor chart: a group holding more than one token (count or kind) uses moment `balanceUsd` over the accounting token's own indexed rate; single-token groups keep the exact raw path.
+- [x] Pay-event rates filtered to the accounting token.
+- [x] Trending: native amount only for a single accounting token, else `trendingVolumeUsd`. Discover/search rank on `volumeUsd`.
+- [x] Activity: `ownToken` prefers the event's `tokenSymbol`; project feed goes USD when any chain has `accountingTokenCount > 1`; account beneficiary rows use their own token.
+- [x] Fixtures, schema docs, data policy, tests; `npm run check`; Codex loop; PR (no merge).
+
+## Plan refinement
+
+- **Objective:** Every revnet.money surface that totals, ranks, charts or labels treasury money uses Bendystraw's new per-token and USD fields so a project accepting several tokens is never shown as one token's units; nothing blanks when a field is missing.
+- **System fit:** Bendystraw (owner of indexed truth) -> static registry documents + operation validators -> server loaders (top, reserves, floor, rates, shields, preview, discover/search) and client mappers (activity) -> UI; Header TVL stays on-chain (live balances, already correct), wallet writes and SDK are unaffected; jbm gets the same rules in parallel.
+- **Reuse and simplicity:** Reuse `formatProjectPreviewBalance` as the single native-unit formatter (shields adopts it), `getTokenSymbolFromAddress` as the symbol fallback, `usdRateOf` for 18-dec rates; delete the ETH price feed path and ProjectMoments instead of adding parallel helpers; no new modules beyond one operation.
+- **Evidence and unknowns:** Live introspection of both endpoints (2026-10-20) shows every field; live data shows multi-token groups (Breadfruit, 2865fc...) and that `suckerGroupMoment.accountingTokenUsdRate` follows the triggering chain's last-set context, so it is not used for multi-token floors; per-chain `usdRate` values differ (each chain's latest event), so REV fees use each row's own current rate.
+- **Verification:** Unit tests per surface (top ranking from balanceUsd, reserves multi-token count, floor multi-token, rate filter, preview rows, shields, trending, activity symbol + account rows), live schema contract test, full `npm run check` (suites one at a time), Codex sol review loop until approve.
+- **Resource budget:** One worktree, one PR; read only touched modules; live checks limited to introspection and two sample queries; replan if a surface needs SDK or indexer changes.
+
+### Review
+
+`npm run check` green (2903 unit tests, 160 browser, 10 existing skips; no budget change). Codex gpt-6.1-sol: 7 passes, approved on the 7th; fixes covered known event tokens beating USD mode, add-to-balance USD fallback, selected `balanceUsd` on Top rows, unpriced/missing history, unreadable symbols, and token identity by address for anything but ETH/USDC (`tokenKindOf`). Declined: a fallback query for schema absence (the live schema contract test gates field presence). The browser fixture's reserve history now passes the response contract, which surfaced the chart's 3.03:1 axis labels; fixed. Header TVL stays on chain (live balances, already correct).

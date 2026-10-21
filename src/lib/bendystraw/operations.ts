@@ -48,8 +48,6 @@ import type {
   ProjectAccountingContextQueryVariables,
   ProjectErc20TickersQuery,
   ProjectErc20TickersQueryVariables,
-  ProjectMomentsQuery,
-  ProjectMomentsQueryVariables,
   ProjectOperatorQuery,
   ProjectOperatorQueryVariables,
   ProjectPayersQuery,
@@ -58,6 +56,8 @@ import type {
   ProjectQueryVariables,
   ProjectsByOwnerQuery,
   ProjectsByOwnerQueryVariables,
+  ProjectTokenBalanceMomentsQuery,
+  ProjectTokenBalanceMomentsQueryVariables,
   ProjectWithPermissionsQuery,
   ProjectWithPermissionsQueryVariables,
   ShieldGroupQuery,
@@ -369,13 +369,16 @@ export const AddToBalanceInflowsOperation = operation<
   variablesWith({}, { after: isOptionalString }),
   hasRoot("addToBalanceEvents", "items"),
 );
-export const ProjectMomentsOperation = operation<ProjectMomentsQuery, ProjectMomentsQueryVariables>(
-  "project-moments.v1",
+export const ProjectTokenBalanceMomentsOperation = operation<
+  ProjectTokenBalanceMomentsQuery,
+  ProjectTokenBalanceMomentsQueryVariables
+>(
+  "project-token-balance-moments.v1",
   variablesWith(
     { projectId: isNumber, chainId: isNumber, version: isNumber },
     { after: isOptionalString },
   ),
-  hasRoot("projectMoments", "items"),
+  hasRoot("projectTokenBalanceMoments", "items"),
 );
 export const TopSuckerGroupsOperation = operation<
   TopSuckerGroupsQuery,
@@ -547,7 +550,7 @@ export const BENDYSTRAW_OPERATIONS = [
   CashOutTaxSnapshotsOperation,
   SuckerGroupMomentsOperation,
   AddToBalanceInflowsOperation,
-  ProjectMomentsOperation,
+  ProjectTokenBalanceMomentsOperation,
   TopSuckerGroupsOperation,
   ProjectPayersOperation,
   PermissionHoldersOperation,

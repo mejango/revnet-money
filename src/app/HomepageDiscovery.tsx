@@ -15,6 +15,7 @@ import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import Image from "next/image";
 import { Suspense, type ReactNode } from "react";
 import { formatUnits, isAddress, type Address } from "viem";
+import { usdFromScaled } from "./[slug]/components/v6/extras/projectPayers";
 import { getSuckerGroup } from "./[slug]/getSuckerGroup";
 import { getHomepageActivityPage } from "./getHomepageActivity";
 import { getHomepageReserves } from "./getHomepageReserves";
@@ -358,7 +359,11 @@ function formatLaunched(createdAt: number): string {
   return `${Math.floor(seconds / 86400)}d ago`;
 }
 
+/** Its own token when the project takes one; USD when its volume adds several. */
 function formatRecentVolume(project: IndexedProjectSummary) {
+  if ((project.accountingTokenCount ?? 0) > 1) {
+    return `$${formatCompact(usdFromScaled(project.trendingVolumeUsd) ?? 0)}`;
+  }
   const integer = String(project.trendingVolume ?? 0).split(".")[0] || "0";
   const amount = formatUnits(BigInt(integer), project.decimals ?? 18);
   const symbol = project.tokenSymbol?.replace(/^\$+/, "");

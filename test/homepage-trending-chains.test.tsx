@@ -84,6 +84,23 @@ describe("homepage composite Trending chain icons", () => {
     expect(mocks.group).toHaveBeenCalledWith("group", 8453, 7);
   });
 
+  it("shows recent volume in USD when the project takes more than one token", async () => {
+    mocks.query.mockResolvedValue({
+      projects: {
+        items: [
+          {
+            ...project,
+            accountingTokenCount: 2,
+            trendingVolume: "311800000000020000",
+            trendingVolumeUsd: "1234500000000000000000",
+          },
+        ],
+      },
+    });
+    await renderPanel("trending");
+    expect(screen.getByRole("link")).toHaveTextContent("Volume: $1.23k");
+  });
+
   it("keeps the known representative icon when group membership is unavailable", async () => {
     await renderPanel("trending");
     expect(screen.getAllByRole("img").map((image) => image.getAttribute("aria-label"))).toEqual([

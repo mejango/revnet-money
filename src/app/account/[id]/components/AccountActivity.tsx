@@ -51,9 +51,8 @@ export function AccountActivity({ address }: { address: Address }) {
     () =>
       mapActivityEvents(items, (event) => {
         const project = (event as AccountActivityEventItem).project;
-        // USD is the account feed's denomination — one unit across every project a wallet
-        // touched. `flowAmount` falls back to the accounting token when the indexer has no
-        // USD figure, and puts the raw accounting amount on hover either way.
+        // Each row shows the token its event moved; USD covers a row whose token is unknown,
+        // and the project's accounting token is the last resort when the indexer has neither.
         return {
           tokenSymbol: project?.tokenSymbol,
           decimals: project?.decimals,

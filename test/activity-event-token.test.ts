@@ -13,6 +13,7 @@ function pay(
   token: string | null,
   decimals: number | null,
   amount = "100000000000000",
+  tokenSymbol?: string | null,
 ) {
   return {
     id,
@@ -37,6 +38,7 @@ function pay(
       project: null,
       token,
       decimals,
+      tokenSymbol,
     },
   } as unknown as ActivityEventItem;
 }
@@ -58,6 +60,39 @@ describe("activity amounts use each event's own token", () => {
       undefined,
       undefined,
     ]);
+  });
+
+  it("labels a token by the event's own symbol before the app's known tokens", () => {
+    const token = "0x00000000000000000000000000000000000000aa";
+    expect(amountOf([pay("a", token, 18, "1000000000000000000", "WBTC")])).toEqual(["1", "WBTC"]);
+    expect(amountOf([pay("a", ETH, 18, "100000000000000", null)])).toEqual(["0.0001", "ETH"]);
+  });
+
+  it("keeps a known token even where the feed would otherwise show USD", () => {
+    const item = pay("a", ETH, 18, "1000000000000000000");
+    (item.payEvent as { amountUsd: string }).amountUsd = "2000000000000000000000";
+    const [row] = mapActivityEvents([item], () => ({ ...usdcContext(), denominateInUsd: true }));
+    expect([row?.baseAmount, row?.baseTokenSymbol]).toEqual(["1", "ETH"]);
+  });
+
+  it("shows an add to balance in an unreadable token as USD", () => {
+    const item = {
+      ...pay("a", null, null),
+      payEvent: null,
+      addToBalanceEvent: {
+        txHash: "0xaaa",
+        timestamp: 1,
+        from: "0x2222222222222222222222222222222222222222",
+        amount: "5",
+        amountUsd: "12000000000000000000",
+        memo: null,
+        token: null,
+        decimals: null,
+        tokenSymbol: null,
+      },
+    } as unknown as ActivityEventItem;
+    const [row] = mapActivityEvents([item], usdcContext);
+    expect([row?.baseAmount, row?.baseTokenSymbol]).toEqual(["$12.00", undefined]);
   });
 
   it("labels a fan-out total only when every pay shares a token", () => {

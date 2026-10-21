@@ -314,11 +314,13 @@ const fixtureProject = {
   currency: "2",
   tokenSymbol: "USDC",
   isRevnet: true,
-  volume: "1250000000",
-  // The discovery documents ask for the trending triple; a project without it fails
+  volumeUsd: "1250000000000000000000",
+  accountingTokenCount: 1,
+  // The discovery documents ask for the trending fields; a project without them fails
   // the client's response contract, which is what left home and discover empty.
   trendingScore: "1250000000",
   trendingVolume: "1250000000",
+  trendingVolumeUsd: "1250000000000000000000",
   trendingPaymentsCount: 2,
   owner: addresses.revOwner,
   permissionHolders: { items: [] },
@@ -329,6 +331,13 @@ const fixtureProject = {
       ],
     },
   },
+};
+const fixtureTokenBalance = {
+  token: usdc,
+  tokenSymbol: "USDC",
+  decimals: 6,
+  balance: "1250000000",
+  balanceUsd: "1250000000000000000000",
 };
 const fixtureSuckerGroup = {
   id: suckerGroupId,
@@ -348,6 +357,8 @@ const fixtureSuckerGroup = {
         tokenSymbol: "USDC",
         version: 6,
         suckerGroupId,
+        accountingTokenCount: 1,
+        projectTokenBalances: { items: [fixtureTokenBalance] },
       },
     ],
   },
@@ -398,7 +409,7 @@ const allowedGraphqlOperations = new Set([
   "ProjectCreateEvent",
   "ProjectErc20Tickers",
   "ProjectOperator",
-  "ProjectMoments",
+  "ProjectTokenBalanceMoments",
   "ProjectWithPermissions",
   "Projects",
   "SuckerGroup",
@@ -446,7 +457,7 @@ const graphqlHandlers = {
     requireFixture(
       [32, 60, 250].includes(variables.limit) &&
         variables.offset === 0 &&
-        ["createdAt", "volume", "trendingScore"].includes(variables.orderBy) &&
+        ["createdAt", "volumeUsd", "trendingScore"].includes(variables.orderBy) &&
         variables.orderDirection === "desc" &&
         variables.where &&
         typeof variables.where === "object",
@@ -497,10 +508,14 @@ const graphqlHandlers = {
     requireExactVariables("ProjectOperator", variables, { chainId, projectId, version: 6 });
     return { permissionHolders: { items: [] } };
   },
-  ProjectMoments(variables) {
-    requireExactVariables("ProjectMoments", variables, { projectId, chainId, version: 6 });
+  ProjectTokenBalanceMoments(variables) {
+    requireExactVariables("ProjectTokenBalanceMoments", variables, {
+      projectId,
+      chainId,
+      version: 6,
+    });
     return {
-      projectMoments: {
+      projectTokenBalanceMoments: {
         items: [],
         pageInfo: { hasNextPage: false, endCursor: null },
       },
@@ -568,7 +583,7 @@ const graphqlHandlers = {
   },
   PayEventRates(variables) {
     requireExactVariables("PayEventRates", variables, {
-      where: { chainId, projectId, version: 6 },
+      where: { chainId, projectId, version: 6, token: usdc.toLowerCase() },
       limit: 500,
       offset: 0,
     });
@@ -615,16 +630,22 @@ const graphqlHandlers = {
           {
             timestamp: 1_740_000_000,
             balance: "1000000000",
+            balanceUsd: "1000000000000000000000",
+            volumeUsd: "1000000000000000000000",
             tokenSupply: "800000000000000000000000",
             suckerGroupId,
             version: 6,
+            accountingTokenUsdRate: "1000000000000000000",
           },
           {
             timestamp: 1_770_000_000,
             balance: "1250000000",
+            balanceUsd: "1250000000000000000000",
+            volumeUsd: "1250000000000000000000",
             tokenSupply: "1000000000000000000000000",
             suckerGroupId,
             version: 6,
+            accountingTokenUsdRate: "1000000000000000000",
           },
         ],
         pageInfo: { hasNextPage: false, endCursor: null },
@@ -679,23 +700,22 @@ const graphqlHandlers = {
         items: [
           {
             id: suckerGroupId,
-            balance: "1250000000",
-            volume: "1250000000",
+            balanceUsd: "1250000000000000000000",
+            volumeUsd: "1250000000000000000000",
             projects: {
               items: [
                 {
-                  balance: "1250000000",
                   chainId,
-                  currency: "2",
-                  decimals: 6,
                   isRevnet: true,
                   logoUri: null,
                   metadataUri: null,
                   name: browserProject.metadata.name,
                   projectId,
                   projectTagline: browserProject.metadata.projectTagline,
-                  tokenSymbol: "USDC",
                   version: 6,
+                  projectTokenBalances: {
+                    items: [{ ...fixtureTokenBalance, usdRate: "1000000000000000000" }],
+                  },
                 },
               ],
             },
