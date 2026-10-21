@@ -705,6 +705,7 @@ const graphqlHandlers = {
             projects: {
               items: [
                 {
+                  balanceUsd: "1250000000000000000000",
                   chainId,
                   isRevnet: true,
                   logoUri: null,

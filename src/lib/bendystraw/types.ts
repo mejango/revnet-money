@@ -17,6 +17,8 @@ export type Project = {
   /** More than one means the raw `balance` adds different token units. */
   accountingTokenCount?: number | null;
   balance: BigNumberish;
+  /** Flow-accrued USD balance, 18-dec. */
+  balanceUsd?: BigNumberish | null;
   chainId: number;
   createdAt: number;
   currency: BigNumberish | null;
@@ -657,6 +659,7 @@ export type TopSuckerGroupsQuery = {
         items: Array<
           Pick<
             Project,
+            | "balanceUsd"
             | "chainId"
             | "name"
             | "projectTagline"
