@@ -4,6 +4,7 @@ import { formatTokenAmount } from "@/lib/token";
 import { getTokenSymbolFromAddress, tokenKindOf } from "@/lib/tokenUtils";
 
 type BalanceDeployment = Pick<Project, "balance" | "decimals" | "tokenSymbol"> & {
+  token?: string | null;
   projectTokenBalances?: { items: ProjectTokenBalance[] } | null;
 };
 
@@ -16,10 +17,19 @@ export function deploymentTokenBalances(
   deployment: BalanceDeployment,
 ): Array<
   Pick<Project, "balance" | "decimals" | "tokenSymbol"> &
-    Pick<Partial<ProjectTokenBalance>, "token" | "balanceUsd">
+    Pick<Partial<ProjectTokenBalance>, "token" | "balanceUsd" | "usdRate">
 > {
   const rows = deployment.projectTokenBalances?.items;
-  if (!rows?.length) return [deployment];
+  if (!rows?.length) {
+    const { token } = deployment;
+    return [
+      {
+        ...deployment,
+        token: token ?? undefined,
+        tokenSymbol: token ? tokenSymbolOf({ ...deployment, token }) : deployment.tokenSymbol,
+      },
+    ];
+  }
   return rows.map((row) => ({ ...row, tokenSymbol: tokenSymbolOf(row) }));
 }
 

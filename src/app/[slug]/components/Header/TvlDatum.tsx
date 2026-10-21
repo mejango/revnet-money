@@ -95,19 +95,26 @@ async function readChainTreasury(
   }
 }
 
+/**
+ * The priced tokens' USD total, and the symbols of held tokens with no USD price, which it
+ * leaves out. Null while any chain is unread: its holdings are unknown, not unpriced.
+ */
 export function treasuryUsdTotal(
   chainResults: readonly ChainTreasury[],
   expectedChains: number,
-): bigint | null {
-  const rows = chainResults.flatMap((result) => result.rows);
-  if (
-    chainResults.length !== expectedChains ||
-    chainResults.some((result) => !result.verified) ||
-    rows.some((row) => row.balance !== 0n && row.usd == null)
-  ) {
+): { usd: bigint; unpriced: string[] } | null {
+  if (chainResults.length !== expectedChains || chainResults.some((result) => !result.verified)) {
     return null;
   }
-  return rows.reduce((sum, row) => sum + (row.usd ?? 0n), 0n);
+  const rows = chainResults.flatMap((result) => result.rows);
+  return {
+    usd: rows.reduce((sum, row) => sum + (row.usd ?? 0n), 0n),
+    unpriced: [
+      ...new Set(
+        rows.filter((row) => row.balance !== 0n && row.usd == null).map((row) => row.symbol),
+      ),
+    ],
+  };
 }
 
 function formatUsd18(value: bigint): string {
@@ -135,9 +142,9 @@ export function TvlDatum({ projects }: Props) {
   // A restored treasury may be available before this streamed component hydrates.
   const chainResults = hydrated ? (query.data ?? []) : [];
   const rows = chainResults.flatMap((result) => result.rows);
-  const totalUsd = treasuryUsdTotal(chainResults, projects.length);
+  const treasury = treasuryUsdTotal(chainResults, projects.length);
   const loading = hydrated ? query.isLoading : projects.length > 0;
-  const total = loading ? "…" : totalUsd == null ? "—" : formatUsd18(totalUsd);
+  const total = loading ? "…" : treasury == null ? "—" : formatUsd18(treasury.usd);
 
   return (
     <Tooltip>
@@ -172,6 +179,9 @@ export function TvlDatum({ projects }: Props) {
           <span>[All chains]</span>
           <span className="font-medium">{total}</span>
         </div>
+        {treasury?.unpriced.length ? (
+          <div className="text-zinc-500">Excludes {treasury.unpriced.join(", ")}: no USD price</div>
+        ) : null}
       </TooltipContent>
     </Tooltip>
   );

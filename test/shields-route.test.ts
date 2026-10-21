@@ -22,14 +22,15 @@ const deployment = {
   metadata: null,
 };
 
-async function badge(items: unknown[], balanceUsd: string | null) {
+async function badge(items: unknown[], balanceUsd: string | null, query = "projectId=8&chainId=1") {
+  mocks.query.mockReset();
   mocks.query.mockImplementation(async (...args: unknown[]) => {
     return (args[1] as { id: string }).id === "shield-project.v1"
       ? { project: { id: "p", suckerGroupId: "group" } }
       : { suckerGroup: { balanceUsd, volumeUsd: "0", projects: { items } } };
   });
   const response = await GET(
-    new Request("https://revnet.app/api/data/shields?projectId=8&chainId=1", {
+    new Request(`https://revnet.app/api/data/shields?${query}`, {
       headers: { host: "revnet.app" },
     }),
   );
@@ -55,13 +56,87 @@ describe("shields badge", () => {
       "37000000000000000000",
     );
 
+    // No USD rates indexed: USDC cannot be converted into ETH, so it is left out and named.
     expect(body).toMatchObject({
       message: "37 USD • 0.01 ETH + 20.00 USDC",
       tvlUsd: 37,
-      tvlBalance: null,
-      denomination: "tokens",
+      tvlBalance: 0.01,
+      denomination: "ETH",
+      tvlExcludedTokens: [{ token: USDC, tokenSymbol: "USDC" }],
     });
-    expect(body.chains[0].balance).toBeNull();
+    expect(body.chains[0].balance).toBe(0.01);
+    // Each token stays readable in its own units.
+    expect(body.chains[0].balances).toEqual([
+      { token: ETH, tokenSymbol: "ETH", balance: 0.01, balanceUsd: null },
+      { token: USDC, tokenSymbol: "USDC", balance: 20, balanceUsd: null },
+    ]);
+    // Colored by USD, one scale for every token: $37 is red.
+    expect(body.color).toBe("red");
+  });
+
+  it("converts other tokens into the project's token at their USD rates", async () => {
+    const body = await badge(
+      [
+        {
+          ...deployment,
+          balance: "10000000020000000",
+          projectTokenBalances: {
+            items: [
+              // $2,000 per ETH and $1 per USDC.
+              {
+                token: ETH,
+                tokenSymbol: "ETH",
+                decimals: 18,
+                balance: "10000000000000000",
+                usdRate: "2000000000000000000000",
+              },
+              {
+                token: USDC,
+                tokenSymbol: "USDC",
+                decimals: 6,
+                balance: "20000000",
+                usdRate: "1000000000000000000",
+              },
+            ],
+          },
+        },
+      ],
+      "40000000000000000000",
+    );
+
+    // 0.01 ETH plus 20 USDC worth 0.01 ETH.
+    expect(body).toMatchObject({ tvlBalance: 0.02, denomination: "ETH", tvlExcludedTokens: [] });
+  });
+
+  it("serves Shields' endpoint schema, with the color, for the badge", async () => {
+    const body = await badge(
+      [{ ...deployment, balance: "1500000000000000000", projectTokenBalances: null }],
+      "3000000000000000000000",
+      "projectId=8&chainId=1&format=endpoint",
+    );
+
+    expect(body).toEqual({
+      schemaVersion: 1,
+      label: "Breadfruit",
+      message: "3,000 USD • 1.5 ETH",
+      color: "green",
+      cacheSeconds: 3600,
+    });
+  });
+
+  it("reads one project's group, on Base unless a chain is named", async () => {
+    const body = await badge(
+      [{ ...deployment, balance: "0", projectTokenBalances: null }],
+      null,
+      "projectId=8",
+    );
+
+    // One project lookup and one group lookup: the same number on another chain is another project.
+    expect(mocks.query.mock.calls.map((call) => call[0])).toEqual([8453, 8453]);
+    expect(body.markdown).toContain("(https://revnet.app/base:8)");
+    expect(decodeURIComponent(body.badgeUrl)).toBe(
+      "https://img.shields.io/endpoint?url=https://revnet.app/api/data/shields?projectId=8&chainId=8453&format=endpoint",
+    );
   });
 
   it.each([null, "CASH"])("keeps distinct %s tokens apart", async (tokenSymbol) => {
@@ -87,8 +162,12 @@ describe("shields badge", () => {
       null,
     );
 
-    expect(body).toMatchObject({ tvlBalance: null, denomination: "tokens" });
-    expect(body.chains[0].balance).toBeNull();
+    // Neither can be converted into the project's ETH: both are left out, and both named.
+    expect(body).toMatchObject({ tvlBalance: 0, denomination: "ETH" });
+    expect(body.tvlExcludedTokens).toEqual([
+      { token: "0x00000000000000000000000000000000000000aa", tokenSymbol },
+      { token: "0x00000000000000000000000000000000000000bb", tokenSymbol },
+    ]);
   });
 
   it("keeps a one-token amount and leaves out USD the indexer has not priced", async () => {
@@ -102,8 +181,67 @@ describe("shields badge", () => {
       tvlUsd: null,
       tvlBalance: 1.5,
       denomination: "ETH",
-      color: "green",
+      // Unpriced: no USD to judge it by.
+      color: "lightgrey",
     });
+  });
+
+  it("converts a chain's tokens with the denomination rate another chain holds", async () => {
+    const body = await badge(
+      [
+        {
+          ...deployment,
+          balance: "1000000000000000000",
+          projectTokenBalances: {
+            items: [
+              {
+                token: ETH,
+                tokenSymbol: "ETH",
+                decimals: 18,
+                balance: "1000000000000000000",
+                usdRate: "2000000000000000000000",
+              },
+            ],
+          },
+        },
+        {
+          ...deployment,
+          chainId: 8453,
+          balance: "20000000",
+          projectTokenBalances: {
+            items: [
+              {
+                token: USDC,
+                tokenSymbol: "USDC",
+                decimals: 6,
+                balance: "20000000",
+                usdRate: "1000000000000000000",
+              },
+            ],
+          },
+        },
+      ],
+      "2020000000000000000000",
+    );
+
+    expect(body.tvlBalance).toBeCloseTo(1.01);
+    expect(body.chains.map((chain: { balance: number }) => chain.balance)).toEqual([1, 0.01]);
+  });
+
+  it("names the denomination from a known token address when the symbol is missing", async () => {
+    const body = await badge(
+      [
+        {
+          ...deployment,
+          tokenSymbol: null,
+          balance: "1000000000000000000",
+          projectTokenBalances: null,
+        },
+      ],
+      null,
+    );
+
+    expect(body).toMatchObject({ tvlBalance: 1, denomination: "ETH" });
   });
 });
 
