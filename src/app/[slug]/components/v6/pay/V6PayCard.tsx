@@ -654,6 +654,7 @@ export function V6PayCard() {
           expectedTokens: quote.beneficiaryTokenCount,
           reservedTokens: quote.reservedTokenCount,
           minReturned: quote.minReturned,
+          quoteFailed: quote.quoteFailed,
           needsApproval: tokenApprovalNeeded,
           tokenApprovalComplete: false,
           tokenApproval: tokenApprovalNeeded
@@ -714,6 +715,7 @@ export function V6PayCard() {
           expectedTokens: null,
           reservedTokens: null,
           minReturned: 0n,
+          quoteFailed: false,
           needsApproval: tokenApprovalNeeded,
           tokenApprovalComplete: false,
           tokenApproval: tokenApprovalNeeded
@@ -920,7 +922,8 @@ export function V6PayCard() {
       // The revert's own reason, when known, and a looser minimum when that is the fix.
       const decoded = decodePayFailure(err);
       setTxError(decoded?.message ?? formatWalletError(err));
-      if (prepared.mode === "pay") {
+      // A failed quote's minimum is the mint rate, not a market price a looser tolerance widens.
+      if (prepared.mode === "pay" && !prepared.quoteFailed) {
         // The tolerance of the attempt that failed, never a loosened one not yet sent.
         const retry = payRetrySlippageBps(
           decoded,
@@ -1021,6 +1024,20 @@ export function V6PayCard() {
         (cartCount > 0 && (shopRoutesLoading || shopCreditsLoading || !shopMatchesToken)) ||
         (amountRaw <= 0n && !creditOnlyCheckout) ||
         (mode === "pay" && !previewReady)));
+
+  // The confirm discloses a failed quote itself; the card's line is for a payment not yet sent
+  // that nothing else already blocks.
+  const showQuoteFailed =
+    mode === "pay" &&
+    (amountRaw > 0n || cartCount > 0) &&
+    !previewError &&
+    !!preview?.quoteFailed &&
+    !confirmOpen &&
+    !busy &&
+    !notStarted &&
+    !surfaceError &&
+    !surface?.pausePay &&
+    !(insufficientBalance && selected && !payWithDollars);
 
   const hasShopStrip = Boolean(shop && shop.tiers.length > 0 && mode === "pay");
   const payPanelLayout = payPanelLayoutClasses({
@@ -1345,20 +1362,22 @@ export function V6PayCard() {
               </p>
             ) : null}
 
-            {mode === "pay" &&
-            (amountRaw > 0n || cartCount > 0) &&
-            !previewError &&
-            preview?.quoteFailed ? (
+            {showQuoteFailed ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
-                {PAY_QUOTE_FAILED_MESSAGE}{" "}
-                <button
-                  type="button"
-                  onClick={() => void refetchPreview()}
-                  disabled={previewLoading}
-                  className="font-medium underline underline-offset-2"
-                >
-                  Try again
-                </button>
+                {previewLoading ? (
+                  <span role="status">Refreshing…</span>
+                ) : (
+                  <>
+                    {PAY_QUOTE_FAILED_MESSAGE}{" "}
+                    <button
+                      type="button"
+                      onClick={() => void refetchPreview()}
+                      className="font-medium underline underline-offset-2"
+                    >
+                      Try again
+                    </button>
+                  </>
+                )}
               </p>
             ) : null}
 

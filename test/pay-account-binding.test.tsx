@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   minReturned: 99n * 10n ** 19n,
   quoteFailed: false,
   routeCalls: 0,
+  routeGate: null as Promise<void> | null,
   shop: undefined as unknown,
   cart: [] as unknown[],
   erc20: false,
@@ -157,6 +158,7 @@ vi.mock("@/lib/nana/suckers", () => ({ useSuckers: () => ({ data: [] }) }));
 vi.mock("@/lib/paymentTerminal", () => ({
   resolveBestV6PayRoute: async () => {
     mocks.routeCalls += 1;
+    if (mocks.routeGate) await mocks.routeGate;
     if (mocks.routeError) throw mocks.routeError;
     return {
       quoteFailed: mocks.quoteFailed,
@@ -220,6 +222,7 @@ beforeEach(() => {
   mocks.minReturned = 99n * 10n ** 19n;
   mocks.quoteFailed = false;
   mocks.routeCalls = 0;
+  mocks.routeGate = null;
   mocks.shop = undefined;
   mocks.cart = [];
   mocks.erc20 = false;
@@ -389,7 +392,7 @@ describe("a payment bound to the account it was prepared for", () => {
     expect(screen.getByText("At least 500 REV")).toBeInTheDocument();
   });
 
-  it("says when the minimum is only the mint rate because the pool price was unreadable, and retries the quote", async () => {
+  it("says when the minimum is only the mint rate, and shows progress instead while the quote is read again", async () => {
     mocks.quoteFailed = true;
     render(
       <QueryClientProvider client={queryClient()}>
@@ -400,13 +403,48 @@ describe("a payment bound to the account it was prepared for", () => {
     fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
     await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
 
+    const gate = deferred<void>();
+    mocks.routeGate = gate.promise;
     mocks.quoteFailed = false;
     const calls = mocks.routeCalls;
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    await waitFor(() => expect(mocks.routeCalls).toBeGreaterThan(calls));
-    await waitFor(() =>
-      expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull(),
+    await screen.findByText("Refreshing…");
+    expect(mocks.routeCalls).toBeGreaterThan(calls);
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+
+    gate.resolve();
+    await waitFor(() => expect(screen.queryByText("Refreshing…")).toBeNull());
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+  });
+
+  it("discloses a failed quote found at submit in the review, bound to the minimum it signs, and not on the card once sent", async () => {
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
     );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+
+    // The card looked healthy; the quote read again at submit could not read the pool.
+    mocks.quoteFailed = true;
+    mocks.minReturned = 7n * 10n ** 20n;
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText(PAY_QUOTE_FAILED_MESSAGE);
+    expect(within(confirm).getByText("700 REV")).toBeInTheDocument();
+    // Said once, in the review, not again on the card behind it.
+    expect(screen.getAllByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toHaveLength(1);
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    const payment = mocks.write.mock.calls[0]![0] as { args: readonly unknown[] };
+    expect(payment.args[4]).toBe(7n * 10n ** 20n);
+    await within(confirm).findByText("Your payment went through.");
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
   });
 
   it("does not send a ready payment after its quote refresh fails", async () => {

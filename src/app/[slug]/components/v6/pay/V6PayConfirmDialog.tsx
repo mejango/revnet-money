@@ -14,7 +14,7 @@ import { TxSteps } from "@/components/ui/TxSteps";
 import { etherscanLink } from "@/lib/utils";
 import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { PAY_MAX_SLIPPAGE_BPS } from "@bananapus/nana-sdk-core/v6";
+import { PAY_MAX_SLIPPAGE_BPS, PAY_QUOTE_FAILED_MESSAGE } from "@bananapus/nana-sdk-core/v6";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
@@ -58,6 +58,8 @@ export interface PreparedV6Pay {
   expectedTokens: bigint | null;
   reservedTokens: bigint | null;
   minReturned: bigint;
+  /** The pool price was unreadable: `minReturned` is only the mint rate. */
+  quoteFailed: boolean;
   needsApproval: boolean;
   tokenApprovalComplete: boolean;
   tokenApproval: PreparedV6TransactionAction | null;
@@ -211,9 +213,14 @@ export function V6PayConfirmDialog({
                         {chainMeta?.name ?? String(prepared.chainId)}
                       </SummaryRow>
                       {prepared.mode === "pay" ? (
-                        <SummaryRow label="You get at least">
-                          {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
-                        </SummaryRow>
+                        <>
+                          <SummaryRow label="You get at least">
+                            {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
+                          </SummaryRow>
+                          {prepared.quoteFailed && !busy ? (
+                            <p className="text-xs text-zinc-600">{PAY_QUOTE_FAILED_MESSAGE}</p>
+                          ) : null}
+                        </>
                       ) : (
                         <SummaryRow label="Effect">
                           Adds money to the project without giving you tokens.
