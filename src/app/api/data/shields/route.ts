@@ -2,7 +2,11 @@ import { usdFromScaled } from "@/app/[slug]/components/v6/extras/projectPayers";
 import { ShieldGroupOperation, ShieldProjectOperation } from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
 import type { ShieldGroupQuery } from "@/lib/bendystraw/types";
-import { deploymentTokenBalances, formatProjectPreviewBalance } from "@/lib/project-link-preview";
+import {
+  deploymentTokenBalances,
+  formatProjectPreviewBalance,
+  tokenSymbolOf,
+} from "@/lib/project-link-preview";
 import { slugFor } from "@/lib/slug";
 import { tokenKindOf } from "@/lib/tokenUtils";
 import { NextResponse } from "next/server";
@@ -19,9 +23,14 @@ type Denomination = { token: string | null; tokenSymbol: string | null; decimals
  * The deployments' holdings in one token: rows of that token as held, any other token
  * converted through its latest USD rate. A token with no USD rate (or a denomination with
  * none, for the others) cannot be converted, so it is left out and named in `excluded`.
+ * The denomination's rate comes from `group`, so one chain's total can use another's.
  * Null when the denomination itself is unknown.
  */
-function treasuryIn(denomination: Denomination | null, deployments: readonly ShieldDeployment[]) {
+function treasuryIn(
+  denomination: Denomination | null,
+  deployments: readonly ShieldDeployment[],
+  group: readonly ShieldDeployment[] = deployments,
+) {
   if (!denomination?.tokenSymbol) return null;
   const kind = tokenKindOf(denomination);
   const rows = deployments.flatMap(deploymentTokenBalances);
@@ -34,7 +43,8 @@ function treasuryIn(denomination: Denomination | null, deployments: readonly Shi
     }
   };
   const denominationUsd =
-    rows
+    group
+      .flatMap(deploymentTokenBalances)
       .filter((row) => tokenKindOf(row) === kind)
       .map(rateOf)
       .find((r) => r !== null) ?? null;
@@ -133,13 +143,16 @@ export async function GET(req: Request) {
   const projectName = items[0]?.name ?? "Revnet";
   // Totals are in the badged project's own accounting token.
   const badged = items.find((item) => item.chainId === chainId) ?? items[0];
+  const badgedSymbol = badged?.token
+    ? tokenSymbolOf({ token: badged.token, tokenSymbol: badged.tokenSymbol })
+    : badged?.tokenSymbol;
   const denomination =
-    badged?.tokenSymbol && badged.decimals != null
-      ? { token: badged.token ?? null, tokenSymbol: badged.tokenSymbol, decimals: badged.decimals }
+    badgedSymbol && badged.decimals != null
+      ? { token: badged.token ?? null, tokenSymbol: badgedSymbol, decimals: badged.decimals }
       : null;
   const results = items.map((item) => ({
     chainId: item.chainId,
-    balance: treasuryIn(denomination, [item])?.amount ?? null,
+    balance: treasuryIn(denomination, [item], items)?.amount ?? null,
     balances: tokenBalances(item),
     supporters: item.participants?.totalCount ?? 0,
     name: JB_CHAINS[item.chainId as ChainId]?.name ?? "Unknown",

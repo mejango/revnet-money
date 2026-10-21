@@ -185,6 +185,64 @@ describe("shields badge", () => {
       color: "lightgrey",
     });
   });
+
+  it("converts a chain's tokens with the denomination rate another chain holds", async () => {
+    const body = await badge(
+      [
+        {
+          ...deployment,
+          balance: "1000000000000000000",
+          projectTokenBalances: {
+            items: [
+              {
+                token: ETH,
+                tokenSymbol: "ETH",
+                decimals: 18,
+                balance: "1000000000000000000",
+                usdRate: "2000000000000000000000",
+              },
+            ],
+          },
+        },
+        {
+          ...deployment,
+          chainId: 8453,
+          balance: "20000000",
+          projectTokenBalances: {
+            items: [
+              {
+                token: USDC,
+                tokenSymbol: "USDC",
+                decimals: 6,
+                balance: "20000000",
+                usdRate: "1000000000000000000",
+              },
+            ],
+          },
+        },
+      ],
+      "2020000000000000000000",
+    );
+
+    expect(body.tvlBalance).toBeCloseTo(1.01);
+    expect(body.chains.map((chain: { balance: number }) => chain.balance)).toEqual([1, 0.01]);
+  });
+
+  it("names the denomination from a known token address when the symbol is missing", async () => {
+    const body = await badge(
+      [
+        {
+          ...deployment,
+          tokenSymbol: null,
+          balance: "1000000000000000000",
+          projectTokenBalances: null,
+        },
+      ],
+      null,
+    );
+
+    expect(body).toMatchObject({ tvlBalance: 1, denomination: "ETH" });
+  });
 });
 
 describe("pay-event rates", () => {
