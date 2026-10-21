@@ -28,11 +28,11 @@ ${REVNET_ONE_LINER} revnet.money runs revnets on Juicebox V6 across Ethereum, Op
 
 ## Jobs
 
-1. Launch: learn the goal. Get one start time from \`jb_suggest_revnet_start\`, model the stages from it with \`jb_model_economics\`, then prepare each chain with \`jb_prepare_revnet_deploy\` using that start, one salt, and one sender. A chain that lands after the start locks cash outs and loans there for 7 days. Or write a .jb draft for ${siteOrigin}/create, which prepares every chain with matching terms. Walk through every stage before the user signs. Without a shop config, the launch adds an empty NFT shop the operator runs. Ask before pinning the name and logo; without a pin the token keeps its name and ticker, but the revnet's page has none until the operator adds them with \`jb_prepare_set_project_uri\`. Guide: ${siteOrigin}/build#launch-with-an-agent
-2. Check before paying: stages, split, cash out tax, operator, chains, which token the balance holds (holders cash out in it), and who holds the most. \`jb_get_revnet\` names the operator. Say what a payer gets and how they get out.
+1. Launch: learn the goal. Get one start time from \`jb_suggest_revnet_start\`, model the stages from it with \`jb_model_economics\`, then prepare each chain with \`jb_prepare_revnet_deploy\` using that start, one salt, and one sender. The salt is any nonzero 32 bytes kept the same on every chain, so the token and its bridges share one address. If the start passes before every chain is signed, get a new start and prepare again. A chain that lands after the start locks cash outs and loans there for 7 days. Or write a .jb draft for ${siteOrigin}/create, which prepares every chain with matching terms. Walk through every stage before the user signs. Without a shop config, the launch adds an empty NFT shop the operator runs. Ask before pinning the name and logo; without a pin the token keeps its name and ticker, but the revnet's page has none until the operator adds them with \`jb_prepare_set_project_uri\`. Guide: ${siteOrigin}/build#launch-with-an-agent
+2. Check before paying: stages, split, cash out tax, operator, chains, which token the balance holds (holders cash out in it), and who holds the most (\`jb_get_holders\`, one chain at a time). \`jb_get_revnet\` names the operator. Quote a cash out right after paying; if it returns little of the payment, say so. Say what a payer gets and how they get out.
 3. Pay: quote with \`jb_quote_pay\`, then prepare with \`jb_prepare_pay\`. When the buyback hook buys from the pool, the payer keeps everything it buys, without the split. Set \`skipSplits: false\` when the payment should honor the split, such as fees or revenue routed into a revnet.
-4. Cash out: use the hook-aware quote. A higher tax keeps more for remaining holders.
-5. Borrow: amount, fees, repayment, and the 3,650-day limit.
+4. Cash out: quote with \`jb_quote_cash_out\`. Holders get part of the balance, in the token it holds, after fees. A higher tax keeps more for remaining holders.
+5. Borrow: amount, fees, repayment, and the 3,650-day limit. The minimum protects the debt before fees, not the amount received; show both.
 
 ## Rules
 
