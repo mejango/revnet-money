@@ -217,7 +217,7 @@ export function V6PayConfirmDialog({
                           <SummaryRow label="You get at least">
                             {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
                           </SummaryRow>
-                          {prepared.quoteFailed && !busy ? (
+                          {prepared.quoteFailed && !busy && !error ? (
                             <p className="text-xs text-zinc-600">{PAY_QUOTE_FAILED_MESSAGE}</p>
                           ) : null}
                         </>

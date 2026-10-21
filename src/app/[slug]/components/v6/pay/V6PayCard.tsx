@@ -1034,6 +1034,9 @@ export function V6PayCard() {
     (amountRaw > 0n || cartCount > 0) &&
     !previewError &&
     !!preview?.quoteFailed &&
+    // Only the quote for what is typed now: not the last amount's, nor one still being debounced.
+    amount === debouncedAmount &&
+    !previewIsPrevious &&
     !confirmOpen &&
     !busy &&
     !notStarted &&

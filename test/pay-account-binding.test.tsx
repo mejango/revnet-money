@@ -418,6 +418,30 @@ describe("a payment bound to the account it was prepared for", () => {
     expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
   });
 
+  it("hides the failed-quote line as soon as the amount changes, until that amount's quote arrives", async () => {
+    mocks.quoteFailed = true;
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+
+    const gate = deferred<void>();
+    mocks.routeGate = gate.promise;
+    const calls = mocks.routeCalls;
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "2" } });
+    // Gone while the new amount is debounced...
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+    // ...and while its quote loads behind the last amount's.
+    await waitFor(() => expect(mocks.routeCalls).toBeGreaterThan(calls), { timeout: 3_000 });
+    expect(screen.queryByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toBeNull();
+
+    gate.resolve();
+    await screen.findByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false }, { timeout: 3_000 });
+  });
+
   it("keeps the failed-quote line through a background refetch the payer did not ask for", async () => {
     mocks.quoteFailed = true;
     const client = queryClient();
@@ -460,6 +484,12 @@ describe("a payment bound to the account it was prepared for", () => {
     expect(within(confirm).getByText("700 REV")).toBeInTheDocument();
     // Said once, in the review, not again on the card behind it.
     expect(screen.getAllByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toHaveLength(1);
+
+    // A failed attempt's error stands alone; the quote line does not come back beside it.
+    mocks.simulate.mockRejectedValueOnce(new Error("Simulation failed"));
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(confirm.querySelector(".text-red-600")).not.toBeNull());
+    expect(within(confirm).queryByText(PAY_QUOTE_FAILED_MESSAGE)).toBeNull();
 
     fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
