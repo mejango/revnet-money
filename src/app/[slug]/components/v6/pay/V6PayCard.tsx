@@ -52,6 +52,7 @@ import {
   decodePayFailure,
   effectiveTierPrice,
   PAY_DEFAULT_SLIPPAGE_BPS,
+  PAY_QUOTE_FAILED_MESSAGE,
   payRetrySlippageBps,
   prepareUserPay,
   resolvePaymentTerminal,
@@ -437,6 +438,7 @@ export function V6PayCard() {
           ...p.preview,
           metadata: p.metadata,
           minReturned: p.minReturnedTokens,
+          quoteFailed: !!p.quoteFailed,
           terminal: resolved.address,
           routeType: resolved.isRouter ? "swap" : "multi",
         } as const;
@@ -456,6 +458,7 @@ export function V6PayCard() {
         ...route.preview,
         metadata: route.metadata,
         minReturned: route.minReturnedTokens,
+        quoteFailed: !!route.quoteFailed,
         terminal: route.address,
         routeType: route.type,
       } as const;
@@ -1339,6 +1342,20 @@ export function V6PayCard() {
             {mode === "pay" && previewError && (amountRaw > 0n || cartCount > 0) ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-red-600">
                 Couldn&apos;t check what you will receive. Try again once the preview loads.
+              </p>
+            ) : null}
+
+            {mode === "pay" && !previewError && preview?.quoteFailed ? (
+              <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
+                {PAY_QUOTE_FAILED_MESSAGE}{" "}
+                <button
+                  type="button"
+                  onClick={() => void refetchPreview()}
+                  disabled={previewLoading}
+                  className="font-medium underline underline-offset-2"
+                >
+                  Try again
+                </button>
               </p>
             ) : null}
 
