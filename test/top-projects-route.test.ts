@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  getTopProjects: vi.fn(async (limit: number) => Array.from({ length: limit }, (_, rank) => ({ rank }))),
+  getTopProjects: vi.fn(async (limit: number) =>
+    Array.from({ length: limit }, (_, rank) => ({ rank })),
+  ),
 }));
 vi.mock("@/app/getTopProjects", () => ({ getTopProjects: mocks.getTopProjects }));
 
