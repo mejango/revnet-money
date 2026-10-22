@@ -21,6 +21,8 @@ const account = `0x${"1".repeat(40)}`;
 // Project routes +4 KiB (2026-10-20): SDK 3.3.0 decodePayFailure revert table and the pay card's failure
 // reason and retry (+2), then SDK 3.4.1's retry rule and router-converted quote minimums (+2).
 // Most routes +1 KiB (2026-10-22): the loan dialogs read their token, decimals and currency onchain.
+// /[slug] and /[slug]/owners +1 KiB (2026-10-22): SDK 4.0.0 (the failed swap quote's Retry line,
+// the registry check before a queued movement's Execute) measures 569.1 and 629.6 KiB.
 const routes = [
   { route: "/", path: "/", kib: 389 },
   { route: "/learn", path: "/learn", kib: 353 },
@@ -28,10 +30,10 @@ const routes = [
   { route: "/audit", path: "/audit", kib: 356 },
   { route: "/discover", path: "/discover", kib: 338 },
   { route: "/create", path: "/create", kib: 543 },
-  { route: "/[slug]", path: "/eth:1", kib: 569 },
+  { route: "/[slug]", path: "/eth:1", kib: 570 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 568 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 675 },
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 629 },
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 630 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 576 },
   { route: "/[slug]/extras", path: "/eth:1/extras", kib: 570 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 419 },
@@ -46,7 +48,8 @@ const unmeasuredRoutes = new Set(["/_global-error"]);
 const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
   ? JSON.parse(process.env.CLIENT_BUNDLE_ROUTES)
   : routes;
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 921);
+// SDK 4.0.0 measures 921.2 KiB route-referenced (919.7 before); the ceiling moves up 1 KiB.
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
@@ -185,7 +188,8 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 921);
 // 2747.6 KiB. Raise only the aggregate ceiling to 2750 KiB; route and lazy-load limits stay fixed.
 // The load-size pass (rendered-HTML gate, splitChunks, lazy dialogs and write machinery, SDK
 // 3.1.0) measures 2714.9 KiB, route-referenced 912.1 KiB. Every ceiling drops to its measure.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2727);
+// SDK 4.0.0 measures 2727.7 KiB (2726.1 before); the aggregate ceiling moves up 1 KiB.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2728);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
