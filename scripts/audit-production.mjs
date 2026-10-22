@@ -192,10 +192,25 @@ if (process.argv.includes("--source-only")) {
   process.exit(0);
 }
 
-const result = spawnSync("npm", ["audit", "--omit=dev", "--json"], {
-  encoding: "utf8",
-  env: process.env,
-});
+const runAudit = () =>
+  spawnSync("npm", ["audit", "--omit=dev", "--json"], {
+    encoding: "utf8",
+    env: process.env,
+  });
+
+// The registry's audit endpoint answers an outage with an error report. That is
+// the one result worth a second attempt; every other bad result fails at once.
+const isErrorReport = ({ status, stdout }) => {
+  if (status !== 0 && status !== 1) return false;
+  try {
+    const parsed = JSON.parse(stdout);
+    return parsed !== null && typeof parsed === "object" && Object.hasOwn(parsed, "error");
+  } catch {
+    return false;
+  }
+};
+let result = runAudit();
+if (isErrorReport(result)) result = runAudit();
 
 const failAudit = (message) => {
   console.error(`Production dependency audit could not be verified: ${message}`);
