@@ -9,6 +9,7 @@ import {
   findSuckerTransportValue,
   getAccountingContexts,
   getAllV6SuckerPairs,
+  getRegisteredSucker,
   getSuckerMovements,
   SUCKER_MERKLE_DEPTH,
   suckerAccountingContextKey,
@@ -202,7 +203,7 @@ export function buildV6ClaimTxFromRow(row: V6BridgeRow) {
  * Find an exact, simulation-verified native value for `toRemote`. Unknown
  * bridge families fail closed; a failed CCIP probe is never treated as native.
  */
-export async function findToRemoteValue(
+async function findToRemoteValue(
   chainId: JBChainId,
   sucker: Address,
   token: Address,
@@ -250,4 +251,23 @@ export async function findToRemoteValue(
   if (value === null) return null;
   assertSuckerTransportValue(transport, value, baseFee);
   return value;
+}
+
+/**
+ * The sucker and `toRemote` value for a queued row's Execute. The indexer only says which
+ * sucker holds the movements; the fee is read from, and the send goes to, the project's
+ * sucker as the registry lists it. Throws `UnverifiedSuckerError` when the registry does not.
+ */
+export async function prepareQueuedExecute(
+  row: V6BridgeRow,
+  projectId: bigint,
+  account: Address | undefined,
+): Promise<{ sucker: Address; value: bigint | null }> {
+  const sucker = await getRegisteredSucker(getViemPublicClient(row.chainId) as PublicClient, {
+    chainId: row.chainId,
+    projectId,
+    remoteChainId: row.peerChainId,
+    sucker: row.sourceSucker,
+  });
+  return { sucker, value: await findToRemoteValue(row.chainId, sucker, row.token, account) };
 }

@@ -1,6 +1,7 @@
 import { GossipCard } from "@/app/[slug]/components/v6/owners/settlement/GossipCard";
 import { QueuedMovementsCard } from "@/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import { UnverifiedSuckerError } from "@bananapus/nana-sdk-core/v6";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -11,12 +12,14 @@ import { groupGateState } from "./support/group-write-gate";
 
 const SUCKER = "0x3333333333333333333333333333333333333333";
 const PEER_SUCKER = "0x4444444444444444444444444444444444444444";
+const REGISTERED_SUCKER = "0x5555555555555555555555555555555555555555";
 const TOKEN = "0x000000000000000000000000000000000000EEEe";
 const HASH = `0x${"cd".repeat(32)}` as Hex;
 
 const mocks = vi.hoisted(() => ({
   simulate: vi.fn(),
   write: vi.fn(),
+  prepareExecute: vi.fn(),
   rows: [] as unknown[],
 }));
 
@@ -74,7 +77,7 @@ vi.mock("@/app/[slug]/components/v6/owners/settlement/lib", async (importOrigina
 }));
 vi.mock("@/lib/v6/suckerProofs", () => ({
   fetchV6BridgeRows: async () => mocks.rows,
-  findToRemoteValue: async () => 10n ** 15n,
+  prepareQueuedExecute: mocks.prepareExecute,
   buildV6ClaimTxFromRow: () => ({
     chainId: 10,
     address: PEER_SUCKER,
@@ -131,6 +134,9 @@ beforeEach(() => {
   groupGateState.reset();
   mocks.simulate.mockReset().mockResolvedValue({});
   mocks.write.mockReset().mockResolvedValue(HASH);
+  mocks.prepareExecute
+    .mockReset()
+    .mockResolvedValue({ sucker: REGISTERED_SUCKER, value: 10n ** 15n });
   mocks.rows = [];
 });
 
@@ -233,4 +239,37 @@ describe("settlement actions over sucker-group chains", () => {
       expect(mocks.write).not.toHaveBeenCalled();
     },
   );
+});
+
+describe("a queued movement's Execute", () => {
+  it("wallet-action:queued-movements sends toRemote only to the sucker the registry lists", async () => {
+    mocks.rows = [bridgeRow("pending")];
+    renderWithQueries(<QueuedMovementsCard chains={CHAINS} tokenSymbol="ART" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
+    const confirm = await screen.findByRole("dialog", { name: "Confirm execution" });
+    expect(mocks.prepareExecute).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceSucker: SUCKER }),
+      4n,
+      "0x1111111111111111111111111111111111111111",
+    );
+    fireEvent.click(within(confirm).getByRole("button", { name: "Execute" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
+    expect(mocks.simulate.mock.calls[0]![0]).toMatchObject({ address: REGISTERED_SUCKER });
+    expect(mocks.write.mock.calls[0]![0]).toMatchObject({
+      address: REGISTERED_SUCKER,
+      functionName: "toRemote",
+      value: 10n ** 15n,
+    });
+  });
+
+  it("wallet-action:queued-movements opens no review and sends nothing when the registry does not list the sucker", async () => {
+    mocks.prepareExecute.mockRejectedValueOnce(new UnverifiedSuckerError("unregistered"));
+    mocks.rows = [bridgeRow("pending")];
+    renderWithQueries(<QueuedMovementsCard chains={CHAINS} tokenSymbol="ART" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
+    await waitFor(() => expect(mocks.prepareExecute).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("dialog", { name: "Confirm execution" })).toBeNull();
+    expect(mocks.simulate).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
 });

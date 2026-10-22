@@ -5,6 +5,10 @@ import {
   resetWriteHoldsForTests,
   resetWriteRecoveryForTests,
 } from "@bananapus/nana-sdk-core/testing";
+import {
+  PAY_SWAP_QUOTE_FAILED_MESSAGE,
+  PaySwapQuoteFailedError,
+} from "@bananapus/nana-sdk-core/v6";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -359,5 +363,28 @@ describe("a failed payment's reason and a looser minimum", () => {
     await within(confirm).findByText("This payment would return no tokens.");
     expect(within(confirm).queryByLabelText(/Custom allowed decrease/)).toBeNull();
     expect(within(confirm).getByRole("button", { name: "Pay" })).toBeInTheDocument();
+  });
+
+  it("shows a failed swap quote as one line with Retry, and quotes again on Retry", async () => {
+    mocks.routeError = new PaySwapQuoteFailedError();
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const line = await screen.findByText(new RegExp(PAY_SWAP_QUOTE_FAILED_MESSAGE));
+    expect(screen.queryByText(/Couldn.t check what you will receive/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Pay" })).toBeDisabled();
+
+    const calls = mocks.routeCalls.length;
+    mocks.routeError = null;
+    fireEvent.click(within(line).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pay" })).toBeEnabled(), {
+      timeout: 3_000,
+    });
+    expect(mocks.routeCalls.length).toBe(calls + 1);
+    expect(screen.queryByText(new RegExp(PAY_SWAP_QUOTE_FAILED_MESSAGE))).toBeNull();
   });
 });

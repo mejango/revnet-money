@@ -262,28 +262,28 @@
     },
     {
       "file": "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
-      "line": 75,
+      "line": 76,
       "api": "useWriteContract",
       "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
       "test": "test/settlement-confirms.test.tsx"
     },
     {
       "file": "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
-      "line": 113,
+      "line": 114,
       "api": "writeContractAsync",
       "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
       "test": "test/settlement-confirms.test.tsx"
     },
     {
       "file": "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
-      "line": 179,
+      "line": 181,
       "api": "useWriteContract",
       "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
       "test": "test/settlement-confirms.test.tsx"
     },
     {
       "file": "src/app/[slug]/components/v6/pay/V6PayCard.tsx",
-      "line": 151,
+      "line": 153,
       "api": "useWriteContract",
       "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
       "test": "test/pay-account-binding.test.tsx"

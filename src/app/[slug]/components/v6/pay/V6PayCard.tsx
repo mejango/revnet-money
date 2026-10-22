@@ -59,7 +59,9 @@ import {
   effectiveTierPrice,
   PAY_DEFAULT_SLIPPAGE_BPS,
   PAY_QUOTE_FAILED_MESSAGE,
+  PAY_SWAP_QUOTE_FAILED_MESSAGE,
   payRetrySlippageBps,
+  PaySwapQuoteFailedError,
   prepareUserPay,
   resolvePaymentTerminal,
   type UserPayTiers,
@@ -410,6 +412,7 @@ export function V6PayCard() {
     data: preview,
     isFetching: previewLoading,
     isError: previewError,
+    error: previewFailure,
     isPlaceholderData: previewIsPrevious,
     isStale: previewIsStale,
     refetch: refetchPreview,
@@ -1382,7 +1385,34 @@ export function V6PayCard() {
               </p>
             ) : null}
 
-            {mode === "pay" && previewError && (amountRaw > 0n || cartCount > 0) ? (
+            {mode === "pay" &&
+            previewFailure instanceof PaySwapQuoteFailedError &&
+            (amountRaw > 0n || cartCount > 0) ? (
+              <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
+                {retriedQuote === previewFailure ? (
+                  <span role="status">Refreshing…</span>
+                ) : (
+                  <>
+                    {PAY_SWAP_QUOTE_FAILED_MESSAGE}{" "}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const retried = previewFailure;
+                        setRetriedQuote(retried);
+                        void refetchPreview().finally(() =>
+                          setRetriedQuote((current: unknown) =>
+                            current === retried ? null : current,
+                          ),
+                        );
+                      }}
+                      className="font-medium underline underline-offset-2"
+                    >
+                      Retry
+                    </button>
+                  </>
+                )}
+              </p>
+            ) : mode === "pay" && previewError && (amountRaw > 0n || cartCount > 0) ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-red-600">
                 Couldn&apos;t check what you will receive. Try again once the preview loads.
               </p>

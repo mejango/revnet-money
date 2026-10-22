@@ -15,7 +15,7 @@ import { formatWalletError } from "@/lib/utils";
 import {
   buildV6ClaimTxFromRow,
   fetchV6BridgeRows,
-  findToRemoteValue,
+  prepareQueuedExecute,
   V6BridgeRow,
 } from "@/lib/v6/suckerProofs";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
@@ -24,6 +24,7 @@ import { bridgeIntent } from "@bananapus/nana-sdk-core/review";
 import { jbSuckerV6Abi } from "@bananapus/nana-sdk-core/v6";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import type { Address } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 import {
   bridgeEtaHint,
@@ -161,8 +162,9 @@ function ClaimButton({
 /**
  * Execute ships the source sucker's queued outbox to the destination in one
  * bridge message (permissionless; it delivers every queued move for that token,
- * not just this row). The exact msg.value comes from findToRemoteValue — when no
- * budget can be verified the button explains instead of prompting a reverting tx.
+ * not just this row). It goes to the source chain's sucker as the registry lists it, and the
+ * exact msg.value comes from findToRemoteValue — when no budget can be verified the button
+ * explains instead of prompting a reverting tx.
  */
 function ExecuteButton({
   row,
@@ -178,7 +180,7 @@ function ExecuteButton({
   const publicClient = usePublicClient({ chainId: row.chainId });
   const { writeContractAsync } = useWriteContract();
   const [busy, setBusy] = useState(false);
-  const [review, setReview] = useState<{ value: bigint } | null>(null);
+  const [review, setReview] = useState<{ sucker: Address; value: bigint } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [feeUnavailable, setFeeUnavailable] = useState(false);
   const nativeSymbol = viemChainOf(row.chainId)?.nativeCurrency.symbol ?? "ETH";
@@ -208,17 +210,14 @@ function ExecuteButton({
             gate.assertVerified(targets);
             setBusy(true);
             setError(null);
-            const value = await findToRemoteValue(
-              row.chainId,
-              row.sourceSucker,
-              row.token,
-              address,
-            );
+            const projectId = targets.find((target) => target.chainId === row.chainId)?.projectId;
+            if (projectId === undefined) throw new Error("This chain's project is not verified.");
+            const { sucker, value } = await prepareQueuedExecute(row, BigInt(projectId), address);
             if (value == null) {
               setFeeUnavailable(true);
               throw new Error("Couldn't find the bridge fee. Try again shortly.");
             }
-            setReview({ value });
+            setReview({ sucker, value });
           } catch (cause) {
             console.error(cause);
             toast({
@@ -257,10 +256,10 @@ function ExecuteButton({
               gate.assertVerified(targets);
               setBusy(true);
               setError(null);
-              const value = review.value;
+              const { sucker, value } = review;
               await publicClient?.simulateContract({
                 account: address,
-                address: row.sourceSucker,
+                address: sucker,
                 abi: jbSuckerV6Abi,
                 functionName: "toRemote",
                 args: [row.token],
@@ -271,14 +270,14 @@ function ExecuteButton({
                 writeContractAsync,
                 bridgeIntent({
                   chainId: row.chainId,
-                  sucker: row.sourceSucker,
+                  sucker,
                   token: row.token,
                   account: address!,
                 }),
-                legacyIntents.toRemote(row.sourceSucker, row.token),
+                legacyIntents.toRemote(sucker, row.token),
               )({
                 chainId: row.chainId,
-                address: row.sourceSucker,
+                address: sucker,
                 abi: jbSuckerV6Abi,
                 functionName: "toRemote",
                 args: [row.token],
