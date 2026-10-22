@@ -23,24 +23,26 @@ const account = `0x${"1".repeat(40)}`;
 // Most routes +1 KiB (2026-10-22): the loan dialogs read their token, decimals and currency onchain.
 // /[slug], /[slug]/terms and /[slug]/owners +1 KiB (2026-10-22): SDK 4.0.0 (the failed swap quote's Retry line,
 // the registry check before a queued movement's Execute) measures 569.1, 568.0 and 629.6 KiB.
+// Next 16.4.2 (the image optimizer advisory GHSA-2464-fhr4-w9xw) adds 0.2-1.7 KiB to most routes;
+// each changed ceiling is its new measure rounded up.
 const routes = [
-  { route: "/", path: "/", kib: 389 },
-  { route: "/learn", path: "/learn", kib: 353 },
-  { route: "/build", path: "/build", kib: 354 },
-  { route: "/audit", path: "/audit", kib: 356 },
+  { route: "/", path: "/", kib: 390 },
+  { route: "/learn", path: "/learn", kib: 354 },
+  { route: "/build", path: "/build", kib: 355 },
+  { route: "/audit", path: "/audit", kib: 357 },
   { route: "/discover", path: "/discover", kib: 338 },
-  { route: "/create", path: "/create", kib: 543 },
-  { route: "/[slug]", path: "/eth:1", kib: 570 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 569 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 675 },
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 630 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 576 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 570 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 419 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 409 },
-  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
-  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 384 },
-  { route: "/_not-found", path: "/no-such-page/x/y", kib: 299, status: 404 },
+  { route: "/create", path: "/create", kib: 544 },
+  { route: "/[slug]", path: "/eth:1", kib: 571 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 570 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 677 },
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 632 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 578 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 572 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 420 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 410 },
+  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 430 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 385 },
+  { route: "/_not-found", path: "/no-such-page/x/y", kib: 300, status: 404 },
 ];
 // Next renders its global error page only when the root layout itself throws; no URL reaches it.
 const unmeasuredRoutes = new Set(["/_global-error"]);
@@ -49,7 +51,8 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
   ? JSON.parse(process.env.CLIENT_BUNDLE_ROUTES)
   : routes;
 // SDK 4.0.0 measures 921.2 KiB route-referenced (919.7 before); the ceiling moves up 1 KiB.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
+// Next 16.4.2 measures 923.0 KiB; the ceiling moves to 924.
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 924);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
@@ -189,7 +192,8 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // The load-size pass (rendered-HTML gate, splitChunks, lazy dialogs and write machinery, SDK
 // 3.1.0) measures 2714.9 KiB, route-referenced 912.1 KiB. Every ceiling drops to its measure.
 // SDK 4.0.0 measures 2727.7 KiB (2726.1 before); the aggregate ceiling moves up 1 KiB.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2728);
+// Next 16.4.2 measures 2729.5 KiB; the aggregate ceiling moves to 2730.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2730);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
