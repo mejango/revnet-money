@@ -2234,11 +2234,7 @@ describe("reviewed selected-call orchestration", () => {
     });
     expect(mocks.write).toHaveBeenCalledOnce();
   });
-  it.each([
-    { code: 4001 },
-    { name: "UserRejectedRequestError" },
-    { cause: { name: "UserRejectedRequestError" } },
-  ])(
+  it.each([{ code: 4001 }, { name: "UserRejectedRequestError", cause: { code: 4001 } }])(
     "releases a definitely rejected wallet attempt using the SDK classifier: %j",
     async (rejection) => {
       mocks.write.mockRejectedValue(rejection);
@@ -2252,10 +2248,13 @@ describe("reviewed selected-call orchestration", () => {
       });
     },
   );
+  // Only EIP-1193 4001 says nothing was sent; a rejection by name alone stays held.
   it.each([
     { name: "TransactionExecutionError" },
     { code: -32000 },
     { name: "UserRejectedRequestErrorExtra", code: "4001" },
+    { name: "UserRejectedRequestError" },
+    { cause: { name: "UserRejectedRequestError" } },
   ])("keeps an ambiguous wallet attempt using the SDK classifier: %j", async (failure) => {
     mocks.write.mockRejectedValue(failure);
     const { result } = renderHook(() => useMultichainBatch());

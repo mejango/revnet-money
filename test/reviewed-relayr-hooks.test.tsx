@@ -2143,6 +2143,7 @@ describe("reviewed Relayr payment hook", () => {
       return error;
     }
 
+    // Only EIP-1193 4001 says nothing was sent; a rejection by name alone stays held.
     it.each<[string, () => unknown, "unfunded" | "submitted"]>([
       [
         "viem's UserRejectedRequestError by name",
@@ -2150,11 +2151,20 @@ describe("reviewed Relayr payment hook", () => {
           Object.assign(new Error("User rejected the request."), {
             name: "UserRejectedRequestError",
           }),
+        "submitted",
+      ],
+      [
+        "viem's UserRejectedRequestError with code 4001",
+        () =>
+          Object.assign(new Error("User rejected the request."), {
+            name: "UserRejectedRequestError",
+            code: 4001,
+          }),
         "unfunded",
       ],
       ["a rejection seven causes down", () => rejectedBelow(7), "unfunded"],
       ["a rejection eight causes down", () => rejectedBelow(8), "submitted"],
-    ])("as no payment sent for %s", async (_, error, status) => {
+    ])("%s leaves the payment %s", async (_, error, status) => {
       const { activity, result } = await quotedPayment();
       mocks.sendTransaction.mockRejectedValueOnce(error());
       await expect(result.current.sendRelayrTx(payment())).rejects.toBeTruthy();

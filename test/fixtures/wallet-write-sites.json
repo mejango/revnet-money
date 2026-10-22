@@ -42,96 +42,10 @@
           2
         ],
         [
-          "raw-wallet-import",
-          "src/hooks/useReviewedWriteContract.ts",
-          "<module>",
-          "@wagmi/core:sendCalls",
-          1
-        ],
-        [
-          "raw-wallet-import",
-          "src/hooks/useReviewedWriteContract.ts",
-          "<module>",
-          "wagmi:useWriteContract",
-          1
-        ],
-        ["raw-wallet-call", "src/hooks/useReviewedWriteContract.ts", "submit", "sendCalls", 1],
-        [
-          "raw-wallet-call",
-          "src/hooks/useReviewedWriteContract.ts",
-          "write",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "raw-wallet-hook",
-          "src/hooks/useReviewedWriteContract.ts",
-          "useWriteContract",
-          "useWriteContract",
-          1
-        ],
-        [
           "reviewed-write",
           "src/hooks/useReviewedWriteContract.ts",
           "writeContract",
           "writeContractAsync",
-          1
-        ]
-      ]
-    },
-    {
-      "id": "relayr",
-      "label": "Cross-chain Relayr authorization and payment boundary",
-      "sites": [
-        [
-          "raw-wallet-import",
-          "src/hooks/useReviewedRelayr.ts",
-          "<module>",
-          "wagmi:useSendTransaction",
-          1
-        ],
-        [
-          "raw-wallet-import",
-          "src/hooks/useReviewedRelayr.ts",
-          "<module>",
-          "wagmi:useSignTypedData",
-          1
-        ],
-        ["raw-wallet-call", "src/hooks/useReviewedRelayr.ts", "quoteOnce", "signTypedDataAsync", 1],
-        ["raw-wallet-call", "src/hooks/useReviewedRelayr.ts", "submit", "sendTransactionAsync", 1],
-        [
-          "raw-wallet-hook",
-          "src/hooks/useReviewedRelayr.ts",
-          "useGetRelayrTxQuote",
-          "useSignTypedData",
-          1
-        ],
-        [
-          "raw-wallet-hook",
-          "src/hooks/useReviewedRelayr.ts",
-          "useSendRelayrTx",
-          "useSendTransaction",
-          1
-        ],
-        [
-          "raw-wallet-call",
-          "src/hooks/useReviewedRelayr.ts",
-          "sendTransaction",
-          "sendTransactionAsync",
-          1
-        ],
-        ["raw-wallet-call", "src/lib/safe-relayr.ts", "sendPayment", "sendTransaction", 1]
-      ]
-    },
-    {
-      "id": "safe-signature",
-      "label": "Reviewed Safe co-signature boundary",
-      "sites": [
-        [
-          "raw-wallet-call",
-          "src/hooks/useReviewedSafeSignature.ts",
-          "signSafeTransactionAsync",
-          "signTypedData",
           1
         ]
       ]
@@ -830,22 +744,6 @@
       "risk": "boundary",
       "files": ["src/hooks/useReviewedWriteContract.ts"],
       "tests": ["test/reviewed-write-contract.test.ts", "test/reviewed-write-hook.test.tsx"]
-    },
-    {
-      "id": "relayr-boundary",
-      "risk": "boundary",
-      "files": ["src/hooks/useReviewedRelayr.ts", "src/lib/safe-relayr.ts"],
-      "tests": [
-        "test/reviewed-relayr.test.ts",
-        "test/reviewed-relayr-hooks.test.tsx",
-        "test/safe-relayr-adapter.test.ts"
-      ]
-    },
-    {
-      "id": "safe-signature-boundary",
-      "risk": "boundary",
-      "files": ["src/hooks/useReviewedSafeSignature.ts"],
-      "tests": ["test/reviewed-safe-signature.test.tsx"]
     },
     {
       "id": "create-revnet",

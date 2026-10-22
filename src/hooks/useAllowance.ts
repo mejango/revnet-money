@@ -11,9 +11,7 @@ import { useAccount, usePublicClient } from "wagmi";
 export function useAllowance(chainId: number, options?: { reviewedInParent?: boolean }) {
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId });
-  const { writeContractAsync } = useWriteContract({
-    reviewedInParent: options?.reviewedInParent,
-  });
+  const { writeContractAsync } = useWriteContract(options);
   const [isApproving, setIsApproving] = useState(false);
   const approvalReceipts = useRef(new Map<Hex, TransactionReceipt>());
 
