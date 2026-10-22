@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import type { Address, Hash } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectEveryWayOutRefused } from "./support/confirm";
+import { groupGateState } from "./support/group-write-gate";
 
 type TokenState = {
   chainId: number;
@@ -119,6 +120,8 @@ vi.mock("wagmi/actions", () => ({
   }),
 }));
 
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
+
 import { V6TokenPanel } from "@/app/[slug]/components/v6/owners/V6TokenPanel";
 
 function deferred<T>() {
@@ -172,6 +175,7 @@ async function openConfirmation(
 }
 
 beforeEach(() => {
+  groupGateState.reset();
   mocks.chainId = 8453;
   mocks.safe = false;
   mocks.safeProposal = false;
@@ -303,6 +307,17 @@ describe("token panel Relayr funding", () => {
     fireEvent.click(within(confirmPanel()).getByRole("button", { name: "Cancel" }));
     expect(await screen.findByLabelText("Token name")).toBeInTheDocument();
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
+    expect(mocks.writeContractAsync).not.toHaveBeenCalled();
+  });
+});
+
+describe("token panel sucker-group check", () => {
+  it("wallet-action:token-admin will not write to a chain the registry does not list", async () => {
+    groupGateState.unverified = ["11155111:5"];
+    await openConfirmation([1, 11155111], true, true);
+    expect(screen.getByText("A project listed here isn't linked onchain.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save token" })).toBeDisabled();
+    expect(screen.queryByText("Confirm token update")).not.toBeInTheDocument();
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
   });
 });

@@ -7,6 +7,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
+import { groupGateState } from "./support/group-write-gate";
 
 const state = vi.hoisted(() => ({
   account: "0x0000000000000000000000000000000000000001",
@@ -27,6 +28,7 @@ vi.mock("@/hooks/useMultichainBatch", () => ({
   useMultichainBatch: () => ({ runBatch: state.runBatch, getPendingBatch: state.getPendingBatch }),
 }));
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 vi.mock("wagmi", () => ({ useAccount: () => ({ address: state.account, chainId: 10 }) }));
 vi.mock("wagmi/actions", () => ({ getPublicClient: () => ({}) }));
 vi.mock("@tanstack/react-query", () => ({
@@ -126,6 +128,7 @@ function snapshot(chainId = 10, projectId = 91n, id = `${chainId}:${projectId}`)
   };
 }
 beforeEach(() => {
+  groupGateState.reset();
   vi.clearAllMocks();
   state.account = holder;
   state.stored = [];
@@ -157,6 +160,8 @@ describe("owner distribution batch", () => {
       <OwnerDistributionBatchButton
         label="Distribute"
         scope="test"
+        targets={[]}
+        group={[]}
         tokenSymbol="REV"
         prepare={async () => [first, second]}
       />,
@@ -177,6 +182,8 @@ describe("owner distribution batch", () => {
       <OwnerDistributionBatchButton
         label="Distribute"
         scope="test"
+        targets={[]}
+        group={[]}
         tokenSymbol="REV"
         prepare={async () => {
           throw new Error("Optimism RPC unavailable");
@@ -197,6 +204,8 @@ describe("owner distribution batch", () => {
       <OwnerDistributionBatchButton
         label="Distribute"
         scope="test"
+        targets={[]}
+        group={[]}
         tokenSymbol="REV"
         disabled
         prepare={prepare}
@@ -212,6 +221,44 @@ describe("owner distribution batch", () => {
     expect(prepare).not.toHaveBeenCalled();
   });
 
+  it("wallet-action:owner-distributions will not resume a saved batch while a group pair is not linked onchain", () => {
+    groupGateState.unverified = ["8453:12"];
+    state.getPendingBatch.mockReturnValue({ label: "Distribute", total: 3, completed: 2 });
+    render(
+      <OwnerDistributionBatchButton
+        label="Distribute"
+        scope="test"
+        targets={[]}
+        group={[
+          { chainId: 10, projectId: 91n },
+          { chainId: 8453, projectId: 12n },
+        ]}
+        tokenSymbol="REV"
+        prepare={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Resume saved batch (2/3 confirmed)" }),
+    ).toBeDisabled();
+    expect(screen.getByText("A project listed here isn't linked onchain.")).toBeInTheDocument();
+    expect(state.runBatch).not.toHaveBeenCalled();
+  });
+
+  it("shows a loading, not a line, while the registry read is pending", () => {
+    groupGateState.unverified = ["8453:12"];
+    groupGateState.pending = true;
+    render(
+      <DistributeReservedTokensButton
+        projects={[{ chainId: 8453, projectId: 12n, pending: 20n }]}
+        tokenSymbol="REV"
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "Distribute selected pending splits" }),
+    ).toBeDisabled();
+    expect(screen.queryByText("A project listed here isn't linked onchain.")).toBeNull();
+  });
+
   it("retries the frozen calls after a pending result", async () => {
     state.runBatch.mockResolvedValueOnce({ status: "pending", hashes: [] });
     const prepare = vi.fn(async () => [snapshot()]);
@@ -219,6 +266,8 @@ describe("owner distribution batch", () => {
       <OwnerDistributionBatchButton
         label="Distribute"
         scope="test"
+        targets={[]}
+        group={[]}
         tokenSymbol="REV"
         prepare={prepare}
       />,
@@ -235,6 +284,8 @@ describe("owner distribution batch", () => {
     const props = {
       label: "Distribute",
       scope: "test",
+      targets: [],
+      group: [],
       tokenSymbol: "REV",
       prepare: async () => [snapshot()],
     };
@@ -255,6 +306,8 @@ describe("owner distribution batch", () => {
       <OwnerDistributionBatchButton
         label="Distribute"
         scope="test"
+        targets={[]}
+        group={[]}
         tokenSymbol="REV"
         prepare={prepare}
       />,
@@ -275,6 +328,8 @@ describe("owner distribution confirm", () => {
       <OwnerDistributionBatchButton
         label="Distribute"
         scope="test"
+        targets={[]}
+        group={[]}
         tokenSymbol="REV"
         prepare={async () => [snapshot()]}
       />,
@@ -310,6 +365,26 @@ describe("owner distribution confirm", () => {
 });
 
 describe("selected owner action destinations", () => {
+  it("wallet-action:owner-distributions will not prepare a destination the registry does not list", () => {
+    groupGateState.unverified = ["8453:12"];
+    render(
+      <DistributeReservedTokensButton
+        projects={[
+          { chainId: 10, projectId: 91n, pending: 10n },
+          { chainId: 8453, projectId: 12n, pending: 20n },
+        ]}
+        tokenSymbol="REV"
+      />,
+    );
+    expect(screen.getByText("A project listed here isn't linked onchain.")).toBeInTheDocument();
+    const button = screen.getByRole("button", { name: "Distribute selected pending splits" });
+    expect(button).toBeDisabled();
+    fireEvent.click(screen.getAllByRole("checkbox")[1]);
+    expect(screen.queryByText("A project listed here isn't linked onchain.")).toBeNull();
+    expect(button).not.toBeDisabled();
+    expect(state.prepareReserved).not.toHaveBeenCalled();
+  });
+
   it("prepares only the checked reserve destinations with their own project IDs", async () => {
     render(
       <DistributeReservedTokensButton

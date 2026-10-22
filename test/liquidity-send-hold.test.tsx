@@ -23,6 +23,8 @@ import { useState, type ReactNode } from "react";
 import { zeroAddress, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
+
 // Every liquidity flow runs inside the dialog V6YouCard opens ("Market
 // liquidity", "Your liquidity"), whose owner closes it on any request. While a
 // send is in flight the confirm it hosts must hold that dialog: before the
@@ -188,6 +190,7 @@ const position = {
 
 const state: AmmChainState = {
   chainId: 8453 as JBChainId,
+  projectId: 1n,
   hook: "0x0000000000000000000000000000000000000001",
   pool,
   composition: null,

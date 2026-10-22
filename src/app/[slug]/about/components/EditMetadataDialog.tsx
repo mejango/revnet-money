@@ -37,6 +37,7 @@ import type { Project } from "@/lib/bendystraw/types";
 import { FormProvider, type FormHelpers } from "@/lib/forms";
 import { isRecord, issue, schema, ValidationIssue, withSchema } from "@/lib/formValidation";
 import { ipfsUri } from "@/lib/ipfs";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import {
   useJBChainId,
   useJBContractContext,
@@ -143,6 +144,8 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
   const router = useRouter();
   const { address, chainId: connectedChainId } = useAccount();
   const viaSafe = useSafeConnection(wagmiConfig);
+  // Destinations come from the server sucker-group list: only chain-verified pairs are written.
+  const gate = useGroupWriteGate(projects);
   const relayed =
     projects.length > 1 &&
     !viaSafe &&
@@ -291,6 +294,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       if (!address) throw new Error("Please connect your wallet");
       // Fail closed: never merge onto a metadata JSON we could not read.
       if (!metadataReady) throw new Error("Still loading the current metadata. Try again.");
+      gate.assertVerified(projects);
 
       const customProperties = parseCustomProperties(values.customProperties ?? "");
       if (!customProperties.ok) throw new Error(customProperties.error);
@@ -367,6 +371,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
     setBusy(true);
     setError(null);
     try {
+      gate.assertVerified(projects);
       await Promise.all(
         destinations.map(async (destination) => {
           const client = getPublicClient(wagmiConfig, {
@@ -473,6 +478,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
     setBusy(true);
     setError(null);
     try {
+      gate.assertVerified(projects);
       const hash = await sendRelayrTx(selectedPayment);
       if (submittedViaSafe(hash)) {
         setProposed("Payment proposed to Safe. Approve and execute it there.");
@@ -666,6 +672,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                   </details>
                 </div>
 
+                {gate.line ? <p className="text-sm text-zinc-600">{gate.line}</p> : null}
                 <DialogFooter>
                   <Button
                     type="button"
@@ -680,8 +687,8 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                     targetChainId={
                       (relayed ? connectedChainId : projects[0].chainId) as JBChainId | undefined
                     }
-                    loading={isLoading}
-                    disabled={isLoading || !metadataReady}
+                    loading={isLoading || gate.pending}
+                    disabled={isLoading || !metadataReady || gate.blocked}
                     connectWalletText="Connect Wallet"
                     className="bg-teal-500 text-melon-950 hover:bg-teal-600"
                   >

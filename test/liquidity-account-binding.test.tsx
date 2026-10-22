@@ -18,6 +18,8 @@ import type { ReactNode } from "react";
 import { zeroAddress, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
+
 // A liquidity plan names the account that reviewed it: a mint's position, a
 // removal's two sides and an edit's freed funds all go to it. When the wallet
 // switches accounts between review and confirm, the plan must not be sent
@@ -133,6 +135,7 @@ const position = {
 
 const state: AmmChainState = {
   chainId: 8453 as JBChainId,
+  projectId: 1n,
   hook: "0x0000000000000000000000000000000000000001",
   pool,
   composition: null,

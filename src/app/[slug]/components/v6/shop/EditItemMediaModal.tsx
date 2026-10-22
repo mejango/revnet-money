@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { jb721TiersHookAbi, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -59,6 +60,12 @@ export function EditItemMediaModal({
   const [progress, setProgress] = useState<string | null>(null);
   const busy = phase === "preparing" || phase === "sending";
   const frozen = busy || !!prepared || !!pending;
+  const chosen = peers.destinations.filter(
+    (destination) => targets[`${destination.chainId}:${destination.projectId}`] !== undefined,
+  );
+  // Peer projects come from the server sucker-group list: edit only registry-listed pairs.
+  const group = [{ chainId, projectId }, ...projects];
+  const gate = useGroupWriteGate(prepared ? [] : pending ? group : chosen);
 
   const prepare = async () => {
     if (!address || busy) return;
@@ -68,10 +75,9 @@ export function EditItemMediaModal({
       if (!file && !/^(?:ipfs:\/\/|https:\/\/)\S+$/u.test(uri.trim()))
         throw new Error("Upload media or enter an HTTPS or IPFS media URI.");
       if (file && file.size > MAX_MEDIA_BYTES) throw new Error("Media must be 500 MB or smaller.");
-      const destinations = peers.destinations.filter(
-        (destination) => targets[`${destination.chainId}:${destination.projectId}`] !== undefined,
-      );
+      const destinations = chosen;
       if (!destinations.length) throw new Error("Choose at least one chain and item.");
+      gate.assertVerified(destinations);
       const sources = await Promise.all(
         destinations.map((destination) =>
           readMediaEditSource(
@@ -93,11 +99,12 @@ export function EditItemMediaModal({
   };
 
   const submit = async (resume = false) => {
-    if (!address || busy || (!prepared && !resume)) return;
+    if (!address || busy || (!prepared && !resume) || (resume && gate.blocked)) return;
     setError(null);
     setPhase("sending");
     setProgress(null);
     try {
+      if (prepared) gate.assertVerified(prepared.map(({ destination }) => destination));
       const result = await runBatch({
         label: "Replace shop item media",
         scope,
@@ -150,7 +157,7 @@ export function EditItemMediaModal({
                   A saved media update is awaiting completion. Continue it without resubmitting
                   confirmed chains.
                 </p>
-                <Button disabled={busy} onClick={() => void submit(true)}>
+                <Button disabled={busy || gate.blocked} onClick={() => void submit(true)}>
                   Resume saved media update
                 </Button>
               </div>
@@ -250,8 +257,8 @@ export function EditItemMediaModal({
             </fieldset>
             {!pending ? (
               <ButtonWithWallet
-                loading={busy}
-                disabled={busy}
+                loading={busy || gate.pending}
+                disabled={busy || gate.blocked}
                 onClick={() => (prepared ? setReviewing(true) : void prepare())}
               >
                 {prepared ? "Continue reviewed media update" : "Review media update"}
@@ -259,6 +266,7 @@ export function EditItemMediaModal({
             ) : null}
           </>
         )}
+        {gate.line ? <p className="text-xs text-zinc-600">{gate.line}</p> : null}
         <TxError error={reviewing ? null : error} />
         <Button variant="outline" disabled={busy} onClick={onClose}>
           Close

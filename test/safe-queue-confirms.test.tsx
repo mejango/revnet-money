@@ -28,6 +28,8 @@ import {
 } from "./fixtures/safe-chain";
 import { expectEveryWayOutRefused } from "./support/confirm";
 
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
+
 const SAFE = provenSafe();
 const [, COSIGNER] = SAFE.owners as [Address, Address];
 const TARGET = "0x4444444444444444444444444444444444444444" as Address;

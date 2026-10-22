@@ -1,5 +1,6 @@
 "use client";
 
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { safeExecutionIntent, withWriteIntent } from "@/lib/write-hold";
 import {
   sameSafeRelayrIntents,
@@ -594,6 +595,14 @@ export function SafeQueueCard({
     return [{ row, tx }];
   });
   const batchChains = batchRows.map(({ row }) => row.chainId);
+  // Each queue's authority rows come from the server sucker-group list: a queue
+  // is signed or executed only once its own rows are chain-verified.
+  const gate = useGroupWriteGate(
+    (queue.data ?? []).flatMap((row) =>
+      "transactions" in row && row.transactions.length ? row.authorityRows : [],
+    ),
+  );
+  const rowBlocked = (row: QueueRow) => gate.unverifiedOf(row.authorityRows).length > 0;
   const canBatch =
     batchRows.length >= 2 &&
     new Set(batchChains).size === batchChains.length &&
@@ -671,7 +680,7 @@ export function SafeQueueCard({
   };
 
   const prepareAll = async (rows: BatchRow[]) => {
-    if (!address || payingBatch.current) return;
+    if (!address || payingBatch.current || rows.some(({ row }) => rowBlocked(row))) return;
     const account = address;
     const generation = ++batchGeneration.current;
     batchAbort.current?.abort();
@@ -838,6 +847,7 @@ export function SafeQueueCard({
     if (!batch?.quote || batch.preparing || payingBatch.current || !address) return;
     if (batch.account.toLowerCase() !== address.toLowerCase()) return;
     const { rows, quote } = batch;
+    if (rows.some(({ row }) => rowBlocked(row))) return;
     const payment = quote.payment_info.find((option) => option.chain === batch.paymentChainId);
     if (!payment) return;
     const generation = batchGeneration.current;
@@ -894,7 +904,7 @@ export function SafeQueueCard({
     return null;
 
   const sign = async (row: QueueRow, tx: SafeQueuedTransaction) => {
-    if (!address) return;
+    if (!address || rowBlocked(row)) return;
     const key = `sign:${row.chainId}:${tx.nonce}`;
     setBusy(key);
     setError(null);
@@ -939,6 +949,7 @@ export function SafeQueueCard({
   };
 
   const execute = async (row: QueueRow, tx: SafeQueuedTransaction) => {
+    if (rowBlocked(row)) return;
     const key = `execute:${row.chainId}:${tx.nonce}`;
     setBusy(key);
     setError(null);
@@ -1056,11 +1067,18 @@ export function SafeQueueCard({
             Safe&#123;Wallet&#125;: use Open in Safe on each chain.
           </p>
         ) : null}
+        {gate.pending ? (
+          <p className="w-full text-sm text-zinc-600" role="status">
+            Confirming this project&apos;s chains onchain…
+          </p>
+        ) : gate.line ? (
+          <p className="w-full text-sm text-zinc-600">{gate.line}</p>
+        ) : null}
         {canBatch && !viaSafeApp ? (
           <button
             type="button"
             className="bg-melon-700 px-3 py-1 text-sm text-white disabled:opacity-50"
-            disabled={busy !== null || !address}
+            disabled={busy !== null || !address || batchRows.some(({ row }) => rowBlocked(row))}
             onClick={() => void prepareAll(structuredClone(batchRows))}
           >
             Execute {batchRows.length} ready
@@ -1207,7 +1225,7 @@ export function SafeQueueCard({
                           <button
                             type="button"
                             className="border border-melon-500 px-3 py-1 disabled:opacity-50"
-                            disabled={busy !== null || !address}
+                            disabled={busy !== null || !address || rowBlocked(row)}
                             onClick={() => {
                               setError(null);
                               setReview({ kind: "sign", row, tx, handleBinding });
@@ -1223,7 +1241,7 @@ export function SafeQueueCard({
                           <button
                             type="button"
                             className="bg-melon-700 px-3 py-1 text-white disabled:opacity-50"
-                            disabled={busy !== null || !current || !address}
+                            disabled={busy !== null || !current || !address || rowBlocked(row)}
                             title={
                               current ? undefined : `Nonce ${row.policy.nonce} must execute first.`
                             }

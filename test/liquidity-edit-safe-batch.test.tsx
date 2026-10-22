@@ -19,6 +19,9 @@ import { fireEvent, render as rtlRender, screen, waitFor, within } from "@testin
 import { type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
+import { groupGateState } from "./support/group-write-gate";
+
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 
 // Under a Safe app, an LP edit with pending approvals goes out as ONE batch
 // (approve → Permit2 → modifyLiquidities), in that order, through the reviewed
@@ -30,6 +33,7 @@ const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as Address;
 const UNLOCK = `0x${"ab".repeat(40)}` as Hex;
 
 const mocks = vi.hoisted(() => ({
+  marketPlan: undefined as unknown,
   proposeSafeBatch: vi.fn(),
   writeContractAsync: vi.fn(),
   reverifyEditLiquidity: vi.fn(),
@@ -79,7 +83,7 @@ vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) =
       position: { ...position, tokenId },
     }),
     prepareEditLiquidity: () => editPlan,
-    prepareMarketEdit: () => marketPlan,
+    prepareMarketEdit: () => mocks.marketPlan ?? marketPlan,
     reverifyEditLiquidity: mocks.reverifyEditLiquidity,
     reverifyMarketEdit: mocks.reverifyMarketEdit,
   };
@@ -130,6 +134,7 @@ const position = {
 
 const state: AmmChainState = {
   chainId: 8453 as JBChainId,
+  projectId: 1n,
   hook: "0x0000000000000000000000000000000000000001",
   pool,
   composition: null,
@@ -218,10 +223,49 @@ function expectOneOrderedBatch(title: string) {
 
 describe("LP edits under a Safe app go out as one batch", () => {
   beforeEach(() => {
+    groupGateState.reset();
+    mocks.marketPlan = undefined;
     mocks.proposeSafeBatch.mockReset().mockResolvedValue(`0x${"cd".repeat(32)}`);
     mocks.writeContractAsync.mockReset();
     mocks.reverifyEditLiquidity.mockReset().mockResolvedValue(undefined);
     mocks.reverifyMarketEdit.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("wallet-action:liquidity-management adds no funds to a pool whose project is not linked onchain", async () => {
+    groupGateState.unverified = ["8453:1"];
+    render(
+      <EditPositionPanel
+        state={state}
+        pool={pool}
+        position={position}
+        tokenSymbol="ART"
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Increase the position" }));
+    expect(await screen.findByText("A project listed here isn't linked onchain.")).toBeTruthy();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mocks.proposeSafeBatch).not.toHaveBeenCalled();
+  });
+
+  it("still lets the wallet withdraw its own market from that pool", async () => {
+    groupGateState.unverified = ["8453:1"];
+    mocks.marketPlan = { ...marketPlan, tokenFunding: 0n, pairFunding: 0n };
+    render(
+      <MarketEditPanel
+        state={state}
+        pool={pool}
+        sides={{ tokenSide: position, pairSide: null }}
+        tokenSymbol="ART"
+        startEmpty
+        onClose={vi.fn()}
+        onDone={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: /market/i }).at(-1)!);
+    expect(await screen.findByRole("dialog")).toBeTruthy();
+    expect(screen.queryByText("A project listed here isn't linked onchain.")).toBeNull();
   });
 
   it("wallet-action:liquidity-management EditPositionPanel proposes approve → Permit2 → modifyLiquidities once, after re-verifying", async () => {

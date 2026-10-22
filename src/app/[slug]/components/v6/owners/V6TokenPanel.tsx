@@ -34,6 +34,7 @@ import {
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import {
   useJBContractContext,
   useJBProjectMetadataContext,
@@ -292,6 +293,8 @@ function TokenEditDialog({
   // A write that went to the Safe as a proposal: nothing more to send from here.
   const [proposed, setProposed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The chains come from the server sucker-group list: write only to pairs the registry lists.
+  const gate = useGroupWriteGate(states);
   const { address, chainId: connectedChainId } = useAccount();
   const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
@@ -376,6 +379,12 @@ function TokenEditDialog({
     if (!address || !canManage) return false;
     if (deploymentRouteError) {
       setError(deploymentRouteError);
+      return false;
+    }
+    try {
+      gate.assertVerified(states);
+    } catch (e) {
+      setError((e as Error).message);
       return false;
     }
 
@@ -486,6 +495,7 @@ function TokenEditDialog({
     setBusy(true);
     setError(null);
     try {
+      gate.assertVerified(states);
       const hash = await sendRelayrTx(selectedPayment);
       if (submittedViaSafe(hash)) {
         toast({
@@ -677,6 +687,8 @@ function TokenEditDialog({
 
         {error && !confirming ? <ErrorNote message={error} /> : null}
 
+        {gate.line ? <p className="text-xs text-zinc-600">{gate.line}</p> : null}
+
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={busy}>
             Cancel
@@ -686,8 +698,8 @@ function TokenEditDialog({
               relayed || deploymentRouteError ? (connectedChainId as JBChainId) : states[0].chainId
             }
             onClick={() => void start()}
-            loading={busy}
-            disabled={!address || !canManage || busy}
+            loading={busy || gate.pending}
+            disabled={!address || !canManage || busy || gate.blocked}
             connectWalletText="Connect Wallet"
             className="bg-teal-500 text-melon-950 hover:bg-teal-600"
           >

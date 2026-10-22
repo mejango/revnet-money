@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectEveryWayOutRefused } from "./support/confirm";
+import { groupGateState } from "./support/group-write-gate";
 
 const mocks = vi.hoisted(() => ({
   pinProjectMetadata: vi.fn(),
@@ -138,6 +139,8 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ refresh: mocks.refreshRoute }),
 }));
 
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
+
 import { EditMetadataDialog } from "@/app/[slug]/about/components/EditMetadataDialog";
 
 const CURRENT_METADATA = {
@@ -197,6 +200,7 @@ async function pinnedMetadata() {
 }
 
 beforeEach(() => {
+  groupGateState.reset();
   mocks.requireRelayrRecoveryScopeAvailable.mockImplementation(() => undefined);
   mocks.peerMetadata = {};
   mocks.controllers = {};
@@ -222,6 +226,17 @@ beforeEach(() => {
   mocks.waitForRelayrBundle.mockResolvedValue(undefined);
   mocks.refreshDisplay.mockResolvedValue(undefined);
   vi.spyOn(console, "error").mockImplementation(() => undefined);
+});
+
+describe("EditMetadataDialog onchain group check", () => {
+  it("keeps Save off with one line when a listed project isn't linked onchain", async () => {
+    groupGateState.unverified = ["11155111:4"];
+    await openDialog();
+    await prefilledAdvancedTextarea();
+    expect(screen.getByRole("button", { name: /^save changes$/i })).toBeDisabled();
+    expect(screen.getByText("A project listed here isn't linked onchain.")).toBeInTheDocument();
+    expect(mocks.pinProjectMetadata).not.toHaveBeenCalled();
+  });
 });
 
 describe("EditMetadataDialog Relayr payment choice", () => {

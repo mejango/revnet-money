@@ -1,6 +1,5 @@
 "use client";
 
-import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
@@ -16,12 +15,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
-import {
-  hasSuckerPair,
-  isPairCheckPending,
-  unverifiedPairLine,
-  useSuckers,
-} from "@/lib/nana/suckers";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { etherscanLink, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
@@ -83,8 +77,6 @@ export function PayerDeployForm({
 }) {
   const { address } = useAccount();
   const { runBatch, getPendingBatch } = useMultichainBatch();
-  const suckerQuery = useSuckers();
-  const { verifiedPairs } = suckerQuery;
   const { toast } = useToast();
   const scope = `project-payers:${rows
     .map((row) => `${row.chainId}:${row.projectId}`)
@@ -132,22 +124,10 @@ export function PayerDeployForm({
   // each destination must be a pair the on-chain sucker registry lists. A saved
   // batch is checked too: while any of its calls not yet confirmed sent targets an
   // unlisted pair, it does not resume, since resuming can authorize new work.
-  const pairPending = isPairCheckPending(suckerQuery);
-  const unverifiedOf = (destinations: { chainId: number; projectId: bigint }[]) =>
-    destinations.filter(
-      (call) =>
-        !hasSuckerPair(verifiedPairs, { peerChainId: call.chainId, projectId: call.projectId }),
-    );
-  const unverifiedLine = (unverified: { chainId: number }[]) =>
-    unverified.length
-      ? unverifiedPairLine(
-          suckerQuery,
-          unverified.map((call) => chainDisplayName(call.chainId)).join(", "),
-        )
-      : null;
-  const unverifiedRows = unverifiedOf(
-    selectedRows.map((row) => ({ chainId: row.chainId, projectId: BigInt(row.projectId) })),
-  );
+  const gate = useGroupWriteGate(selectedRows);
+  const { unverifiedOf, lineFor: unverifiedLine } = gate;
+  const pairPending = gate.pending;
+  const unverifiedRows = unverifiedOf(selectedRows);
   const unverifiedResume = unverifiedOf(
     (pendingBatch?.calls ?? [])
       .filter((call) => call.state === "ready" && call.expectedDeployment)
@@ -383,7 +363,7 @@ export function PayerDeployForm({
           <ButtonWithWallet
             className="mt-2"
             disabled={busy || unverifiedResume.length > 0}
-            loading={busy || (unverifiedResume.length > 0 && pairPending)}
+            loading={busy || (unverifiedResume.length > 0 && gate.checking)}
             onClick={() => void submitDeploys(true)}
           >
             Resume saved deployment

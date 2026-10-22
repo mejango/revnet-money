@@ -41,6 +41,7 @@ import {
 } from "@/lib/bridgePrepare";
 import { revalidateCacheTag } from "@/lib/cache";
 import { legacyIntents } from "@/lib/legacy-intents";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { useJBTokenContext } from "@/lib/nana/project";
 import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { getTokenAddress } from "@/lib/token";
@@ -128,6 +129,12 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const project = projects.find((p) => p.chainId === sourceChainId)!;
   const targetProjects = projects.filter((candidate) => candidate.chainId === targetChainId);
   const targetProject = targetProjects.length === 1 ? targetProjects[0] : undefined;
+  // Both projects come from the server sucker-group list: bridge only between registry-listed pairs.
+  const routeProjects = useMemo(
+    () => (targetProject ? [project, targetProject] : [project]),
+    [project, targetProject],
+  );
+  const gate = useGroupWriteGate(routeProjects);
   const { suckerPairs } = useSuckerPairs(project.projectId, sourceChainId);
   const suckerPair = suckerPairs.find(
     (candidate) => Number(candidate.remoteChainId) === targetChainId,
@@ -235,7 +242,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   // The approval is its own wallet prompt, so it is named before the confirm
   // opens rather than discovered mid-flow.
   const reviewMove = useCallback(async () => {
-    if (!address || amountValue === undefined || !publicClient || !suckerPair) return;
+    if (!address || amountValue === undefined || !publicClient || !suckerPair || gate.blocked)
+      return;
     setIsSubmitting(true);
     setNeedsApproval(null);
     setError(null);
@@ -257,11 +265,20 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
     } finally {
       setIsSubmitting(false);
     }
-  }, [address, amountValue, publicClient, suckerPair, sourceChainId, project.projectId]);
+  }, [
+    address,
+    amountValue,
+    publicClient,
+    suckerPair,
+    sourceChainId,
+    project.projectId,
+    gate.blocked,
+  ]);
 
   const moveTokens = useCallback(async () => {
     try {
       setIsSubmitting(true);
+      gate.assertVerified(routeProjects);
 
       if (!address) {
         throw new Error("Please connect your wallet");
@@ -378,6 +395,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
     writeContractAsync,
     address,
     terminalToken,
+    gate,
+    routeProjects,
   ]);
 
   return (
@@ -610,10 +629,13 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
               {isSuccess &&
                 "First step confirmed. Close this window and use the transaction table to finish the move."}
               {isSafeResultUnconfirmed && SAFE_PROPOSAL_UNCONFIRMED_LINE}
+              {gate.line}
             </div>
             <ButtonWithWallet
               targetChainId={sourceChainId}
+              loading={gate.pending}
               disabled={
+                gate.blocked ||
                 isDisabled ||
                 !prepareQuote.data ||
                 prepareQuote.isError ||

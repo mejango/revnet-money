@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { formatWalletError } from "@/lib/utils";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import { useQuery } from "@tanstack/react-query";
@@ -54,6 +55,11 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The chains come from the server sucker-group list: pay out only on registry-listed pairs.
+  const selectedChains = chains.filter((chain) => selected.has(chain.chainId));
+  // A saved batch resumed from storage is checked against the whole group: its calls
+  // carry no generic project id, so any unlisted pair holds the resume.
+  const gate = useGroupWriteGate(pending ? chains : selectedChains);
   const {
     data = [],
     isLoading,
@@ -80,6 +86,7 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
     try {
       const selectedRows = data.filter((row) => selected.has(row.chainId));
       if (!selectedRows.length) throw new Error("Select at least one chain.");
+      gate.assertVerified(selectedChains);
       const destinations = await Promise.all(
         selectedRows.map(async (row) => {
           const selectedOption = optionFor(row);
@@ -109,7 +116,7 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
   };
 
   const submit = async (resume = false) => {
-    if (!address || busy || (!review && !resume)) return;
+    if (!address || busy || (!review && !resume) || (resume && gate.blocked)) return;
     if (!resume && review?.account.toLowerCase() !== address.toLowerCase()) {
       setReview(null);
       setError("Your connected account changed. Review the payouts again.");
@@ -118,6 +125,7 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
     setBusy(true);
     setError(null);
     try {
+      if (!resume) gate.assertVerified(review!.destinations.map(({ option }) => option));
       const outcome = await runBatch({
         label: "Send project payouts",
         scope,
@@ -151,8 +159,8 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
             Saved payout progress: {pending.completed}/{pending.total} complete.
           </p>
           <ButtonWithWallet
-            disabled={busy}
-            loading={busy}
+            disabled={busy || gate.blocked}
+            loading={busy || gate.pending}
             className="mt-2"
             onClick={() => void submit(true)}
           >
@@ -278,10 +286,11 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
           );
         })
       )}
+      {gate.line ? <p className="mt-3 text-xs text-zinc-600">{gate.line}</p> : null}
       <div className="mt-4 flex justify-end">
         <ButtonWithWallet
-          disabled={busy || Boolean(pending) || !selected.size}
-          loading={busy}
+          disabled={busy || Boolean(pending) || !selected.size || gate.blocked}
+          loading={busy || gate.pending}
           onClick={() => void buildReview()}
         >
           Review selected payouts

@@ -5,6 +5,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
 import { toast } from "@/components/ui/use-toast";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
+import { type GroupWriteTarget, useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { formatWalletError } from "@/lib/utils";
 import { formatUnits, JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
@@ -17,6 +18,8 @@ export function OwnerDistributionBatchButton({
   scope,
   tokenSymbol,
   disabled,
+  targets,
+  group,
   prepare,
   onSuccess,
 }: {
@@ -24,6 +27,10 @@ export function OwnerDistributionBatchButton({
   scope: string;
   tokenSymbol: string;
   disabled?: boolean;
+  /** The selected (chain, project) pairs, from the server sucker-group list. */
+  targets: readonly GroupWriteTarget[];
+  /** Every (chain, project) pair of the group: a batch saved in storage is resumed only when all are verified. */
+  group: readonly GroupWriteTarget[];
   prepare: () => Promise<DistributionSnapshot[]>;
   onSuccess?: () => void;
 }) {
@@ -38,6 +45,8 @@ export function OwnerDistributionBatchButton({
   const [error, setError] = useState<string | null>(null);
   const [reviewedAccount, setReviewedAccount] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
+  const fresh = !saved && !pending;
+  const gate = useGroupWriteGate(saved ? group : pending ? (snapshots ?? []) : targets);
 
   async function review() {
     setError(null);
@@ -54,6 +63,7 @@ export function OwnerDistributionBatchButton({
         throw new Error(
           "The selection contains the same allocation more than once. Reload before continuing.",
         );
+      gate.assertVerified(rows);
       setSnapshots(rows);
       setReviewedAccount(address?.toLowerCase() ?? null);
       setOpen(true);
@@ -65,7 +75,7 @@ export function OwnerDistributionBatchButton({
   }
 
   async function submit() {
-    if (!snapshots && !saved) return;
+    if ((!snapshots && !saved) || gate.blocked) return;
     setBusy(true);
     setError(null);
     // Errors can follow confirmed earlier rounds; keep their original snapshots
@@ -109,8 +119,8 @@ export function OwnerDistributionBatchButton({
       <ButtonWithWallet
         targetChainId={chainId as JBChainId | undefined}
         variant="outline"
-        disabled={disabled && !pending && !saved}
-        loading={preparing || busy}
+        disabled={(disabled && fresh) || gate.blocked}
+        loading={preparing || busy || gate.pending}
         onClick={() => void review()}
       >
         {saved
@@ -119,6 +129,7 @@ export function OwnerDistributionBatchButton({
             ? `Continue ${label.toLowerCase()}`
             : label}
       </ButtonWithWallet>
+      {gate.line ? <p className="text-xs text-zinc-600">{gate.line}</p> : null}
       <TxError error={open ? null : error} />
       {snapshots || saved ? (
         <TxConfirmDialog

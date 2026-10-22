@@ -5,6 +5,9 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { Address } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmIsOpen, expectEveryWayOutRefused } from "./support/confirm";
+import { groupGateState } from "./support/group-write-gate";
+
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 
 const OPERATOR = `0x${"22".repeat(20)}` as Address;
 const HOOK = "0xB222Da5A71e8FB89a5A38b7c920EaB5DfbC74B91" as Address;
@@ -119,6 +122,20 @@ describe("SafeBatchTray", () => {
     mocks.route = { kind: "eoa" };
     mocks.connected = true;
     mocks.proposed = null;
+    groupGateState.reset();
+  });
+
+  it("wallet-action:safe-batch will not send a batch for a row the sucker registry does not list", async () => {
+    groupGateState.unverified = ["8453:6"];
+    writeBatch(8453, 6, [hookStep(), terminalStep()]);
+    render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Review and propose on Base" }));
+    const dialog = await screen.findByRole("dialog", { name: "Batch on Base" });
+    expect(within(dialog).getByText("A project listed here isn't linked onchain.")).toBeTruthy();
+    const send = screen.getByRole("button", { name: "Send 2 transactions" });
+    expect(send).toBeDisabled();
+    fireEvent.click(send);
+    expect(mocks.submit).not.toHaveBeenCalled();
   });
 
   it("shows a queued proposal in place of the review button and can drop the steps", () => {

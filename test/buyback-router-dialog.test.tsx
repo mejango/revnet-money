@@ -1,6 +1,10 @@
 import { BuybackRouterCard } from "@/app/[slug]/components/v6/operator/BuybackRouterCard";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { groupGateState } from "./support/group-write-gate";
+
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
+beforeEach(() => groupGateState.reset());
 
 // The card reads chain state on mount; stub it so the test is about the shell,
 // not the RPC. One chain with an initialized USDC pool = every action available.
@@ -68,6 +72,20 @@ vi.mock("wagmi", () => ({
   useChainId: () => 8453,
   useSwitchChain: () => ({ switchChainAsync: vi.fn(), isPending: false }),
 }));
+
+describe("BuybackRouterCard over sucker-group rows", () => {
+  it("wallet-action:operator-writes refuses a chain whose project the registry does not list", async () => {
+    groupGateState.unverified = ["8453:6"];
+    render(<BuybackRouterCard rows={[{ chainId: 8453, projectId: 6 }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set TWAP window" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set TWAP window" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /I verified every selected/ }));
+    expect(within(dialog).getByText("A project listed here isn't linked onchain.")).toBeTruthy();
+    expect(within(dialog).getByRole("button", { name: "Set TWAP window" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Add to batch" })).toBeDisabled();
+    expect(writes.runWrites).not.toHaveBeenCalled();
+  });
+});
 
 describe("BuybackRouterCard", () => {
   it("opens each action's form in a modal dialog, not inline", async () => {

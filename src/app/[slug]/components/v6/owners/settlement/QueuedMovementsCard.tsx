@@ -9,6 +9,7 @@ import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { legacyIntents } from "@/lib/legacy-intents";
+import { type GroupWriteTarget, useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
 import {
@@ -59,13 +60,16 @@ function StatusBadge({ status }: { status: V6BridgeRow["status"] }) {
  */
 function ClaimButton({
   row,
+  targets,
   tokenSymbol,
   onDone,
 }: {
   row: V6BridgeRow & { tokenSymbol: string };
+  targets: GroupWriteTarget[];
   tokenSymbol: string;
   onDone: () => void;
 }) {
+  const gate = useGroupWriteGate(targets);
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: row.peerChainId });
   const { writeContractAsync } = useWriteContract();
@@ -80,7 +84,8 @@ function ClaimButton({
         size="sm"
         variant="outline"
         forceChildren
-        loading={busy}
+        loading={busy || gate.pending}
+        disabled={gate.blocked}
         onClick={() => {
           setError(null);
           setReview(true);
@@ -88,6 +93,7 @@ function ClaimButton({
       >
         Claim
       </ButtonWithWallet>
+      {gate.line ? <p className="mt-1 text-xs text-zinc-600">{gate.line}</p> : null}
       <TxConfirmDialog
         open={review}
         onClose={() => setReview(false)}
@@ -99,6 +105,7 @@ function ClaimButton({
         error={error}
         onConfirm={async () => {
           try {
+            gate.assertVerified(targets);
             setBusy(true);
             setError(null);
             const tx = buildV6ClaimTxFromRow(row);
@@ -157,7 +164,16 @@ function ClaimButton({
  * not just this row). The exact msg.value comes from findToRemoteValue — when no
  * budget can be verified the button explains instead of prompting a reverting tx.
  */
-function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }) {
+function ExecuteButton({
+  row,
+  targets,
+  onDone,
+}: {
+  row: V6BridgeRow;
+  targets: GroupWriteTarget[];
+  onDone: () => void;
+}) {
+  const gate = useGroupWriteGate(targets);
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: row.chainId });
   const { writeContractAsync } = useWriteContract();
@@ -185,9 +201,11 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
         size="sm"
         variant="outline"
         forceChildren
-        loading={busy}
+        loading={busy || gate.pending}
+        disabled={gate.blocked}
         onClick={async () => {
           try {
+            gate.assertVerified(targets);
             setBusy(true);
             setError(null);
             const value = await findToRemoteValue(
@@ -215,6 +233,7 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
       >
         Execute
       </ButtonWithWallet>
+      {gate.line ? <p className="mt-1 text-xs text-zinc-600">{gate.line}</p> : null}
       {review || busy ? (
         <TxConfirmDialog
           open
@@ -235,6 +254,7 @@ function ExecuteButton({ row, onDone }: { row: V6BridgeRow; onDone: () => void }
           onConfirm={async () => {
             if (!review) return;
             try {
+              gate.assertVerified(targets);
               setBusy(true);
               setError(null);
               const value = review.value;
@@ -376,6 +396,9 @@ export function QueuedMovementsCard({
   });
 
   const data = hydrated ? query.data : undefined;
+  // Both ends of a movement come from the server sucker-group list: act only on registry-listed pairs.
+  const rowTargets = (row: V6BridgeRow) =>
+    chains.filter((chain) => chain.chainId === row.chainId || chain.chainId === row.peerChainId);
   const isLoading = hydrated ? query.isLoading : chains.length > 1;
   const isError = hydrated && query.isError;
   const { refetch } = query;
@@ -469,9 +492,14 @@ export function QueuedMovementsCard({
                   </td>
                   <td className={cell}>
                     {row.status === "claimable" ? (
-                      <ClaimButton row={row} tokenSymbol={tokenSymbol} onDone={() => refetch()} />
+                      <ClaimButton
+                        row={row}
+                        targets={rowTargets(row)}
+                        tokenSymbol={tokenSymbol}
+                        onDone={() => refetch()}
+                      />
                     ) : row.status === "pending" && row.canExecute ? (
-                      <ExecuteButton row={row} onDone={() => refetch()} />
+                      <ExecuteButton row={row} targets={rowTargets(row)} onDone={() => refetch()} />
                     ) : row.status === "pending" ? (
                       <BridgingLink row={row} />
                     ) : (

@@ -11,6 +11,7 @@ import {
   useSafeConnection,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { withWriteIntent } from "@/lib/write-hold";
 import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
@@ -28,6 +29,7 @@ import { useAccount, useConfig, usePublicClient } from "wagmi";
 import { chainName, fmtUnits } from "../settlement/lib";
 import { describeEditLiquidityPlan } from "./formView";
 import {
+  addsFunds,
   lpBandPrices,
   lpDeadline,
   POSITION_MANAGER_ABI,
@@ -141,6 +143,9 @@ export function EditPositionPanel({
   const [status, setStatus] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [busy, setBusy] = useState(false);
+  // The pool is found from the server sucker-group project: an edit that adds funds goes only
+  // to a registry-listed pair. Withdrawals of the wallet's own positions stay open.
+  const gate = useGroupWriteGate([state]);
 
   // The plan is built while reviewing, so the confirm modal's copy comes from
   // this MUTATED object — the hook reads it when the modal opens.
@@ -275,6 +280,9 @@ export function EditPositionPanel({
         range,
         address,
       );
+      if (addsFunds(plan) && gate.blocked) {
+        throw new Error(gate.line ?? "Still confirming this project's chains onchain. Try again.");
+      }
       const held = balances.data ?? (await balances.refetch()).data;
       if (!held) throw new Error("Could not read your wallet balances.");
       // Gate on what the pool actually pulls, not on the maxima: those carry
@@ -323,6 +331,7 @@ export function EditPositionPanel({
   const execute = async () => {
     if (!address || !publicClient || !current) return;
     const { plan, steps, account } = current;
+    if (addsFunds(plan) && gate.blocked) return;
     if (account.toLowerCase() !== address.toLowerCase()) {
       setReviewed(null);
       setStatus(ACCOUNT_CHANGED);

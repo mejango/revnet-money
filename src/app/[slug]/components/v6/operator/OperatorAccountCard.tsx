@@ -9,6 +9,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
@@ -242,6 +243,8 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
   const [destination, setDestination] = useState("");
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The rows come from the server sucker-group list: only chain-verified pairs are written.
+  const gate = useGroupWriteGate(group.rows);
   const [review, setReview] = useState(false);
   // A send that went to the Safe as a proposal: nothing more to send from here.
   const [proposed, setProposed] = useState(false);
@@ -268,6 +271,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
   const buildWrites = (): ChainWrite[] => {
     const to = destination.trim();
     if (!isAddress(to)) throw new Error("Enter a valid destination address.");
+    gate.assertVerified(group.rows);
     return group.rows.map((row) => {
       const target = v6ContractAddress(RevnetCoreContracts.REVOwner, row.chainId);
       if (!target) throw new Error(`REVOwner isn't deployed on ${chainName(row.chainId)}.`);
@@ -396,6 +400,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
         />
       </div>
       <p className="text-xs text-zinc-500 mt-1">Applies on {chains}.</p>
+      {gate.line ? <p className="text-xs text-zinc-600 mt-1">{gate.line}</p> : null}
       <label className="mt-3 flex items-start gap-2 border border-red-300 bg-red-50 rounded p-3">
         <input
           type="checkbox"
@@ -415,7 +420,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
           variant="secondary"
           size="sm"
           className="h-11"
-          disabled={busy || !destination.trim()}
+          disabled={busy || gate.blocked || !destination.trim()}
           onClick={addToBatch}
         >
           Add to batch
@@ -423,8 +428,8 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
         <ButtonWithWallet
           targetChainId={group.rows[0]?.chainId}
           connectWalletText="Connect wallet to transfer"
-          loading={busy}
-          disabled={busy || !ack || !destination.trim()}
+          loading={busy || gate.pending}
+          disabled={busy || gate.blocked || !ack || !destination.trim()}
           onClick={beginReview}
           className="bg-teal-500 text-melon-950 hover:bg-teal-600"
         >

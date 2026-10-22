@@ -57,6 +57,7 @@ describe("fetchAmmReferences", () => {
     expect(states).toEqual([
       {
         chainId: 8453,
+        projectId: 3n,
         hook: HOOK,
         pool: fakePool,
         composition: null,
@@ -64,6 +65,7 @@ describe("fetchAmmReferences", () => {
       },
       {
         chainId: 1,
+        projectId: 5n,
         hook: null,
         pool: null,
         composition: null,

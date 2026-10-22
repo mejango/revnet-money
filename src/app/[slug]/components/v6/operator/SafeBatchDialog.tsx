@@ -4,6 +4,7 @@ import { CallRow } from "@/components/ExactCallCard";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import {
   checkBatchOrder,
   describeStep,
@@ -94,6 +95,8 @@ export function SafeBatchDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const steps = useSafeBatch(row.chainId, row.projectId);
+  // The batch's row comes from the server sucker-group list: only a chain-verified pair sends.
+  const gate = useGroupWriteGate([row]);
   const { address } = useAccount();
   const { routeFor, submit } = useSafeBatchSubmit();
   const { toast } = useToast();
@@ -119,6 +122,7 @@ export function SafeBatchDialog({
 
   const confirm = async () => {
     if (busy || !route || route.kind === "refused" || !steps.length || problems.length) return;
+    if (gate.blocked) return;
     setBusy(true);
     setError(null);
     setStatus(null);
@@ -223,10 +227,12 @@ export function SafeBatchDialog({
       action={actionLabel(route, steps.length, row.chainId)}
       onConfirm={() => void confirm()}
       busy={busy}
-      actionDisabled={!route || route.kind === "refused" || !steps.length || problems.length > 0}
+      actionDisabled={
+        !route || route.kind === "refused" || !steps.length || problems.length > 0 || gate.blocked
+      }
       complete={proposed}
-      status={status}
-      error={error ?? (route?.kind === "refused" ? route.message : null)}
+      status={status ?? (gate.pending ? "Confirming this project's chains onchain…" : null)}
+      error={error ?? gate.line ?? (route?.kind === "refused" ? route.message : null)}
     >
       <SummaryRow label="On">{name}</SummaryRow>
       <SummaryRow label="From">

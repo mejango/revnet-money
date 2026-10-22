@@ -2304,6 +2304,7 @@ export async function reverifyAddLiquidity(
 
 export interface AmmChainState {
   chainId: JBChainId;
+  projectId: bigint;
   hook: Address | null;
   pool: PoolSnapshot | null;
   composition: PoolComposition | null;
@@ -2515,7 +2516,7 @@ export async function fetchAmmReferences(
       const reference = pool
         ? await readReference(pool, projectId).catch(() => EMPTY_REFERENCE)
         : EMPTY_REFERENCE;
-      return { chainId, hook, pool, composition: null, reference };
+      return { chainId, projectId, hook, pool, composition: null, reference };
     }),
   );
 }
@@ -2765,4 +2766,9 @@ export async function deployPoolArity(
   }
   deployPoolArityCache.set(key, arity);
   return arity;
+}
+
+/** True when a liquidity edit moves new funds into the pool, rather than only withdrawing. */
+export function addsFunds(plan: { tokenFunding: bigint; pairFunding: bigint }): boolean {
+  return plan.tokenFunding > 0n || plan.pairFunding > 0n;
 }

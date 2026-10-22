@@ -2,6 +2,7 @@ import { SuckerExtensionCard } from "@/app/[slug]/components/v6/operator/SuckerE
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { groupGateState } from "./support/group-write-gate";
 
 const CONFIG_HASH = `0x${"ab".repeat(32)}`;
 
@@ -13,6 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
   useAccount: () => ({ address: "0x2222222222222222222222222222222222222222" }),
@@ -89,12 +91,30 @@ async function openConfirm() {
 }
 
 beforeEach(() => {
+  groupGateState.reset();
   mocks.read.mockImplementation(async ({ functionName }: { functionName: string }) =>
     functionName === "hashedEncodedConfigurationOf" ? CONFIG_HASH : [],
   );
   mocks.runWrites.mockResolvedValue({ chains: 2, safeQueued: 0, safeConfirmed: 0 });
   mocks.salt.mockReset().mockReturnValue(`0x${"11".repeat(32)}`);
   mocks.discard.mockReset();
+});
+
+describe("extend to another chain over sucker-group rows", () => {
+  it("wallet-action:operator-writes will not deploy suckers for a row the registry does not list", async () => {
+    groupGateState.unverified = ["1:4"];
+    render(<SuckerExtensionCard rows={[{ chainId: 1, projectId: 4 }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Extend to another chain" }));
+    fireEvent.click(screen.getByRole("combobox", { name: "Target chain" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Base" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Project ID on the target chain" }), {
+      target: { value: "9" },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.getByText("A project listed here isn't linked onchain.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Deploy suckers" })).toBeDisabled();
+    expect(mocks.runWrites).not.toHaveBeenCalled();
+  });
 });
 
 describe("extend to another chain confirm", () => {

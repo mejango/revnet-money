@@ -12,6 +12,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
@@ -632,9 +633,12 @@ function BuybackActionForm({
     () => available.filter((state) => selected.has(state.chainId)),
     [available, selected],
   );
+  // Chain states come from the server sucker-group rows: only chain-verified pairs are written.
+  const gate = useGroupWriteGate(chosen);
 
   const buildWrites = (): ChainWrite[] => {
     if (!chosen.length) throw new Error("Choose at least one available chain.");
+    gate.assertVerified(chosen);
     let poolValues: {
       fee: number;
       tickSpacing: number;
@@ -818,6 +822,7 @@ function BuybackActionForm({
     if (busy || !address || !review) return;
     setError(null);
     try {
+      gate.assertVerified(chosen);
       setBusy(true);
       const result = await runWrites({
         writes: review,
@@ -987,12 +992,13 @@ function BuybackActionForm({
         </span>
       </label>
 
+      {gate.line ? <p className="text-xs text-zinc-600 mt-3">{gate.line}</p> : null}
       <div className="mt-3 flex justify-end gap-2">
         <Button
           variant="secondary"
           size="sm"
           className="h-11"
-          disabled={busy || !chosen.length}
+          disabled={busy || gate.blocked || !chosen.length}
           onClick={addToBatch}
         >
           Add to batch
@@ -1000,8 +1006,8 @@ function BuybackActionForm({
         <ButtonWithWallet
           targetChainId={chosen[0]?.chainId}
           connectWalletText="Connect wallet to continue"
-          loading={busy}
-          disabled={busy || !ack || !chosen.length}
+          loading={busy || gate.pending}
+          disabled={busy || gate.blocked || !ack || !chosen.length}
           onClick={prepare}
           className="bg-teal-500 text-melon-950 hover:bg-teal-600"
         >
