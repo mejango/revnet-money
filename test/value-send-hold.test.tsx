@@ -59,6 +59,14 @@ const mocks = vi.hoisted(() => ({
   reverted: false,
   /** A sent hash's receipt never lands: an unbounded watch waits forever, a bounded one ends. */
   neverLands: false,
+  /** The loans contract's terminal accounting context for the loan token, read onchain. */
+  loanContext: {
+    token: "0x000000000000000000000000000000000000EEEe",
+    decimals: 18,
+    currency: 61166,
+  } as { token: string; decimals: number; currency: number },
+  /** The onchain loan token read fails. */
+  loanSourceFails: false,
 }));
 
 const tokenBalance = (chainId: number, projectId: number) => ({
@@ -92,6 +100,20 @@ vi.mock("wagmi", async (importOriginal) => ({
         ];
       }
       if (functionName === "projectId") return 8n;
+      if (functionName === "TERMINAL") {
+        if (mocks.loanSourceFails) throw new Error("The node can't be reached.");
+        return "0x5555555555555555555555555555555555555555";
+      }
+      if (functionName === "accountingContextsOf") return [mocks.loanContext];
+      if (functionName === "accountingContextForTokenOf") return mocks.loanContext;
+      if (functionName === "revnetIdOfLoanWith") return 7n;
+      if (functionName === "loanOf") {
+        return {
+          amount: 10n ** 18n,
+          collateral: 2n * 10n ** 18n,
+          sourceToken: mocks.loanContext.token,
+        };
+      }
       return mocks.directSell && functionName === "balanceOf"
         ? 5n * 10n ** 18n
         : mocks.allowanceOnLoanChainOnly && parameters?.chainId === 1
@@ -363,6 +385,12 @@ beforeEach(() => {
   mocks.receiptOn = null;
   mocks.neverLands = false;
   mocks.reverted = false;
+  mocks.loanContext = {
+    token: "0x000000000000000000000000000000000000EEEe",
+    decimals: 18,
+    currency: 61166,
+  };
+  mocks.loanSourceFails = false;
   mocks.verifiedPairs = [
     { peerChainId: 1, projectId: 7n },
     { peerChainId: 10, projectId: 8n },
@@ -477,6 +505,88 @@ async function confirmBorrow() {
   const confirm = await confirmPanel();
   fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
 }
+
+describe("a loan's source token, decimals and currency", () => {
+  const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
+  it("wallet-action:loans quotes and sends in the loans contract's onchain context, with one confirmation", async () => {
+    // The indexer says ETH/18; the revnet's terminal accounts for USDC/6 on this chain.
+    mocks.loanContext = { token: USDC, decimals: 6, currency: 909516616 };
+    mocks.freshBorrowable.mockResolvedValue(10n ** 6n);
+    // The wallet prompt stays open, so the one confirm that led to it is still on screen.
+    await confirmBorrow();
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    expect(mocks.freshBorrowable).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ revnetId: 7n, decimals: 6n, currency: 909516616n }),
+    );
+    expect(mocks.write.mock.calls[0][0]).toMatchObject({ functionName: "borrowFrom" });
+    expect(mocks.write.mock.calls[0][0].args[1]).toBe(USDC);
+    expect(document.querySelectorAll("[data-tx-confirm]")).toHaveLength(1);
+  });
+
+  it("wallet-action:loans keeps Open loan off with one line when the loan token can't be read", async () => {
+    mocks.loanSourceFails = true;
+    renderWithQueries(
+      <BorrowDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open borrow</button>
+      </BorrowDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open borrow" }));
+    fireEvent.change(await screen.findByLabelText(/How much REV/), { target: { value: "1" } });
+    expect(
+      await screen.findByText("Couldn't read this network's loan token onchain. Try again."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open loan" })).toBeDisabled();
+    expect(mocks.freshBorrowable).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("wallet-action:loans sends nothing and shows the same line when the send-time read fails", async () => {
+    renderWithQueries(
+      <BorrowDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open borrow</button>
+      </BorrowDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open borrow" }));
+    fireEvent.change(await screen.findByLabelText(/How much REV/), { target: { value: "1" } });
+    const open = screen.getByRole("button", { name: "Open loan" });
+    await waitFor(() => expect(open).toBeEnabled());
+    fireEvent.click(open);
+    const confirm = await confirmPanel();
+    mocks.loanSourceFails = true;
+    fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
+    expect(
+      await screen.findByText("Couldn't read this network's loan token onchain. Try again."),
+    ).toBeTruthy();
+    expect(mocks.freshBorrowable).not.toHaveBeenCalled();
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(document.querySelectorAll("[data-tx-confirm]").length).toBeLessThanOrEqual(1);
+  });
+
+  it("wallet-action:loans sends nothing when the loan token changes after review, and says so in place", async () => {
+    renderWithQueries(
+      <BorrowDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open borrow</button>
+      </BorrowDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open borrow" }));
+    fireEvent.change(await screen.findByLabelText(/How much REV/), { target: { value: "1" } });
+    const open = screen.getByRole("button", { name: "Open loan" });
+    await waitFor(() => expect(open).toBeEnabled());
+    fireEvent.click(open);
+    const confirm = await confirmPanel();
+    mocks.loanContext = { token: USDC, decimals: 6, currency: 909516616 };
+    fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
+    expect(
+      await screen.findByText(
+        "This network's loan token changed. Check the terms and confirm again.",
+      ),
+    ).toBeTruthy();
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(document.querySelectorAll("[data-tx-confirm]")).toHaveLength(1);
+  });
+});
 
 async function confirmRefinance() {
   renderWithQueries(
