@@ -663,6 +663,15 @@ function ReviewModal({
             <button
               type="button"
               onClick={async () => {
+                // Approve only what was shown: a request changed since then is declined.
+                const now = buildReviewModel(request);
+                if (
+                  now.rawJson !== model.rawJson ||
+                  now.warnings.some((warning) => warning.code === "unreadable")
+                ) {
+                  onFinish(false);
+                  return;
+                }
                 if (await feeReview.confirm()) onFinish(true);
               }}
               disabled={!agreed || feeReview.busy || projectCheckPending}

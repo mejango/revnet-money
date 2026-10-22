@@ -153,4 +153,29 @@ describe("transaction review dialog", () => {
     act(() => close?.click());
     expect(finished).toEqual([false]);
   });
+
+  it("declines when the request changed after it was shown", async () => {
+    const claim = REVIEW_REQUESTS["sucker claim"].calls[0];
+    const { TransactionReviewDialog } = await import("@/components/TransactionReviewDialog");
+    const finished: unknown[] = [];
+    const authorization = { kind: "message", message: "A" };
+    const request = { calls: [claim], authorization } as unknown as TransactionReviewRequest;
+    act(() =>
+      root.render(
+        <TransactionReviewDialog
+          pending={{ kind: "review", id: 1, request, resolve: () => {} }}
+          onFinish={(approved) => finished.push(approved)}
+        />,
+      ),
+    );
+    const dialog = document.querySelector("dialog")!;
+    authorization.message = "B";
+    const agree = dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
+    act(() => agree.click());
+    // The footer's primary button, whatever the fee notice names it.
+    const approve = dialog.querySelector<HTMLButtonElement>("footer button.bg-melon-500")!;
+    expect(approve).toBeEnabled();
+    await act(async () => approve.click());
+    expect(finished).toEqual([false]);
+  });
 });
