@@ -11,6 +11,10 @@ import { protectedOutputFloor } from "./bridgePrepare";
 const DEFAULT_BORROW_SLIPPAGE_BPS = 100n;
 
 /** What REVLoans prices a loan in: the revnet, its source token and that token's accounting context. */
+export const LOAN_SOURCE_UNREADABLE = "Couldn't read this network's loan token onchain. Try again.";
+export const LOAN_SOURCE_CHANGED =
+  "This network's loan token changed. Check the terms and confirm again.";
+
 export type LoanSource = { revnetId: bigint; token: Address; decimals: number; currency: number };
 
 /**
@@ -192,3 +196,10 @@ export function buildProtectedReallocateCollateralTx({
     prepaidFeePercent,
   });
 }
+
+/** Whether two reads of a loan source agree on everything a loan is priced and sent in. */
+export const sameLoanSource = (a: LoanSource, b: LoanSource) =>
+  a.revnetId === b.revnetId &&
+  isAddressEqual(a.token, b.token) &&
+  a.decimals === b.decimals &&
+  a.currency === b.currency;

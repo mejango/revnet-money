@@ -4,12 +4,13 @@ import { ReallocateDialog } from "@/app/[slug]/components/Value/ReallocateDialog
 import { RedeemDialog } from "@/app/[slug]/components/Value/RedeemDialog";
 import { RepayDialog } from "@/app/[slug]/components/Value/RepayDialog";
 import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { repayCeilingFor } from "@/lib/loanFees";
 import { recordTransactionActivity, updateTransactionActivity } from "@/lib/transaction-activity";
 import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState, type ReactNode } from "react";
-import { pad, type Hex } from "viem";
+import { formatUnits, pad, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type ReviewedWriteContractOptions = NonNullable<
@@ -67,6 +68,8 @@ const mocks = vi.hoisted(() => ({
   } as { token: string; decimals: number; currency: number },
   /** The onchain loan token read fails. */
   loanSourceFails: false,
+  clients: {} as Record<number, unknown>,
+  loan: { amount: 10n ** 18n, collateral: 2n * 10n ** 18n },
 }));
 
 const tokenBalance = (chainId: number, projectId: number) => ({
@@ -78,49 +81,52 @@ const tokenBalance = (chainId: number, projectId: number) => ({
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
   useAccount: () => ({ address: "0x1111111111111111111111111111111111111111" }),
-  usePublicClient: (parameters?: { chainId?: number }) => ({
-    getChainId: async () => parameters?.chainId ?? 1,
-    readContract: async ({ functionName }: { functionName?: string }) => {
-      if (functionName === "suckerPairsOf") {
-        if (parameters?.chainId === 10) {
+  // One client per chain across renders, as wagmi's is.
+  usePublicClient: (parameters?: { chainId?: number }) =>
+    (mocks.clients[parameters?.chainId ?? 0] ??= {
+      getChainId: async () => parameters?.chainId ?? 1,
+      waitForTransactionReceipt: async () => ({ status: "success" }),
+      readContract: async ({ functionName }: { functionName?: string }) => {
+        if (functionName === "suckerPairsOf") {
+          if (parameters?.chainId === 10) {
+            return [
+              {
+                local: "0x4444444444444444444444444444444444444444",
+                remote: pad("0x3333333333333333333333333333333333333333"),
+                remoteChainId: 1n,
+              },
+            ];
+          }
           return [
             {
-              local: "0x4444444444444444444444444444444444444444",
-              remote: pad("0x3333333333333333333333333333333333333333"),
-              remoteChainId: 1n,
+              local: "0x3333333333333333333333333333333333333333",
+              remote: pad("0x4444444444444444444444444444444444444444"),
+              remoteChainId: 10n,
             },
           ];
         }
-        return [
-          {
-            local: "0x3333333333333333333333333333333333333333",
-            remote: pad("0x4444444444444444444444444444444444444444"),
-            remoteChainId: 10n,
-          },
-        ];
-      }
-      if (functionName === "projectId") return 8n;
-      if (functionName === "TERMINAL") {
-        if (mocks.loanSourceFails) throw new Error("The node can't be reached.");
-        return "0x5555555555555555555555555555555555555555";
-      }
-      if (functionName === "accountingContextsOf") return [mocks.loanContext];
-      if (functionName === "accountingContextForTokenOf") return mocks.loanContext;
-      if (functionName === "revnetIdOfLoanWith") return 7n;
-      if (functionName === "loanOf") {
-        return {
-          amount: 10n ** 18n,
-          collateral: 2n * 10n ** 18n,
-          sourceToken: mocks.loanContext.token,
-        };
-      }
-      return mocks.directSell && functionName === "balanceOf"
-        ? 5n * 10n ** 18n
-        : mocks.allowanceOnLoanChainOnly && parameters?.chainId === 1
-          ? 10n ** 30n
-          : 0n;
-    },
-  }),
+        if (functionName === "projectId") return 8n;
+        if (functionName === "TERMINAL") {
+          if (mocks.loanSourceFails) throw new Error("The node can't be reached.");
+          return "0x5555555555555555555555555555555555555555";
+        }
+        if (functionName === "accountingContextsOf") return [mocks.loanContext];
+        if (functionName === "accountingContextForTokenOf") return mocks.loanContext;
+        if (functionName === "revnetIdOfLoanWith") return 7n;
+        if (functionName === "loanOf") {
+          return {
+            amount: 10n ** 18n,
+            collateral: 2n * 10n ** 18n,
+            sourceToken: mocks.loanContext.token,
+          };
+        }
+        return mocks.directSell && functionName === "balanceOf"
+          ? 5n * 10n ** 18n
+          : mocks.allowanceOnLoanChainOnly && parameters?.chainId === 1
+            ? 10n ** 30n
+            : 0n;
+      },
+    }),
   useWalletClient: () => ({ data: {} }),
   useSimulateContract: () => ({ isLoading: false, error: null }),
   // The chain's own receipt read, which a Safe proposal never makes. A sent
@@ -158,7 +164,8 @@ vi.mock("wagmi", async (importOriginal) => ({
     return { ...idle, isLoading: true };
   },
   useReadContract: ({ functionName }: { functionName?: string }) => {
-    const loan = { amount: 10n ** 18n, collateral: 2n * 10n ** 18n };
+    // One object across renders, as wagmi's structurally shared data is.
+    const loan = mocks.loan;
     const answers: Record<string, unknown> = {
       PERMISSIONS: "0x4444444444444444444444444444444444444444",
       suckerPairsOf: [
@@ -624,6 +631,62 @@ async function confirmRepay() {
   fireEvent.click(within(confirm).getByRole("button", { name: "Repay loan" }));
 }
 
+describe("a repayment's loan token, decimals and currency", () => {
+  function openRepay() {
+    function Loans() {
+      const [open, setOpen] = useState(true);
+      return (
+        <RepayDialog
+          loanId="3"
+          chainId={1 as JBChainId}
+          projectId={7n}
+          loanProjectId={7n}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      );
+    }
+    renderWithQueries(<Loans />);
+  }
+
+  it("wallet-action:repay authorizes in the loans contract's onchain decimals, with one confirmation", async () => {
+    // The indexer says ETH/18; the loans contract prices this loan in a 6-decimal context.
+    mocks.loanContext = { ...mocks.loanContext, decimals: 6 };
+    await confirmRepay();
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    const ceiling = repayCeilingFor(10n ** 18n - 5n * 10n ** 17n, 1_000n);
+    expect(mocks.write.mock.calls[0][0]).toMatchObject({ functionName: "repayLoan" });
+    expect(screen.getByText(`${formatUnits(ceiling, 6)} ETH`, { exact: false })).toBeTruthy();
+    expect(document.querySelectorAll("[data-tx-confirm]")).toHaveLength(1);
+  });
+
+  it("wallet-action:repay shows one line and no repay button when the loan token can't be read", async () => {
+    mocks.loanSourceFails = true;
+    openRepay();
+    expect(
+      await screen.findByText("Couldn't read this network's loan token onchain. Try again."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Repay loan" })).toBeNull();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("wallet-action:repay sends nothing when the send-time read fails, and says so in place", async () => {
+    openRepay();
+    const repay = await screen.findByRole("button", { name: "Repay loan" });
+    await waitFor(() => expect(repay).toBeEnabled());
+    fireEvent.click(repay);
+    const confirm = await confirmPanel();
+    mocks.loanSourceFails = true;
+    fireEvent.click(within(confirm).getByRole("button", { name: "Repay loan" }));
+    expect(
+      await within(confirm).findByText(
+        "Couldn't read this network's loan token onchain. Try again.",
+      ),
+    ).toBeTruthy();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+});
+
 describe("value flows hold their dialog while a send is in flight", () => {
   it("cash out, from Confirm through the route read before the wallet prompt", async () => {
     await confirmCashOut();
@@ -855,9 +918,12 @@ describe("cash out's sale approval", () => {
 
 // The confirm no longer switches the wallet before it sends, so a flow's reads
 // must name the chain they are about rather than follow the wallet's.
+const ERC20_LOAN_TOKEN = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
 describe("repay reads on the loan's chain", () => {
   it("checks the allowance on the loan's chain, whichever chain the wallet is on", async () => {
     mocks.nativeBase = false;
+    mocks.loanContext = { token: ERC20_LOAN_TOKEN, decimals: 6, currency: 909516616 };
     mocks.allowanceOnLoanChainOnly = true;
     function Loans() {
       const [open, setOpen] = useState(true);
@@ -877,6 +943,36 @@ describe("repay reads on the loan's chain", () => {
     const repay = await screen.findByRole("button", { name: "Repay loan" });
     await waitFor(() => expect(repay).toBeEnabled());
     expect(screen.queryByText("Token approval needed")).toBeNull();
+  });
+});
+
+describe("an ERC-20 repayment after its approval", () => {
+  it("wallet-action:repay checks the allowance again and offers the repayment", async () => {
+    mocks.nativeBase = false;
+    mocks.loanContext = { token: ERC20_LOAN_TOKEN, decimals: 6, currency: 909516616 };
+    mocks.write.mockResolvedValue(`0x${"ef".repeat(32)}`);
+    function Loans() {
+      const [open, setOpen] = useState(true);
+      return (
+        <RepayDialog
+          loanId="3"
+          chainId={1 as JBChainId}
+          projectId={7n}
+          loanProjectId={7n}
+          open={open}
+          onOpenChange={setOpen}
+        />
+      );
+    }
+    renderWithQueries(<Loans />);
+    fireEvent.click(await screen.findByRole("button", { name: "Approve ETH" }));
+    const confirm = await confirmPanel();
+    // The approval lands: the loan's chain now holds enough allowance.
+    mocks.allowanceOnLoanChainOnly = true;
+    fireEvent.click(within(confirm).getByRole("button", { name: "Approve ETH" }));
+    const repay = await screen.findByRole("button", { name: "Repay loan" });
+    await waitFor(() => expect(repay).toBeEnabled());
+    expect(mocks.write).toHaveBeenCalledOnce();
   });
 });
 

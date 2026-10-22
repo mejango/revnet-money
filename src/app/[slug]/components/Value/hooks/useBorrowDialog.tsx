@@ -15,10 +15,12 @@ import { legacyIntents } from "@/lib/legacy-intents";
 import {
   buildProtectedBorrowTx,
   buildProtectedReallocateCollateralTx,
-  LoanSource,
+  LOAN_SOURCE_CHANGED,
+  LOAN_SOURCE_UNREADABLE,
   minimumBorrowAmount,
   readFreshBorrowableAmount,
   readLoanSource,
+  sameLoanSource,
 } from "@/lib/loanTransactions";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
@@ -81,15 +83,6 @@ interface UseBorrowDialogProps {
   selectedLoan?: SelectedLoan | null;
   defaultTab?: "borrow" | "repay";
 }
-
-const LOAN_SOURCE_UNREADABLE = "Couldn't read this network's loan token onchain. Try again.";
-const LOAN_SOURCE_CHANGED = "This network's loan token changed. Check the terms and confirm again.";
-
-const sameLoanSource = (a: LoanSource, b: LoanSource) =>
-  a.revnetId === b.revnetId &&
-  isAddressEqual(a.token, b.token) &&
-  a.decimals === b.decimals &&
-  a.currency === b.currency;
 
 export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorrowDialogProps) {
   // ===== STATE VARIABLES =====

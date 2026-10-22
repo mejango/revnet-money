@@ -20,6 +20,12 @@ import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/li
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { legacyIntents } from "@/lib/legacy-intents";
 import { repayCeilingFor, repayPrincipalFor } from "@/lib/loanFees";
+import {
+  LOAN_SOURCE_CHANGED,
+  LOAN_SOURCE_UNREADABLE,
+  readLoanSource,
+  sameLoanSource,
+} from "@/lib/loanTransactions";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
@@ -28,8 +34,9 @@ import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { withWriteIntent } from "@/lib/write-hold";
 import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
 import { approvalIntent, loanIntent } from "@bananapus/nana-sdk-core/review";
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Address, erc20Abi, formatUnits, parseUnits } from "viem";
+import { Address, erc20Abi, formatUnits, isAddressEqual, parseUnits } from "viem";
 import {
   useAccount,
   usePublicClient,
@@ -88,6 +95,8 @@ export function RepayDialog({
 
   // Check allowance for non-ETH base tokens before simulation
   const [allowanceChecked, setAllowanceChecked] = useState(false);
+  // Bumped after an approval lands, so the allowance is read again.
+  const [allowanceRead, setAllowanceRead] = useState(0);
   const [hasSufficientAllowance, setHasSufficientAllowance] = useState(true);
   const [allowanceError, setAllowanceError] = useState<string>("");
 
@@ -138,11 +147,52 @@ export function RepayDialog({
     { enabled: !!suckerGroupId, pollInterval: 10000, chainId: Number(currentChainId) },
   );
 
-  // Token configuration for this loan's chain. Null means LOADING/unknown —
-  // never assume ETH: gate submission and show skeletons until it resolves.
-  const chainTokenConfig = useMemo(
+  // The loan's revnet, token, decimals and currency, as the loans contract reports them
+  // (`revnetIdOfLoanWith`, `loanOf(...).sourceToken`, the terminal's accounting context). Read on
+  // every open and again at send; the indexer only names the symbol. Null means loading or
+  // unreadable: never assume ETH or 18 decimals.
+  const loanSourceQuery = useQuery({
+    queryKey: ["revLoanSource", "repay", chainId, loanId],
+    enabled: open && !!publicClient,
+    staleTime: 0,
+    retry: 1,
+    retryDelay: 250,
+    // A failed read retries on its own, so the line clears without a click.
+    refetchInterval: (query) => (query.state.status === "error" ? 15_000 : false),
+    queryFn: () =>
+      readLoanSource(publicClient!, { chainId, revnetId: loanProjectId, loanId: BigInt(loanId) }),
+  });
+  const loanSource = loanSourceQuery.isError ? undefined : loanSourceQuery.data;
+  const refetchLoanSource = loanSourceQuery.refetch;
+  // A send-time read that failed or disagreed with the reviewed one.
+  const [sourceNotice, setSourceNotice] = useState<string>();
+  const loanSourceUpdatedAt = loanSourceQuery.dataUpdatedAt;
+  useEffect(() => {
+    // A read that lands again ends a send-time failure.
+    if (loanSourceUpdatedAt)
+      setSourceNotice((notice) => (notice === LOAN_SOURCE_UNREADABLE ? undefined : notice));
+  }, [loanSourceUpdatedAt]);
+  const loanSourceLine = loanSourceQuery.isError ? LOAN_SOURCE_UNREADABLE : (sourceNotice ?? null);
+
+  const indexedTokenConfig = useMemo(
     () => getTokenConfigForChain(suckerGroupData, chainId),
     [suckerGroupData, chainId],
+  );
+  const indexedSymbol =
+    loanSource && indexedTokenConfig && isAddressEqual(indexedTokenConfig.token, loanSource.token)
+      ? indexedTokenConfig.symbol
+      : undefined;
+  const chainTokenConfig = useMemo(
+    () =>
+      loanSource
+        ? {
+            token: loanSource.token,
+            decimals: loanSource.decimals,
+            currency: loanSource.currency,
+            symbol: indexedSymbol,
+          }
+        : null,
+    [loanSource, indexedSymbol],
   );
   // Native-vs-ERC-20 is decided by the accounting token ADDRESS; symbols are
   // display-only. Undefined while the config is unresolved.
@@ -150,7 +200,6 @@ export function RepayDialog({
   const baseTokenSymbol = chainTokenConfig
     ? (chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token))
     : undefined;
-  const baseTokenDecimals = chainTokenConfig?.decimals ?? 18;
 
   // Repay loan hook
   const { writeContractAsync: repayLoanAsync, isPending: isRepaying } = useWriteContract();
@@ -209,16 +258,16 @@ export function RepayDialog({
     address: getRevnetLoanContract(6, chainId),
     chainId,
     args:
-      loanData && collateralToReturnWei !== undefined && chainTokenConfig
+      loanData && collateralToReturnWei !== undefined && loanSource
         ? [
-            loanProjectId,
+            loanSource.revnetId,
             loanData.collateral - collateralToReturnWei,
-            BigInt(chainTokenConfig.decimals),
-            BigInt(chainTokenConfig.currency),
+            BigInt(loanSource.decimals),
+            BigInt(loanSource.currency),
           ]
         : undefined,
     query: {
-      enabled: !!loanData && collateralToReturnWei !== undefined && !!chainTokenConfig,
+      enabled: !!loanData && collateralToReturnWei !== undefined && !!loanSource,
     },
   });
 
@@ -377,7 +426,15 @@ export function RepayDialog({
     checkAllowance();
     // `finalRepayAmount` is a dependency: it resolves asynchronously with the source-fee read, and the
     // allowance must be judged against the amount the contract will actually pull, not the principal.
-  }, [loanData, userAddress, publicClient, chainTokenConfig, chainId, finalRepayAmount]);
+  }, [
+    loanData,
+    userAddress,
+    publicClient,
+    chainTokenConfig,
+    chainId,
+    finalRepayAmount,
+    allowanceRead,
+  ]);
 
   // ===== EFFECTS =====
 
@@ -450,6 +507,30 @@ export function RepayDialog({
     return true;
   };
 
+  /**
+   * Reads the loan source again before a write: true only when the chain still says what the
+   * confirm showed. Otherwise the line says why, in place, and nothing is sent.
+   */
+  const confirmLoanSource = async () => {
+    try {
+      const fresh = await readLoanSource(publicClient!, {
+        chainId,
+        revnetId: loanProjectId,
+        loanId: BigInt(loanId),
+      });
+      if (loanSource && sameLoanSource(loanSource, fresh)) {
+        setSourceNotice(undefined);
+        return true;
+      }
+      setSourceNotice(LOAN_SOURCE_CHANGED);
+    } catch {
+      setSourceNotice(LOAN_SOURCE_UNREADABLE);
+    }
+    setRepayStatus("error");
+    void refetchLoanSource();
+    return false;
+  };
+
   const handleApproveAllowance = async () => {
     if (
       !loanData ||
@@ -465,6 +546,7 @@ export function RepayDialog({
 
     try {
       setRepayStatus("approving");
+      if (!(await confirmLoanSource())) return;
       const baseTokenAddress = chainTokenConfig.token;
       const revLoansContractAddress = getRevnetLoanContract(6, chainId);
 
@@ -493,6 +575,7 @@ export function RepayDialog({
 
       // Reset allowance check to trigger re-check
       setAllowanceChecked(false);
+      setAllowanceRead((read) => read + 1);
       setRepayStatus("idle");
 
       toast({
@@ -535,6 +618,7 @@ export function RepayDialog({
 
     try {
       setRepayStatus("waiting-signature");
+      if (!(await confirmLoanSource())) return;
 
       const loanIdBigInt = BigInt(loanId);
       // Same value the simulation and the allowance check used — all three move together, or
@@ -685,6 +769,19 @@ export function RepayDialog({
   // An unresolved token config is a LOADING state: without it the loan's base
   // token is unknown, so amounts, allowance, and value attachment can't be
   // rendered or submitted safely.
+  if (!chainTokenConfig && loanSourceLine) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Repay loan</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-zinc-600">{loanSourceLine}</p>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   if (isLoadingLoan || !chainTokenConfig || (!allowanceChecked && isNativeBase === false)) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -704,6 +801,9 @@ export function RepayDialog({
       </Dialog>
     );
   }
+
+  // The loan's own decimals, as the loans contract reports them.
+  const baseTokenDecimals = chainTokenConfig.decimals;
 
   if (!loanData) {
     return (
@@ -898,6 +998,7 @@ export function RepayDialog({
                 }
                 onClick={() => setReview("repay")}
                 disabled={
+                  loanSourceLine === LOAN_SOURCE_UNREADABLE ||
                   !finalRepayAmount ||
                   Number(finalRepayAmount) <= 0 ||
                   !collateralToReturn ||
@@ -914,6 +1015,9 @@ export function RepayDialog({
               </ButtonWithWallet>
             )}
             {renderStatusMessage()}
+            {loanSourceLine && !review ? (
+              <p className="text-sm text-zinc-600 mt-2">{loanSourceLine}</p>
+            ) : null}
           </div>
         </div>
         {review && finalRepayAmount !== undefined ? (
@@ -947,7 +1051,7 @@ export function RepayDialog({
             }}
             busy={signing}
             status={signing || repayStatus === "safe-unconfirmed" ? statusText : null}
-            error={repayStatus === "error" ? statusText : null}
+            error={loanSourceLine ?? (repayStatus === "error" ? statusText : null)}
           >
             {review === "repay" ? (
               <>
