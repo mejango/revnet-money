@@ -252,7 +252,9 @@ describe("a queued movement's Execute", () => {
       4n,
       "0x1111111111111111111111111111111111111111",
     );
-    fireEvent.click(within(confirm).getByRole("button", { name: "Execute" }));
+    const execute = within(confirm).getByRole("button", { name: "Execute" });
+    await waitFor(() => expect(execute).toBeEnabled());
+    fireEvent.click(execute);
     await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
     expect(mocks.simulate.mock.calls[0]![0]).toMatchObject({ address: REGISTERED_SUCKER });
     expect(mocks.write.mock.calls[0]![0]).toMatchObject({

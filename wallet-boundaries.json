@@ -124,7 +124,7 @@
       "file": "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
       "line": 752,
       "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
+      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3. The cited test drives this file; this exact site has no direct test.",
       "test": "test/project-handle-confirm.test.tsx"
     },
     {
@@ -146,14 +146,14 @@
       "line": 186,
       "api": "writeContractAsync",
       "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/operator-safe-route.test.ts"
+      "test": "test/edit-metadata-dialog.test.tsx"
     },
     {
       "file": "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
       "line": 78,
       "api": "useWriteContract",
       "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/operator-account-card.test.tsx"
+      "test": "test/operator-safe-proposal.test.tsx"
     },
     {
       "file": "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
@@ -250,7 +250,7 @@
       "file": "src/app/[slug]/components/v6/owners/market/lib.ts",
       "line": 764,
       "api": "request",
-      "boundary": "Public-client read (eth_call or eth_getLogs), never a wallet RPC. The test reaches the indexed path; this raw log scan has no direct test.",
+      "boundary": "Public-client read (eth_call or eth_getLogs), never a wallet RPC. The test's malformed and truncated indexer cases fall back to this raw log scan.",
       "test": "test/market-indexed-liquidity.test.ts"
     },
     {
@@ -558,7 +558,7 @@
       "file": "src/lib/projectHandles.ts",
       "line": 214,
       "api": "request",
-      "boundary": "Public-client read (eth_call or eth_getLogs), never a wallet RPC.",
+      "boundary": "Public-client read (eth_call or eth_getLogs), never a wallet RPC. The cited test drives this file; this exact site has no direct test.",
       "test": "test/project-handles.test.ts"
     },
     {
@@ -573,21 +573,21 @@
       "line": 439,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
-      "test": "test/safe-relayr-adapter.test.ts"
+      "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/lib/safe-relayr.ts",
       "line": 447,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
-      "test": "test/safe-relayr-adapter.test.ts"
+      "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/lib/safe-relayr.ts",
       "line": 609,
       "api": "sendTransaction",
       "boundary": "Raw Relayr fee payment for a Safe bundle, sent only after the reviewed quote and the payment journal. Replaced by core Relayr in R5.",
-      "test": "test/safe-relayr-adapter.test.ts"
+      "test": "test/reviewed-relayr-hooks.test.tsx"
     }
   ]
 }
