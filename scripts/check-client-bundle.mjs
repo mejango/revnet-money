@@ -25,23 +25,24 @@ const account = `0x${"1".repeat(40)}`;
 // the registry check before a queued movement's Execute) measures 569.1, 568.0 and 629.6 KiB.
 // Next 16.4.2 (the image optimizer advisory GHSA-2464-fhr4-w9xw) adds 0.2-1.7 KiB to most routes;
 // each changed ceiling is its new measure rounded up.
+// SDK 4.0.0-local.7 (provenance-based error lines, the wallet-ready wait) adds 0.1-0.4 KiB to eight routes.
 const routes = [
   { route: "/", path: "/", kib: 390 },
   { route: "/learn", path: "/learn", kib: 354 },
-  { route: "/build", path: "/build", kib: 355 },
+  { route: "/build", path: "/build", kib: 356 },
   { route: "/audit", path: "/audit", kib: 357 },
-  { route: "/discover", path: "/discover", kib: 338 },
+  { route: "/discover", path: "/discover", kib: 339 },
   { route: "/create", path: "/create", kib: 544 },
-  { route: "/[slug]", path: "/eth:1", kib: 571 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 570 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 677 },
+  { route: "/[slug]", path: "/eth:1", kib: 572 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 571 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 632 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 578 },
   { route: "/[slug]/extras", path: "/eth:1/extras", kib: 572 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 420 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 421 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 410 },
-  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 430 },
-  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 385 },
+  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 431 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 386 },
   { route: "/_not-found", path: "/no-such-page/x/y", kib: 300, status: 404 },
 ];
 // Next renders its global error page only when the root layout itself throws; no URL reaches it.

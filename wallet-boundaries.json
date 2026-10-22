@@ -247,13 +247,6 @@
       "test": "test/split-hook-card.test.tsx"
     },
     {
-      "file": "src/app/[slug]/components/v6/owners/market/lib.ts",
-      "line": 764,
-      "api": "request",
-      "boundary": "Public-client read (eth_call or eth_getLogs), never a wallet RPC. The test's malformed and truncated indexer cases fall back to this raw log scan.",
-      "test": "test/market-indexed-liquidity.test.ts"
-    },
-    {
       "file": "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
       "line": 76,
       "api": "useWriteContract",
@@ -532,48 +525,6 @@
       "api": "writeContractAsync",
       "boundary": "The fire-and-forget writeContract wrapper calls the reviewed writeContractAsync above, never the wallet directly. Deleted in R3.",
       "test": "test/reviewed-write-hook.test.tsx"
-    },
-    {
-      "file": "src/lib/pending-router-calls.ts",
-      "line": 91,
-      "api": "request",
-      "boundary": "Public-client read (eth_call or eth_getLogs), never a wallet RPC.",
-      "test": "test/pending-router-calls.test.ts"
-    },
-    {
-      "file": "src/lib/projectHandles.ts",
-      "line": 136,
-      "api": "request",
-      "boundary": "Public-client read (eth_call or eth_getLogs), never a wallet RPC.",
-      "test": "test/project-handles.test.ts"
-    },
-    {
-      "file": "src/lib/projectHandles.ts",
-      "line": 177,
-      "api": "request",
-      "boundary": "Public-client read (eth_call or eth_getLogs), never a wallet RPC.",
-      "test": "test/project-handles.test.ts"
-    },
-    {
-      "file": "src/lib/projectHandles.ts",
-      "line": 214,
-      "api": "request",
-      "boundary": "Public-client read (eth_call or eth_getLogs), never a wallet RPC. The cited test drives this file; this exact site has no direct test.",
-      "test": "test/project-handles.test.ts"
-    },
-    {
-      "file": "src/lib/projectHandles.ts",
-      "line": 263,
-      "api": "request",
-      "boundary": "Public-client read (eth_call or eth_getLogs), never a wallet RPC.",
-      "test": "test/project-handles.test.ts"
-    },
-    {
-      "file": "src/lib/safe-relayr.ts",
-      "line": 439,
-      "api": "request",
-      "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
-      "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/lib/safe-relayr.ts",
