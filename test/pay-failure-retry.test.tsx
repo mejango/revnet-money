@@ -123,7 +123,10 @@ vi.mock("@/hooks/useTokenBalances", () => ({
 vi.mock("@/lib/nana/project", () => ({
   useJBTokenContext: () => ({ token: { data: { symbol: "REV", decimals: 18 } } }),
 }));
-vi.mock("@/lib/nana/suckers", () => ({ useSuckers: () => ({ data: [] }) }));
+vi.mock("@/lib/nana/suckers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/nana/suckers")>()),
+  useSuckers: () => ({ data: [], verifiedPairs: [{ peerChainId: 1, projectId: 7n }] }),
+}));
 vi.mock("@/lib/paymentTerminal", () => ({
   resolveBestV6PayRoute: async (args: { slippageBps?: bigint }) => {
     mocks.routeCalls.push(args);

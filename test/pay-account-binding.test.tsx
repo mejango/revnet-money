@@ -32,6 +32,11 @@ const mocks = vi.hoisted(() => ({
   cart: [] as unknown[],
   erc20: false,
   ensureAllowance: vi.fn(),
+  verifiedPairs: [{ peerChainId: 1, projectId: 7n }] as {
+    peerChainId: number;
+    projectId: bigint;
+  }[],
+  suckersVerified: true,
 }));
 
 const TKN = "0x7777777777777777777777777777777777777777" as Address;
@@ -154,7 +159,15 @@ vi.mock("@/lib/waitForReceipt", () => ({
 vi.mock("@/lib/nana/project", () => ({
   useJBTokenContext: () => ({ token: { data: { symbol: "REV", decimals: 18 } } }),
 }));
-vi.mock("@/lib/nana/suckers", () => ({ useSuckers: () => ({ data: [] }) }));
+vi.mock("@/lib/nana/suckers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/nana/suckers")>()),
+  useSuckers: () => ({
+    data: [{ peerChainId: 1, projectId: 7n }],
+    verifiedPairs: mocks.verifiedPairs,
+    isVerified: mocks.suckersVerified,
+    isError: false,
+  }),
+}));
 vi.mock("@/lib/paymentTerminal", () => ({
   resolveBestV6PayRoute: async () => {
     mocks.routeCalls += 1;
@@ -226,9 +239,65 @@ beforeEach(() => {
   mocks.shop = undefined;
   mocks.cart = [];
   mocks.erc20 = false;
+  mocks.verifiedPairs = [{ peerChainId: 1, projectId: 7n }];
+  mocks.suckersVerified = true;
   mocks.ensureAllowance.mockReset().mockResolvedValue(HASH);
   mocks.write.mockReset().mockResolvedValue(HASH);
   mocks.simulate.mockReset().mockResolvedValue({ request: {} });
+});
+
+describe("a payment to a sucker peer", () => {
+  it("wallet-action:pay stays off for a pair the on-chain sucker registry does not list", async () => {
+    // The selected pair (1, 7) came from the indexer seed; the registry read lists project 8.
+    mocks.verifiedPairs = [{ peerChainId: 1, projectId: 8n }];
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await screen.findByText(/project listed here isn.t linked onchain/);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    const pay = screen.getByRole("button", { name: "Pay" });
+    expect(pay).toBeDisabled();
+    fireEvent.click(pay);
+    expect(screen.queryByRole("dialog", { name: "Confirm payment" })).toBeNull();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("wallet-action:pay keeps one confirmation: a pending registry read is only the button's loading state", async () => {
+    mocks.verifiedPairs = [];
+    mocks.suckersVerified = false;
+    const client = queryClient();
+    const view = render(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    // Pending: no message, no extra step, just a busy Pay.
+    expect(screen.getByRole("button", { name: "Pay" })).toBeDisabled();
+    expect(screen.queryByText(/belongs to this project|isn.t linked/)).toBeNull();
+
+    // The read lands: the same single press and single confirm pay, as on the home chain.
+    mocks.verifiedPairs = [{ peerChainId: 1, projectId: 7n }];
+    mocks.suckersVerified = true;
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText("You get at least");
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
+  });
 });
 
 describe("a payment bound to the account it was prepared for", () => {

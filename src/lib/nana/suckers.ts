@@ -50,15 +50,51 @@ export function normalizeSuckerPairs(
 }
 
 /**
- * Resolve the V6 sucker group on-chain. Server-provided peers seed the cache,
- * removing the duplicate client indexer waterfall on initial render. Manual
- * `refetch` still resolves the live registry after cross-chain edits.
+ * Whether `pairs` lists this exact `(chainId, projectId)`. Write paths check a
+ * target against `useSuckers().verifiedPairs` with this before building calldata.
+ */
+export function hasSuckerPair(
+  pairs: readonly SuckerPair[] | undefined,
+  pair: { peerChainId: number; projectId: bigint },
+): boolean {
+  return (pairs ?? []).some(
+    (p) => p.peerChainId === pair.peerChainId && p.projectId === pair.projectId,
+  );
+}
+
+type SuckerCheck = { isVerified: boolean; isError: boolean };
+
+/**
+ * Whether the registry read is still in flight. It starts on mount, so it has
+ * normally landed before anyone reaches a write; while it has not, the write's
+ * own button shows its loading state rather than a message or another step.
+ */
+export function isPairCheckPending(suckers: SuckerCheck): boolean {
+  return !suckers.isVerified && !suckers.isError;
+}
+
+/** The one inline line a write shows when its target pair is not chain-verified; null while pending. */
+export function unverifiedPairLine(suckers: SuckerCheck, chainName: string): string | null {
+  if (suckers.isVerified) return `The ${chainName} project listed here isn't linked onchain.`;
+  if (suckers.isError) return `Couldn't confirm ${chainName} belongs to this project.`;
+  return null;
+}
+
+/**
+ * Resolve the V6 sucker group on-chain. Server-provided (Bendystraw) peers seed
+ * the cache so the first render shows the group without a client waterfall, but
+ * the seed is stale from the start: the on-chain registry read always runs on
+ * mount, and once it lands the group stays cached until a manual `refetch`.
+ *
+ * `data` is for display. Anything that builds calldata for a peer reads
+ * `verifiedPairs`: the page's own pair until the registry read lands, then the
+ * on-chain group. An indexer-listed peer never reaches a write.
  *
  * `resolveSuckers` rejects rather than returning a truncated group when a
  * registry read fails — a partial group under-counts supply, surplus, and
  * balances. React Query keeps the Bendystraw-seeded pairs as `data` and raises
  * `isError`, so the page renders what the indexer knew instead of silently
- * treating an incomplete group as complete.
+ * treating an incomplete group as complete, while peer writes stay blocked.
  */
 export function useSuckers({ enabled = true }: { enabled?: boolean } = {}) {
   const config = useConfig();
@@ -77,11 +113,14 @@ export function useSuckers({ enabled = true }: { enabled?: boolean } = {}) {
     [current, project?.initialSuckers],
   );
 
-  return useQuery({
+  const query = useQuery({
     queryKey: ["revnet", "suckers", chainId, projectId.toString()],
     enabled: enabled && !!chainId,
     initialData,
-    staleTime: Infinity,
+    // The indexer seed is dated 0, so it is never mistaken for a chain read and is
+    // fetched over at once; a chain read then stays fresh until a manual refetch.
+    initialDataUpdatedAt: 0,
+    staleTime: (q) => (q.state.dataUpdatedAt > 0 ? Infinity : 0),
     queryFn: async () => {
       if (!chainId || !current) return [];
       const pairs = await resolveSuckers({
@@ -93,6 +132,12 @@ export function useSuckers({ enabled = true }: { enabled?: boolean } = {}) {
       return normalizeSuckerPairs(pairs, current);
     },
   });
+  const chainRead = query.dataUpdatedAt > 0;
+  const verifiedPairs = useMemo(
+    () => (chainRead ? query.data : current ? [current] : []),
+    [chainRead, query.data, current],
+  );
+  return { ...query, isVerified: chainRead, verifiedPairs };
 }
 
 /**
@@ -118,9 +163,10 @@ export function useSuckersUserTokenBalance() {
     },
   });
 
-  const peerKey = (suckers.data ?? [])
-    .map((pair) => `${pair.peerChainId}:${pair.projectId}`)
-    .join(",");
+  // Borrow, burn, cash out and credit claims act on these rows' project ids, so
+  // only chain-verified pairs get a balance row; peers appear once the registry read lands.
+  const pairs = suckers.verifiedPairs;
+  const peerKey = pairs.map((pair) => `${pair.peerChainId}:${pair.projectId}`).join(",");
   const balances = useQuery({
     queryKey: [
       "revnet",
@@ -134,7 +180,6 @@ export function useSuckersUserTokenBalance() {
     enabled: !!address && !!chainId && !suckers.isLoading,
     queryFn: async () => {
       if (!address || !chainId) return [];
-      const pairs = suckers.data ?? [];
       // Identity is the whole pair: a group member sharing the active chain
       // under a different project id still needs its own balance read.
       const remotePairs = pairs.filter(
@@ -168,6 +213,13 @@ export function useSuckersUserTokenBalance() {
 
   return {
     ...balances,
+    // While verified peers are read, or if a peer read fails, the home balance read
+    // on its own stays shown (and selectable).
+    data:
+      balances.data ??
+      (chainId && currentChain.data
+        ? [{ balance: currentChain.data, chainId, projectId }]
+        : undefined),
     isLoading: balances.isLoading || suckers.isLoading || currentChain.isLoading,
     isError: balances.isError || suckers.isError || currentChain.isError,
     error: balances.error ?? suckers.error ?? currentChain.error,

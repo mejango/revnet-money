@@ -32,7 +32,7 @@ const routes = [
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 673 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 628 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 574 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 568 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 569 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 418 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 408 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },

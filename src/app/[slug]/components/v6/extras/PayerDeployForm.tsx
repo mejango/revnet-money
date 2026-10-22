@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,12 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
+import {
+  hasSuckerPair,
+  isPairCheckPending,
+  unverifiedPairLine,
+  useSuckers,
+} from "@/lib/nana/suckers";
 import { etherscanLink, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
@@ -76,6 +83,8 @@ export function PayerDeployForm({
 }) {
   const { address } = useAccount();
   const { runBatch, getPendingBatch } = useMultichainBatch();
+  const suckerQuery = useSuckers();
+  const { verifiedPairs } = suckerQuery;
   const { toast } = useToast();
   const scope = `project-payers:${rows
     .map((row) => `${row.chainId}:${row.projectId}`)
@@ -119,6 +128,34 @@ export function PayerDeployForm({
   };
 
   const selectedRows = deployableRows.filter((row) => selected.has(row.chainId));
+  // Rows come from the indexer, and a payer forwards to its project id forever, so
+  // each destination must be a pair the on-chain sucker registry lists. A saved
+  // batch is checked too: while any of its calls not yet confirmed sent targets an
+  // unlisted pair, it does not resume, since resuming can authorize new work.
+  const pairPending = isPairCheckPending(suckerQuery);
+  const unverifiedOf = (destinations: { chainId: number; projectId: bigint }[]) =>
+    destinations.filter(
+      (call) =>
+        !hasSuckerPair(verifiedPairs, { peerChainId: call.chainId, projectId: call.projectId }),
+    );
+  const unverifiedLine = (unverified: { chainId: number }[]) =>
+    unverified.length
+      ? unverifiedPairLine(
+          suckerQuery,
+          unverified.map((call) => chainDisplayName(call.chainId)).join(", "),
+        )
+      : null;
+  const unverifiedRows = unverifiedOf(
+    selectedRows.map((row) => ({ chainId: row.chainId, projectId: BigInt(row.projectId) })),
+  );
+  const unverifiedResume = unverifiedOf(
+    (pendingBatch?.calls ?? [])
+      .filter((call) => call.state === "ready" && call.expectedDeployment)
+      .map((call) => ({
+        chainId: call.chainId,
+        projectId: BigInt(call.expectedDeployment!.projectId),
+      })),
+  );
 
   // Surface identical already-deployed payers so nobody redeploys one they
   // could just reuse — matching behavior + beneficiary on a selected chain.
@@ -141,6 +178,10 @@ export function PayerDeployForm({
     if (!address) return;
     if (!selectedRows.length) {
       setError("Select at least one chain.");
+      return;
+    }
+    if (unverifiedRows.length) {
+      setError(unverifiedLine(unverifiedRows));
       return;
     }
     const trimmedMetadata = metadata.trim() || "0x";
@@ -217,6 +258,18 @@ export function PayerDeployForm({
     if (!resume && review && address.toLowerCase() !== review.account.toLowerCase()) {
       setReview(null);
       setError("Your connected account changed. Review the deploy again.");
+      return;
+    }
+    const unverified = resume
+      ? unverifiedResume
+      : unverifiedOf(
+          (review?.calls ?? []).map((call) => ({
+            chainId: call.chainId,
+            projectId: BigInt(call.projectId),
+          })),
+        );
+    if (unverified.length) {
+      setError(unverifiedLine(unverified));
       return;
     }
     setBusy(true);
@@ -329,12 +382,15 @@ export function PayerDeployForm({
           </p>
           <ButtonWithWallet
             className="mt-2"
-            disabled={busy}
-            loading={busy}
+            disabled={busy || unverifiedResume.length > 0}
+            loading={busy || (unverifiedResume.length > 0 && pairPending)}
             onClick={() => void submitDeploys(true)}
           >
             Resume saved deployment
           </ButtonWithWallet>
+          {unverifiedLine(unverifiedResume) ? (
+            <p className="mt-2 text-sm text-zinc-600">{unverifiedLine(unverifiedResume)}</p>
+          ) : null}
         </div>
       ) : null}
       <section className="pb-6">
@@ -552,11 +608,20 @@ export function PayerDeployForm({
             </div>
           ) : null}
 
+          {unverifiedLine(unverifiedRows) ? (
+            <p className="mt-4 text-sm text-zinc-600">{unverifiedLine(unverifiedRows)}</p>
+          ) : null}
+
           <div className="mt-4 flex justify-end">
             <ButtonWithWallet
               connectWalletText="Connect wallet to deploy"
-              loading={busy}
-              disabled={busy || Boolean(pendingBatch) || selectedRows.length === 0}
+              loading={busy || (unverifiedRows.length > 0 && pairPending)}
+              disabled={
+                busy ||
+                Boolean(pendingBatch) ||
+                selectedRows.length === 0 ||
+                unverifiedRows.length > 0
+              }
               onClick={buildReview}
               className="bg-teal-500 text-melon-950 hover:bg-teal-600"
             >

@@ -2,6 +2,7 @@ import {
   JBBuybackHookContracts,
   JBCoreContracts,
   JBRouterTerminalContracts,
+  JBSuckerContracts,
   MAX_RESERVED_PERCENT,
   RevnetCoreContracts,
   jbBuybackHookRegistryAbi,
@@ -14,6 +15,7 @@ import {
   jbRouterTerminalRegistryAbi,
   jbRulesetsAbi,
   jbSplitsAbi,
+  jbSuckerRegistryAbi,
   jbTerminalStoreAbi,
   jbTokensAbi,
   jbV6ContractAddress,
@@ -186,6 +188,7 @@ const addresses = {
   projectHandles: getAddress("0x726f4a3dfd2fb8297f8ab98d215b42a92d8eefe8"),
   rulesets: addressOf(JBCoreContracts.JBRulesets),
   splits: addressOf(JBCoreContracts.JBSplits),
+  suckerRegistry: addressOf(JBSuckerContracts.JBSuckerRegistry),
   terminal: addressOf(JBCoreContracts.JBMultiTerminal),
   terminalStore: addressOf(JBCoreContracts.JBTerminalStore),
   tokens: addressOf(JBCoreContracts.JBTokens),
@@ -1109,6 +1112,21 @@ for (const functionName of ["FUND_ACCESS_LIMITS", "RULESETS", "TOKENS", "SPLITS"
     result: () => zeroAddress,
   });
 }
+// Every project page reads its sucker group from the registry on mount; the
+// fixture projects live on one chain, matching their indexed groups.
+registerCall({
+  abi: jbSuckerRegistryAbi,
+  functionName: "suckerPairsOf",
+  address: addresses.suckerRegistry,
+  result: ([requestedProjectId]) => {
+    requireFixture(
+      requestedProjectId === BigInt(projectId) ||
+        requestedProjectId === BigInt(routingSourceProjectId),
+      `suckerPairsOf projectId=${requestedProjectId}`,
+    );
+    return [];
+  },
+});
 registerCall({
   abi: jbControllerAbi,
   functionName: "currentRulesetOf",
