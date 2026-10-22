@@ -178,4 +178,31 @@ describe("transaction review dialog", () => {
     await act(async () => approve.click());
     expect(finished).toEqual([false]);
   });
+
+  it("declines when an authorization beside signatures changed after it was shown", async () => {
+    const claim = REVIEW_REQUESTS["sucker claim"].calls[0];
+    const { TransactionReviewDialog } = await import("@/components/TransactionReviewDialog");
+    const finished: unknown[] = [];
+    const authorization = { kind: "message", message: "A" };
+    const request = {
+      calls: [claim],
+      authorization,
+      signatures: [{ kind: "message", chainId: 1, message: "List my project" }],
+    } as unknown as TransactionReviewRequest;
+    act(() =>
+      root.render(
+        <TransactionReviewDialog
+          pending={{ kind: "review", id: 1, request, resolve: () => {} }}
+          onFinish={(approved) => finished.push(approved)}
+        />,
+      ),
+    );
+    const dialog = document.querySelector("dialog")!;
+    authorization.message = "B";
+    act(() => dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
+    await act(async () =>
+      dialog.querySelector<HTMLButtonElement>("footer button.bg-melon-500")!.click(),
+    );
+    expect(finished).toEqual([false]);
+  });
 });

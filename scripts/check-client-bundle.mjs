@@ -194,7 +194,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 924);
 // 3.1.0) measures 2714.9 KiB, route-referenced 912.1 KiB. Every ceiling drops to its measure.
 // SDK 4.0.0 measures 2727.7 KiB (2726.1 before); the aggregate ceiling moves up 1 KiB.
 // Next 16.4.2 measures 2729.5 KiB; the aggregate ceiling moves to 2730.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2730);
+// The lazy review dialog renders SDK 4.0.0's review model (buildReviewModel and its decoders):
+// 2733.2 KiB, routes unchanged; builds vary by 0.1 KiB. The aggregate ceiling moves to 2734.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2734);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
