@@ -210,9 +210,7 @@ function ExecuteButton({
             gate.assertVerified(targets);
             setBusy(true);
             setError(null);
-            const projectId = targets.find((target) => target.chainId === row.chainId)?.projectId;
-            if (projectId === undefined) throw new Error("This chain's project is not verified.");
-            const { sucker, value } = await prepareQueuedExecute(row, BigInt(projectId), address);
+            const { sucker, value } = await prepareQueuedExecute(row, address);
             if (value == null) {
               setFeeUnavailable(true);
               throw new Error("Couldn't find the bridge fee. Try again shortly.");

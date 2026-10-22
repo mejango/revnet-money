@@ -21,8 +21,8 @@ const account = `0x${"1".repeat(40)}`;
 // Project routes +4 KiB (2026-10-20): SDK 3.3.0 decodePayFailure revert table and the pay card's failure
 // reason and retry (+2), then SDK 3.4.1's retry rule and router-converted quote minimums (+2).
 // Most routes +1 KiB (2026-10-22): the loan dialogs read their token, decimals and currency onchain.
-// /[slug] and /[slug]/owners +1 KiB (2026-10-22): SDK 4.0.0 (the failed swap quote's Retry line,
-// the registry check before a queued movement's Execute) measures 569.1 and 629.6 KiB.
+// /[slug], /[slug]/terms and /[slug]/owners +1 KiB (2026-10-22): SDK 4.0.0 (the failed swap quote's Retry line,
+// the registry check before a queued movement's Execute) measures 569.1, 568.0 and 629.6 KiB.
 const routes = [
   { route: "/", path: "/", kib: 389 },
   { route: "/learn", path: "/learn", kib: 353 },
@@ -31,7 +31,7 @@ const routes = [
   { route: "/discover", path: "/discover", kib: 338 },
   { route: "/create", path: "/create", kib: 543 },
   { route: "/[slug]", path: "/eth:1", kib: 570 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 568 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 569 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 675 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 630 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 576 },

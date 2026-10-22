@@ -91,6 +91,7 @@ const neverSynced = chains.map(({ chainId }) => ({
 }));
 const pendingMovement: V6BridgeRow & { tokenSymbol: string } = {
   chainId: 1,
+  projectId: 1n,
   peerChainId: 8453,
   beneficiary: "0x1111111111111111111111111111111111111111",
   beneficiary32: `0x${"00".repeat(32)}`,

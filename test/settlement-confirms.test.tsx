@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   simulate: vi.fn(),
   write: vi.fn(),
   prepareExecute: vi.fn(),
+  rowProjectId: 4n,
   rows: [] as unknown[],
 }));
 
@@ -96,6 +97,7 @@ function bridgeRow(status: "claimable" | "pending") {
   return {
     createdAt: 1_700_000_000,
     chainId: 8453,
+    projectId: mocks.rowProjectId,
     peerChainId: 10,
     beneficiary: "0x1111111111111111111111111111111111111111",
     beneficiary32: `0x${"00".repeat(32)}`,
@@ -134,6 +136,7 @@ beforeEach(() => {
   groupGateState.reset();
   mocks.simulate.mockReset().mockResolvedValue({});
   mocks.write.mockReset().mockResolvedValue(HASH);
+  mocks.rowProjectId = 4n;
   mocks.prepareExecute
     .mockReset()
     .mockResolvedValue({ sucker: REGISTERED_SUCKER, value: 10n ** 15n });
@@ -248,8 +251,7 @@ describe("a queued movement's Execute", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
     const confirm = await screen.findByRole("dialog", { name: "Confirm execution" });
     expect(mocks.prepareExecute).toHaveBeenCalledWith(
-      expect.objectContaining({ sourceSucker: SUCKER }),
-      4n,
+      expect.objectContaining({ sourceSucker: SUCKER, projectId: 4n }),
       "0x1111111111111111111111111111111111111111",
     );
     const execute = within(confirm).getByRole("button", { name: "Execute" });
@@ -273,5 +275,19 @@ describe("a queued movement's Execute", () => {
     expect(screen.queryByRole("dialog", { name: "Confirm execution" })).toBeNull();
     expect(mocks.simulate).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("wallet-action:queued-movements checks the movement's own project when two share its chain", async () => {
+    mocks.rowProjectId = 3n;
+    mocks.rows = [bridgeRow("pending")];
+    renderWithQueries(
+      <QueuedMovementsCard
+        chains={[...CHAINS, { chainId: 8453 as JBChainId, projectId: 3n }]}
+        tokenSymbol="ART"
+      />,
+    );
+    fireEvent.click((await screen.findAllByRole("button", { name: "Execute" }))[0]!);
+    await waitFor(() => expect(mocks.prepareExecute).toHaveBeenCalled());
+    expect(mocks.prepareExecute.mock.calls[0]![0]).toMatchObject({ projectId: 3n });
   });
 });

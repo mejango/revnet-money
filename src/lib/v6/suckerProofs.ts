@@ -30,6 +30,8 @@ type V6BridgeRowStatus = JBSuckerMovementStatus;
 export interface V6BridgeRow {
   createdAt?: number;
   chainId: JBChainId;
+  /** The project on `chainId` whose sucker holds this movement. */
+  projectId: bigint;
   peerChainId: JBChainId;
   beneficiary: Address;
   beneficiary32: Hex;
@@ -148,6 +150,7 @@ export async function fetchV6BridgeRows(
                 rows.push({
                   createdAt: blockTimestamps.get(movement.blockNumber),
                   chainId,
+                  projectId,
                   peerChainId,
                   beneficiary: suckerBytes32ToAddress(movement.leaf.beneficiary),
                   beneficiary32: movement.leaf.beneficiary,
@@ -260,12 +263,11 @@ async function findToRemoteValue(
  */
 export async function prepareQueuedExecute(
   row: V6BridgeRow,
-  projectId: bigint,
   account: Address | undefined,
 ): Promise<{ sucker: Address; value: bigint | null }> {
   const sucker = await getRegisteredSucker(getViemPublicClient(row.chainId) as PublicClient, {
     chainId: row.chainId,
-    projectId,
+    projectId: row.projectId,
     remoteChainId: row.peerChainId,
     sucker: row.sourceSucker,
   });

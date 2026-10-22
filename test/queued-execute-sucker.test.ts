@@ -23,7 +23,13 @@ const INDEXED = "0x1111111111111111111111111111111111111111" as Address;
 const REGISTERED = "0x2222222222222222222222222222222222222222" as Address;
 const TOKEN = "0x000000000000000000000000000000000000EEEe" as Address;
 const ACCOUNT = "0x3333333333333333333333333333333333333333" as Address;
-const row = { chainId: 10, peerChainId: 8453, sourceSucker: INDEXED, token: TOKEN } as V6BridgeRow;
+const row = {
+  chainId: 10,
+  projectId: 7n,
+  peerChainId: 8453,
+  sourceSucker: INDEXED,
+  token: TOKEN,
+} as V6BridgeRow;
 
 beforeEach(() => {
   mocks.registered.mockReset();
@@ -34,7 +40,7 @@ beforeEach(() => {
 describe("a queued movement's Execute", () => {
   it("quotes and sends toRemote to the registry's sucker, never the indexer's", async () => {
     mocks.registered.mockResolvedValueOnce(REGISTERED);
-    const prepared = await prepareQueuedExecute(row, 7n, ACCOUNT);
+    const prepared = await prepareQueuedExecute(row, ACCOUNT);
     expect(mocks.registered).toHaveBeenCalledWith(expect.anything(), {
       chainId: 10,
       projectId: 7n,
@@ -47,9 +53,7 @@ describe("a queued movement's Execute", () => {
 
   it("stops before any fee read when the registry does not list the sucker", async () => {
     mocks.registered.mockRejectedValueOnce(new UnverifiedSuckerError("unregistered"));
-    await expect(prepareQueuedExecute(row, 7n, ACCOUNT)).rejects.toBeInstanceOf(
-      UnverifiedSuckerError,
-    );
+    await expect(prepareQueuedExecute(row, ACCOUNT)).rejects.toBeInstanceOf(UnverifiedSuckerError);
     expect(mocks.readContract).not.toHaveBeenCalled();
     expect(mocks.call).not.toHaveBeenCalled();
   });
