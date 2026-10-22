@@ -199,12 +199,18 @@ const runAudit = () =>
   });
 
 // The registry's audit endpoint answers an outage with an error report. That is
-// the one result worth a second attempt; every other bad result fails at once.
+// the one result worth a second attempt (a report holding only an error object); every other bad result fails at once.
 const isErrorReport = ({ status, stdout }) => {
   if (status !== 0 && status !== 1) return false;
   try {
     const parsed = JSON.parse(stdout);
-    return parsed !== null && typeof parsed === "object" && Object.hasOwn(parsed, "error");
+    const keys = parsed !== null && typeof parsed === "object" ? Object.keys(parsed) : [];
+    return (
+      keys.length === 1 &&
+      keys[0] === "error" &&
+      parsed.error !== null &&
+      typeof parsed.error === "object"
+    );
   } catch {
     return false;
   }

@@ -364,6 +364,14 @@ describe("production audit runner fails closed", () => {
     expect(result.output).toContain("Production dependency audit passed.");
   });
 
+  it("does not retry an error field that sits beside a report", () => {
+    const result = fixture().run({
+      firstOutput: JSON.stringify({ ...report(), error: null }),
+    });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("error response");
+  });
+
   it("stops after one more attempt when the error report repeats", () => {
     const result = fixture().run({
       firstOutput: JSON.stringify({ error: { code: "E503" } }),
