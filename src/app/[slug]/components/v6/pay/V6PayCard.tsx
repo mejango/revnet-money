@@ -961,7 +961,7 @@ export function V6PayCard() {
 
   useEffect(() => {
     if (phase !== "safe-proposed") return;
-    if (pay.phase === "done" && approvalProposedRef.current) {
+    if ((pay.phase === "done" || pay.settledStep === 0) && approvalProposedRef.current) {
       // The Safe ran the approval: the payment is still to send, from a fresh review.
       approvalProposedRef.current = false;
       setPrepared(null);
@@ -985,7 +985,16 @@ export function V6PayCard() {
       setPhase("ready");
       setTxError(heldLineOf(pay.held) ?? null);
     }
-  }, [cart, chainCartItems, phase, prepared?.mode, pay.error, pay.held, pay.phase]);
+  }, [
+    cart,
+    chainCartItems,
+    phase,
+    prepared?.mode,
+    pay.error,
+    pay.held,
+    pay.phase,
+    pay.settledStep,
+  ]);
 
   // The card's chain picker. The token selection re-maps to the same token on
   // the new chain via the key-remap effect; an open confirm re-prepares from a

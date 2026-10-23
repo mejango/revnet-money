@@ -198,6 +198,11 @@ export function useReviewedAction() {
     deps,
     /** The line to show: a site's own refusal as it is, else core's. */
     error: failure instanceof ReviewRefusal ? failure.message : runner.error,
+    /**
+     * A step before the last that settled after its run ended (a Safe's approval): the run is idle
+     * and running the action again continues from the next step.
+     */
+    settledStep: runner.settled && !runner.settled.finished ? runner.settled.step : null,
     /** In review, simulating, signing or awaiting a receipt. */
     busy:
       runner.phase === "review" ||

@@ -1,6 +1,5 @@
 "use client";
 
-import { relayrPaymentReview } from "@/lib/relayr-payment-review";
 import { ReviewRefusal } from "@/lib/review-refusal";
 
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
@@ -40,6 +39,7 @@ import {
   sentPayments,
 } from "@/lib/relayr-activity";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { relayrPaymentReview } from "@/lib/relayr-payment-review";
 import { loadEngine, reviewedSendDeps, reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
@@ -63,7 +63,7 @@ import {
 } from "@/lib/transaction-activity";
 import type { TransactionReviewCall } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
-import { savedAttempts } from "@/lib/write-hold";
+import { savedAttempts, writeHolds } from "@/lib/write-hold";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
 import {
   browserLocks,
@@ -206,7 +206,12 @@ type RememberedQuote = {
   chainIds: number[];
   payments: ChainPayment[];
   expectedTransactions: RelayrExpectedTransaction[];
+  /** The plan review that showed this bundle's fee bound, and its round: its payment asks nothing more. */
+  planned?: PlannedRound;
 };
+
+/** A plan and the Relayr round in it that one bundle runs. */
+export type PlannedRound = { plan: ReviewedPlan; relayrRound: string };
 
 export type RelayrDestinationProgress = {
   transactionUuid: string;
@@ -323,8 +328,9 @@ function rememberQuote(
   callKey: string,
   callKeys: string[],
   expectedTransactions: RelayrExpectedTransaction[],
+  planned?: PlannedRound,
 ): void {
-  const remembered = {
+  const remembered: RememberedQuote = {
     bundleUuid: quote.bundle_uuid,
     account,
     callKey,
@@ -332,6 +338,7 @@ function rememberQuote(
     chainIds: expectedTransactions.map((transaction) => transaction.chainId),
     payments: quote.payment_info.map((payment) => ({ ...payment })),
     expectedTransactions,
+    ...(planned ? { planned } : {}),
   };
   quote.payment_info.forEach((payment) => quotes.set(paymentKey(payment), remembered));
 }
@@ -1799,8 +1806,11 @@ export function useGetRelayrTxQuote() {
         onMessage?: (message: string) => void;
         onStatus?: SafeRelayrStatus;
         onProgress?: (progress: SafeRelayrProgress) => void;
-        /** A review that already showed every call (`reviewPlan`): nothing is asked again. */
-        plan?: ReviewedPlan;
+        /**
+         * A review that already showed every call (`reviewPlan`), and the round of it these calls
+         * are: nothing is asked again, and the payment within the round's fee bound pays too.
+         */
+        planned?: PlannedRound;
       },
     ) => {
       if (!address) throw new Error("Connect a wallet first.");
@@ -1952,6 +1962,8 @@ export function useGetRelayrTxQuote() {
         try {
           /** The outer calls this publication posts, with what proves each one. */
           let expected: RelayrExpectedTransaction[];
+          /** The plan this bundle was reviewed under, when it was signed now. */
+          let planned: PlannedRound | undefined;
           /** The forwarder nonce each one was signed with, when every one is a forward request. */
           let nonces: string[] | undefined;
           if (continuation?.kind === "requote" && saved?.relayrExpectedTransactions) {
@@ -2079,9 +2091,9 @@ export function useGetRelayrTxQuote() {
             }
             // One review of every call the bundle runs, with the gas each signature commits to;
             // the signatures under it ask nothing more.
-            const plan =
-              options?.plan ??
-              (await (
+            planned = options?.planned ?? {
+              relayrRound: "bundle",
+              plan: await (
                 await loadEngine()
               ).reviewPlan(
                 {
@@ -2091,19 +2103,22 @@ export function useGetRelayrTxQuote() {
                       ? `Review ${requests[0]!.review?.label ?? "relayed transaction"}`
                       : `Review ${requests.length} relayed transactions`,
                   description:
-                    "Relayr submits these calls for you. A separate payment covers execution on each chain and is reviewed before it is sent.",
+                    "Relayr submits these calls for you. One network fee pays for all of them, up to the amount shown.",
                   confirmLabel: "Agree & sign",
-                  calls: requests.map((request, index) =>
-                    relayrPlanCall(
+                  calls: requests.map((request, index) => ({
+                    ...relayrPlanCall(
                       request,
                       address,
                       unsigned.find((item) => item.index === index)?.message.gas,
                     ),
-                  ),
+                    relayrRound: "bundle",
+                  })),
                   signal: options?.signal,
                 },
                 deps,
-              ));
+              ),
+            };
+            const { plan } = planned;
             for (const { request, client } of raw) {
               options?.signal?.throwIfAborted();
               requireWalletContext();
@@ -2266,7 +2281,7 @@ export function useGetRelayrTxQuote() {
           });
           dismissTransactionActivity(publicationId);
           options?.signal?.throwIfAborted();
-          rememberQuote(quote, address, callKey, callKeys, expectedTransactions);
+          rememberQuote(quote, address, callKey, callKeys, expectedTransactions, planned);
 
           setData(quote);
           return quote;
@@ -2385,8 +2400,6 @@ export function useSendRelayrTx() {
         let previousPayment: TransactionActivity | undefined;
         /** The wallet step began: the attempt is saved as submitted. */
         let walletOpened = false;
-        /** Its last gate passed: from here an error may come from the wallet. */
-        let ready = false;
         let hash: Hex | undefined;
         /** The payment's receipt, also when it reverted. */
         let receipt: TransactionReceipt | undefined;
@@ -2403,121 +2416,188 @@ export function useSendRelayrTx() {
             },
           ],
         });
-        try {
-          // Core reviews, simulates, holds and sends exactly this payment, once.
-          const result = await (
-            await loadEngine()
-          ).sendReviewed(
-            {
+        /** Rechecks the quote, its signed calls and earlier payments right before the wallet. */
+        const recheck = async () => {
+          requireAccount();
+          options?.onMessage?.("Checking the selected transactions before payment.");
+          const code = await publicClient.getCode({ address: payment.target });
+          if (!code || keccak256(code) !== RELAYR_PAYMENT_CODE_HASH)
+            throw new Error("Payment contract code is not recognized.");
+          // Funding may be approved long after signing.
+          await revalidateSignedCalls(config, address, remembered.expectedTransactions);
+          const row = journal();
+          sent = sentPayments(row);
+          // A quote that was paid before is paid again only on the SDK's retry rule.
+          if (row && sent.length)
+            await requireRelayrRetry(clientFor(config), {
+              payments: relayrSavedQuote(row).payments,
+              from: address,
+              bundleUuid: remembered.bundleUuid.toLowerCase(),
+            });
+          requireAccount();
+          relayrPaymentDetails(payment, {
+            bundleUuid: remembered.bundleUuid,
+            destinationChainIds: remembered.chainIds,
+          });
+          await requireUnfunded(config, remembered);
+          requireAccount();
+        };
+        /** Saves the attempt as submitted, last before the wallet. */
+        const saveSubmitting = () => {
+          previousPayment = structuredClone(journal());
+          if (!previousPayment)
+            throw new Error("The saved payment disappeared. Recover the quote before paying.");
+          submitting = structuredClone(
+            recordTransactionActivity({
+              id: activityId,
+              kind: "relayr-bundle",
+              title: "Multi-chain bundle",
+              status: "submitted",
+              message:
+                "Funding is being submitted. Do not pay again while the wallet result is uncertain.",
+              chainId: payment.chain,
               account: address,
-              calls: [
-                {
-                  chainId: payment.chain,
-                  to: payment.target,
-                  value,
-                  gas: RELAYR_PAYMENT_GAS,
-                  data: payment.calldata,
-                  label: "Pay network fee",
-                  ...relayrPaymentReview(payment.calldata),
-                },
-              ],
-              title: "Review payment",
-              description:
-                "This one payment funds the signed calls on every selected chain. Destination transactions confirm separately.",
-              confirmLabel: "Pay",
-              guard: requireNoViewAs,
-              reverify: async () => {
-                requireAccount();
-                options?.onMessage?.("Checking the selected transactions before payment.");
-                const code = await publicClient.getCode({ address: payment.target });
-                if (!code || keccak256(code) !== RELAYR_PAYMENT_CODE_HASH)
-                  throw new Error("Payment contract code is not recognized.");
-                // Funding may be approved long after signing.
-                await revalidateSignedCalls(config, address, remembered.expectedTransactions);
-                const row = journal();
-                sent = sentPayments(row);
-                // A quote that was paid before is paid again only on the SDK's retry rule.
-                if (row && sent.length)
-                  await requireRelayrRetry(clientFor(config), {
-                    payments: relayrSavedQuote(row).payments,
-                    from: address,
-                    bundleUuid: remembered.bundleUuid.toLowerCase(),
-                  });
-                requireAccount();
-                relayrPaymentDetails(payment, {
-                  bundleUuid: remembered.bundleUuid,
-                  destinationChainIds: remembered.chainIds,
-                });
-                await requireUnfunded(config, remembered);
-                requireAccount();
+              bundleUuid: remembered.bundleUuid,
+              relayrExpectedTransactions: remembered.expectedTransactions,
+              relayrPayment: {
+                target: payment.target,
+                data: payment.calldata,
+                value: value.toString(),
               },
-              beforeWallet: async () => {
-                previousPayment = structuredClone(journal());
-                if (!previousPayment)
-                  throw new Error(
-                    "The saved payment disappeared. Recover the quote before paying.",
-                  );
-                submitting = structuredClone(
-                  recordTransactionActivity({
-                    id: activityId,
-                    kind: "relayr-bundle",
-                    title: "Multi-chain bundle",
-                    status: "submitted",
-                    message:
-                      "Funding is being submitted. Do not pay again while the wallet result is uncertain.",
-                    chainId: payment.chain,
-                    account: address,
-                    bundleUuid: remembered.bundleUuid,
-                    relayrExpectedTransactions: remembered.expectedTransactions,
-                    relayrPayment: {
-                      target: payment.target,
-                      data: payment.calldata,
-                      value: value.toString(),
-                    },
-                    relayrPayments: sent,
-                    relayrPaymentStatus: "submitted",
-                    chainStates: remembered.chainIds.map((chainId) => ({
-                      chainId,
-                      status: "Pending",
-                    })),
-                    callKey: remembered.callKey,
-                  }),
-                );
-                requireTransactionActivityPersistence();
-                walletOpened = true;
-                options?.onMessage?.("Confirm the network-fee payment in your wallet.");
-              },
-              assertWriteState: () => {
-                requireAccount();
-                relayrPaymentDetails(payment, {
-                  bundleUuid: remembered.bundleUuid,
-                  destinationChainIds: remembered.chainIds,
-                });
-                if (walletOpened) ready = true;
-              },
-              onSubmitted: (_call, _step, submitted) => {
-                hash = submitted;
-                fundedBundles.add(remembered.bundleUuid);
-                updateTransactionActivity(activityId, {
-                  ...sentAs(submitted),
-                  message: "Payment submitted. Do not pay again while its receipt is pending.",
-                });
-                options?.onMessage?.("Checking the submitted network-fee payment.");
-              },
-            },
-            paymentDeps,
+              relayrPayments: sent,
+              relayrPaymentStatus: "submitted",
+              chainStates: remembered.chainIds.map((chainId) => ({
+                chainId,
+                status: "Pending",
+              })),
+              callKey: remembered.callKey,
+            }),
           );
-          if (result.status !== "done")
-            throw new Error("Pay the network fee from an ordinary wallet. Nothing was sent.");
-          receipt = result.receipts[0];
+          requireTransactionActivityPersistence();
+          walletOpened = true;
+          options?.onMessage?.("Confirm the network-fee payment in your wallet.");
+        };
+        const onSent = async (submitted: Hex) => {
+          hash ??= submitted;
+          fundedBundles.add(remembered.bundleUuid);
+          updateTransactionActivity(activityId, {
+            ...sentAs(submitted),
+            message: "Payment submitted. Do not pay again while its receipt is pending.",
+          });
+          options?.onMessage?.("Checking the submitted network-fee payment.");
+        };
+        // A quote's first payment under the plan that reviewed its round's fee bound pays within
+        // that bound with no prompt. A retry, or a quote reviewed apart from a plan, reviews the
+        // payment on its own, on the SDK's retry rule.
+        const planned = sentPayments(journal()).length ? undefined : remembered.planned;
+        /** Its last gate passed: from here an error may come from the wallet. */
+        let ready = false;
+        const engine = await loadEngine();
+        // payRelayrReviewed leaves its hold for a follower to settle; settling it from the
+        // receipt now lets a reverted payment be paid again on the retry rule at once.
+        const settleHold = () =>
+          engine
+            .openStepHold(writeHolds, address, false, {
+              chainId: payment.chain,
+              to: payment.target,
+              data: payment.calldata,
+              value,
+              intent: `relayr:${remembered.bundleUuid}`,
+            })
+            .state(publicClient)
+            .catch(() => undefined);
+        try {
+          if (planned) {
+            const bindings = remembered.expectedTransactions.map((row) => ({
+              txUuid: row.transactionUuid,
+              chain: row.chainId,
+              entry: { chain: row.chainId, target: row.target, data: row.data, value: row.value },
+            }));
+            const paid = await engine.payRelayrReviewed(
+              {
+                bundle_uuid: remembered.bundleUuid,
+                payment_info: [payment],
+                transactions: bindings.map(({ txUuid, entry }) => ({
+                  tx_uuid: txUuid,
+                  request: entry,
+                })),
+                expectedTransactions: bindings,
+              },
+              payment.chain,
+              {
+                account: address,
+                ...planned,
+                // Core's own gates follow and refuse as not sent.
+                onSending: async () => {
+                  await recheck();
+                  saveSubmitting();
+                  ready = true;
+                },
+                onSent,
+              },
+              paymentDeps,
+            );
+            if (!("hash" in paid))
+              throw new Error("Pay the network fee from an ordinary wallet. Nothing was sent.");
+            receipt = await publicClient.getTransactionReceipt({ hash: paid.hash });
+            await settleHold();
+          } else {
+            const result = await engine.sendReviewed(
+              {
+                account: address,
+                calls: [
+                  {
+                    chainId: payment.chain,
+                    to: payment.target,
+                    value,
+                    gas: RELAYR_PAYMENT_GAS,
+                    data: payment.calldata,
+                    label: "Pay network fee",
+                    ...relayrPaymentReview(payment.calldata),
+                  },
+                ],
+                title: "Review payment",
+                description:
+                  "This one payment funds the signed calls on every selected chain. Destination transactions confirm separately.",
+                confirmLabel: "Pay",
+                guard: requireNoViewAs,
+                reverify: recheck,
+                beforeWallet: async () => saveSubmitting(),
+                assertWriteState: () => {
+                  requireAccount();
+                  relayrPaymentDetails(payment, {
+                    bundleUuid: remembered.bundleUuid,
+                    destinationChainIds: remembered.chainIds,
+                  });
+                  if (walletOpened) ready = true;
+                },
+                onSubmitted: (_call, _step, submitted) => onSent(submitted),
+              },
+              paymentDeps,
+            );
+            if (result.status !== "done")
+              throw new Error("Pay the network fee from an ordinary wallet. Nothing was sent.");
+            receipt = result.receipts[0];
+          }
         } catch (cause) {
           if (hash && cause instanceof ReviewedCallRevertedError) receipt = cause.receipt;
-          else if (hash) receipt = undefined;
-          else if (walletOpened && !ready) {
+          else if (hash)
+            receipt = planned
+              ? await publicClient
+                  .getTransactionReceipt({ hash: journal()?.hash ?? hash })
+                  .catch(() => undefined)
+                  .finally(settleHold)
+              : undefined;
+          else if (
+            walletOpened &&
+            (planned ? cause instanceof RelayrPaymentNotSentError : !ready)
+          ) {
             // A gate refused before the wallet: this exact marker belongs to a wallet call never
             // invoked. A changed record may hold another attempt's evidence.
             restoreUnsentPaymentActivity(submitting!, previousPayment!);
-            throw new RelayrPaymentNotSentError(cause);
+            throw cause instanceof RelayrPaymentNotSentError
+              ? cause
+              : new RelayrPaymentNotSentError(cause);
           } else if (walletOpened) {
             const error = relayrWalletPaymentError(cause);
             // Only an explicit wallet rejection proves that no transaction was broadcast. A quote

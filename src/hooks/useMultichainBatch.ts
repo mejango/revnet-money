@@ -332,6 +332,9 @@ async function verifyDirectResult(
 }
 
 /** One frozen job, explicit rounds, one payment per independent multichain round. */
+/** The plan's key for one Relayr round of a batch. */
+const roundKey = (roundIndex: number) => `round:${roundIndex}`;
+
 export function useMultichainBatch() {
   const config = useConfig();
   const [isPending, setIsPending] = useState(false);
@@ -774,6 +777,10 @@ export function useMultichainBatch() {
                     value: call.value ?? 0n,
                     data: call.data,
                     ...(plannedGas.has(index) ? { gas: plannedGas.get(index) } : {}),
+                    // Each round pays one Relayr fee: the review shows its bound once.
+                    relayrRound: roundKey(
+                      batch!.rounds.findIndex((round) => round.indices.includes(index)),
+                    ),
                     abi: call.abi,
                     functionName: call.functionName,
                     args: call.args,
@@ -860,7 +867,7 @@ export function useMultichainBatch() {
                 const quote = await getRelayrTxQuote(requests, {
                   signal: input.signal,
                   onMessage: progress,
-                  plan,
+                  ...(plan ? { planned: { plan, relayrRound: roundKey(roundIndex) } } : {}),
                 });
                 requireAccount();
                 if (!quote) throw new Error("No payable quote is available.");

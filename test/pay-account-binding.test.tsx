@@ -747,8 +747,9 @@ describe("a payment bound to the account it was prepared for", () => {
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     expect(mocks.write.mock.calls[0]![0]).toMatchObject({ functionName: "approve" });
 
-    // The Safe runs the approval: the run's step is done, the payment is not.
-    act(() => mocks.runner!.set({ phase: "done", held: null }));
+    // The Safe runs the approval after the run ended: core goes idle with the approval settled,
+    // and the payment is still to send.
+    act(() => mocks.runner!.set({ phase: "idle", held: null, settledStep: 0 } as never));
     await within(confirm).findByText(
       "Your Safe approved the token. Review the payment again to send it.",
     );

@@ -34,8 +34,27 @@ const mocks = vi.hoisted(() => ({
   call: vi.fn(),
   readContract: vi.fn(),
   getBlock: vi.fn(),
+  feeBound: false,
 }));
 
+// Core quotes each Relayr round's fee bound from Relayr before the plan review opens. These
+// tests post through their own Relayr stubs, so rounds stay untagged unless a test proves the bound.
+vi.mock("@bananapus/nana-sdk-core/review", async (importOriginal) => {
+  const core = await importOriginal<typeof import("@bananapus/nana-sdk-core/review")>();
+  return {
+    ...core,
+    reviewPlan: (
+      action: Parameters<typeof core.reviewPlan>[0],
+      deps: Parameters<typeof core.reviewPlan>[1],
+    ) =>
+      core.reviewPlan(
+        mocks.feeBound
+          ? action
+          : { ...action, calls: action.calls.map(({ relayrRound: _round, ...call }) => call) },
+        deps,
+      ),
+  };
+});
 vi.mock("@/components/layout/Nav", () => ({ Nav: () => null }));
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: mocks.config }));

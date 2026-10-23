@@ -888,6 +888,16 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     }
   }, [isReallocating]);
 
+  // The Safe ran the permission after its run ended: the loan is still to send, from Borrow again.
+  useEffect(() => {
+    if (borrow.settledStep !== 0) return;
+    setBorrowStatus((status) => (status === "pending" ? "idle" : status));
+    toast({
+      title: "Safe granted the permission",
+      description: "Review the loan again to borrow.",
+    });
+  }, [borrow.settledStep, toast]);
+
   // Transaction status effects
   useEffect(() => {
     if (!txHash && !reallocationTxHash) return;

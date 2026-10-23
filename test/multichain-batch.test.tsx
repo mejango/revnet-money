@@ -2490,7 +2490,13 @@ describe("reviewed selected-call orchestration", () => {
     });
     expect(mocks.review).toHaveBeenCalledOnce();
     // The round's quote spends the batch's one plan review.
-    expect(mocks.quote.mock.calls[0][1]).toMatchObject({ plan: expect.anything() });
+    // It names its round, whose fee bound the review showed once.
+    expect(mocks.quote.mock.calls[0][1]).toMatchObject({
+      planned: { plan: expect.anything(), relayrRound: "round:0" },
+    });
+    expect(
+      mocks.review.mock.calls[0][0].calls.map((call: { relayrRound?: string }) => call.relayrRound),
+    ).toEqual(expect.arrayContaining(["round:0"]));
 
     const saved = createMultichainBatch(
       ACCOUNT,
@@ -2505,7 +2511,7 @@ describe("reviewed selected-call orchestration", () => {
     });
     expect(mocks.review).toHaveBeenCalledOnce();
     // A resumed run showed no review, so its quote reviews its own calls.
-    expect(mocks.quote.mock.calls[1][1]?.plan).toBeUndefined();
+    expect(mocks.quote.mock.calls[1][1]?.planned).toBeUndefined();
   });
 
   it("never sends when the recovery journal cannot be persisted", async () => {
