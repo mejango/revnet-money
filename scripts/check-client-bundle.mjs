@@ -20,6 +20,8 @@ import { vendorWallets } from "./lib/vendor-wallets.mjs";
 const account = `0x${"1".repeat(40)}`;
 // Project routes +4 KiB (2026-10-20): SDK 3.3.0 decodePayFailure revert table and the pay card's failure
 // reason and retry (+2), then SDK 3.4.1's retry rule and router-converted quote minimums (+2).
+// Routes +1-2 KiB (2026-10-22): Next 16.4.2's client runtime (critical advisories) adds 1.6-1.9 KiB to each;
+// each ceiling is the new measurement rounded up.
 // Most routes +1 KiB (2026-10-22): the loan dialogs read their token, decimals and currency onchain.
 // /[slug], /[slug]/terms and /[slug]/owners +1 KiB (2026-10-22): SDK 4.0.0 (the failed swap quote's Retry line,
 // the registry check before a queued movement's Execute) measures 569.1, 568.0 and 629.6 KiB.
@@ -33,20 +35,20 @@ const account = `0x${"1".repeat(40)}`;
 // where webpack splits a shared 15.8 KiB chunk that repeats modules other chunks hold (all JS fell 16 KiB).
 const routes = [
   { route: "/", path: "/", kib: 393 },
-  { route: "/learn", path: "/learn", kib: 356 },
-  { route: "/build", path: "/build", kib: 358 },
-  { route: "/audit", path: "/audit", kib: 359 },
+  { route: "/learn", path: "/learn", kib: 354 },
+  { route: "/build", path: "/build", kib: 356 },
+  { route: "/audit", path: "/audit", kib: 357 },
   { route: "/discover", path: "/discover", kib: 340 },
-  { route: "/create", path: "/create", kib: 555 },
-  { route: "/[slug]", path: "/eth:1", kib: 585 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 584 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 637 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 591 },
+  { route: "/create", path: "/create", kib: 549 },
+  { route: "/[slug]", path: "/eth:1", kib: 578 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 576 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 676 },
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 584 },
   { route: "/[slug]/extras", path: "/eth:1/extras", kib: 595 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 424 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 414 },
-  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 431 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 413 },
+  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
   { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 389 },
   { route: "/_not-found", path: "/no-such-page/x/y", kib: 300, status: 404 },
 ];
@@ -56,9 +58,12 @@ const unmeasuredRoutes = new Set(["/_global-error"]);
 const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
   ? JSON.parse(process.env.CLIENT_BUNDLE_ROUTES)
   : routes;
+// 920 -> 922 (and all JS 2726 -> 2727): the onchain sucker-peer and group-write checks on top of Next 16.4.2.
+// All JS 2727 -> 2730: the loan dialogs read their token, decimals and currency onchain.
+// All JS 2730 -> 2753: the R stack on SDK 4.0.0 (core reviewed runs and Relayr rounds), measured on the 4.0.0 build.
 // SDK 4.0.0 measures 921.2 KiB route-referenced (919.7 before); the ceiling moves up 1 KiB.
 // Next 16.4.2 measures 923.0 KiB; the ceiling moves to 924.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 924);
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
@@ -203,7 +208,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 924);
 // 2733.2 KiB, routes unchanged; builds vary by 0.1 KiB. The aggregate ceiling moves to 2734.
 // Every write on core's useReviewedRun measures 2766.6 KiB: core's hold and lines load with each
 // writing page, and the app's own send engine is gone. The aggregate ceiling moves to 2767.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2767);
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2753);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
