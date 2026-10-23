@@ -486,18 +486,23 @@ export function V6PayCard() {
       })),
     [tokens],
   );
-  const { balances } = useTokenBalances(balanceToken, chainId);
+  const { balances, isLoading: balancesLoading } = useTokenBalances(balanceToken, chainId);
   const buyableLabel = buyableAsset({
     accepted: tokens.map((token) => token.symbol),
     preferred: selected?.symbol,
   });
   const holdsNothing = defaultsToDollars({
     isConnected,
-    balances: balanceToken.map((token) => balances.get(token.address) ?? 0n),
+    balances: balanceToken.map((token) => balances.get(token.address)),
   });
-  const walletBalance = selected ? (balances.get(selected.token) ?? 0n) : 0n;
+  // Undefined while unread or when the read failed: never a zero balance.
+  const walletBalance = selected ? balances.get(selected.token) : undefined;
   const insufficientBalance =
-    isConnected && !!selected && amountRaw > 0n && amountRaw > walletBalance;
+    isConnected &&
+    !!selected &&
+    walletBalance !== undefined &&
+    amountRaw > 0n &&
+    amountRaw > walletBalance;
 
   // A wallet with nothing in it cannot pay in any of these tokens, so the menu opens on "$"
   // rather than on a token the payer would have to go and acquire first. Their own choice wins
@@ -1198,10 +1203,15 @@ export function V6PayCard() {
 
                   Not while paying by card: that is a balance in a token this payer is not
                   spending, on a row that is about to buy some. */}
-              {selected && isConnected && !payWithDollars ? (
+              {selected &&
+              isConnected &&
+              !payWithDollars &&
+              (walletBalance !== undefined || !balancesLoading) ? (
                 <div className="col-start-2 row-start-3 -mt-0.5 flex flex-col items-end justify-self-end pb-1.5 pr-[18px]">
                   <span className="whitespace-nowrap text-xs text-zinc-600">
-                    Balance: {formatPayAmount(walletBalance, selected.decimals)}
+                    {walletBalance === undefined
+                      ? "Balance unavailable"
+                      : `Balance: ${formatPayAmount(walletBalance, selected.decimals)}`}
                   </span>
                 </div>
               ) : null}

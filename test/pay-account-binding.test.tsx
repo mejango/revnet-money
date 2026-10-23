@@ -18,6 +18,7 @@ const HASH = `0x${"ab".repeat(32)}` as Hex;
 
 const mocks = vi.hoisted(() => ({
   address: "0x1111111111111111111111111111111111111111" as string | undefined,
+  balances: new Map<string, bigint>(),
   write: vi.fn(),
   simulate: vi.fn(),
   routeError: null as Error | null,
@@ -142,13 +143,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
   };
 });
 vi.mock("@/hooks/useTokenBalances", () => ({
-  useTokenBalances: () => ({
-    balances: new Map([
-      ["0x000000000000000000000000000000000000EEEe", 10n ** 20n],
-      [TKN, 10n ** 20n],
-    ]),
-    isLoading: false,
-  }),
+  useTokenBalances: () => ({ balances: mocks.balances, isLoading: false }),
 }));
 vi.mock("@/lib/nana/project", () => ({
   useJBTokenContext: () => ({ token: { data: { symbol: "REV", decimals: 18 } } }),
@@ -224,6 +219,10 @@ const queryClient = () => new QueryClient({ defaultOptions: { queries: { retry: 
 beforeEach(() => {
   window.localStorage.clear();
   mocks.address = A;
+  mocks.balances = new Map([
+    ["0x000000000000000000000000000000000000EEEe", 10n ** 20n],
+    [TKN, 10n ** 20n],
+  ]);
   mocks.routeError = null;
   mocks.terminal = "0x3333333333333333333333333333333333333333";
   mocks.minReturned = 99n * 10n ** 19n;
@@ -239,6 +238,21 @@ beforeEach(() => {
   mocks.runner?.reset();
   mocks.write.mockReset().mockResolvedValue(HASH);
   mocks.simulate.mockReset().mockResolvedValue({ request: {} });
+});
+
+describe("the wallet balance under the amount", () => {
+  it("shows a failed balance read as unavailable, never 0, and claims no shortfall", async () => {
+    mocks.balances = new Map([[TKN, 10n ** 20n]]);
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    expect(await screen.findByText("Balance unavailable")).toBeTruthy();
+    expect(screen.queryByText(/^Balance: 0$/)).toBeNull();
+    expect(screen.queryByText(/not enough|insufficient/i)).toBeNull();
+  });
 });
 
 describe("a payment to a sucker peer", () => {

@@ -31,8 +31,11 @@ export function defaultsToDollars({
   balances,
 }: {
   isConnected: boolean;
-  /** One balance per accepted token. Empty while they are still being read. */
-  balances: bigint[];
+  /**
+   * One balance per accepted token, undefined for one unread or failed. Empty while they are
+   * still being read. An unknown balance is never "nothing".
+   */
+  balances: readonly (bigint | undefined)[];
 }): boolean {
   if (!isConnected || balances.length === 0) return false;
   return balances.every((balance) => balance === 0n);
