@@ -20,7 +20,11 @@ import { reviewClosed } from "@/lib/review-refusal";
 import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
-import { relayrDestinationHash } from "@bananapus/nana-sdk-core/review/relayr";
+import {
+  relayrDestinationHash,
+  relayrStateIsFailed,
+  relayrStateIsSuccess,
+} from "@bananapus/nana-sdk-core/review/relayr";
 import { useState } from "react";
 import { twMerge } from "tailwind-merge";
 import { useCreateForm } from "../form/useCreateForm";
@@ -36,16 +40,17 @@ interface PaymentAndDeploySectionProps {
   rebuildStaleQuote?: (stale: RelayrPostBundleResponse) => Promise<RelayrPostBundleResponse>;
 }
 
+// Only Relayr's Failed is a failure; any state it has not settled shows as pending.
 const statusToIcon = (status: string) => {
-  if (status === "Pending")
-    return <CircleDashedIcon className="w-5 h-5 text-amber-400 animate-spin" />;
+  if (relayrStateIsSuccess(status))
+    return <CheckCircle className="w-5 h-5 text-emerald-500 fade-in-50" />;
+  if (relayrStateIsFailed(status))
+    return <CircleXIcon className="w-5 h-5 text-red-500 fade-in-50" />;
   if (status === "Mempool")
     return <CircleDotDashedIcon className="w-5 h-5 text-blue-400 animate-spin" />;
   if (status === "Included")
     return <CircleDotIcon className="w-5 h-5 text-cyan-400 animate-spin" />;
-  if (status === "Success" || status === "Completed")
-    return <CheckCircle className="w-5 h-5 text-emerald-500 fade-in-50" />;
-  return <CircleXIcon className="w-5 h-5 text-red-500 fade-in-50" />;
+  return <CircleDashedIcon className="w-5 h-5 text-amber-400 animate-spin" />;
 };
 
 export function PayAndDeploy({

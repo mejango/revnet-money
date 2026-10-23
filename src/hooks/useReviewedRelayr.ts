@@ -100,6 +100,8 @@ import {
   relayrRequestsVerdict,
   relayrRetryOption,
   relayrSessionOutcome,
+  relayrStateIsFailed,
+  relayrStateIsSuccess,
   relayrWalletPaymentError,
   requireRelayrBundleUnpaid,
   requireRelayrRetry,
@@ -1095,7 +1097,7 @@ export async function checkRelayrSession(
     verifyBundleIdentity(activity.bundleUuid, bundle, expected);
     if (
       bundle.transactions.length &&
-      bundle.transactions.every((transaction) => stateIsSuccess(transaction.status?.state))
+      bundle.transactions.every((transaction) => relayrStateIsSuccess(transaction.status?.state))
     ) {
       await verifyDestinationReceipts(bundle, expected);
       updateTransactionActivity(id, {
@@ -1517,14 +1519,6 @@ async function provePayment(bundleUuid: string): Promise<void> {
   updateTransactionActivity(activity.id, { relayrPaymentStatus: "confirmed" });
 }
 
-function stateIsSuccess(state?: string): boolean {
-  return state === "Success" || state === "Completed";
-}
-
-function stateIsFailed(state?: string): boolean {
-  return state === "Failed" || state === "Reverted" || state === "Dropped";
-}
-
 /** Never from a cache: a stale answer could hide a payment or a destination result. */
 async function fetchBundle(bundleUuid: string): Promise<RelayrGetBundleResponse> {
   const response = await fetch(`${RELAYR_API}/v1/bundle/${bundleUuid}`, {
@@ -1638,10 +1632,10 @@ export async function waitForRelayrBundle(
           last.transactions.every(
             (transaction) =>
               relayrDestinationHash(transaction) &&
-              (stateIsSuccess(transaction.status?.state) ||
-                stateIsFailed(transaction.status?.state)),
+              (relayrStateIsSuccess(transaction.status?.state) ||
+                relayrStateIsFailed(transaction.status?.state)),
           );
-        if (states.some(stateIsFailed) && !routingComplete) {
+        if (states.some(relayrStateIsFailed) && !routingComplete) {
           updateTransactionActivity(activityId, {
             status: "failed",
             manualVerificationRequired: true,
@@ -1652,7 +1646,7 @@ export async function waitForRelayrBundle(
           await holdUnprovenSession(activityId);
           throw new Error(`Transaction bundle ${bundleUuid} failed. ${summary}`);
         }
-        if (states.length > 0 && (states.every(stateIsSuccess) || routingComplete)) {
+        if (states.length > 0 && (states.every(relayrStateIsSuccess) || routingComplete)) {
           await verifyDestinationReceipts(last, expected, (result) => {
             const index = results.findIndex(
               (item) => item.transactionUuid === result.transactionUuid,
@@ -2580,7 +2574,8 @@ export function useGetRelayrTxBundle() {
   }, [uuid, pollAttempt]);
 
   const states = response?.transactions.map((item) => item.status?.state) ?? [];
-  const isComplete = !error && !isPolling && states.length > 0 && states.every(stateIsSuccess);
-  const hasFailed = !!error || states.some(stateIsFailed);
+  const isComplete =
+    !error && !isPolling && states.length > 0 && states.every(relayrStateIsSuccess);
+  const hasFailed = !!error || states.some(relayrStateIsFailed);
   return { startPolling, isComplete, hasFailed, uuid, response, isPolling, error };
 }

@@ -80,56 +80,56 @@
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 275,
+      "line": 277,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 1743,
+      "line": 1737,
       "api": "useSignTypedData",
       "boundary": "Raw typed-data signer inside the Relayr boundary: signs ERC-2771 forward requests only after the bundle review. Replaced by core Relayr in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 1960,
+      "line": 1954,
       "api": "reviewedInParent",
       "boundary": "Relayr request option that skips the per-call review when the parent dialog already showed the exact call. Removed in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2094,
+      "line": 2088,
       "api": "signTypedDataAsync",
       "boundary": "Raw forward-request signature inside the Relayr boundary, after the bundle review, precondition checks and wallet-context check. Replaced by core Relayr in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2272,
+      "line": 2266,
       "api": "useSendTransaction",
       "boundary": "Raw send hook inside the Relayr boundary, used only for the reviewed network-fee payment. Replaced by core Relayr in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2308,
+      "line": 2302,
       "api": "sendTransactionAsync",
       "boundary": "Raw network-fee payment inside the Relayr boundary: sent only after the quote is reviewed and the payment journal is saved. Replaced by core Relayr in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2440,
+      "line": 2434,
       "api": "sendTransactionAsync",
       "boundary": "Raw network-fee payment inside the Relayr boundary: sent only after the quote is reviewed and the payment journal is saved. Replaced by core Relayr in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2534,
+      "line": 2528,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/reviewed-relayr-hooks.test.tsx"

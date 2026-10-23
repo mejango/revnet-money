@@ -4503,6 +4503,46 @@ describe("Relayr sessions decided from the chain", () => {
     });
   });
 
+  it("relayr-state: Reverted stays pending until Relayr says failed", async () => {
+    const { hooks, session } = await signedSession();
+    const [signed] = session()!.relayrExpectedTransactions!;
+    const states = ["Reverted", "Dropped", "Failed"];
+    const reads = vi.fn(async () => {
+      const state = states[Math.min(reads.mock.calls.length - 1, states.length - 1)];
+      return new Response(
+        JSON.stringify({
+          bundle_uuid: BUNDLE_UUID,
+          payment_received: true,
+          transactions: [
+            {
+              tx_uuid: signed.transactionUuid,
+              request: {
+                chain: signed.chainId,
+                target: signed.target,
+                data: signed.data,
+                value: signed.value,
+              },
+              status: { state },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+    const payer = renderHook(() => hooks.useSendRelayrTx());
+    vi.stubGlobal("fetch", reads);
+    await act(async () => {
+      await expect(payer.result.current.sendRelayrTx(payment())).resolves.toBe(HASH);
+    });
+    // Each read is two seconds apart, as Relayr is polled.
+    const outcome = await hooks.waitForRelayrBundle(BUNDLE_UUID).catch((error: Error) => error);
+    // Reverted and Dropped are not final: only Relayr's Failed ends the wait.
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toMatch(/failed/);
+    expect(reads.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(session()).toMatchObject({ status: "failed", manualVerificationRequired: true });
+  }, 20_000);
+
   it("holds a paid bundle whose calls reverted while they can run, then marks it for Discard and signs again at the saved nonces once they are dead and unused", async () => {
     const { activity, hooks, result, session } = await signedSession();
     const [signed] = session()!.relayrExpectedTransactions!;
