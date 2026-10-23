@@ -253,7 +253,7 @@ describe("production audit runner fails closed", () => {
         ),
       });
       expect(result.status).toBe(0);
-      expect(result.output).toContain("fail-closed Para exceptions");
+      expect(result.output).toContain("fail-closed exceptions");
       expect(result.output).toContain("GHSA-848j-6mx2-7j84");
       expect(result.output).not.toContain("GHSA-86w9-cpqp-85rv");
     },
@@ -588,5 +588,80 @@ describe("Para's audited node-forge usage", () => {
     const result = build.run({ sourceOnly: true });
     expect(result.status).toBe(0);
     expect(result.output).toContain("node-forge usage invariants verified");
+  });
+});
+
+describe("zod GHSA-mrhx-c7xc-m3w5 exception", () => {
+  const zodUrl = "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5";
+  const zodNodes = ["node_modules/zod", "node_modules/@reown/appkit-wallet/node_modules/zod"];
+  const lockfilePackages = {
+    "node_modules/@coinbase/cdp-sdk": { version: "1.57.1", dependencies: { zod: "^3.25.76" } },
+    "node_modules/@reown/appkit-wallet": { version: "1.8.19", dependencies: { zod: "3.22.4" } },
+    "node_modules/zod": { version: "3.25.76" },
+    "node_modules/@reown/appkit-wallet/node_modules/zod": { version: "3.22.4" },
+  };
+  const zod = (nodes: string[] | null = zodNodes, severity = "high") => ({
+    name: "zod",
+    severity,
+    ...(nodes ? { nodes } : {}),
+    via: [{ source: 3, name: "zod", severity, url: zodUrl }],
+  });
+  const dependent = (name: string, via: string[]) => ({ name, severity: "high", via });
+  const findings = (zodFinding = zod()) => ({
+    zod: zodFinding,
+    "@reown/appkit-wallet": dependent("@reown/appkit-wallet", ["zod"]),
+    "@reown/appkit": dependent("@reown/appkit", ["@reown/appkit-wallet"]),
+    "@coinbase/cdp-sdk": dependent("@coinbase/cdp-sdk", ["zod"]),
+  });
+
+  it("accepts zod reached only through @reown/appkit-wallet and @coinbase/cdp-sdk", () => {
+    const result = fixture({ lockfilePackages }).run({
+      status: 1,
+      output: JSON.stringify(report(findings())),
+    });
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("GHSA-mrhx-c7xc-m3w5");
+  });
+
+  it("rejects a zod copy another production package depends on", () => {
+    const result = fixture({
+      lockfilePackages: {
+        ...lockfilePackages,
+        "node_modules/@getpara/shared": { version: "1.29.0", dependencies: { zod: "^3.22.4" } },
+      },
+    }).run({ status: 1, output: JSON.stringify(report(findings())) });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("zod: high");
+  });
+
+  it("accepts a copy that only a development package or an optional peer reaches", () => {
+    const result = fixture({
+      lockfilePackages: {
+        ...lockfilePackages,
+        "node_modules/knip": { version: "6.0.0", dev: true, dependencies: { zod: "^3.0.0" } },
+        "node_modules/abitype": {
+          version: "1.2.4",
+          peerDependencies: { zod: "^3.22.0" },
+          peerDependenciesMeta: { zod: { optional: true } },
+        },
+      },
+    }).run({ status: 1, output: JSON.stringify(report(findings())) });
+    expect(result.status).toBe(0);
+  });
+
+  it.each([
+    ["reports no installed copy", zod(null)],
+    [
+      "reports a copy the lockfile has no dependent for",
+      zod(["node_modules/orphan/node_modules/zod"]),
+    ],
+    ["is rated at another severity", zod(zodNodes, "critical")],
+  ])("rejects a zod finding that %s", (_name, finding) => {
+    const result = fixture({ lockfilePackages }).run({
+      status: 1,
+      output: JSON.stringify(report(findings(finding))),
+    });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("Unexpected production vulnerabilities");
   });
 });
