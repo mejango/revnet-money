@@ -627,7 +627,7 @@ describe("zod GHSA-mrhx-c7xc-m3w5 exception", () => {
     const result = fixture({
       lockfilePackages: {
         ...lockfilePackages,
-        "node_modules/@getpara/shared": { version: "1.29.0", dependencies: { zod: "^3.22.4" } },
+        "node_modules/some-wallet-sdk": { version: "1.29.0", dependencies: { zod: "^3.22.4" } },
       },
     }).run({ status: 1, output: JSON.stringify(report(findings())) });
     expect(result.status).toBe(1);
