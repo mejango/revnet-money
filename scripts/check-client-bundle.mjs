@@ -29,23 +29,25 @@ const account = `0x${"1".repeat(40)}`;
 // Every write on core's useReviewedRun (revnet R3): the hook loads core's write hold and its lines
 // with the page (the send engine stays lazy), +1-2 KiB on most routes, +10-13 KiB on /create and
 // the project routes that write. Each changed ceiling is its new measure rounded up.
+// SDK 4.0.0 (R5: core Relayr rounds, one plan review): +0.1-1.0 KiB on five routes; /extras +11.6,
+// where webpack splits a shared 15.8 KiB chunk that repeats modules other chunks hold (all JS fell 16 KiB).
 const routes = [
-  { route: "/", path: "/", kib: 392 },
+  { route: "/", path: "/", kib: 393 },
   { route: "/learn", path: "/learn", kib: 356 },
   { route: "/build", path: "/build", kib: 358 },
   { route: "/audit", path: "/audit", kib: 359 },
-  { route: "/discover", path: "/discover", kib: 339 },
+  { route: "/discover", path: "/discover", kib: 340 },
   { route: "/create", path: "/create", kib: 555 },
   { route: "/[slug]", path: "/eth:1", kib: 585 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 584 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 637 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 591 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 583 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 423 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 412 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 595 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 424 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 414 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 431 },
-  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 388 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 389 },
   { route: "/_not-found", path: "/no-such-page/x/y", kib: 300, status: 404 },
 ];
 // Next renders its global error page only when the root layout itself throws; no URL reaches it.
