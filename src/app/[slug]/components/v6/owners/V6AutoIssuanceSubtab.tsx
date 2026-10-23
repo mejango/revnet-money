@@ -135,6 +135,11 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
           scope={scope}
           tokenSymbol={tokenSymbol}
           disabled={selected.length === 0}
+          group={chains}
+          targets={selected.map((row) => ({
+            chainId: row.chainId,
+            projectId: BigInt(row.projectId),
+          }))}
           onSuccess={() => {
             void issued.refetch();
             void stored.refetch();

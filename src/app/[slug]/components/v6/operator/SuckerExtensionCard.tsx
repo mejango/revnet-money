@@ -15,6 +15,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
 import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import {
   clearExtensionSalt,
   discardUnreadableSalts,
@@ -69,6 +70,9 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
   const [targetProjectId, setTargetProjectId] = useState("");
   const [ack, setAck] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Existing group rows come from the server list: each one gets a sucker, so
+  // only chain-verified pairs are written. The target is entered by the operator.
+  const gate = useGroupWriteGate(rows);
   const [review, setReview] = useState(false);
   // A send that went to the Safe as a proposal: nothing more to send from here.
   const [proposed, setProposed] = useState(false);
@@ -108,6 +112,12 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
       return;
     }
     if (!ack) return;
+    try {
+      gate.assertVerified(rows);
+    } catch (e) {
+      setError((e as Error).message);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -297,12 +307,13 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
                 belongs to this revnet. Every transaction is simulated before it sends.
               </span>
             </label>
+            {gate.line ? <p className="text-xs text-zinc-600 mt-3">{gate.line}</p> : null}
             <div className="mt-3 flex justify-end">
               <ButtonWithWallet
                 targetChainId={(Number(targetChainId) || rows[0]?.chainId) as JBChainId}
                 connectWalletText="Connect wallet to extend"
-                loading={busy}
-                disabled={busy || !ack || !targetChainId || !targetProjectId.trim()}
+                loading={busy || gate.pending}
+                disabled={busy || gate.blocked || !ack || !targetChainId || !targetProjectId.trim()}
                 onClick={beginReview}
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >

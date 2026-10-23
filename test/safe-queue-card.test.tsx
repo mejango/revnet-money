@@ -14,6 +14,9 @@ import {
   safeChain,
   safeTransactionService,
 } from "./fixtures/safe-chain";
+import { groupGateState } from "./support/group-write-gate";
+
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 
 const SAFE = provenSafe();
 const OWNERS = SAFE.owners;
@@ -143,6 +146,7 @@ function baseQueue(tx: SafeQueuedTransaction) {
 
 beforeEach(() => {
   window.localStorage.clear();
+  groupGateState.reset();
   mocks.client = safeChain(SAFE.address, { nonce: 5n }).client;
   mocks.writeOptions = undefined;
   mocks.review.mockResolvedValue(undefined);
@@ -163,6 +167,32 @@ beforeEach(() => {
 });
 
 describe("Safe queue card", () => {
+  it("wallet-action:safe-queue signs nothing for a row the sucker registry does not list", async () => {
+    groupGateState.unverified = ["8453:42"];
+    const row = queuedRow(8453, SAFE.address, safeProposalFor({ to: TARGET, data: "0x1234" }, 5), [
+      { owner: OWNERS[1]!, signature: signature(OWNERS[1]!) },
+    ]);
+    vi.stubGlobal("fetch", safeTransactionService("base", SAFE.address, [row]).fetch);
+    renderCard(8453);
+    const sign = await screen.findByRole("button", { name: "Sign" });
+    expect(screen.getByText("A project listed here isn't linked onchain.")).toBeTruthy();
+    expect(sign).toBeDisabled();
+    fireEvent.click(sign);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("wallet-action:safe-queue keeps a listed row's queue actionable beside an unlisted row with nothing queued", async () => {
+    groupGateState.unverified = ["10:42"];
+    const row = queuedRow(8453, SAFE.address, safeProposalFor({ to: TARGET, data: "0x1234" }, 5), [
+      { owner: OWNERS[1]!, signature: signature(OWNERS[1]!) },
+    ]);
+    vi.stubGlobal("fetch", safeTransactionService("base", SAFE.address, [row]).fetch);
+    renderCard(8453, 10);
+    expect(await screen.findByRole("button", { name: "Sign" })).toBeEnabled();
+    expect(screen.queryByText("A project listed here isn't linked onchain.")).toBeNull();
+  });
+
   it("states in one line why the operator Safe's Ethereum handle queue can't be read", async () => {
     baseQueue(safeProposalFor({ to: TARGET, data: "0x1234" }, 5));
     renderCard(8453);

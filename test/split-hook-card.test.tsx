@@ -7,6 +7,9 @@ import type { ReactNode } from "react";
 import type { Address, Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectEveryWayOutRefused } from "./support/confirm";
+import { groupGateState } from "./support/group-write-gate";
+
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 
 const ACCOUNT = "0x1111111111111111111111111111111111111111" as Address;
 const HOOK = "0x2222222222222222222222222222222222222222" as Address;
@@ -86,6 +89,7 @@ async function openConfirm() {
 }
 
 beforeEach(() => {
+  groupGateState.reset();
   mocks.states = [STATE];
   // Viem's simulated request echoes the call's fields; it names no chain.
   mocks.simulate.mockImplementation(async (call: Record<string, unknown>) => ({ request: call }));
@@ -93,6 +97,14 @@ beforeEach(() => {
 });
 
 describe("SplitHookCard", () => {
+  it("wallet-action:split-hook keeps the action off for a project the registry does not list", async () => {
+    groupGateState.unverified = ["8453:4"];
+    renderCard();
+    expect(await screen.findByRole("button", { name: "Collect fees" })).toBeDisabled();
+    expect(screen.getByText("A project listed here isn't linked onchain.")).toBeInTheDocument();
+    expect(mocks.simulate).not.toHaveBeenCalled();
+  });
+
   it("wallet-action:split-hook sends the simulated fee collection on the hook's chain", async () => {
     const confirm = await openConfirm();
 

@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import type { Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectEveryWayOutRefused } from "./support/confirm";
+import { groupGateState } from "./support/group-write-gate";
 
 const SUCKER = "0x3333333333333333333333333333333333333333";
 const PEER_SUCKER = "0x4444444444444444444444444444444444444444";
@@ -39,6 +40,7 @@ vi.mock("@/components/ButtonWithWallet", () => ({
   }) => <button {...props}>{children}</button>,
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 vi.mock("@/components/EthereumAddress", () => ({ EthereumAddress: () => null }));
 vi.mock("@/components/ui/use-toast", () => ({ toast: vi.fn() }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
@@ -126,6 +128,7 @@ function holdSimulation() {
 }
 
 beforeEach(() => {
+  groupGateState.reset();
   mocks.simulate.mockReset().mockResolvedValue({});
   mocks.write.mockReset().mockResolvedValue(HASH);
   mocks.rows = [];
@@ -194,4 +197,40 @@ describe.each([
     await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
     await waitFor(() => expect(screen.queryByRole("dialog", { name: title })).toBeNull());
   });
+});
+
+describe("settlement actions over sucker-group chains", () => {
+  it.each([
+    {
+      action: "Sync",
+      render: () => renderWithQueries(<GossipCard chains={CHAINS} />),
+    },
+    {
+      action: "Claim",
+      render: () => {
+        mocks.rows = [bridgeRow("claimable")];
+        renderWithQueries(<QueuedMovementsCard chains={CHAINS} tokenSymbol="ART" />);
+      },
+    },
+    {
+      action: "Execute",
+      render: () => {
+        mocks.rows = [bridgeRow("pending")];
+        renderWithQueries(<QueuedMovementsCard chains={CHAINS} tokenSymbol="ART" />);
+      },
+    },
+  ])(
+    "wallet-action:settlement-sync wallet-action:queued-movements keeps $action off for a pair the registry does not list",
+    async ({ action, render }) => {
+      groupGateState.unverified = ["10:4", "8453:4"];
+      render();
+      const buttons = await screen.findAllByRole("button", { name: action });
+      for (const button of buttons) expect(button).toBeDisabled();
+      expect(screen.getAllByText("A project listed here isn't linked onchain.").length).toBe(
+        buttons.length,
+      );
+      expect(mocks.simulate).not.toHaveBeenCalled();
+      expect(mocks.write).not.toHaveBeenCalled();
+    },
+  );
 });

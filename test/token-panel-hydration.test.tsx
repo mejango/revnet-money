@@ -38,6 +38,8 @@ vi.mock("wagmi/actions", () => ({
   getPublicClient: () => ({ readContract: () => new Promise(() => {}) }),
 }));
 
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
+
 import { V6TokenPanel } from "@/app/[slug]/components/v6/owners/V6TokenPanel";
 import { installQueryPersistence, PERSIST, serializeState } from "@/lib/query-persist";
 

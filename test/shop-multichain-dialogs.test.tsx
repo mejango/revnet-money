@@ -6,6 +6,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
+import { groupGateState } from "./support/group-write-gate";
 
 const mocks = vi.hoisted(() => ({
   runBatch: vi.fn(),
@@ -47,6 +48,7 @@ vi.mock("@/app/[slug]/components/v6/shop/shopMediaEdit", () => ({
 }));
 vi.mock("@/app/create/helpers/pinProjectMetaData", () => ({ pinMediaFile: mocks.pinMediaFile }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 vi.mock("@/components/ButtonWithWallet", () => ({
   ButtonWithWallet: ({
     children,
@@ -131,6 +133,7 @@ function mount(kind: "add" | "media") {
 }
 
 beforeEach(() => {
+  groupGateState.reset();
   mocks.saved = false;
   mocks.destinations = [
     { chainId: 1, projectId: 7n, shop: primaryShop },
@@ -149,6 +152,23 @@ beforeEach(() => {
 });
 
 describe("selected-chain shop dialogs", () => {
+  it.each([
+    { kind: "add" as const, peer: "Add on Base", action: "Add items" },
+    { kind: "media" as const, peer: "Update media on Base", action: "Review media update" },
+  ])(
+    "wallet-action:shop-items keeps $kind off while a selected peer is not linked onchain",
+    ({ kind, peer, action }) => {
+      groupGateState.unverified = ["8453:91"];
+      mount(kind);
+      expect(screen.getByRole("button", { name: action })).not.toBeDisabled();
+      fireEvent.click(screen.getByRole("checkbox", { name: peer }));
+      expect(screen.getByText("A project listed here isn't linked onchain.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: action })).toBeDisabled();
+      expect(mocks.addItemsConditions).not.toHaveBeenCalled();
+      expect(mocks.readMediaEditSource).not.toHaveBeenCalled();
+    },
+  );
+
   it("wallet-action:shop-items submits one add-items call per selected hook with exact per-chain pricing and frozen guards", async () => {
     mount("add");
     fireEvent.click(screen.getByRole("checkbox", { name: "Add on Base" }));
@@ -175,6 +195,22 @@ describe("selected-chain shop dialogs", () => {
     expect(input.calls[1].args[0][0].price).toBe(3250000n);
     expect(input.calls.map((call: { args: unknown[] }) => call.args[1])).toEqual([[], []]);
   });
+
+  it.each([
+    { kind: "add" as const, resume: "Resume saved shop update" },
+    { kind: "media" as const, resume: "Resume saved media update" },
+  ])(
+    "wallet-action:shop-items holds a saved $kind update while inventories load and a group pair is not linked onchain",
+    ({ kind, resume }) => {
+      groupGateState.unverified = ["1:7"];
+      mocks.saved = true;
+      mocks.destinations = [];
+      mount(kind);
+      fireEvent.click(screen.getByRole("button", { name: resume }));
+      expect(screen.getByRole("button", { name: resume })).toBeDisabled();
+      expect(mocks.runBatch).not.toHaveBeenCalled();
+    },
+  );
 
   it("blocks the whole addition before pinning when a selected peer denies permission", async () => {
     mocks.addItemsConditions.mockRejectedValue(new Error("Peer permission denied"));

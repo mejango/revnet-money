@@ -9,6 +9,8 @@ import type { Address, Hex, PublicClient } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { provenSafe, queuedRow, safeChain } from "./fixtures/safe-chain";
 
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
+
 const SAFE = provenSafe();
 const TARGET = "0x4444444444444444444444444444444444444444" as Address;
 const signature = (owner: Address) => `0x${owner.slice(2).padStart(128, "1")}1b` as Hex;

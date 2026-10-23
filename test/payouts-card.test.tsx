@@ -6,6 +6,7 @@ import type { ComponentProps } from "react";
 import { zeroAddress } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
+import { groupGateState } from "./support/group-write-gate";
 
 const mocks = vi.hoisted(() => ({
   account: "0x0000000000000000000000000000000000000001",
@@ -26,6 +27,7 @@ vi.mock("@/lib/utils", async (importOriginal) => ({
   formatWalletError: (error: Error) => error.message,
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 vi.mock("@/components/ButtonWithWallet", () => ({
   ButtonWithWallet: ({
     loading: _loading,
@@ -118,6 +120,7 @@ async function selectAll() {
 }
 
 beforeEach(() => {
+  groupGateState.reset();
   mocks.account = "0x0000000000000000000000000000000000000001";
   mocks.getPendingBatch.mockReturnValue(undefined);
   mocks.runBatch.mockResolvedValue({ status: "success", hashes: [] });
@@ -200,6 +203,19 @@ describe("reachable selected-chain payouts", () => {
     finish({ status: "success", hashes: [] });
     await waitFor(() => expect(confirmIsOpen()).toBe(false));
     expect(mocks.runBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("wallet-action:payouts will not review a chain the registry does not list until it is deselected", async () => {
+    groupGateState.unverified = ["42161:99"];
+    setup();
+    await selectAll();
+    const review = screen.getByRole("button", { name: "Review selected payouts" });
+    expect(screen.getByText("A project listed here isn't linked onchain.")).toBeTruthy();
+    expect(review).toBeDisabled();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Project #99 on Arbitrum" }));
+    expect(screen.queryByText("A project listed here isn't linked onchain.")).toBeNull();
+    expect(review).not.toBeDisabled();
+    expect(mocks.readPayoutOptions).not.toHaveBeenCalled();
   });
 
   it("keeps deselected chains out of both preparation and submission", async () => {

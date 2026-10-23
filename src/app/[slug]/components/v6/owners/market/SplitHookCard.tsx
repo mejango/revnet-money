@@ -7,6 +7,7 @@ import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
@@ -54,6 +55,8 @@ function HookActionButton({
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The project comes from the server sucker-group list: act only on a registry-listed pair.
+  const gate = useGroupWriteGate([state]);
 
   return (
     <>
@@ -62,7 +65,8 @@ function HookActionButton({
         size="sm"
         variant="outline"
         forceChildren
-        loading={busy}
+        loading={busy || gate.pending}
+        disabled={gate.blocked}
         title={title}
         onClick={() => {
           setError(null);
@@ -71,6 +75,7 @@ function HookActionButton({
       >
         {label}
       </ButtonWithWallet>
+      {gate.line ? <p className="mt-1 text-xs text-zinc-600">{gate.line}</p> : null}
       <TxConfirmDialog
         open={review}
         onClose={() => setReview(false)}
@@ -82,6 +87,7 @@ function HookActionButton({
         error={error}
         onConfirm={async () => {
           try {
+            gate.assertVerified([state]);
             setBusy(true);
             setError(null);
             if (!publicClient) throw new Error("Public client unavailable.");

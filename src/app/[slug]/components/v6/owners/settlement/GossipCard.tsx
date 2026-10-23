@@ -8,6 +8,7 @@ import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
 import { legacyIntents } from "@/lib/legacy-intents";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
@@ -57,16 +58,19 @@ function StatusBadge({ level, label }: { level: GossipLevel; label: string }) {
  * mode). No verified budget → error toast, never a blind-guessed fee.
  */
 function SyncButton({
-  peerChainId,
+  peerProject,
   toChainId,
   syncSucker,
   onSynced,
 }: {
-  peerChainId: JBChainId;
+  peerProject: ChainProject;
   toChainId: JBChainId;
   syncSucker: Address;
   onSynced: () => void;
 }) {
+  const peerChainId = peerProject.chainId;
+  // The peer's project comes from the server sucker-group list: sync only a registry-listed pair.
+  const gate = useGroupWriteGate([peerProject]);
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: peerChainId });
   const { writeContractAsync } = useWriteContract();
@@ -82,10 +86,11 @@ function SyncButton({
         size="sm"
         variant="outline"
         forceChildren
-        loading={state === "finding" || state === "working"}
-        disabled={state === "sent"}
+        loading={state === "finding" || state === "working" || gate.pending}
+        disabled={state === "sent" || gate.blocked}
         onClick={async () => {
           try {
+            gate.assertVerified([peerProject]);
             setState("finding");
             setError(null);
             const value = await findSyncValue(peerChainId, syncSucker, address);
@@ -107,6 +112,7 @@ function SyncButton({
       >
         {state === "sent" ? "Sent" : "Sync"}
       </ButtonWithWallet>
+      {gate.line ? <p className="mt-1 text-xs text-zinc-600">{gate.line}</p> : null}
       {review || state === "finding" ? (
         <TxConfirmDialog
           open
@@ -127,6 +133,7 @@ function SyncButton({
           onConfirm={async () => {
             if (!review) return;
             try {
+              gate.assertVerified([peerProject]);
               setState("working");
               setError(null);
               const request = buildSyncAccountingDataTx({
@@ -195,10 +202,12 @@ function SyncButton({
 
 function PeerRow({
   peer,
+  peerProject,
   toChainId,
   onSynced,
 }: {
   peer: GossipPeerRow;
+  peerProject: ChainProject | undefined;
   toChainId: JBChainId;
   onSynced: () => void;
 }) {
@@ -229,9 +238,9 @@ function PeerRow({
       </td>
       <td className={cell}>{peer.snapshot ? timeAgo(peer.snapshot) : "never"}</td>
       <td className={`${cell} text-right`}>
-        {showSync && peer.syncSucker && (
+        {showSync && peer.syncSucker && peerProject && (
           <SyncButton
-            peerChainId={peer.peerChainId}
+            peerProject={peerProject}
             toChainId={toChainId}
             syncSucker={peer.syncSucker}
             onSynced={onSynced}
@@ -304,6 +313,9 @@ export function GossipCard({ chains }: { chains: ChainProject[] }) {
                     <PeerRow
                       key={peer.peerChainId}
                       peer={peer}
+                      peerProject={chains.find(
+                        (chain) => Number(chain.chainId) === Number(peer.peerChainId),
+                      )}
                       toChainId={view.chainId}
                       onSynced={() => {
                         // The push rides the bridge for minutes — re-read a few times so

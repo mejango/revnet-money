@@ -363,7 +363,10 @@ beforeEach(() => {
   mocks.receiptOn = null;
   mocks.neverLands = false;
   mocks.reverted = false;
-  mocks.verifiedPairs = [{ peerChainId: 1, projectId: 7n }];
+  mocks.verifiedPairs = [
+    { peerChainId: 1, projectId: 7n },
+    { peerChainId: 10, projectId: 8n },
+  ];
   mocks.balanceRows = null;
   mocks.write.mockReset().mockImplementation(never);
   mocks.prepareCashOut.mockReset().mockImplementation(never);
@@ -582,6 +585,32 @@ describe("cash out's sucker pair", () => {
       await screen.findByText("The Ethereum project listed here isn't linked onchain."),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cash out" })).toBeDisabled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+});
+
+describe("bridge's source and destination projects", () => {
+  it("wallet-action:bridge stays off for a destination the on-chain sucker registry does not list", async () => {
+    mocks.verifiedPairs = [{ peerChainId: 1, projectId: 7n }];
+    renderWithQueries(
+      <BridgeDialog
+        projects={[
+          { projectId: 7, chainId: 1, token: NATIVE_TOKEN },
+          { projectId: 8, chainId: 10, token: NATIVE_TOKEN },
+        ]}
+      >
+        <button type="button">Open move</button>
+      </BridgeDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open move" }));
+    const [, to] = await screen.findAllByRole("combobox");
+    fireEvent.click(to);
+    fireEvent.click(await screen.findByRole("option", { name: /Optimism/ }));
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    expect(
+      await screen.findByText("The Optimism project listed here isn't linked onchain."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Move REV" })).toBeDisabled();
     expect(mocks.write).not.toHaveBeenCalled();
   });
 });

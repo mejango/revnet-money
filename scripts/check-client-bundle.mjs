@@ -31,8 +31,8 @@ const routes = [
   { route: "/create", path: "/create", kib: 543 },
   { route: "/[slug]", path: "/eth:1", kib: 570 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 569 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 675 },
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 630 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 676 },
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 576 },
   { route: "/[slug]/extras", path: "/eth:1/extras", kib: 571 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 420 },
@@ -47,8 +47,8 @@ const unmeasuredRoutes = new Set(["/_global-error"]);
 const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
   ? JSON.parse(process.env.CLIENT_BUNDLE_ROUTES)
   : routes;
-// 920 -> 921 with the account routes +1: the onchain sucker-peer check on top of Next 16.4.2.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 921);
+// 920 -> 922 (and all JS 2726 -> 2727): the onchain sucker-peer and group-write checks on top of Next 16.4.2.
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
@@ -187,7 +187,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 921);
 // 2747.6 KiB. Raise only the aggregate ceiling to 2750 KiB; route and lazy-load limits stay fixed.
 // The load-size pass (rendered-HTML gate, splitChunks, lazy dialogs and write machinery, SDK
 // 3.1.0) measures 2714.9 KiB, route-referenced 912.1 KiB. Every ceiling drops to its measure.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2725);
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2727);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");

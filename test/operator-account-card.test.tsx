@@ -2,10 +2,12 @@ import { OperatorAccountCard } from "@/app/[slug]/components/v6/operator/Operato
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { groupGateState } from "./support/group-write-gate";
 
 const NEXT = "0x3333333333333333333333333333333333333333";
 
 const mocks = vi.hoisted(() => ({ runWrites: vi.fn() }));
+vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 
 // The operator and account-type reads need bendystraw and RPC; the card's
 // transfer flow is what these tests are about.
@@ -84,7 +86,29 @@ async function openConfirm() {
 }
 
 beforeEach(() => {
+  groupGateState.reset();
   mocks.runWrites.mockResolvedValue({ chains: 1, safeQueued: 0, safeConfirmed: 0 });
+});
+
+describe("transfer revnet operator to sucker-group rows", () => {
+  it("wallet-action:operator-writes refuses a row the sucker registry does not list", async () => {
+    groupGateState.unverified = ["8453:6"];
+    render(
+      <OperatorAccountCard
+        rows={[{ chainId: 8453, projectId: 6 }]}
+        fallbackProject={{ chainId: 8453, projectId: 6 }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Transfer revnet operator" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "New revnet operator" }), {
+      target: { value: NEXT },
+    });
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.getByText("A project listed here isn't linked onchain.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Transfer revnet operator" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add to batch" })).toBeDisabled();
+    expect(mocks.runWrites).not.toHaveBeenCalled();
+  });
 });
 
 describe("transfer revnet operator confirm", () => {

@@ -64,6 +64,8 @@ export function DistributeReservedTokensButton({
         scope={scope}
         tokenSymbol={tokenSymbol}
         disabled={selected.length === 0}
+        targets={selected}
+        group={projects}
         onSuccess={onSuccess}
         prepare={async () => {
           if (!address) throw new Error("Connect your wallet to continue.");

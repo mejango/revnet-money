@@ -31,6 +31,7 @@ import {
   useWaitForTransactionReceipt,
   useWriteContract,
 } from "@/hooks/useReviewedWriteContract";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { cachedQuery } from "@/lib/query-persist";
 import { explorerBaseUrl } from "@/lib/utils";
 import { RECEIPT_WAIT_TIMEOUT_MS, waitForReceiptWithRetry } from "@/lib/waitForReceipt";
@@ -691,6 +692,8 @@ export function AddLiquidityForm({
         args: [address!],
       }),
   });
+  // The pool is found from the server sucker-group project: fund only a registry-listed pair.
+  const gate = useGroupWriteGate([state]);
 
   if (!pool || !POSITION_MANAGER_BY_CHAIN[chainId]) return null;
 
@@ -750,6 +753,10 @@ export function AddLiquidityForm({
     }
     if (!view.ready || view.minPrice == null || view.maxPrice == null) {
       setStatus(view.note ?? "Finish the amounts first.");
+      return;
+    }
+    if (gate.blocked) {
+      setStatus(gate.line ?? "Still confirming this project's chains onchain. Try again.");
       return;
     }
     setBusy(true);
@@ -854,6 +861,7 @@ export function AddLiquidityForm({
 
   const execute = async () => {
     if (!address || !publicClient || !reviewed || reviewed.snapshot !== snapshot) return;
+    if (gate.blocked) return;
     const { reviewed: built, steps, account } = reviewed;
     if (account.toLowerCase() !== address.toLowerCase()) {
       setReviewed(null);
@@ -1118,11 +1126,12 @@ export function AddLiquidityForm({
       </div>
       {view.summary ? <p className="mt-2 text-xs text-zinc-600">{view.summary}</p> : null}
       {view.note ? <p className="mt-1 text-[11px] text-zinc-500">{view.note}</p> : null}
+      {gate.line ? <p className="mt-2 text-xs text-zinc-600">{gate.line}</p> : null}
       <div className="mt-3 flex justify-end">
         <ButtonWithWallet
           targetChainId={state.chainId}
-          loading={disabled}
-          disabled={disabled || !view.ready}
+          loading={disabled || gate.pending}
+          disabled={disabled || !view.ready || gate.blocked}
           onClick={() => void prepare()}
           connectWalletText="Connect Wallet"
           className="bg-teal-500 text-melon-950 hover:bg-teal-600"

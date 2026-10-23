@@ -52,8 +52,9 @@ const chains: ChainProject[] = [
   { chainId: 8453, projectId: 1n },
 ];
 const chainKey = chainProjectsKey(chains);
-const noPools: AmmChainState[] = chains.map(({ chainId }) => ({
+const noPools: AmmChainState[] = chains.map(({ chainId, projectId }) => ({
   chainId,
+  projectId,
   hook: null,
   pool: null,
   composition: null,

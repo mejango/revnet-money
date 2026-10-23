@@ -23,6 +23,7 @@ import { Label } from "@/components/ui/label";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
+import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { jb721TiersHookAbi, JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -68,6 +69,12 @@ export function AddItemsModal({
     configs: ReturnType<typeof tierConfigsForDestination>;
     preconditions: ShopReadCondition[];
   }> | null>(null);
+  // Peer projects come from the server sucker-group list: a fresh selection, or a
+  // saved update resumed from storage, reaches only registry-listed pairs. A batch
+  // prepared in this session was checked when built.
+  const gate = useGroupWriteGate(
+    prepared ? [] : saved ? [{ chainId, projectId }, ...projects] : destinations,
+  );
 
   const [items, setItems] = useState<DraftItem[]>([newDraftItem()]);
   const [phase, setPhase] = useState<
@@ -152,6 +159,7 @@ export function AddItemsModal({
     setError(null);
     setPhase("checking");
     try {
+      gate.assertVerified(destinations);
       for (let index = 0; index < items.length; index++) {
         const item = items[index];
         if (
@@ -180,12 +188,14 @@ export function AddItemsModal({
   };
 
   const submit = async (resume = false) => {
-    if (!address || busy) return;
+    if (!address || busy || (resume && gate.blocked)) return;
     setError(null);
     setProgress(null);
     try {
       let batch = prepared;
+      if (batch) gate.assertVerified(batch.map(({ destination }) => destination));
       if (!batch && !resume) {
+        gate.assertVerified(destinations);
         setPhase("checking");
         // Every destination is authorized before uploading any media.
         const conditions = await Promise.all(
@@ -307,7 +317,7 @@ export function AddItemsModal({
                   A saved shop update is awaiting completion. Confirmed chains will not be submitted
                   again.
                 </p>
-                <Button disabled={busy} onClick={() => void submit(true)}>
+                <Button disabled={busy || gate.blocked} onClick={() => void submit(true)}>
                   Resume saved shop update
                 </Button>
               </div>
@@ -433,6 +443,7 @@ export function AddItemsModal({
               })}
             </div>
 
+            {gate.line ? <p className="text-xs text-zinc-600">{gate.line}</p> : null}
             <TxError error={reviewing ? null : error} />
 
             <div className="flex justify-end gap-2">
@@ -441,8 +452,8 @@ export function AddItemsModal({
               </Button>
               <ButtonWithWallet
                 targetChainId={chainId}
-                loading={busy}
-                disabled={busy || !!saved || (!prepared && !destinations.length)}
+                loading={busy || gate.pending}
+                disabled={busy || !!saved || gate.blocked || (!prepared && !destinations.length)}
                 onClick={() => (prepared ? setReviewing(true) : void review())}
                 connectWalletText="Connect Wallet"
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"

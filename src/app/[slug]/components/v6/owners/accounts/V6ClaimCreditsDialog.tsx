@@ -97,6 +97,8 @@ export function V6ClaimCreditsDialog({
           scope={scope}
           tokenSymbol={tokenSymbol}
           disabled={selected.length === 0}
+          targets={selected}
+          group={creditRows}
           onSuccess={() => {
             void queryClient.invalidateQueries({ queryKey: ["readContracts"] });
           }}
