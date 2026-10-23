@@ -2479,6 +2479,20 @@ describe("reviewed selected-call orchestration", () => {
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 
+  it("leaves the fee's payment chain open when the wallet starts in another network family", async () => {
+    mocks.chainId = 11155111;
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await result.current.runBatch({
+        scope: "relayr-family",
+        label: "Deploy payers",
+        calls: [call(1), call(10)].map((row) => ({ ...row, relayrMode: "raw" as const })),
+      });
+    });
+    expect(mocks.review).toHaveBeenCalledOnce();
+    expect(mocks.review.mock.calls[0][0].relayrRounds).toBeUndefined();
+  });
+
   it("spends the batch's plan review only in the run that showed it", async () => {
     const { result } = renderHook(() => useMultichainBatch());
     await act(async () => {
@@ -2497,6 +2511,10 @@ describe("reviewed selected-call orchestration", () => {
     expect(
       mocks.review.mock.calls[0][0].calls.map((call: { relayrRound?: string }) => call.relayrRound),
     ).toEqual(expect.arrayContaining(["round:0"]));
+    // The bound is quoted on the start chain, where the round's fee is paid.
+    expect(mocks.review.mock.calls[0][0].relayrRounds).toEqual({
+      "round:0": { paymentChainId: mocks.chainId },
+    });
 
     const saved = createMultichainBatch(
       ACCOUNT,

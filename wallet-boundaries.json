@@ -45,7 +45,7 @@
     },
     {
       "file": "src/hooks/useMultichainBatch.ts",
-      "line": 1083,
+      "line": 1099,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/multichain-batch.test.tsx"
@@ -59,7 +59,7 @@
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2668,
+      "line": 2653,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/reviewed-relayr-hooks.test.tsx"

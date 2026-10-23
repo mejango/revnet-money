@@ -786,6 +786,22 @@ export function useMultichainBatch() {
                     args: call.args,
                     contractName: call.contractName,
                   })),
+                  // Each round's fee is paid on the start chain, so its bound is quoted there.
+                  // A start chain outside the destinations' family leaves the payer's choice open.
+                  ...(startChainId &&
+                  areRelayrChainsCompatible([
+                    startChainId,
+                    ...batch.calls.map((call) => call.chainId),
+                  ])
+                    ? {
+                        relayrRounds: Object.fromEntries(
+                          batch.rounds.map((_, roundIndex) => [
+                            roundKey(roundIndex),
+                            { paymentChainId: startChainId },
+                          ]),
+                        ),
+                      }
+                    : {}),
                   signal: input.signal,
                 },
                 reviewedSendDeps(config),

@@ -63,7 +63,7 @@ import {
 } from "@/lib/transaction-activity";
 import type { TransactionReviewCall } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
-import { savedAttempts, writeHolds } from "@/lib/write-hold";
+import { savedAttempts } from "@/lib/write-hold";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
 import {
   browserLocks,
@@ -2493,19 +2493,6 @@ export function useSendRelayrTx() {
         /** Its last gate passed: from here an error may come from the wallet. */
         let ready = false;
         const engine = await loadEngine();
-        // payRelayrReviewed leaves its hold for a follower to settle; settling it from the
-        // receipt now lets a reverted payment be paid again on the retry rule at once.
-        const settleHold = () =>
-          engine
-            .openStepHold(writeHolds, address, false, {
-              chainId: payment.chain,
-              to: payment.target,
-              data: payment.calldata,
-              value,
-              intent: `relayr:${remembered.bundleUuid}`,
-            })
-            .state(publicClient)
-            .catch(() => undefined);
         try {
           if (planned) {
             const bindings = remembered.expectedTransactions.map((row) => ({
@@ -2540,7 +2527,6 @@ export function useSendRelayrTx() {
             if (!("hash" in paid))
               throw new Error("Pay the network fee from an ordinary wallet. Nothing was sent.");
             receipt = await publicClient.getTransactionReceipt({ hash: paid.hash });
-            await settleHold();
           } else {
             const result = await engine.sendReviewed(
               {
@@ -2586,7 +2572,6 @@ export function useSendRelayrTx() {
               ? await publicClient
                   .getTransactionReceipt({ hash: journal()?.hash ?? hash })
                   .catch(() => undefined)
-                  .finally(settleHold)
               : undefined;
           else if (
             walletOpened &&
