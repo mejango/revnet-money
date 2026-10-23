@@ -43,7 +43,11 @@ const ADVISORY_EXCEPTIONS = new Map([
     {
       severity: "high",
       // Para's @getpara/shared also pins zod 3.25.76; allowed under the 2026-10-05 Para ruling until Signa replaces Para.
-    through: ["node_modules/@reown/appkit-wallet", "node_modules/@coinbase/cdp-sdk", "node_modules/@getpara/shared"],
+      through: [
+        "node_modules/@reown/appkit-wallet",
+        "node_modules/@coinbase/cdp-sdk",
+        "node_modules/@getpara/shared",
+      ],
       note: "zod GHSA-mrhx-c7xc-m3w5, whose zod 3 copies production reaches only through @reown/appkit-wallet, @coinbase/cdp-sdk and Para",
     },
   ],
