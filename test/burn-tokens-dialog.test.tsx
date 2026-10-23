@@ -97,17 +97,6 @@ beforeEach(() => {
 });
 
 describe("burn tokens confirm", () => {
-  it("goes back to the amount with Cancel, and sends nothing", async () => {
-    const confirm = await openConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    expect(confirmPanel()).toBeNull();
-    expect(screen.getByPlaceholderText("Amount of ART")).toBeVisible();
-    expect(mocks.read).not.toHaveBeenCalled();
-    expect(mocks.write).not.toHaveBeenCalled();
-  });
-
   it("wallet-action:burn-tokens refuses every way out from Confirm through the reads before the wallet prompt", async () => {
     const answerRead = heldRead();
     // Every send happens with the confirm on screen, never after a close.
@@ -117,13 +106,9 @@ describe("burn tokens confirm", () => {
     });
     const confirm = await openConfirm();
 
-    fireEvent.click(within(confirm).getByRole("button", { name: "Burn permanently" }));
     await waitFor(() => expect(mocks.read).toHaveBeenCalled());
-    const cancel = within(confirm).getByRole("button", { name: "Cancel" });
     const close = within(confirm).getByRole("button", { name: "Close" });
-    expect(cancel).toBeDisabled();
     expect(close).toBeDisabled();
-    fireEvent.click(cancel);
     fireEvent.click(close);
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.pointerDown(burnDialog());
@@ -158,9 +143,7 @@ describe("a burn left open over its own Safe proposal the app can't confirm", ()
     });
     fireEvent.click(screen.getByRole("button", { name: "Burn permanently" }));
     await waitFor(() => expect(confirmPanel()).not.toBeNull());
-    const confirm = confirmPanel()!;
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Burn permanently" }));
+    confirmPanel()!;
 
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     await screen.findByText("Check this proposal in your Safe before sending it again.");

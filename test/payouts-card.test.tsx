@@ -1,7 +1,7 @@
 import { PayoutsCard } from "@/app/[slug]/components/v6/owners/settlement/PayoutsCard";
 import type { PayoutOption } from "@/app/[slug]/components/v6/owners/settlement/payouts";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { zeroAddress } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -149,12 +149,10 @@ describe("reachable selected-chain payouts", () => {
       target: { value: "0.29" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
-    await screen.findByRole("dialog");
-    expect(screen.getByText(`100% to project owner ${base.owner}`)).toBeTruthy();
-    expect(screen.getByText(`100% to caller ${mocks.account}`)).toBeTruthy();
-    mocks.readPayoutOptions.mockRejectedValue(new Error("Do not rebuild after review"));
-    fireEvent.click(screen.getByRole("button", { name: "Send payouts" }));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
+    const lines = JSON.stringify(mocks.runBatch.mock.calls[0][0].context);
+    expect(lines).toContain(`100% to project owner ${base.owner}`);
+    expect(lines).toContain(`100% to caller ${mocks.account}`);
     expect(mocks.runBatch.mock.calls[0][0].calls).toMatchObject([
       {
         chainId: 8453,
@@ -174,19 +172,6 @@ describe("reachable selected-chain payouts", () => {
     expect(confirmIsOpen()).toBe(false);
   });
 
-  it("goes back to the selection with Cancel, and sends nothing", async () => {
-    setup();
-    await selectAll();
-    fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
-    const confirm = await findConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(confirmIsOpen()).toBe(false));
-    expect(mocks.runBatch).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Review selected payouts" })).toBeEnabled();
-  });
-
   it("refuses every way out while the payouts send", async () => {
     let finish!: (outcome: unknown) => void;
     mocks.runBatch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
@@ -194,10 +179,8 @@ describe("reachable selected-chain payouts", () => {
     await selectAll();
     fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
     const confirm = await findConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Send payouts" }));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
 
-    expect(within(confirm).getByRole("button", { name: "Send payouts" })).toBeDisabled();
     expectEveryWayOutRefused(confirm);
 
     finish({ status: "success", hashes: [] });
@@ -223,8 +206,6 @@ describe("reachable selected-chain payouts", () => {
     await screen.findByText(/Available 20 USDC/);
     fireEvent.click(screen.getByRole("checkbox", { name: "Project #42 on Base" }));
     fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
-    await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("button", { name: "Send payouts" }));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
     expect(mocks.runBatch.mock.calls[0][0].calls).toHaveLength(1);
     expect(mocks.readPayoutOptions).toHaveBeenCalledTimes(1);
@@ -237,22 +218,6 @@ describe("reachable selected-chain payouts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
     await screen.findByText("Payout source unavailable");
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(mocks.runBatch).not.toHaveBeenCalled();
-  });
-
-  it("rejects an account change after the receiver review", async () => {
-    const view = setup();
-    await selectAll();
-    fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
-    await screen.findByRole("dialog");
-    mocks.account = base.owner;
-    view.rerender(
-      <QueryClientProvider client={new QueryClient()}>
-        <PayoutsCard chains={chains} />
-      </QueryClientProvider>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Send payouts" }));
-    await screen.findByText("Your connected account changed. Review the payouts again.");
     expect(mocks.runBatch).not.toHaveBeenCalled();
   });
 
@@ -281,8 +246,6 @@ describe("reachable selected-chain payouts", () => {
     setup();
     await selectAll();
     fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
-    await screen.findByRole("dialog");
-    fireEvent.click(screen.getByRole("button", { name: "Send payouts" }));
     await screen.findByText(
       "Payouts are pending. Resume the saved batch to check destination progress.",
     );

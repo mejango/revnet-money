@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { ModalCloseButton, ModalDialog } from "@/components/ui/ModalShell";
-import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { topLayerHost } from "@/lib/topLayer";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
@@ -212,13 +212,12 @@ describe("a confirm hosted in a dialog", () => {
     onConfirmClose: () => void;
   }) {
     const confirm = (
-      <TxConfirmDialog
+      <TxProgress
         open
         title="Confirm"
         steps={[{ title: "Approve" }, { title: "Mint" }]}
         activeIndex={1}
-        action="Adding liquidity…"
-        onConfirm={() => undefined}
+        status="Adding liquidity…"
         onClose={onConfirmClose}
         busy={busy}
       />
@@ -249,7 +248,7 @@ describe("a confirm hosted in a dialog", () => {
       );
       // The confirm replaced the host's content in place: one dialog, the host's.
       const dialog = only();
-      expect(await screen.findByText("Adding liquidity…")).toBeInTheDocument();
+      expect(await screen.findByText(/Adding liquidity/)).toBeInTheDocument();
       expect(dialog.querySelector("[data-tx-confirm]")).not.toBeNull();
       const hostClose = hostCloseIn(dialog);
 
@@ -261,9 +260,8 @@ describe("a confirm hosted in a dialog", () => {
       expect(onConfirmClose).not.toHaveBeenCalled();
       expect(dialog.open).toBe(true);
       expect(hostClose).toBeDisabled();
-      // The confirm's own way back is closed too: its × and Cancel.
+      // The progress's own way back, its ×, is closed too.
       expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
-      expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
 
       view.rerender(
         <Hosted
@@ -286,7 +284,7 @@ describe("a confirm hosted in a dialog", () => {
       <Hosted busy placement="content" onOpenChange={onOpenChange} onConfirmClose={vi.fn()} />,
     );
     const dialog = only();
-    await screen.findByText("Adding liquidity…");
+    await screen.findByText(/Adding liquidity/);
 
     view.rerender(
       <Hosted

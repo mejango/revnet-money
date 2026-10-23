@@ -319,10 +319,6 @@ async function removePosition() {
   await waitFor(() => expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled());
   fireEvent.click(screen.getByRole("button", { name: "Remove" }));
   const confirm = await confirmPanel();
-  await waitFor(() =>
-    expect(within(confirm).getByRole("button", { name: "Remove the position" })).toBeEnabled(),
-  );
-  fireEvent.click(within(confirm).getByRole("button", { name: "Remove the position" }));
   await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
   return { seen, confirm };
 }
@@ -341,12 +337,8 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
       target: { value: "0.08" },
     });
     fireEvent.click(screen.getAllByRole("button", { name: "Make the market" }).at(-1)!);
-    const confirm = await confirmPanel();
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Make the market" })).toBeEnabled(),
-    );
+    await confirmPanel();
 
-    fireEvent.click(within(confirm).getByRole("button", { name: "Make the market" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Market liquidity", seen);
 
@@ -370,12 +362,8 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Increase the position" }));
-    const confirm = await confirmPanel();
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Increase the position" })).toBeEnabled(),
-    );
+    await confirmPanel();
 
-    fireEvent.click(within(confirm).getByRole("button", { name: "Increase the position" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Your liquidity", seen);
   });
@@ -394,12 +382,8 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Edit the market" }));
-    const confirm = await confirmPanel();
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Edit the market" })).toBeEnabled(),
-    );
+    await confirmPanel();
 
-    fireEvent.click(within(confirm).getByRole("button", { name: "Edit the market" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Your liquidity", seen);
   });
@@ -412,9 +396,8 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     );
     await waitFor(() => expect(screen.getByRole("button", { name: "Claim fees" })).toBeEnabled());
     fireEvent.click(screen.getByRole("button", { name: "Claim fees" }));
-    const confirm = await confirmPanel();
+    await confirmPanel();
 
-    fireEvent.click(within(confirm).getByRole("button", { name: "Claim fees" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     tryEveryWayOut("Your liquidity", seen);
   });
@@ -426,21 +409,16 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
       <LiquidityManager states={[state]} tokenSymbol="ART" heading={null} />,
     );
     await waitFor(() => expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    const confirm = await confirmPanel();
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Remove the position" })).toBeEnabled(),
-    );
-
-    // Remove re-reads the live position before it asks the wallet.
+    // Remove reads the position for its review, then re-reads it before it asks the wallet.
     let reread!: (value: UserLpPosition) => void;
-    mocks.refreshPosition.mockImplementationOnce(
+    mocks.refreshPosition.mockResolvedValueOnce(position).mockImplementationOnce(
       () =>
         new Promise<UserLpPosition>((resolve) => {
           reread = resolve;
         }),
     );
-    fireEvent.click(within(confirm).getByRole("button", { name: "Remove the position" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    await confirmPanel();
     await waitFor(() => expect(mocks.refreshPosition).toHaveBeenCalledTimes(2));
     tryEveryWayOut("Your liquidity", seen);
 
@@ -459,8 +437,7 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
         element?.tagName === "P" && element.textContent === "Waiting for confirmation…",
     );
     // The sent removal cannot be sent again while it confirms.
-    expect(within(confirm).getByRole("button", { name: "Remove the position" })).toBeDisabled();
-    expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(within(confirm).queryByRole("button", { name: "Try again" })).toBeNull();
     tryEveryWayOut("Your liquidity", seen);
     expect(mocks.write).toHaveBeenCalledTimes(1);
   });
@@ -531,9 +508,7 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     const { confirm } = await removePosition();
 
     await waitFor(() => expect(confirm).toHaveTextContent(WRITE_HOLD_UNCHECKED_LINE));
-    expect(
-      within(confirm).getByRole("button", { name: "Remove the position" }),
-    ).toBeInTheDocument();
+    expect(within(confirm).getByRole("button", { name: "Try again" })).toBeInTheDocument();
     expect(mocks.write).toHaveBeenCalledTimes(1);
   });
 
@@ -543,10 +518,10 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     const { confirm } = await removePosition();
 
     await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeEnabled(),
+      expect(within(confirm).getByRole("button", { name: "Close" })).toBeEnabled(),
     );
     expect(confirm).toHaveTextContent(`Transaction ${HASH} reverted onchain.`);
-    expect(within(confirm).getByRole("button", { name: "Remove the position" })).toBeEnabled();
+    expect(within(confirm).getByRole("button", { name: "Try again" })).toBeEnabled();
     expect(within(confirm).queryByRole("button", { name: "Done" })).toBeNull();
     expect(mocks.write).toHaveBeenCalledTimes(1);
   });

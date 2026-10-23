@@ -4,7 +4,7 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import { failedLine, reviewedCall, useReviewedAction } from "@/hooks/useReviewedAction";
@@ -74,6 +74,16 @@ function ClaimButton({
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const context = [
+    {
+      label: "Claims",
+      value: `${fmtUnits(row.projectTokenCount, 18)} ${tokenSymbol}`,
+      note: `${fmtUnits(row.terminalTokenAmount, row.tokenDecimals)} ${row.tokenSymbol} backing`,
+      strong: true,
+    },
+    { label: "On", value: chainName(row.peerChainId) },
+    { label: "To", value: row.beneficiary, mono: true },
+  ];
 
   return (
     <>
@@ -92,25 +102,29 @@ function ClaimButton({
         Claim
       </ButtonWithWallet>
       {gate.line ? <p className="mt-1 text-xs text-zinc-600">{gate.line}</p> : null}
-      <TxConfirmDialog
+      <TxProgress
         open={review}
         onClose={() => setReview(false)}
         title="Confirm claim"
         steps={[{ title: "Claim", detail: "Proves the bridged leaf on the destination sucker." }]}
         activeIndex={busy ? 0 : -1}
-        action="Claim"
         busy={busy}
         error={error}
-        onConfirm={async () => {
+        rows={context}
+        start={async () => {
           try {
             gate.assertVerified(targets);
             setBusy(true);
             setError(null);
             const result = await run({
               account: address,
+              context,
               calls: [reviewedCall(buildV6ClaimTxFromRow(row))],
             });
-            if (!result) return;
+            if (!result) {
+              setReview(false);
+              return;
+            }
             if (result.status === "failed") {
               setError(failedLine(result));
               return;
@@ -136,23 +150,7 @@ function ClaimButton({
             setBusy(false);
           }
         }}
-      >
-        <SummaryRow label="Claims">
-          {fmtUnits(row.projectTokenCount, 18)} {tokenSymbol}
-          <span className="block text-xs text-zinc-500">
-            {fmtUnits(row.terminalTokenAmount, row.tokenDecimals)} {row.tokenSymbol} backing
-          </span>
-        </SummaryRow>
-        <SummaryRow label="On">{chainName(row.peerChainId)}</SummaryRow>
-        <SummaryRow label="To">
-          <EthereumAddress
-            address={row.beneficiary}
-            short
-            withEnsName
-            chain={viemChainOf(row.peerChainId)}
-          />
-        </SummaryRow>
-      </TxConfirmDialog>
+      />
     </>
   );
 }
@@ -181,6 +179,19 @@ function ExecuteButton({
   const [error, setError] = useState<string | null>(null);
   const [feeUnavailable, setFeeUnavailable] = useState(false);
   const nativeSymbol = viemChainOf(row.chainId)?.nativeCurrency.symbol ?? "ETH";
+  const context = [
+    { label: "On", value: chainName(row.chainId) },
+    { label: "Delivers to", value: chainName(row.peerChainId) },
+    ...(review
+      ? [
+          {
+            label: "Bridge fee",
+            value: `${fmtUnits(review.value, 18)} ${nativeSymbol}`,
+            note: "Found by simulation",
+          },
+        ]
+      : []),
+  ];
 
   if (feeUnavailable) {
     return (
@@ -229,7 +240,7 @@ function ExecuteButton({
       </ButtonWithWallet>
       {gate.line ? <p className="mt-1 text-xs text-zinc-600">{gate.line}</p> : null}
       {review || busy ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReview(null)}
           title="Confirm execution"
@@ -242,10 +253,10 @@ function ExecuteButton({
             },
           ]}
           activeIndex={busy ? 0 : -1}
-          action="Execute"
           busy={busy}
           error={error}
-          onConfirm={async () => {
+          rows={context}
+          start={async () => {
             if (!review) return;
             try {
               gate.assertVerified(targets);
@@ -255,6 +266,7 @@ function ExecuteButton({
               // Held by the sucker, token and account: its fee is quoted again on a retry.
               const result = await run({
                 account: address,
+                context,
                 calls: [
                   reviewedCall(
                     {
@@ -277,7 +289,10 @@ function ExecuteButton({
                   ),
                 ],
               });
-              if (!result) return;
+              if (!result) {
+                setReview(null);
+                return;
+              }
               if (result.status === "failed") {
                 setError(failedLine(result));
                 return;
@@ -303,16 +318,7 @@ function ExecuteButton({
               setBusy(false);
             }
           }}
-        >
-          <SummaryRow label="On">{chainName(row.chainId)}</SummaryRow>
-          <SummaryRow label="Delivers to">{chainName(row.peerChainId)}</SummaryRow>
-          {review ? (
-            <SummaryRow label="Bridge fee">
-              {fmtUnits(review.value, 18)} {nativeSymbol}
-              <span className="block text-xs text-zinc-500">Found by simulation</span>
-            </SummaryRow>
-          ) : null}
-        </TxConfirmDialog>
+        />
       ) : null}
     </>
   );

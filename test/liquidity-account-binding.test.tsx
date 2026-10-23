@@ -13,7 +13,7 @@ import type {
 import { MarketEditPanel } from "@/app/[slug]/components/v6/owners/market/MarketEditPanel";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { zeroAddress, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,6 +35,7 @@ const ACCOUNT_CHANGED = "The connected account changed. Review again.";
 const mocks = vi.hoisted(() => ({
   address: "0x1111111111111111111111111111111111111111",
   write: vi.fn(),
+  holdReview: null as null | (() => () => void),
 }));
 
 vi.mock("wagmi", async (importOriginal) => ({
@@ -69,9 +70,11 @@ vi.mock("@/lib/safe-connector", async (importOriginal) => ({
 }));
 vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
   const { reviewedActionThrough } = await import("./support/reviewed-action");
+  const runner = reviewedActionThrough(mocks.write, { connected: () => mocks.address });
+  mocks.holdReview = runner.holdReview;
   return {
     ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
-    useReviewedAction: reviewedActionThrough(mocks.write).hook,
+    useReviewedAction: runner.hook,
   };
 });
 vi.mock("@/lib/waitForReceipt", async (importOriginal) => ({
@@ -202,11 +205,12 @@ function renderFlow(flow: () => ReactNode) {
   };
 }
 
-const confirmAction = async (name: string) => {
-  const confirm = await screen.findByRole("dialog", { name: /^Confirm/ });
-  const action = within(confirm).getByRole("button", { name });
-  await waitFor(() => expect(action).toBeEnabled());
-  return action;
+/** Starts the flow's one review and holds it open, as a user still reading it would. */
+const startHeld = async (button: HTMLElement) => {
+  const release = mocks.holdReview!();
+  fireEvent.click(button);
+  await screen.findByRole("dialog", { name: /^Confirm/ });
+  return release;
 };
 
 beforeEach(() => {
@@ -223,19 +227,19 @@ describe("a plan sent only from the account that reviewed it", () => {
     fireEvent.change(screen.getByRole("spinbutton", { name: /^ETH/ }), {
       target: { value: "0.08" },
     });
-    fireEvent.click(screen.getAllByRole("button", { name: "Make the market" }).at(-1)!);
-    const mint = await confirmAction("Make the market");
+    const release = await startHeld(
+      screen.getAllByRole("button", { name: "Make the market" }).at(-1)!,
+    );
 
     switchTo(B);
-    fireEvent.click(mint);
+    release();
 
     await screen.findByText(ACCOUNT_CHANGED);
     expect(mocks.write).not.toHaveBeenCalled();
-    expect(screen.queryByRole("dialog", { name: /^Confirm/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
 
     // A fresh review is B's, and the mint is bound to B.
     fireEvent.click(screen.getAllByRole("button", { name: "Make the market" }).at(-1)!);
-    fireEvent.click(await confirmAction("Make the market"));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     expect(mocks.write.mock.calls[0][0]).toMatchObject({
       functionName: "modifyLiquidities",
@@ -248,12 +252,11 @@ describe("a plan sent only from the account that reviewed it", () => {
       <LiquidityManager states={[state]} tokenSymbol="ART" heading={null} />
     ));
     await waitFor(() => expect(screen.getByRole("button", { name: "Remove" })).toBeEnabled());
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
-    await confirmAction("Remove the position");
+    const release = await startHeld(screen.getByRole("button", { name: "Remove" }));
 
-    // The list reloads for B, and the removal reviewed for A is still on screen.
+    // The list reloads for B while the removal's review for A is still open.
     switchTo(B);
-    fireEvent.click(await confirmAction("Remove the position"));
+    release();
 
     await screen.findByText(ACCOUNT_CHANGED);
     expect(mocks.write).not.toHaveBeenCalled();
@@ -270,11 +273,10 @@ describe("a plan sent only from the account that reviewed it", () => {
         onDone={vi.fn()}
       />
     ));
-    fireEvent.click(screen.getByRole("button", { name: "Increase the position" }));
-    const increase = await confirmAction("Increase the position");
+    const release = await startHeld(screen.getByRole("button", { name: "Increase the position" }));
 
     switchTo(B);
-    fireEvent.click(increase);
+    release();
 
     await screen.findByText(ACCOUNT_CHANGED);
     expect(mocks.write).not.toHaveBeenCalled();
@@ -291,11 +293,10 @@ describe("a plan sent only from the account that reviewed it", () => {
         onDone={vi.fn()}
       />
     ));
-    fireEvent.click(screen.getByRole("button", { name: "Edit the market" }));
-    const edit = await confirmAction("Edit the market");
+    const release = await startHeld(screen.getByRole("button", { name: "Edit the market" }));
 
     switchTo(B);
-    fireEvent.click(edit);
+    release();
 
     await screen.findByText(ACCOUNT_CHANGED);
     expect(mocks.write).not.toHaveBeenCalled();

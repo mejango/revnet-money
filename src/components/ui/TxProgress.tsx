@@ -9,24 +9,29 @@ import {
 } from "@/components/ui/ModalShell";
 import { TxSteps } from "@/components/ui/TxSteps";
 import { formatTransactionMessage } from "@/lib/utils";
-import { useEffect, useId, type ComponentProps, type ReactNode } from "react";
+import { useEffect, useId, useRef, type ComponentProps, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-export type TxConfirmRow = {
+export type TxProgressRow = {
   label: ReactNode;
   value: ReactNode;
   /** Render the value in a monospace face (addresses, hashes). */
   mono?: boolean;
   /** Emphasize the value (the amount that leaves the wallet). */
   strong?: boolean;
+  /** Further lines of the value, as a review context row has them. */
+  lines?: readonly ReactNode[];
+  /** A short note under the value. */
+  note?: ReactNode;
 };
 
 /**
- * The one review surface for every wallet write: a frozen plan (label/value
- * rows), the wallet-prompt queue, then a single action. Closing is refused
- * while `busy`; once `complete` the footer collapses to Done.
+ * A write's progress: what it does (label/value rows), the wallet-prompt queue,
+ * its status and error. It never confirms: `start` opens the write's one review
+ * as soon as the progress is open and ready, and again from Try again after an
+ * error. Closing is refused while `busy`; once `complete` the footer is Done.
  */
-export function TxConfirmDialog({
+export function TxProgress({
   open,
   onClose,
   eyebrow = "Review",
@@ -36,10 +41,7 @@ export function TxConfirmDialog({
   steps,
   activeIndex,
   stepsIntro,
-  action,
-  actionDisabled = false,
-  cancelLabel = "Cancel",
-  onConfirm,
+  start,
   busy = false,
   complete = false,
   preparing = false,
@@ -51,27 +53,37 @@ export function TxConfirmDialog({
   onClose: () => void;
   eyebrow?: string;
   title: ReactNode;
-  rows?: readonly TxConfirmRow[];
+  rows?: readonly TxProgressRow[];
   /** Extra body content under the rows (warnings, notes, custom grids). */
   children?: ReactNode;
   steps: ComponentProps<typeof TxSteps>["steps"];
   activeIndex: number;
   stepsIntro?: string;
-  /** Null while a read-only phase advances automatically; dismissal remains available. */
-  action: string | null;
-  actionDisabled?: boolean;
-  cancelLabel?: string;
-  onConfirm: () => void;
+  /** Opens the write's review; absent while a read-only phase advances on its own. */
+  start?: () => void;
   busy?: boolean;
   complete?: boolean;
   /** Rows and steps are still being read; `status` says what is happening. */
   preparing?: boolean;
   status?: ReactNode;
   error?: ReactNode;
-  /** Controls tied to the final action, after the review's rows and steps. */
+  /** Controls under the rows and steps (a Relayr payment choice and its button). */
   footerContent?: ReactNode;
 }) {
   const titleId = useId();
+  const ready = open && !busy && !preparing && !complete && !error && !!start;
+  // Once per opening or preparation: a cancelled review leaves the progress to its site, never
+  // reopens itself; a new preparation is a new write.
+  const started = useRef(false);
+  const startRef = useRef(start);
+  startRef.current = start;
+  useEffect(() => {
+    if (!open || preparing) started.current = false;
+    else if (ready && !started.current) {
+      started.current = true;
+      startRef.current?.();
+    }
+  }, [open, preparing, ready]);
   // Inside a ModalShell already, the confirm replaces that card's content in
   // place: one scrim, one card, and closing brings the form back.
   const host = useEnclosingModalCard();
@@ -127,7 +139,7 @@ export function TxConfirmDialog({
             {rows && rows.length > 0 ? (
               <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
                 {rows.map((row, index) => (
-                  <TxConfirmRowItem key={index} row={row} />
+                  <TxProgressRowItem key={index} row={row} />
                 ))}
               </div>
             ) : null}
@@ -141,7 +153,7 @@ export function TxConfirmDialog({
             {status ? (
               <p className="text-sm text-amber-900" role="status">
                 {typeof statusText === "string" ? (
-                  <LoadingText text={statusText} active={busy || action === null || undefined} />
+                  <LoadingText text={statusText} active={busy || undefined} />
                 ) : (
                   statusText
                 )}
@@ -155,7 +167,7 @@ export function TxConfirmDialog({
           </p>
         ) : null}
       </div>
-      {complete || action || footerContent ? (
+      {complete || (error && start && !busy) || footerContent ? (
         <footer className="flex flex-wrap items-end justify-end gap-2 border-t border-melon-300 bg-melon-25 px-5 py-4">
           {complete ? (
             <button
@@ -168,26 +180,15 @@ export function TxConfirmDialog({
           ) : (
             <>
               {footerContent ? <div className="w-full">{footerContent}</div> : null}
-              {action ? (
-                <>
-                  <button
-                    type="button"
-                    className="min-h-[44px] border border-melon-600 px-5 text-sm disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={busy}
-                    onClick={onClose}
-                  >
-                    {cancelLabel}
-                  </button>
-                  <button
-                    type="button"
-                    className="min-h-[44px] border border-melon-700 bg-melon-500 px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
-                    disabled={busy || preparing || actionDisabled}
-                    aria-busy={preparing || undefined}
-                    onClick={onConfirm}
-                  >
-                    {action}
-                  </button>
-                </>
+              {error && start && !busy ? (
+                <button
+                  type="button"
+                  className="min-h-[44px] border border-melon-700 bg-melon-500 px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
+                  disabled={preparing}
+                  onClick={start}
+                >
+                  Try again
+                </button>
               ) : null}
             </>
           )}
@@ -208,7 +209,7 @@ export function TxConfirmDialog({
   );
 }
 
-function TxConfirmRowItem({ row }: { row: TxConfirmRow }) {
+function TxProgressRowItem({ row }: { row: TxProgressRow }) {
   return (
     <>
       <span className="text-zinc-500">{row.label}</span>
@@ -218,6 +219,12 @@ function TxConfirmRowItem({ row }: { row: TxConfirmRow }) {
         } ${row.strong ? "font-medium" : ""}`}
       >
         {row.value}
+        {row.lines?.map((line, index) => (
+          <span key={index} className="block">
+            {line}
+          </span>
+        ))}
+        {row.note ? <span className="block text-xs text-zinc-500">{row.note}</span> : null}
       </span>
     </>
   );

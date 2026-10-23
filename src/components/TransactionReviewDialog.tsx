@@ -20,7 +20,7 @@ import {
   type PrettyStep,
   type V4PlanStep,
 } from "@bananapus/nana-sdk-core/review/decode";
-import { useMemo, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 
 import { FeeBuybackNotice, useFeeBuybackReview } from "./FeeBuybackNotice";
 
@@ -594,6 +594,30 @@ function ReviewModal({
             <div className="mt-3 border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
               {COMMITMENT_TEXT[commitment].banner}
             </div>
+          ) : null}
+          {model.context.length ? (
+            <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+              {model.context.map((row, index) => (
+                <Fragment key={index}>
+                  <dt className="text-zinc-500">{row.label}</dt>
+                  <dd
+                    className={`min-w-0 text-right text-zinc-900 ${
+                      row.mono ? "break-all font-mono text-xs" : "wrap-anywhere"
+                    } ${row.strong ? "font-medium" : ""}`}
+                  >
+                    {row.value}
+                    {row.lines?.map((line, at) => (
+                      <span key={at} className="block">
+                        {line}
+                      </span>
+                    ))}
+                    {row.note ? (
+                      <span className="block text-xs text-zinc-500">{row.note}</span>
+                    ) : null}
+                  </dd>
+                </Fragment>
+              ))}
+            </dl>
           ) : null}
 
           <div className="mt-4 space-y-4">

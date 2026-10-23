@@ -34,9 +34,6 @@ vi.mock("@/components/ButtonWithWallet", () => ({
   }) => <button {...props}>{children}</button>,
 }));
 
-vi.mock("@/hooks/useAllowance", () => ({
-  useAllowance: () => ({ ensureAllowance: vi.fn(), isApproving: false }),
-}));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   followSubmission: vi.fn(),
   useProposeSafeBatch: () => vi.fn(),

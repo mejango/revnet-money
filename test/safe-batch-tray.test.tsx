@@ -329,19 +329,6 @@ describe("SafeBatchTray", () => {
     expect(mocks.submit).toHaveBeenCalledTimes(1);
   });
 
-  it("goes back to the tray with Cancel, and sends nothing", async () => {
-    writeBatch(8453, 6, [hookStep(), terminalStep()]);
-    render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Review and propose on Base" }));
-    const dialog = await screen.findByRole("dialog", { name: "Batch on Base" });
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(confirmIsOpen()).toBe(false));
-    expect(mocks.submit).not.toHaveBeenCalled();
-    expect(readBatch(8453, 6)).toHaveLength(2);
-  });
-
   it("refuses every way out while the batch is sent", async () => {
     let finish!: (outcome: unknown) => void;
     mocks.submit.mockReturnValue(new Promise((resolve) => (finish = resolve)));

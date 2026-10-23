@@ -1,7 +1,7 @@
 import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import {
   Dialog,
   DialogContent,
@@ -171,6 +171,24 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
   const statusText = BORROW_STATUS_TEXT[borrowStatus];
   const adjusting =
     !!internalSelectedLoan && !!collateralAmount && !isNaN(Number(collateralAmount));
+  const loanContext =
+    cashOutChainId && selectedChainTokenConfig
+      ? [
+          { label: "Tokens used for loan", value: `${collateralAmount} ${tokenSymbol}` },
+          { label: "On", value: chainDisplayName(Number(cashOutChainId) as JBChainId) },
+          {
+            label: "Borrows",
+            value: `~${simulatedAmountBorrowed.toFixed(8)} ${selectedChainTokenSymbol}`,
+            strong: true,
+            ...(minimumBorrowAmountPreview !== undefined
+              ? {
+                  note: `At least ${formatUnits(minimumBorrowAmountPreview, selectedChainTokenConfig.decimals)} ${selectedChainTokenSymbol}; the contract enforces this minimum`,
+                }
+              : {}),
+          },
+          { label: "Prepaid fee", value: `${prepaidPercent}%` },
+        ]
+      : [];
 
   useEffect(() => {
     if (["pending", "reallocation-pending", "success"].includes(borrowStatus)) setReview(false);
@@ -410,7 +428,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           </ButtonWithWallet>
         </DialogFooter>
         {review && cashOutChainId && selectedChainTokenConfig ? (
-          <TxConfirmDialog
+          <TxProgress
             open
             onClose={() => setReview(false)}
             title={adjusting ? "Confirm loan adjustment" : "Confirm loan"}
@@ -430,30 +448,14 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
             activeIndex={
               borrowStatus === "granting-permission" ? 0 : busy ? (grantsPermission ? 1 : 0) : -1
             }
-            action={adjusting ? "Adjust loan" : "Open loan"}
-            onConfirm={() => void handleBorrow()}
+            start={async () => {
+              if ((await handleBorrow(loanContext)) === "closed") setReview(false);
+            }}
             busy={busy}
             status={busy || borrowStatus === "safe-unconfirmed" ? statusText : null}
             error={loanSourceLine ?? (borrowStatus.startsWith("error") ? statusText : null)}
-          >
-            <SummaryRow label="Tokens used for loan">
-              {collateralAmount} {tokenSymbol}
-            </SummaryRow>
-            <SummaryRow label="On">
-              {chainDisplayName(Number(cashOutChainId) as JBChainId)}
-            </SummaryRow>
-            <SummaryRow label="Borrows">
-              ~{simulatedAmountBorrowed.toFixed(8)} {selectedChainTokenSymbol}
-              {minimumBorrowAmountPreview !== undefined ? (
-                <span className="block text-xs text-zinc-500">
-                  At least{" "}
-                  {formatUnits(minimumBorrowAmountPreview, selectedChainTokenConfig.decimals)}{" "}
-                  {selectedChainTokenSymbol}; the contract enforces this minimum
-                </span>
-              ) : null}
-            </SummaryRow>
-            <SummaryRow label="Prepaid fee">{prepaidPercent}%</SummaryRow>
-          </TxConfirmDialog>
+            rows={loanContext}
+          />
         ) : null}
       </DialogContent>
     </Dialog>

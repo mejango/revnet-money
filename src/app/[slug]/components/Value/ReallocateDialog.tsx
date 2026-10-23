@@ -1,6 +1,6 @@
 import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import {
   Dialog,
   DialogContent,
@@ -152,6 +152,36 @@ export function ReallocateDialog({
   useEffect(() => {
     if (["pending", "reallocation-pending", "success"].includes(borrowStatus)) setReview(false);
   }, [borrowStatus]);
+
+  const refinanceContext = cashOutChainId
+    ? [
+        {
+          label: "Loan",
+          value: `#${selectedLoan?.id} on ${chainDisplayName(Number(cashOutChainId) as JBChainId)}`,
+          note: "The remaining debt gets a new loan number",
+        },
+        {
+          label: "Extra tokens used",
+          value: `${collateralAmount || "0"} ${tokenSymbol}`,
+          note: `Plus ${collateralToTransfer.toFixed(6)} ${tokenSymbol} moved from the existing loan`,
+        },
+        {
+          label: "New loan borrows",
+          value: `~${
+            newLoanBorrowableAmount && baseTokenDecimals !== undefined
+              ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals)).toFixed(8)
+              : "0"
+          } ${selectedChainTokenSymbol}`,
+          strong: true,
+          ...(minimumBorrowAmountPreview !== undefined && baseTokenDecimals !== undefined
+            ? {
+                note: `At least ${Number(formatUnits(minimumBorrowAmountPreview, baseTokenDecimals)).toFixed(8)} ${selectedChainTokenSymbol}; the contract enforces this minimum`,
+              }
+            : {}),
+        },
+        { label: "Prepaid fee", value: `${prepaidPercent}%` },
+      ]
+    : [];
 
   return (
     <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
@@ -428,7 +458,7 @@ export function ReallocateDialog({
             </DialogFooter>
           )}
           {review && cashOutChainId ? (
-            <TxConfirmDialog
+            <TxProgress
               open
               onClose={() => setReview(false)}
               title="Confirm refinancing"
@@ -448,40 +478,14 @@ export function ReallocateDialog({
               activeIndex={
                 borrowStatus === "granting-permission" ? 0 : busy ? (grantsPermission ? 1 : 0) : -1
               }
-              action="Refinance loan"
-              onConfirm={() => void handleBorrow()}
+              start={async () => {
+                if ((await handleBorrow(refinanceContext)) === "closed") setReview(false);
+              }}
               busy={busy}
               status={busy || borrowStatus === "safe-unconfirmed" ? statusText : null}
               error={loanSourceLine ?? (borrowStatus.startsWith("error") ? statusText : null)}
-            >
-              <SummaryRow label="Loan">
-                #{selectedLoan?.id} on {chainDisplayName(Number(cashOutChainId) as JBChainId)}
-                <span className="block text-xs text-zinc-500">
-                  The remaining debt gets a new loan number
-                </span>
-              </SummaryRow>
-              <SummaryRow label="Extra tokens used">
-                {collateralAmount || "0"} {tokenSymbol}
-                <span className="block text-xs text-zinc-500">
-                  Plus {collateralToTransfer.toFixed(6)} {tokenSymbol} moved from the existing loan
-                </span>
-              </SummaryRow>
-              <SummaryRow label="New loan borrows">
-                ~
-                {newLoanBorrowableAmount && baseTokenDecimals !== undefined
-                  ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals)).toFixed(8)
-                  : "0"}{" "}
-                {selectedChainTokenSymbol}
-                {minimumBorrowAmountPreview !== undefined && baseTokenDecimals !== undefined ? (
-                  <span className="block text-xs text-zinc-500">
-                    At least{" "}
-                    {Number(formatUnits(minimumBorrowAmountPreview, baseTokenDecimals)).toFixed(8)}{" "}
-                    {selectedChainTokenSymbol}; the contract enforces this minimum
-                  </span>
-                ) : null}
-              </SummaryRow>
-              <SummaryRow label="Prepaid fee">{prepaidPercent}%</SummaryRow>
-            </TxConfirmDialog>
+              rows={refinanceContext}
+            />
           ) : null}
         </div>
       </DialogContent>

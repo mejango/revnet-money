@@ -198,7 +198,6 @@ async function sendFromReadyConfirm(queryClient: QueryClient) {
   fireEvent.click(pay);
   const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
   await within(confirm).findByText("You get at least");
-  fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
   return confirm;
 }
 

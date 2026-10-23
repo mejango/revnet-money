@@ -56,7 +56,7 @@ import {
   type UserPayTiers,
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   Address,
   encodeFunctionData,
@@ -562,7 +562,8 @@ export function V6PayCard() {
       (prepared.mode === "pay" &&
         (previewError || (quoteSettled && preview.terminal !== prepared.terminal))));
 
-  useEffect(() => {
+  // Set before the review dialog's effects run, so a review it opens checks this render's quote.
+  useLayoutEffect(() => {
     currentPayRef.current = {
       identity: payIdentity,
       quoteTerminal: quoteSettled ? preview.terminal : null,
@@ -833,10 +834,13 @@ export function V6PayCard() {
       requireCurrent(prepared, currentPayRef.current);
       // In flight from here: the confirm holds, and a changed payment is caught by the write gate.
       setPhase(approval ? "approving-token" : "simulating");
+      // The review's rows load with the confirm that called this, never with the card.
+      const { payContext } = await loadPayConfirm();
       const result = await pay.run({
         account: prepared.account,
         title: "Review the payment",
         confirmLabel: "Agree & send",
+        context: payContext(prepared, projectTokenLabel),
         calls: [
           ...(approval
             ? [
@@ -884,7 +888,9 @@ export function V6PayCard() {
         },
       });
       if (!result) {
+        // Closing the review closes the payment; the card keeps its inputs.
         setPhase("ready");
+        setConfirmOpen(false);
         return;
       }
       if (result.status === "proposed") {
@@ -1535,6 +1541,7 @@ export function V6PayCard() {
               ? { bps: retrySlippageBps, onChange: setRetrySlippageBps }
               : null
           }
+          quoteSettled={mode !== "pay" || quoteSettled}
           projectTokenSymbol={projectTokenLabel}
           txHash={txHash}
           onConfirm={confirm}

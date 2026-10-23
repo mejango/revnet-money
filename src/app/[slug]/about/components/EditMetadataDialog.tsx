@@ -19,10 +19,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import {
   isSafeProposalPendingError,
+  reviewClosed,
   ReviewRefusal,
   useReviewedAction,
 } from "@/hooks/useReviewedAction";
@@ -399,6 +400,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
           })),
           account: address,
           label: "Update project details",
+          context: metadataContext(destinations),
           run,
           reverify: (call) => reverifyDestination(call, address),
           beforeWallet: (call) =>
@@ -459,6 +461,10 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       selectPayment(preselectedRelayrPayment(quote.payment_info, connectedChainId));
       return true;
     } catch (e: unknown) {
+      if (reviewClosed(e)) {
+        closeReview();
+        return false;
+      }
       const message = formatWalletError(e) || "Failed to update metadata";
       if (isSafeProposalPendingError(e)) {
         setProposed(message);
@@ -474,6 +480,21 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
       setSubmissionStatus(null);
     }
   };
+
+  const metadataContext = (
+    destinations: {
+      source: { chainId: number; projectId: string | number };
+      metadataUri: string;
+    }[],
+  ) => [
+    { label: "Name", value: reviewed?.name ?? "", strong: true },
+    { label: "On", value: chainNames },
+    ...destinations.map(({ source, metadataUri }) => ({
+      label: `Project ${source.projectId} on ${JB_CHAINS[source.chainId as JBChainId]?.name ?? source.chainId}`,
+      value: metadataUri,
+      mono: true,
+    })),
+  ];
 
   const handlePayAndSubmit = async () => {
     if (!relayrQuote || !selectedPayment || !sendRelayrTx) return;
@@ -702,7 +723,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
           }}
         </FormProvider>
         {reviewed || preparing ? (
-          <TxConfirmDialog
+          <TxProgress
             open
             onClose={() => closeReview()}
             title="Confirm metadata"
@@ -722,37 +743,37 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
             activeIndex={
               !busy && !isPending ? -1 : relayed && relayrQuote ? projects.length : directChainIndex
             }
-            action={relayed ? "Pay and submit" : "Save changes"}
-            onConfirm={() => void (relayrQuote ? handlePayAndSubmit() : handleSubmit())}
+            start={relayed ? undefined : () => void handleSubmit()}
             busy={Boolean(preparing) || busy || isPending}
-            actionDisabled={relayed && !selectedPayment}
             complete={proposed !== null}
             status={proposed ?? preparing ?? submissionStatus}
             error={error}
-          >
-            <SummaryRow label="Name">{reviewed?.name}</SummaryRow>
-            <SummaryRow label="On">{chainNames}</SummaryRow>
-            {reviewed?.destinations.map(({ source, metadataUri }) => (
-              <SummaryRow
-                key={`${source.chainId}:${source.projectId}`}
-                label={`Project ${source.projectId} on ${JB_CHAINS[source.chainId as JBChainId]?.name ?? source.chainId}`}
-              >
-                <span className="break-all font-mono text-xs">{metadataUri}</span>
-              </SummaryRow>
-            ))}
-            {relayrQuote ? (
-              <RelayrPaymentSelect
-                options={relayrPaymentOptions(relayrQuote.payment_info)}
-                value={selectedPayment?.chain ?? null}
-                onValueChange={(chainId) =>
-                  selectPayment(
-                    relayrQuote.payment_info.find((payment) => payment.chain === chainId) ?? null,
-                  )
-                }
-                disabled={busy}
-              />
-            ) : null}
-          </TxConfirmDialog>
+            rows={reviewed ? metadataContext(reviewed.destinations) : []}
+            footerContent={
+              relayrQuote ? (
+                <>
+                  <RelayrPaymentSelect
+                    options={relayrPaymentOptions(relayrQuote.payment_info)}
+                    value={selectedPayment?.chain ?? null}
+                    onValueChange={(chainId) =>
+                      selectPayment(
+                        relayrQuote.payment_info.find((payment) => payment.chain === chainId) ??
+                          null,
+                      )
+                    }
+                    disabled={busy}
+                  />
+                  <Button
+                    className="mt-3 w-full"
+                    disabled={busy || !selectedPayment}
+                    onClick={() => void handlePayAndSubmit()}
+                  >
+                    Pay and submit
+                  </Button>
+                </>
+              ) : undefined
+            }
+          />
         ) : null}
       </DialogContent>
     </Dialog>

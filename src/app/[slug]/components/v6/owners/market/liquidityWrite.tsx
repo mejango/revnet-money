@@ -16,8 +16,6 @@ import {
   POSITION_MANAGER_BY_CHAIN,
 } from "./lib";
 
-export { SummaryRow } from "@/components/ui/TxConfirmDialog";
-
 /**
  * A wallet prompt a liquidity write will actually raise. Deciding the sequence
  * while reviewing — not while executing — is what lets the signer see the

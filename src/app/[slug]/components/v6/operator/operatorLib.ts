@@ -164,15 +164,17 @@ export async function runSequentialWrites({
   run,
   reverify,
   beforeWallet,
+  context,
 }: {
   writes: ChainWrite[];
   account: Address;
   label: string;
   run: ReviewedAction["run"];
-} & Pick<ReviewedActionInput, "reverify" | "beforeWallet">): Promise<Hex[]> {
+} & Pick<ReviewedActionInput, "reverify" | "beforeWallet" | "context">): Promise<Hex[]> {
   const result = requireDone(
     await run({
       account,
+      context,
       reverify,
       beforeWallet,
       ...(writes.length > 1

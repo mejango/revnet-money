@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import {
   failedLine,
@@ -490,6 +490,44 @@ export function RepayDialog({
     if (repayStatus === "pending" || repayStatus === "success") setReview(null);
   }, [repayStatus]);
 
+  // What the review shows first; read when the repayment runs, after every value is set.
+  const repayContext = () =>
+    finalRepayAmount === undefined || !loanData
+      ? []
+      : [
+          ...(review === "repay"
+            ? [
+                { label: "Returns", value: `${collateralToReturn} ${tokenSymbol}`, strong: true },
+                { label: "On", value: chainDisplayName(chainId) },
+                {
+                  label: "Pays now",
+                  value:
+                    amountToPayNow !== undefined
+                      ? `${formatUnits(amountToPayNow, baseTokenDecimals)} ${baseTokenSymbol}`
+                      : "Calculated by the contract",
+                  ...(feeForThisRepay !== undefined && feeForThisRepay > 0n
+                    ? {
+                        note: `Includes ${formatUnits(feeForThisRepay, baseTokenDecimals)} ${baseTokenSymbol} source fee`,
+                      }
+                    : {}),
+                },
+                ...(repayPrincipal !== undefined && loanData.amount - repayPrincipal > 0n
+                  ? [
+                      {
+                        label: "Debt left in a new loan",
+                        value: `${formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)} ${baseTokenSymbol}`,
+                      },
+                    ]
+                  : []),
+              ]
+            : [{ label: "On", value: chainDisplayName(chainId) }]),
+          {
+            label: "Authorizes up to",
+            value: `${formatUnits(finalRepayAmount, baseTokenDecimals)} ${baseTokenSymbol}`,
+            note: "The unused part is refunded",
+          },
+        ];
+
   // ===== EVENT HANDLERS =====
   /**
    * Runs the reviewed steps of a repayment; a step that went to the Safe ends it there. A failed
@@ -498,6 +536,7 @@ export function RepayDialog({
   const runRepay = async (calls: ReviewedCall[]) => {
     const result = await repay.run({
       account: userAddress as Address,
+      context: repayContext(),
       ...(calls.length > 1
         ? {
             title: "Repay loan",
@@ -513,6 +552,10 @@ export function RepayDialog({
       },
       calls,
     });
+    if (!result) {
+      setRepayStatus("idle");
+      setReview(null);
+    }
     if (result?.status === "failed") throw new ReviewRefusal(failedLine(result));
     if (result?.status === "proposed") {
       setRepayStatus("pending");
@@ -998,7 +1041,7 @@ export function RepayDialog({
           </div>
         </div>
         {review && finalRepayAmount !== undefined ? (
-          <TxConfirmDialog
+          <TxProgress
             open
             onClose={() => setReview(null)}
             title={review === "approve" ? "Confirm approval" : "Confirm repayment"}
@@ -1020,8 +1063,7 @@ export function RepayDialog({
                   ]
             }
             activeIndex={signing ? 0 : -1}
-            action={review === "approve" ? `Approve ${baseTokenSymbol}` : "Repay loan"}
-            onConfirm={() => {
+            start={() => {
               if (review === "approve")
                 void handleApproveAllowance().finally(() => setReview(null));
               else void handleRepay();
@@ -1029,39 +1071,8 @@ export function RepayDialog({
             busy={signing}
             status={signing || repayStatus === "safe-unconfirmed" ? statusText : null}
             error={loanSourceLine ?? (repayStatus === "error" ? statusText : null)}
-          >
-            {review === "repay" ? (
-              <>
-                <SummaryRow label="Returns">
-                  {collateralToReturn} {tokenSymbol}
-                </SummaryRow>
-                <SummaryRow label="On">{chainDisplayName(chainId)}</SummaryRow>
-                <SummaryRow label="Pays now">
-                  {amountToPayNow !== undefined
-                    ? `${formatUnits(amountToPayNow, baseTokenDecimals)} ${baseTokenSymbol}`
-                    : "Calculated by the contract"}
-                  {feeForThisRepay !== undefined && feeForThisRepay > 0n ? (
-                    <span className="block text-xs text-zinc-500">
-                      Includes {formatUnits(feeForThisRepay, baseTokenDecimals)} {baseTokenSymbol}{" "}
-                      source fee
-                    </span>
-                  ) : null}
-                </SummaryRow>
-                {repayPrincipal !== undefined && loanData.amount - repayPrincipal > 0n ? (
-                  <SummaryRow label="Debt left in a new loan">
-                    {formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)}{" "}
-                    {baseTokenSymbol}
-                  </SummaryRow>
-                ) : null}
-              </>
-            ) : (
-              <SummaryRow label="On">{chainDisplayName(chainId)}</SummaryRow>
-            )}
-            <SummaryRow label="Authorizes up to">
-              {formatUnits(finalRepayAmount, baseTokenDecimals)} {baseTokenSymbol}
-              <span className="block text-xs text-zinc-500">The unused part is refunded</span>
-            </SummaryRow>
-          </TxConfirmDialog>
+            rows={repayContext()}
+          />
         ) : null}
       </DialogContent>
     </Dialog>

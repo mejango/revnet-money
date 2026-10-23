@@ -344,7 +344,6 @@ describe("EditMetadataDialog Relayr payment choice", () => {
     expect(picker).toHaveTextContent("Select chain");
     expect(confirm).toBeDisabled();
     // Its way back stays open while the funding choice is missing.
-    expect(within(confirmPanel()).getByRole("button", { name: "Cancel" })).toBeEnabled();
     expect(within(confirmPanel()).getByRole("button", { name: "Close" })).toBeEnabled();
     fireEvent.click(confirm);
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
@@ -451,10 +450,6 @@ describe("EditMetadataDialog direct routing", () => {
     await save();
     await screen.findByText("Confirm metadata");
     expect(mocks.getRelayrTxQuote).not.toHaveBeenCalled();
-    expect(mocks.writeContractAsync).not.toHaveBeenCalled();
-    const confirm = screen.getByRole("button", { name: "Save changes" });
-    await waitFor(() => expect(confirm).not.toBeDisabled());
-    fireEvent.click(confirm);
 
     await waitFor(() => expect(mocks.waitForReceipt).toHaveBeenCalledTimes(1));
     expect(mocks.writeContractAsync).toHaveBeenCalledTimes(1);
@@ -462,7 +457,6 @@ describe("EditMetadataDialog direct routing", () => {
       chainId: chainIds[0],
       functionName: "setUriOf",
     });
-    expect(confirm).toBeDisabled();
     expect(screen.getByText("Confirm metadata")).toBeInTheDocument();
     expectEveryWayOutRefused(confirmPanel());
 
@@ -477,24 +471,10 @@ describe("EditMetadataDialog direct routing", () => {
       mocks.writeContractAsync.mock.calls[0][0].args,
     );
     expect(screen.getByText("Confirm metadata")).toBeInTheDocument();
-    expect(confirm).toBeDisabled();
 
     await act(async () => resolveSecond({ status: "success" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
-  });
-
-  it("goes back to the editor with Cancel, and writes nothing", async () => {
-    await openDialog();
-    await prefilledAdvancedTextarea();
-    await save();
-    await screen.findByText("Confirm metadata");
-
-    fireEvent.click(within(confirmPanel()).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
-    expect(screen.getByRole("button", { name: /^save changes$/i })).toBeVisible();
-    expect(mocks.writeContractAsync).not.toHaveBeenCalled();
   });
 
   it("stops before the next chain when a Safe write is still a proposal, and ends on Done", async () => {
@@ -505,9 +485,6 @@ describe("EditMetadataDialog direct routing", () => {
     await prefilledAdvancedTextarea();
     await save();
     await screen.findByText("Confirm metadata");
-    const confirm = screen.getByRole("button", { name: "Save changes" });
-    await waitFor(() => expect(confirm).not.toBeDisabled());
-    fireEvent.click(confirm);
 
     await screen.findByText(SAFE_PROPOSAL_PENDING_LINE);
     expect(mocks.writeContractAsync).toHaveBeenCalledTimes(1);
@@ -631,12 +608,10 @@ describe("metadata edits across distinct destinations", () => {
   it("does not bypass an unresolved relay by changing to a direct metadata update", async () => {
     await openDialog();
     await prefilledAdvancedTextarea();
-    await save();
-    await screen.findByText("Confirm metadata");
     mocks.requireRelayrRecoveryScopeAvailable.mockImplementation(() => {
       throw new Error("Previous relay requires reconciliation");
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await save();
     await screen.findByText("Previous relay requires reconciliation");
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
   });
@@ -644,12 +619,11 @@ describe("metadata edits across distinct destinations", () => {
   it("rejects a source pointer that changes while the direct review is open", async () => {
     await openDialog();
     await prefilledAdvancedTextarea();
+    // The source is read at save and again just before the write: the second read differs.
+    mocks.verifyMetadataSource
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValue(new Error("The source metadata changed. Reopen the editor."));
     await save();
-    await screen.findByText("Confirm metadata");
-    mocks.verifyMetadataSource.mockRejectedValue(
-      new Error("The source metadata changed. Reopen the editor."),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText("The source metadata changed. Reopen the editor.");
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
   });
@@ -722,12 +696,7 @@ describe("EditMetadataDialog advanced custom properties", () => {
     expect(pinned.tags).toEqual(["defi"]);
     expect(pinned.name).toBe("Current name");
 
-    // Nothing is written until the confirm dialog's action is pressed.
-    expect(mocks.writeContractAsync).not.toHaveBeenCalled();
-    // The confirm opens at once and its action enables once the pin lands.
-    const confirm = await screen.findByRole("button", { name: /^save changes$/i });
-    await waitFor(() => expect(confirm).not.toBeDisabled());
-    fireEvent.click(confirm);
+    // The write's one review opens once the pin lands.
     await waitFor(() => expect(mocks.writeContractAsync).toHaveBeenCalledTimes(1));
     expect(mocks.writeContractAsync.mock.calls[0][0]).toMatchObject({
       functionName: "setUriOf",

@@ -199,19 +199,6 @@ beforeEach(() => {
 });
 
 describe("project handle confirm", () => {
-  it("goes back to the editor with Cancel, and sends nothing", async () => {
-    const confirm = await openConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Confirm ENS record" })).toBeNull(),
-    );
-    expect(screen.getByRole("dialog", { name: "Set project handle" })).toBeInTheDocument();
-    expect(mocks.blockNumber).not.toHaveBeenCalled();
-    expect(mocks.write).not.toHaveBeenCalled();
-  });
-
   it("wallet-action:project-handle refuses every way out from Confirm through the resolver check before the prompt", async () => {
     let answer!: () => void;
     mocks.blockNumber.mockReturnValue(
@@ -220,14 +207,10 @@ describe("project handle confirm", () => {
       }),
     );
     const confirm = await openConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Set art.eth record" }));
     await waitFor(() => expect(mocks.blockNumber).toHaveBeenCalledOnce());
 
-    const cancel = within(confirm).getByRole("button", { name: "Cancel" });
     const close = within(confirm).getByRole("button", { name: "Close" });
-    expect(cancel).toBeDisabled();
     expect(close).toBeDisabled();
-    fireEvent.click(cancel);
     fireEvent.click(close);
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.pointerDown(confirm);
@@ -245,7 +228,6 @@ describe("project handle confirm", () => {
 
   it("ends on Done when the record went to the Safe as a proposal", async () => {
     const confirm = await openConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Set art.eth record" }));
 
     const done = await within(confirm).findByRole("button", { name: "Done" });
     expect(confirm).toHaveTextContent(
@@ -267,32 +249,14 @@ describe("project handle confirm", () => {
 });
 
 describe("operator Safe deployment confirm", () => {
-  it("goes back to the editor with Cancel, and deploys nothing", async () => {
-    const confirm = await openDeployConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Confirm Safe deployment" })).toBeNull(),
-    );
-    expect(screen.getByRole("dialog", { name: "Set project handle" })).toBeInTheDocument();
-    expect(mocks.liveOperator).not.toHaveBeenCalled();
-    expect(mocks.write).not.toHaveBeenCalled();
-  });
-
   it("wallet-action:project-handle refuses every way out from Confirm through the live checks, then closes once deployed", async () => {
     mocks.requireOnchain.mockImplementation(() => undefined);
     let answer!: () => void;
     mocks.liveOperator.mockReturnValue(new Promise((resolve) => (answer = () => resolve(true))));
     const confirm = await openDeployConfirm();
-    const action = within(confirm).getByRole("button", {
-      name: "Deploy operator Safe on Ethereum",
-    });
-    fireEvent.click(action);
     await waitFor(() => expect(mocks.liveOperator).toHaveBeenCalledOnce());
 
     expectEveryWayOutRefused(confirm);
-    expect(action).toBeDisabled();
     expect(mocks.write).not.toHaveBeenCalled();
 
     await act(async () => answer());
@@ -320,9 +284,6 @@ describe("operator Safe deployment confirm", () => {
       );
     });
     const confirm = await openDeployConfirm();
-    fireEvent.click(
-      within(confirm).getByRole("button", { name: "Deploy operator Safe on Ethereum" }),
-    );
 
     const done = await within(confirm).findByRole("button", { name: "Done" });
     expect(confirm).toHaveTextContent(

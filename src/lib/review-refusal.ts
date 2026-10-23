@@ -6,3 +6,11 @@
 export class ReviewRefusal extends Error {
   readonly name = "ReviewRefusal";
 }
+
+/**
+ * The person closed the write's review: nothing was sent, and its progress closes with it. Matched
+ * by name so pages that only need this test do not load core's review module.
+ */
+export function reviewClosed(cause: unknown): boolean {
+  return (cause as { name?: string } | null)?.name === "TransactionReviewCancelledError";
+}

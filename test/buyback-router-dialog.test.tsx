@@ -131,25 +131,6 @@ describe("BuybackRouterCard", () => {
     expect(values).toContain("172800");
   });
 
-  it("goes back to the action's form with Cancel, and sends nothing", async () => {
-    render(<BuybackRouterCard rows={[{ chainId: 8453, projectId: 6 }]} />);
-    fireEvent.click(screen.getByRole("button", { name: "Set TWAP window" }));
-    const dialog = await screen.findByRole("dialog", { name: "Set TWAP window" });
-    fireEvent.click(within(dialog).getByRole("checkbox", { name: /I verified every selected/ }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Set TWAP window" }));
-    await waitFor(() => expect(dialog.querySelector("[data-tx-confirm]")).not.toBeNull());
-    const confirm = dialog.querySelector<HTMLElement>("[data-tx-confirm]")!;
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(dialog.querySelector("[data-tx-confirm]")).toBeNull());
-    // The form is back, still checked, in the same dialog.
-    expect(
-      within(dialog).getByRole("checkbox", { name: /I verified every selected/ }),
-    ).toBeChecked();
-    expect(writes.runWrites).not.toHaveBeenCalled();
-  });
-
   it("keeps an action's dialog open while its confirm is sending", async () => {
     let finish!: (result: unknown) => void;
     writes.runWrites.mockReturnValue(new Promise((resolve) => (finish = resolve)));
@@ -164,11 +145,9 @@ describe("BuybackRouterCard", () => {
     // The confirm replaces the form inside the same dialog.
     await waitFor(() => expect(dialog.querySelector("[data-tx-confirm]")).not.toBeNull());
     const confirm = dialog.querySelector<HTMLElement>("[data-tx-confirm]")!;
-    fireEvent.click(within(confirm).getByRole("button", { name: "Set TWAP window" }));
     await waitFor(() => expect(writes.runWrites).toHaveBeenCalledTimes(1));
 
     // Every way out is refused while the write is in flight.
-    expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled();
     expect(within(confirm).getByRole("button", { name: "Close" })).toBeDisabled();
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.pointerDown(dialog);
@@ -198,7 +177,6 @@ describe("BuybackRouterCard", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Set TWAP window" }));
     await waitFor(() => expect(dialog.querySelector("[data-tx-confirm]")).not.toBeNull());
     const confirm = dialog.querySelector<HTMLElement>("[data-tx-confirm]")!;
-    fireEvent.click(within(confirm).getByRole("button", { name: "Set TWAP window" }));
 
     // Nothing is left to send from here: Done, not the action again.
     const done = await within(confirm).findByRole("button", { name: "Done" });

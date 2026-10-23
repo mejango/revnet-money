@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { TxStep, stepStatus } from "@/components/ui/TxSteps";
 import { useToast } from "@/components/ui/use-toast";
 import { useCompleteProjectPermissions } from "@/hooks/useCompleteBendystrawLists";
@@ -21,6 +21,7 @@ import {
   ReviewRefusal,
   isSafeProposalPendingError,
   requireDone,
+  reviewClosed,
   reviewedCall,
   useReviewedAction,
   type WriteRequest,
@@ -389,7 +390,13 @@ export function ProjectHandleEditor({
     reverify: () => Promise<void>,
   ) => {
     const { receipts } = requireDone(
-      await run({ account, ...review, reverify, calls: [reviewedCall(request, options)] }),
+      await run({
+        account,
+        ...review,
+        context: handleContext,
+        reverify,
+        calls: [reviewedCall(request, options)],
+      }),
     );
     return receipts.at(-1)!;
   };
@@ -580,7 +587,8 @@ export function ProjectHandleEditor({
       await authorityQuery.refetch();
     } catch (cause) {
       const message = formatWalletError(cause, "Could not deploy the operator Safe on Ethereum.");
-      if (isSafeProposalPendingError(cause)) {
+      if (reviewClosed(cause)) setReview(null);
+      else if (isSafeProposalPendingError(cause)) {
         setStatus(message);
         setProposed(true);
         toast({ title: "Safe proposal submitted", description: message });
@@ -673,7 +681,8 @@ export function ProjectHandleEditor({
       );
     } catch (cause) {
       const message = formatWalletError(cause, "Could not set the ENS project record.");
-      if (isSafeProposalPendingError(cause)) {
+      if (reviewClosed(cause)) setReview(null);
+      else if (isSafeProposalPendingError(cause)) {
         setStatus(message);
         setProposed(true);
         toast({ title: "Safe proposal submitted", description: message });
@@ -773,7 +782,8 @@ export function ProjectHandleEditor({
       await Promise.all([setupQuery.refetch(), currentHandleQuery.refetch()]);
     } catch (cause) {
       const message = formatWalletError(cause, "Could not publish the project handle.");
-      if (isSafeProposalPendingError(cause)) {
+      if (reviewClosed(cause)) setReview(null);
+      else if (isSafeProposalPendingError(cause)) {
         setStatus(message);
         setProposed(true);
         toast({ title: "Safe proposal submitted", description: message });
@@ -785,6 +795,35 @@ export function ProjectHandleEditor({
       setBusyAction(null);
     }
   };
+
+  const handleContext = [
+    ...(review === "deploy-safe"
+      ? [
+          { label: "Safe", value: operator ?? "", mono: true },
+          ...(sourceSafe
+            ? [
+                {
+                  label: "Policy",
+                  value: `${sourceSafe.threshold} of ${sourceSafe.owners.length} signatures`,
+                },
+              ]
+            : []),
+        ]
+      : handleProgress.nextAction === "publish"
+        ? [
+            { label: "Handle", value: `/@${parsed.handle?.handle ?? ""}`, strong: true },
+            { label: "Project", value: `${chainName(project.chainId)} #${project.projectId}` },
+          ]
+        : [
+            { label: "ENS name", value: parsed.handle?.ensName ?? "", strong: true },
+            {
+              label: "Record",
+              value: `${PROJECT_HANDLE_TEXT_KEY}=${expectedRecord}`,
+              mono: true,
+            },
+          ]),
+    { label: "On", value: "Ethereum" },
+  ];
 
   const openEditor = () => {
     setOpen(true);
@@ -1065,7 +1104,7 @@ export function ProjectHandleEditor({
         </DialogContent>
       </Dialog>
       {review === "deploy-safe" || (review === "step" && handleProgress.nextAction) ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => {
             setReview(null);
@@ -1095,14 +1134,7 @@ export function ProjectHandleEditor({
                   },
           ]}
           activeIndex={busyAction ? 0 : -1}
-          action={
-            review === "deploy-safe"
-              ? "Deploy operator Safe on Ethereum"
-              : handleProgress.nextAction === "publish"
-                ? `Publish /@${parsed.handle?.handle ?? ""}`
-                : `Set ${parsed.handle?.ensName ?? "ENS"} record`
-          }
-          onConfirm={() =>
+          start={() =>
             void (review === "deploy-safe"
               ? deploySafeOnMainnet()
               : (handleProgress.nextAction === "publish" ? publish : setEnsRecord)())
@@ -1111,37 +1143,8 @@ export function ProjectHandleEditor({
           status={status}
           complete={proposed}
           error={error}
-        >
-          {review === "deploy-safe" ? (
-            <>
-              <SummaryRow label="Safe">
-                <span className="break-all font-mono text-xs">{operator}</span>
-              </SummaryRow>
-              {sourceSafe ? (
-                <SummaryRow label="Policy">
-                  {sourceSafe.threshold} of {sourceSafe.owners.length} signatures
-                </SummaryRow>
-              ) : null}
-            </>
-          ) : handleProgress.nextAction === "publish" ? (
-            <>
-              <SummaryRow label="Handle">/@{parsed.handle?.handle}</SummaryRow>
-              <SummaryRow label="Project">
-                {chainName(project.chainId)} #{project.projectId}
-              </SummaryRow>
-            </>
-          ) : (
-            <>
-              <SummaryRow label="ENS name">{parsed.handle?.ensName}</SummaryRow>
-              <SummaryRow label="Record">
-                <span className="break-all font-mono text-xs">
-                  {PROJECT_HANDLE_TEXT_KEY}={expectedRecord}
-                </span>
-              </SummaryRow>
-            </>
-          )}
-          <SummaryRow label="On">Ethereum</SummaryRow>
-        </TxConfirmDialog>
+          rows={handleContext}
+        />
       ) : null}
     </div>
   );

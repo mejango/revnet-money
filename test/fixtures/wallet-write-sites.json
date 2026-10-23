@@ -57,7 +57,7 @@
         [
           "reviewed-relayr-payment",
           "src/app/create/buttons/PayAndDeploy.tsx",
-          "PayAndDeploy",
+          "payAndLaunch",
           "sendRelayrTx",
           1
         ],
@@ -81,14 +81,6 @@
           "reviewed-action-hook",
           "src/app/[slug]/components/v6/pay/V6PayCard.tsx",
           "V6PayCard",
-          "useReviewedAction",
-          1
-        ],
-        ["reviewed-action", "src/hooks/useAllowance.ts", "ensureAllowance", "run", 1],
-        [
-          "reviewed-action-hook",
-          "src/hooks/useAllowance.ts",
-          "useAllowance",
           "useReviewedAction",
           1
         ]
@@ -117,14 +109,14 @@
           "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
           "useBorrowDialog",
           "useReviewedAction",
-          3
+          2
         ],
         [
           "reviewed-action-hook",
           "src/app/[slug]/components/Value/RedeemDialog.tsx",
           "RedeemDialog",
           "useReviewedAction",
-          2
+          1
         ],
         [
           "reviewed-action-hook",
@@ -656,12 +648,6 @@
       "risk": "money",
       "files": ["src/app/[slug]/components/v6/pay/V6PayCard.tsx"],
       "tests": ["test/pay-route.test.ts", "test/pay-account-binding.test.tsx"]
-    },
-    {
-      "id": "allowance",
-      "risk": "money",
-      "files": ["src/hooks/useAllowance.ts"],
-      "tests": ["test/allowance-hook.test.tsx"]
     },
     {
       "id": "bridge-prepare",

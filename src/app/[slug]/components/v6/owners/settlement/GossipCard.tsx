@@ -3,7 +3,7 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import { failedLine, reviewedCall, useReviewedAction } from "@/hooks/useReviewedAction";
@@ -75,6 +75,19 @@ function SyncButton({
   const [review, setReview] = useState<{ value: bigint } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const nativeSymbol = viemChainOf(peerChainId)?.nativeCurrency.symbol ?? "ETH";
+  const context = [
+    { label: "On", value: chainName(peerChainId) },
+    { label: "Pushes to", value: chainName(toChainId) },
+    ...(review
+      ? [
+          {
+            label: "Bridge fee",
+            value: `${fmtUnits(review.value, 18)} ${nativeSymbol}`,
+            note: "Found by simulation",
+          },
+        ]
+      : []),
+  ];
 
   return (
     <>
@@ -111,7 +124,7 @@ function SyncButton({
       </ButtonWithWallet>
       {gate.line ? <p className="mt-1 text-xs text-zinc-600">{gate.line}</p> : null}
       {review || state === "finding" ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReview(null)}
           title="Confirm sync"
@@ -124,10 +137,10 @@ function SyncButton({
             },
           ]}
           activeIndex={state === "working" ? 0 : -1}
-          action="Sync"
           busy={state !== "idle"}
           error={error}
-          onConfirm={async () => {
+          rows={context}
+          start={async () => {
             if (!review) return;
             try {
               gate.assertVerified([peerProject]);
@@ -142,6 +155,7 @@ function SyncButton({
               // names the whole sucker); the bridge fee is simulated again on a reopen.
               const result = await run({
                 account: address,
+                context,
                 calls: [
                   reviewedCall(request, {
                     intent: bridgeIntent({
@@ -157,6 +171,7 @@ function SyncButton({
               if (!result || result.status === "failed") {
                 setState("idle");
                 if (result) setError(failedLine(result));
+                else setReview(null);
                 return;
               }
               if (result.status === "proposed") {
@@ -181,16 +196,7 @@ function SyncButton({
               setError(formatWalletError(cause));
             }
           }}
-        >
-          <SummaryRow label="On">{chainName(peerChainId)}</SummaryRow>
-          <SummaryRow label="Pushes to">{chainName(toChainId)}</SummaryRow>
-          {review ? (
-            <SummaryRow label="Bridge fee">
-              {fmtUnits(review.value, 18)} {nativeSymbol}
-              <span className="block text-xs text-zinc-500">Found by simulation</span>
-            </SummaryRow>
-          ) : null}
-        </TxConfirmDialog>
+        />
       ) : null}
     </>
   );

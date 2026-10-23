@@ -3,7 +3,11 @@
 import { runSequentialWrites } from "@/app/[slug]/components/v6/operator/operatorLib";
 import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import { useToast } from "@/components/ui/use-toast";
-import { isSafeProposalPendingError, useReviewedAction } from "@/hooks/useReviewedAction";
+import {
+  isSafeProposalPendingError,
+  reviewClosed,
+  useReviewedAction,
+} from "@/hooks/useReviewedAction";
 import {
   requireRelayrRecoveryScopeAvailable,
   useGetRelayrTxQuote,
@@ -26,6 +30,7 @@ import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { heldLineOf } from "@/lib/write-hold";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
+import type { ReviewContextRow } from "@bananapus/nana-sdk-core/review";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { fillSplitPercents } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useState } from "react";
@@ -47,7 +52,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
   const { run, phase, held, busy } = useReviewedAction();
 
   const submitSplits = useCallback(
-    async (selectedChains: ChainFormData[]) => {
+    async (selectedChains: ChainFormData[], context?: readonly ReviewContextRow[]) => {
       if (!userAddress) return;
 
       setIsSubmitting(true);
@@ -76,6 +81,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
             account: userAddress,
             label: "Update reserved token recipients",
             run,
+            context,
           });
           const lastHash = hashes.at(-1);
           if (!lastHash) throw new Error("No split update was submitted.");
@@ -145,6 +151,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
         resetRelayr();
         return { success: true };
       } catch (e: any) {
+        if (reviewClosed(e)) return { success: false, closed: true };
         // A chain's write went to the Safe as a proposal, and the later chains wait on it.
         if (isSafeProposalPendingError(e)) {
           toast({ title: "Safe proposal submitted", description: formatWalletError(e) });

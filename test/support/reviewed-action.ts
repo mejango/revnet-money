@@ -54,12 +54,34 @@ type RunState = { phase: string; held: { exit?: unknown } | null };
  */
 export function reviewedActionThrough(
   write: Mock,
-  options: { proposed?: (hash: Hex) => boolean } = {},
+  options: {
+    proposed?: (hash: Hex) => boolean;
+    /** The connected account, which core's wallet step requires to still be the run's. */
+    connected?: () => string;
+  } = {},
 ) {
   const state: RunState = { phase: "idle", held: null };
+  // While held, the review stays open: the user is still reading it.
+  let review: Promise<void> | null = null;
+  const holdReview = () => {
+    let release!: () => void;
+    review = new Promise((resolve) => (release = resolve));
+    return () => {
+      review = null;
+      release();
+    };
+  };
   const run = vi.fn(async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
     const hashes: Hex[] = [];
+    await review;
     for (const [step, call] of action.calls.entries()) {
+      // Core refuses a run whose reviewed account is no longer the connected one.
+      const connected = options.connected?.();
+      if (connected && action.account && connected.toLowerCase() !== action.account.toLowerCase()) {
+        const failure = new Error("The connected account changed. Review again.");
+        state.phase = "idle";
+        return { status: "failed" as const, error: failure.message, failure };
+      }
       action.guard?.();
       await action.reverify?.(call, step);
       await action.beforeWallet?.(call, step);
@@ -94,7 +116,7 @@ export function reviewedActionThrough(
     };
   });
   const hook = () => ({ ...reviewedActionState(run), ...state, run });
-  return { run, hook, state };
+  return { run, hook, state, holdReview };
 }
 
 /** How a run that `write` sent ends: still awaiting its receipt, proposed, held, failed, or done. */
@@ -127,9 +149,20 @@ export function liveReviewedAction(
     Object.assign(state, patch);
     listeners.forEach((listener) => listener());
   };
+  // While held, the review stays open: the user is still reading it.
+  let review: Promise<void> | null = null;
+  const holdReview = () => {
+    let release!: () => void;
+    review = new Promise((resolve) => (release = resolve));
+    return () => {
+      review = null;
+      release();
+    };
+  };
   const run = vi.fn(async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
     const hashes: Hex[] = [];
     set({ ...blank, phase: "review" });
+    await review;
     for (const [step, call] of action.calls.entries()) {
       try {
         const sent = { ...call, address: call.to, account: action.account };
@@ -192,5 +225,15 @@ export function liveReviewedAction(
       run,
     };
   }
-  return { run, hook: useLiveReviewedAction, state, set, reset: () => set({ ...blank }) };
+  return {
+    run,
+    hook: useLiveReviewedAction,
+    state,
+    set,
+    holdReview,
+    reset: () => {
+      review = null;
+      set({ ...blank });
+    },
+  };
 }

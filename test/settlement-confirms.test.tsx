@@ -3,7 +3,7 @@ import { QueuedMovementsCard } from "@/app/[slug]/components/v6/owners/settlemen
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { UnverifiedSuckerError } from "@bananapus/nana-sdk-core/v6";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import type { Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -149,7 +149,6 @@ describe.each([
   {
     name: "sync",
     title: "Confirm sync",
-    action: "Sync",
     open: async () => {
       renderWithQueries(<GossipCard chains={CHAINS} />);
       fireEvent.click(await screen.findByRole("button", { name: "Sync" }));
@@ -158,7 +157,6 @@ describe.each([
   {
     name: "claim",
     title: "Confirm claim",
-    action: "Claim",
     open: async () => {
       mocks.rows = [bridgeRow("claimable")];
       renderWithQueries(<QueuedMovementsCard chains={CHAINS} tokenSymbol="ART" />);
@@ -168,37 +166,21 @@ describe.each([
   {
     name: "execute",
     title: "Confirm execution",
-    action: "Execute",
     open: async () => {
       mocks.rows = [bridgeRow("pending")];
       renderWithQueries(<QueuedMovementsCard chains={CHAINS} tokenSymbol="ART" />);
       fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
     },
   },
-])("the $name confirm", ({ title, action, open }) => {
+])("the $name confirm", ({ title, open }) => {
   async function confirmOpen() {
     await open();
-    const confirm = await screen.findByRole("dialog", { name: title });
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: action })).toBeEnabled(),
-    );
-    return confirm;
+    return screen.findByRole("dialog", { name: title });
   }
-
-  it("goes back with Cancel, and sends nothing", async () => {
-    const confirm = await confirmOpen();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog", { name: title })).toBeNull());
-    expect(mocks.simulate).not.toHaveBeenCalled();
-    expect(mocks.write).not.toHaveBeenCalled();
-  });
 
   it("wallet-action:settlement-sync wallet-action:queued-movements refuses every way out from Confirm through the simulation before the wallet prompt", async () => {
     const release = holdSimulation();
     const confirm = await confirmOpen();
-    fireEvent.click(within(confirm).getByRole("button", { name: action }));
     await waitFor(() => expect(mocks.simulate).toHaveBeenCalledOnce());
 
     expectEveryWayOutRefused(confirm);
@@ -251,15 +233,11 @@ describe("a queued movement's Execute", () => {
     mocks.rows = [bridgeRow("pending")];
     renderWithQueries(<QueuedMovementsCard chains={CHAINS} tokenSymbol="ART" />);
     fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
-    const confirm = await screen.findByRole("dialog", { name: "Confirm execution" });
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
     expect(mocks.prepareExecute).toHaveBeenCalledWith(
       expect.objectContaining({ sourceSucker: SUCKER, projectId: 4n }),
       "0x1111111111111111111111111111111111111111",
     );
-    const execute = within(confirm).getByRole("button", { name: "Execute" });
-    await waitFor(() => expect(execute).toBeEnabled());
-    fireEvent.click(execute);
-    await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
     expect(mocks.simulate.mock.calls[0]![0]).toMatchObject({ to: REGISTERED_SUCKER });
     expect(mocks.write.mock.calls[0]![0]).toMatchObject({
       to: REGISTERED_SUCKER,

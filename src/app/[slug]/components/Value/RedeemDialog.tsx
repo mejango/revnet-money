@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import { useCashOutRoute } from "@/hooks/useCashOutRoute";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
@@ -29,7 +29,7 @@ import {
   reviewedCall,
   ReviewRefusal,
   useReviewedAction,
-  type ReviewedActionInput,
+  type ReviewedCall,
 } from "@/hooks/useReviewedAction";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import {
@@ -55,10 +55,9 @@ import {
 } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
-import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
+import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
-import { heldLineOf } from "@/lib/write-hold";
 import {
   formatUnits,
   getJBContractAddress,
@@ -86,8 +85,6 @@ interface Props {
   disabled?: boolean;
 }
 
-const APPROVAL_PROPOSED = "The approval was proposed to Safe. Continue the sale once it executes.";
-
 export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { projectId, tokenSymbol, disabled, children } = props;
   // Where the amount came from: typed, a share option (Max), or the app's seed. The write's
@@ -106,7 +103,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     cashOutChainId,
   );
   const chainId = useJBChainId();
-  const [isApproving, setIsApproving] = useState(false);
+  // The run's step keys and the one in the wallet, for the progress list.
+  const [runKeys, setRunKeys] = useState<string[]>([]);
+  const [activeStep, setActiveStep] = useState(-1);
   // From Confirm until the write returns: the quote and route reads before
   // the wallet prompt are part of the send, and the dialog must not close
   // under them.
@@ -169,40 +168,16 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     : 0n;
 
   const sale = useReviewedAction();
-  const approval = useReviewedAction();
   const [hash, setHash] = useState<`0x${string}`>();
   const isWriteLoading =
     sale.phase === "review" || sale.phase === "simulating" || sale.phase === "signing";
   const isTxLoading = sale.phase === "receipt";
   const isSuccess = sale.phase === "done";
   const isTxUnconfirmed = sale.phase === "proposed" && !!sale.held?.exit;
-  const approvalSigning =
-    approval.phase === "review" || approval.phase === "simulating" || approval.phase === "signing";
-  const approvalConfirming = approval.phase === "receipt";
-  const approvalProposed = approval.phase === "proposed";
-  const approvalSafeUnconfirmed = approvalProposed && !!approval.held?.exit;
-  const approvalHeldLine = approval.held ? heldLineOf(approval.held) : undefined;
-  // An approval proposed to the Safe, or one whose Safe result can't be confirmed, may still
-  // land: the sale stays locked, settled rather than spinning, and says why.
-  const approvalOutstanding = approvalProposed;
-  const approvalStatus = approvalSafeUnconfirmed
-    ? SAFE_PROPOSAL_UNCONFIRMED_LINE
-    : approvalProposed
-      ? APPROVAL_PROPOSED
-      : (approvalHeldLine ?? null);
-  /** One reviewed step of the cash out, sent exactly; its run's end. */
-  const send = async (runner: typeof sale, action: ReviewedActionInput) => {
-    const result = await runner.run(action);
-    if (result?.status === "failed") throw new ReviewRefusal(failedLine(result));
-    return result;
-  };
   // const { data: redeemQuote } = useTokenCashOutQuoteEth(redeemAmountBN, {
   //   chainId: selectedSucker?.peerChainId as JBChainId,
   // });
-  // An approval proposed to the Safe has no receipt to wait for here: the
-  // confirm ends on Done, and the sale continues once the Safe executes it.
-  const loading =
-    isWriteLoading || isTxLoading || approvalSigning || (approvalConfirming && !approvalProposed);
+  const loading = isWriteLoading || isTxLoading;
   const { balance } = balances?.find((b) => b.chainId === Number(activeCashOutChainId)) || {
     balance: { value: 0n },
   };
@@ -350,14 +325,13 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
       routerAllowance[0] < redeemAmountBN ||
       Number(routerAllowance[1]) <= Math.floor(Date.now() / 1000) + 1_800);
 
-  // Approved, at once or by its Safe later: the sale is its own step, from the refreshed allowances.
+  // A finished sale spent the allowances and the balance it read.
   useEffect(() => {
-    if (approval.phase !== "done") return;
-    setIsApproving(false);
+    if (sale.phase !== "done") return;
     void refetchErc20Allowance();
     void refetchRouterAllowance();
     void refetchClaimedBalance();
-  }, [approval.phase, refetchErc20Allowance, refetchRouterAllowance, refetchClaimedBalance]);
+  }, [sale.phase, refetchErc20Allowance, refetchRouterAllowance, refetchClaimedBalance]);
 
   // A cleared approval stops being "needed", so the queue is built from the
   // approvals this sale ever required — otherwise a finished step disappears
@@ -375,8 +349,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     });
   }, [directSell, needsErc20Approval, needsRouterApproval]);
 
-  // Each approval is its own wallet prompt and its own click, so the whole
-  // queue is named before the first one.
+  // Each approval is its own wallet prompt in the one review, so the whole queue is named.
   const cashOutSteps = [
     ...requiredApprovals.map((kind) =>
       kind === "erc20"
@@ -396,11 +369,188 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   ];
   const cashOutActiveIndex = isSuccess
     ? cashOutSteps.length
-    : needsErc20Approval
-      ? requiredApprovals.indexOf("erc20")
-      : needsRouterApproval
-        ? requiredApprovals.indexOf("router")
-        : requiredApprovals.length;
+    : cashOutSteps.findIndex((step) => step.key === runKeys[activeStep]);
+  const quotedOutput = directSell
+    ? Number(formatUnits(directSell.quotedOutput, baseDecimals))
+    : expectedReclaim;
+  const minimumOutput = directSell
+    ? Number(formatUnits(directSell.minimumOutput, baseDecimals))
+    : minimumReclaim;
+  const cashOutContext = selectedChainId
+    ? [
+        { label: "Cash out", value: `${redeemAmount} ${tokenSymbol}`, strong: true },
+        { label: "On", value: chainDisplayName(selectedChainId) },
+        {
+          label: "You get",
+          value: `~${formatDecimals(quotedOutput, 5)} ${baseToken?.symbol}`,
+          note: `Stops if you would receive less than ${formatDecimals(minimumOutput, 5)} ${baseToken?.symbol}`,
+        },
+        {
+          label: "Route",
+          value: directSell ? "Sell to other traders" : "Cash out from revnet funds",
+        },
+        { label: "Allowed decrease", value: `${slippageBps / 100}%` },
+      ]
+    : [];
+
+  const startCashOut = async () => {
+    setSubmitting(true);
+    try {
+      if (!pairVerified) {
+        throw new Error("Couldn't confirm this chain belongs to this project.");
+      }
+      if (!cashOutTerminal || !address || !redeemAmountBN || !cashOutRoute || !tokenToReceive) {
+        console.error("Missing required data for cashout");
+        throw new Error("Please try again");
+      }
+      const cashOut = cashOutIntent({
+        chainId: selectedChainId!,
+        project: effectiveProjectId,
+        holder: address,
+        beneficiary: address,
+      });
+      const legacy = legacyIntents.cashOut({
+        projectId: effectiveProjectId,
+        token: tokenToReceive,
+        amount: redeemAmountBN,
+        beneficiary: address,
+      });
+      const sell = directSell && projectTokenAddress && selectedChainId && deployment;
+      const approvals: { key: string; call: ReviewedCall }[] = [];
+      let saleCall: ReviewedCall;
+      if (sell) {
+        if (needsErc20Approval)
+          approvals.push({
+            key: "erc20",
+            call: reviewedCall(
+              {
+                abi: erc20ApproveAbi,
+                functionName: "approve",
+                chainId: selectedChainId,
+                address: projectTokenAddress,
+                args: [PERMIT2_ADDRESS, redeemAmountBN],
+              },
+              {
+                intent: approvalIntent(cashOut, {
+                  step: "erc20",
+                  token: projectTokenAddress,
+                  spender: PERMIT2_ADDRESS,
+                }),
+              },
+            ),
+          });
+        if (needsRouterApproval)
+          approvals.push({
+            key: "router",
+            call: reviewedCall(
+              {
+                abi: permit2Abi,
+                functionName: "approve",
+                chainId: selectedChainId,
+                address: PERMIT2_ADDRESS,
+                args: [
+                  projectTokenAddress,
+                  deployment.universalRouter!,
+                  redeemAmountBN,
+                  Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+                ],
+              },
+              {
+                dependsOnPrior: approvals.length > 0,
+                intent: approvalIntent(cashOut, {
+                  step: "permit2",
+                  token: projectTokenAddress,
+                  spender: deployment.universalRouter!,
+                }),
+              },
+            ),
+          });
+        // The sale pays `address`: only `address` may send it.
+        saleCall = reviewedCall(
+          buildDirectSellSwapTx({
+            chainId: selectedChainId,
+            quote: directSell,
+            amount: redeemAmountBN,
+            recipient: address,
+            deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
+          }),
+          { dependsOnPrior: approvals.length > 0, intent: cashOut, legacyIntents: legacy },
+        );
+      } else {
+        const prepared = await prepareHookAwareCashOut(publicClient!, {
+          chainId: selectedChainId!,
+          projectId: effectiveProjectId,
+          holder: address,
+          cashOutCount: redeemAmountBN,
+          tokenToReclaim: tokenToReceive,
+          terminal: cashOutTerminal,
+          beneficiary: address,
+          slippageBps: BigInt(slippageBps),
+        });
+        if (prepared.route.expectedReturn <= 0n) {
+          throw new Error("The cash-out quote is no longer available. Review and try again.");
+        }
+        saleCall = reviewedCall(prepared.transaction, { intent: cashOut, legacyIntents: legacy });
+      }
+      const saleStep = approvals.length;
+      setRunKeys([...approvals.map((approval) => approval.key), "cashout"]);
+      const result = await sale.run({
+        account: address,
+        context: cashOutContext,
+        scope: saleStep > 0 ? cashOut : undefined,
+        beforeWallet: (_call, step) => setActiveStep(step),
+        // Approvals can leave the review open for minutes: selling must still pay more.
+        reverify: async (_call, step) => {
+          if (!sell || step !== saleStep) return;
+          const refreshed = await refetchCashOutRoute();
+          if (refreshed.isError || !refreshed.data)
+            throw new ReviewRefusal(
+              "The cash-out quote is no longer available. Review and try again.",
+            );
+          const pool = (await readPoolSnapshot(selectedChainId, effectiveProjectId)).pool;
+          const fresh = pool
+            ? await quoteDirectSellSwap({
+                client: publicClient!,
+                chainId: selectedChainId,
+                poolKey: pool.key,
+                projectToken: projectTokenAddress,
+                tokenToReclaim: tokenToReceive,
+                amount: redeemAmountBN,
+                cashOutRoute: refreshed.data,
+                slippageBps,
+              })
+            : null;
+          if (!fresh || fresh.quotedOutput < directSell.minimumOutput)
+            throw new ReviewRefusal(
+              "Selling no longer pays more than cashing out. Review the new estimate.",
+            );
+        },
+        onSubmitted: (_call, step, sent) => {
+          if (step === saleStep) setHash(sent);
+        },
+        calls: [...approvals.map((approval) => approval.call), saleCall],
+      });
+      setActiveStep(-1);
+      if (!result || result.status === "proposed") {
+        setReview(false);
+        if (result)
+          toast({ title: "Safe proposal submitted", description: SAFE_PROPOSAL_PENDING_LINE });
+        return;
+      }
+      if (result.status === "failed") throw new ReviewRefusal(failedLine(result));
+    } catch (err) {
+      setActiveStep(-1);
+      console.error("Cashout failed:", err);
+      setError(cashOutExecutionErrorMessage(err) ?? formatWalletError(err));
+      toast({
+        variant: "destructive",
+        title: "Cashout Failed",
+        description: cashOutExecutionErrorMessage(err) ?? formatWalletError(err),
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   useEffect(() => {
     if (hash) setReview(false);
@@ -584,20 +734,16 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
             </div>
           </DialogDescription>
           <DialogFooter>
-            {approvalStatus && !review ? (
-              <p className="self-center text-sm text-zinc-600">{approvalStatus}</p>
-            ) : valid && pairLine ? (
+            {valid && pairLine ? (
               <p className="self-center text-sm text-zinc-600">{pairLine}</p>
             ) : null}
             {!isSuccess ? (
               <ButtonWithWallet
                 targetChainId={selectedSucker?.peerChainId}
                 loading={
-                  loading ||
-                  (isApproving && !approvalOutstanding) ||
-                  (valid && (isQuoteFetching || directSellLoading || pairPending))
+                  loading || (valid && (isQuoteFetching || directSellLoading || pairPending))
                 }
-                disabled={(valid && (!cashOutRoute || !pairVerified)) || approvalOutstanding}
+                disabled={valid && (!cashOutRoute || !pairVerified)}
                 onClick={() => {
                   setError(null);
                   // Pin the reviewed chain: a peer balance arriving later must not unselect it.
@@ -612,236 +758,17 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
           </DialogFooter>
         </DialogHeader>
         {review && selectedChainId && cashOutRoute ? (
-          <TxConfirmDialog
+          <TxProgress
             open
             onClose={() => setReview(false)}
             title="Confirm cash out"
             steps={cashOutSteps}
             activeIndex={cashOutActiveIndex}
-            action={
-              isApproving
-                ? "Approving..."
-                : needsErc20Approval
-                  ? "Approve tokens"
-                  : needsRouterApproval
-                    ? "Allow token use for sale"
-                    : directSell
-                      ? "Sell on market"
-                      : "Cash out"
-            }
-            busy={loading || (isApproving && !approvalOutstanding) || submitting}
-            complete={approvalOutstanding}
-            status={approvalStatus}
+            start={() => void startCashOut()}
+            busy={loading || submitting}
             error={error}
-            onConfirm={async () => {
-              setSubmitting(true);
-              try {
-                if (!pairVerified) {
-                  throw new Error("Couldn't confirm this chain belongs to this project.");
-                }
-                if (
-                  !cashOutTerminal ||
-                  !address ||
-                  !redeemAmountBN ||
-                  !cashOutRoute ||
-                  !tokenToReceive
-                ) {
-                  console.error("Missing required data for cashout");
-                  throw new Error("Please try again");
-                }
-
-                if (directSell && projectTokenAddress && selectedChainId && deployment) {
-                  setIsApproving(needsErc20Approval || needsRouterApproval);
-                  const cashOut = cashOutIntent({
-                    chainId: selectedChainId,
-                    project: effectiveProjectId,
-                    holder: address,
-                    beneficiary: address,
-                  });
-                  if (needsErc20Approval || needsRouterApproval) {
-                    const approved = await send(approval, {
-                      account: address,
-                      calls: [
-                        needsErc20Approval
-                          ? reviewedCall(
-                              {
-                                abi: erc20ApproveAbi,
-                                functionName: "approve",
-                                chainId: selectedChainId,
-                                address: projectTokenAddress,
-                                args: [PERMIT2_ADDRESS, redeemAmountBN],
-                              },
-                              {
-                                intent: approvalIntent(cashOut, {
-                                  step: "erc20",
-                                  token: projectTokenAddress,
-                                  spender: PERMIT2_ADDRESS,
-                                }),
-                              },
-                            )
-                          : reviewedCall(
-                              {
-                                abi: permit2Abi,
-                                functionName: "approve",
-                                chainId: selectedChainId,
-                                address: PERMIT2_ADDRESS,
-                                args: [
-                                  projectTokenAddress,
-                                  deployment.universalRouter!,
-                                  redeemAmountBN,
-                                  Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
-                                ],
-                              },
-                              {
-                                intent: approvalIntent(cashOut, {
-                                  step: "permit2",
-                                  token: projectTokenAddress,
-                                  spender: deployment.universalRouter!,
-                                }),
-                              },
-                            ),
-                      ],
-                    });
-                    // A Safe proposal stays approving until its Safe runs it (the effect below).
-                    if (approved?.status !== "proposed") setIsApproving(false);
-                    return;
-                  }
-                  const refreshedCashOut = await refetchCashOutRoute();
-                  if (refreshedCashOut.isError || !refreshedCashOut.data) {
-                    throw new Error(
-                      "The cash-out quote is no longer available. Review and try again.",
-                    );
-                  }
-                  const pool = await readPoolSnapshot(selectedChainId, effectiveProjectId).then(
-                    (result) => result.pool,
-                  );
-                  const fresh = pool
-                    ? await quoteDirectSellSwap({
-                        client: publicClient!,
-                        chainId: selectedChainId,
-                        poolKey: pool.key,
-                        projectToken: projectTokenAddress,
-                        tokenToReclaim: tokenToReceive,
-                        amount: redeemAmountBN,
-                        cashOutRoute: refreshedCashOut.data,
-                        slippageBps,
-                      })
-                    : null;
-                  if (!fresh) {
-                    throw new Error(
-                      "Selling no longer pays more than cashing out. Review the new estimate.",
-                    );
-                  }
-                  // The sale pays `address`: only `address` may send it.
-                  // Held by what the user asked for: the quote and deadline are stamped again.
-                  // One cash-out intent, whichever venue the app picks.
-                  await send(sale, {
-                    account: address,
-                    onSubmitted: (_call, _step, sent) => setHash(sent),
-                    calls: [
-                      reviewedCall(
-                        buildDirectSellSwapTx({
-                          chainId: selectedChainId,
-                          quote: fresh,
-                          amount: redeemAmountBN,
-                          recipient: address,
-                          deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
-                        }),
-                        {
-                          intent: cashOut,
-                          legacyIntents: legacyIntents.cashOut({
-                            projectId: effectiveProjectId,
-                            token: tokenToReceive,
-                            amount: redeemAmountBN,
-                            beneficiary: address,
-                          }),
-                        },
-                      ),
-                    ],
-                  });
-                  return;
-                }
-
-                const prepared = await prepareHookAwareCashOut(publicClient!, {
-                  chainId: selectedChainId!,
-                  projectId: effectiveProjectId,
-                  holder: address,
-                  cashOutCount: redeemAmountBN,
-                  tokenToReclaim: tokenToReceive,
-                  terminal: cashOutTerminal,
-                  beneficiary: address,
-                  slippageBps: BigInt(slippageBps),
-                });
-                if (prepared.route.expectedReturn <= 0n) {
-                  throw new Error(
-                    "The cash-out quote is no longer available. Review and try again.",
-                  );
-                }
-
-                // Held by what the user asked for: the quoted minimum is read again on a retry.
-                await send(sale, {
-                  account: address,
-                  onSubmitted: (_call, _step, sent) => setHash(sent),
-                  calls: [
-                    reviewedCall(prepared.transaction, {
-                      intent: cashOutIntent({
-                        chainId: selectedChainId!,
-                        project: effectiveProjectId,
-                        holder: address,
-                        beneficiary: address,
-                      }),
-                      legacyIntents: legacyIntents.cashOut({
-                        projectId: effectiveProjectId,
-                        token: tokenToReceive,
-                        amount: redeemAmountBN,
-                        beneficiary: address,
-                      }),
-                    }),
-                  ],
-                });
-              } catch (err) {
-                setIsApproving(false);
-                console.error("Cashout failed:", err);
-                setError(cashOutExecutionErrorMessage(err) ?? formatWalletError(err));
-                toast({
-                  variant: "destructive",
-                  title: "Cashout Failed",
-                  description: cashOutExecutionErrorMessage(err) ?? formatWalletError(err),
-                });
-              } finally {
-                setSubmitting(false);
-              }
-            }}
-          >
-            <SummaryRow label="Cash out">
-              {redeemAmount} {tokenSymbol}
-            </SummaryRow>
-            <SummaryRow label="On">{chainDisplayName(selectedChainId)}</SummaryRow>
-            <SummaryRow label="You get">
-              ~
-              {formatDecimals(
-                directSell
-                  ? Number(formatUnits(directSell.quotedOutput, baseDecimals))
-                  : expectedReclaim,
-                5,
-              )}{" "}
-              {baseToken?.symbol}
-              <span className="block text-xs text-zinc-500">
-                Stops if you would receive less than{" "}
-                {formatDecimals(
-                  directSell
-                    ? Number(formatUnits(directSell.minimumOutput, baseDecimals))
-                    : minimumReclaim,
-                  5,
-                )}{" "}
-                {baseToken?.symbol}
-              </span>
-            </SummaryRow>
-            <SummaryRow label="Route">
-              {directSell ? "Sell to other traders" : "Cash out from revnet funds"}
-            </SummaryRow>
-            <SummaryRow label="Allowed decrease">{slippageBps / 100}%</SummaryRow>
-          </TxConfirmDialog>
+            rows={cashOutContext}
+          />
         ) : null}
       </DialogContent>
     </Dialog>

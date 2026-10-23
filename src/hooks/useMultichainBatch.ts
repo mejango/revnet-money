@@ -58,6 +58,7 @@ import {
   discardReviewedSequence,
   findReviewedSequence,
   gasWithHeadroom,
+  type ReviewContextRow,
 } from "@bananapus/nana-sdk-core/review";
 import { relayrDestinationHash } from "@bananapus/nana-sdk-core/review/relayr";
 import {
@@ -110,6 +111,8 @@ function callProgress(call: FrozenBatchCall): BatchCallProgress {
 
 type BatchInput = {
   label: string;
+  /** What the batch does, shown first in its review. */
+  context?: readonly ReviewContextRow[];
   scope: string;
   calls: MultichainCall[];
   replaceDraftId?: string;
@@ -403,11 +406,13 @@ export function useMultichainBatch() {
       indices: readonly number[],
       {
         title,
+        context,
         progress,
         beforeFirstSend,
         onCall,
       }: {
         title: string;
+        context?: readonly ReviewContextRow[];
         progress: (message: string) => void;
         beforeFirstSend?: () => Promise<void>;
         onCall: (index: number) => void;
@@ -425,6 +430,7 @@ export function useMultichainBatch() {
       const result = await run({
         account: batch.account,
         title,
+        context,
         description:
           "Calls are submitted in order on their selected chains. A Safe proposal must execute before the next call. Confirmed calls are skipped when resuming.",
         confirmLabel: "Agree & send",
@@ -948,6 +954,7 @@ export function useMultichainBatch() {
               title: input.calls.every((call) => call.expectedRouterPending)
                 ? "Retry payments"
                 : `Review ${input.label}`,
+              context: input.context,
               progress,
               beforeFirstSend: commitFresh,
               onCall: (index) => {

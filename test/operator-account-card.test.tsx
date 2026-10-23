@@ -113,28 +113,14 @@ describe("transfer revnet operator to sucker-group rows", () => {
 });
 
 describe("transfer revnet operator confirm", () => {
-  it("goes back to the form with Cancel, and sends nothing", async () => {
-    const confirm = await openConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByRole("textbox", { name: "New revnet operator" })).toHaveValue(NEXT);
-    expect(mocks.runWrites).not.toHaveBeenCalled();
-  });
-
   it("wallet-action:operator-writes refuses every way out while the transfer is sending, then closes when it lands", async () => {
     let finish!: (result: unknown) => void;
     mocks.runWrites.mockReturnValue(new Promise((resolve) => (finish = resolve)));
     const confirm = await openConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Transfer revnet operator" }));
     await waitFor(() => expect(mocks.runWrites).toHaveBeenCalledOnce());
 
-    const cancel = within(confirm).getByRole("button", { name: "Cancel" });
     const close = within(confirm).getByRole("button", { name: "Close" });
-    expect(cancel).toBeDisabled();
     expect(close).toBeDisabled();
-    fireEvent.click(cancel);
     fireEvent.click(close);
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.pointerDown(confirm);
@@ -155,7 +141,6 @@ describe("transfer revnet operator confirm", () => {
       }),
     );
     const confirm = await openConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Transfer revnet operator" }));
 
     const done = await within(confirm).findByRole("button", { name: "Done" });
     expect(confirm).toHaveTextContent("Transfer revnet operator was proposed to Safe.");

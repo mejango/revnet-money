@@ -163,6 +163,17 @@ function underMin(received: bigint, minimum: bigint) {
   });
 }
 
+/** A simulation that reverts because the project takes no payments now. */
+function notAccepting() {
+  return Object.assign(new Error("Execution reverted."), {
+    shortMessage: "Execution reverted.",
+    data: `0x8dc14446${encodeAbiParameters(
+      [{ type: "uint256" }, { type: "uint256" }],
+      [7n, 1n],
+    ).slice(2)}`,
+  });
+}
+
 beforeEach(() => {
   window.localStorage.clear();
   Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
@@ -192,7 +203,6 @@ async function payFromConfirm() {
   fireEvent.click(pay);
   const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
   await within(confirm).findByText(/^990 /);
-  fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
   return confirm;
 }
 
@@ -228,7 +238,6 @@ describe("a failed payment's reason and a looser minimum", () => {
     expect(within(confirm).queryByLabelText(/Custom allowed decrease/)).toBeNull();
     expect(mocks.submit).not.toHaveBeenCalled();
 
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));
     expect((mocks.submit.mock.calls[0]![0] as { args: unknown[] }).args[4]).toBe(960n * TOKEN);
   });
@@ -258,15 +267,7 @@ describe("a failed payment's reason and a looser minimum", () => {
   });
 
   it("names a failure a looser minimum cannot fix, and offers no tolerance", async () => {
-    mocks.cardSimulate.mockRejectedValueOnce(
-      Object.assign(new Error("Execution reverted."), {
-        shortMessage: "Execution reverted.",
-        data: `0x8dc14446${encodeAbiParameters(
-          [{ type: "uint256" }, { type: "uint256" }],
-          [7n, 1n],
-        ).slice(2)}`,
-      }),
-    );
+    mocks.cardSimulate.mockRejectedValueOnce(notAccepting());
     const confirm = await payFromConfirm();
     await within(confirm).findByText("This project is not accepting payments right now.");
     expect(within(confirm).queryByLabelText(/Custom allowed decrease/)).toBeNull();
@@ -282,14 +283,11 @@ describe("a failed payment's reason and a looser minimum", () => {
     expect(within(confirm).queryByLabelText(/Custom allowed decrease/)).toBeNull();
 
     const quotes = mocks.routeCalls.length;
-    fireEvent.click(within(confirm).getByRole("button", { name: "Review again" }));
-    await waitFor(() => expect(mocks.routeCalls.length).toBeGreaterThan(quotes));
-    await within(confirm).findByText(/^990 /);
-
     // The fresh simulation, at the latest block, is what names the reason.
     mocks.reverted = false;
     mocks.cardSimulate.mockRejectedValueOnce(underMin(980n * TOKEN, 990n * TOKEN));
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    fireEvent.click(within(confirm).getByRole("button", { name: "Review again" }));
+    await waitFor(() => expect(mocks.routeCalls.length).toBeGreaterThan(quotes));
     await within(confirm).findByText(
       "This payment would get fewer tokens than your minimum, so lower your minimum or try again.",
     );
@@ -301,7 +299,10 @@ describe("a failed payment's reason and a looser minimum", () => {
   it("drops a loosened tolerance when the review closes or the payment changes", async () => {
     mocks.cardSimulate.mockRejectedValueOnce(underMin(970n * TOKEN, 990n * TOKEN));
     const confirm = await payFromConfirm();
-    fireEvent.click(await within(confirm).findByRole("button", { name: "Review again" }));
+    const again = await within(confirm).findByRole("button", { name: "Review again" });
+    // Each review from here fails for a reason no tolerance fixes, so nothing sends.
+    mocks.cardSimulate.mockRejectedValue(notAccepting());
+    fireEvent.click(again);
     await within(confirm).findByText(/^965 /);
     expect(mocks.routeCalls.at(-1)?.slippageBps).toBe(350n);
 

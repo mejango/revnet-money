@@ -11,11 +11,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
+import { reviewClosed } from "@/lib/review-refusal";
 import { etherscanLink, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
@@ -233,6 +234,30 @@ export function PayerDeployForm({
     }
   };
 
+  const context = review
+    ? [
+        {
+          label: "Every ETH transfer",
+          value: review.addToBalance
+            ? "Adds to the project balance without minting tokens"
+            : "Pays the project and mints its tokens",
+        },
+        ...review.calls.map((call) => ({
+          label: String(JB_CHAINS[call.chainId]?.name ?? call.chainId),
+          value: `Project #${call.projectId}`,
+          lines: [
+            ...(review.addToBalance
+              ? []
+              : [
+                  `Tokens to ${call.request.args[1] === zeroAddress ? "the sender" : call.request.args[1]}`,
+                ]),
+            `Admin ${call.request.args[5] === zeroAddress ? "none (immutable)" : call.request.args[5]}`,
+          ],
+        })),
+        ...(review.memo ? [{ label: "Memo", value: review.memo }] : []),
+      ]
+    : [];
+
   const submitDeploys = async (resume = false) => {
     if ((!review && !resume) || busy || !address) return;
     if (!resume && review && address.toLowerCase() !== review.account.toLowerCase()) {
@@ -259,6 +284,7 @@ export function PayerDeployForm({
     try {
       const outcome = await runBatch({
         label: "Deploy payer addresses",
+        context: resume ? undefined : context,
         scope,
         calls: resume
           ? []
@@ -331,6 +357,10 @@ export function PayerDeployForm({
       if (refreshTimer.current) clearTimeout(refreshTimer.current);
       refreshTimer.current = setTimeout(onDeployed, 5000);
     } catch (e) {
+      if (reviewClosed(e) && !results.length) {
+        setReview(null);
+        return;
+      }
       const message = formatWalletError(e) || "Could not deploy the payer address.";
       setStatus(
         results.length
@@ -610,7 +640,7 @@ export function PayerDeployForm({
           </div>
 
           {review ? (
-            <TxConfirmDialog
+            <TxProgress
               open
               onClose={() => setReview(null)}
               title="Confirm payer address"
@@ -624,39 +654,12 @@ export function PayerDeployForm({
                   ? "Review the destinations together, then choose a funding chain. Safe and testnet wallets continue in stages with saved progress."
                   : undefined
               }
-              action={`Deploy payer address${review.calls.length > 1 ? "es" : ""}`}
-              onConfirm={() => void submitDeploys()}
+              start={() => void submitDeploys()}
               busy={busy}
               status={status}
               error={error}
-            >
-              <SummaryRow label="Every ETH transfer">
-                {review.addToBalance
-                  ? "Adds to the project balance without minting tokens"
-                  : "Pays the project and mints its tokens"}
-              </SummaryRow>
-              {review.calls.map((call) => (
-                <SummaryRow
-                  key={call.chainId}
-                  label={String(JB_CHAINS[call.chainId]?.name ?? call.chainId)}
-                >
-                  Project #{call.projectId}
-                  {!review.addToBalance ? (
-                    <span className="block text-xs text-zinc-500 break-all">
-                      Tokens to{" "}
-                      {call.request.args[1] === zeroAddress ? "the sender" : call.request.args[1]}
-                    </span>
-                  ) : null}
-                  <span className="block text-xs text-zinc-500 break-all">
-                    Admin{" "}
-                    {call.request.args[5] === zeroAddress
-                      ? "none (immutable)"
-                      : call.request.args[5]}
-                  </span>
-                </SummaryRow>
-              ))}
-              {review.memo ? <SummaryRow label="Memo">{review.memo}</SummaryRow> : null}
-            </TxConfirmDialog>
+              rows={context}
+            />
           ) : null}
 
           {status && !review ? (

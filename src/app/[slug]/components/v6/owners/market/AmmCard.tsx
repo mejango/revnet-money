@@ -17,8 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useReviewedAction } from "@/hooks/useReviewedAction";
 import { useProposeSafeBatch } from "@/hooks/useReviewedWriteContract";
@@ -27,6 +27,7 @@ import { cachedQuery } from "@/lib/query-persist";
 import {
   ACCOUNT_CHANGED,
   requireProposedOrDone,
+  reviewClosed,
   reviewedCall,
   ReviewRefusal,
   SAFE_PROPOSAL_UNCONFIRMED_LINE,
@@ -95,7 +96,6 @@ import {
   liquidityBatchCalls,
   liquidityReviewedCalls,
   safeBatchIntro,
-  SummaryRow,
   type LiquidityStep,
 } from "./liquidityWrite";
 
@@ -653,6 +653,7 @@ export function AddLiquidityForm({
     account: Address;
   } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [minted, setMinted] = useState<Hex | null>(null);
   const [busy, setBusy] = useState(false);
@@ -743,6 +744,7 @@ export function AddLiquidityForm({
   };
 
   const prepare = async () => {
+    setFailure(null);
     if (!address || !publicClient) {
       setStatus("Connect a wallet first.");
       return;
@@ -855,6 +857,50 @@ export function AddLiquidityForm({
     }
   };
 
+  const reviewContext = !review
+    ? []
+    : [
+        ...(review.kind === "market"
+          ? [
+              ...(review.plan.tokenSide
+                ? [
+                    {
+                      label: "Sells above the price",
+                      value: amountsText(sideUnits("token"), 0n),
+                      note: bandLabel(pool, tokenSymbol, review.plan.tokenSide),
+                      strong: true,
+                    },
+                  ]
+                : []),
+              ...(review.plan.pairSide
+                ? [
+                    {
+                      label: "Buys below the price",
+                      value: amountsText(0n, sideUnits("pair")),
+                      note: bandLabel(pool, tokenSymbol, review.plan.pairSide),
+                      strong: true,
+                    },
+                  ]
+                : []),
+            ]
+          : [
+              {
+                label: "Adds",
+                value: amountsText(sideUnits("token"), sideUnits("pair")),
+                note: bandLabel(pool, tokenSymbol, review.plan),
+                strong: true,
+              },
+            ]),
+        { label: "On", value: chainName(state.chainId) },
+        {
+          label: "Authorizes up to",
+          value: amountsText(review.plan.tokenMaximum, review.plan.pairMaximum),
+          note: `1% price headroom, spent only if the price moves before the mint lands${
+            pool.pair.addr === zeroAddress ? `. Unused ${pool.pair.symbol} is refunded` : ""
+          }`,
+        },
+      ];
+
   const execute = async () => {
     if (!address || !publicClient || !reviewed || reviewed.snapshot !== snapshot) return;
     if (gate.blocked) return;
@@ -869,6 +915,7 @@ export function AddLiquidityForm({
     const lpIntent = liquidityIntent({ chainId, pool: pool.poolId, positions: [] });
     setBusy(true);
     setStatus(null);
+    setFailure(null);
     try {
       // ponytail: Safe app only; other EIP-5792 wallets keep the sequential path.
       if (isSafeConnection(wagmiConfig) && steps.length > 1) {
@@ -900,6 +947,7 @@ export function AddLiquidityForm({
           title: built.kind === "market" ? "Review the market" : "Review liquidity",
           confirmLabel:
             built.kind === "market" ? "Agree & make the market" : "Agree & add liquidity",
+          context: reviewContext,
           calls: liquidityReviewedCalls(lpIntent, {
             chainId: state.chainId,
             steps,
@@ -933,7 +981,8 @@ export function AddLiquidityForm({
         queryClient.invalidateQueries({ queryKey: ["revnetPoolLpProviders"] }),
       ]);
     } catch (cause) {
-      setStatus(txMessage(cause, "Could not add liquidity."));
+      if (reviewClosed(cause)) setReviewed(null);
+      else setFailure(txMessage(cause, "Could not add liquidity."));
     } finally {
       setBusy(false);
     }
@@ -1118,7 +1167,7 @@ export function AddLiquidityForm({
         </ButtonWithWallet>
       </div>
       {review || (busy && !review) ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReviewed(null)}
           title={mode === "market" ? "Confirm market" : "Confirm liquidity"}
@@ -1126,51 +1175,12 @@ export function AddLiquidityForm({
           steps={reviewSteps}
           activeIndex={busy ? stepIndex : -1}
           stepsIntro={viaSafe && reviewSteps.length > 1 ? safeBatchIntro(reviewSteps) : undefined}
-          action={mode === "market" ? "Make the market" : "Add liquidity"}
-          onConfirm={() => void execute()}
+          start={() => void execute()}
           busy={disabled}
           status={status}
-        >
-          {!review ? null : review.kind === "market" ? (
-            <>
-              {review.plan.tokenSide ? (
-                <SummaryRow label="Sells above the price">
-                  {amountsText(sideUnits("token"), 0n)}
-                  <span className="block text-xs text-zinc-500">
-                    {bandLabel(pool, tokenSymbol, review.plan.tokenSide)}
-                  </span>
-                </SummaryRow>
-              ) : null}
-              {review.plan.pairSide ? (
-                <SummaryRow label="Buys below the price">
-                  {amountsText(0n, sideUnits("pair"))}
-                  <span className="block text-xs text-zinc-500">
-                    {bandLabel(pool, tokenSymbol, review.plan.pairSide)}
-                  </span>
-                </SummaryRow>
-              ) : null}
-            </>
-          ) : (
-            <SummaryRow label="Adds">
-              {amountsText(sideUnits("token"), sideUnits("pair"))}
-              <span className="block text-xs text-zinc-500">
-                {bandLabel(pool, tokenSymbol, review.plan)}
-              </span>
-            </SummaryRow>
-          )}
-          {review ? (
-            <>
-              <SummaryRow label="On">{chainName(state.chainId)}</SummaryRow>
-              <SummaryRow label="Authorizes up to">
-                {amountsText(review.plan.tokenMaximum, review.plan.pairMaximum)}
-                <span className="block text-xs text-zinc-500">
-                  1% price headroom, spent only if the price moves before the mint lands
-                  {pool.pair.addr === zeroAddress ? `. Unused ${pool.pair.symbol} is refunded` : ""}
-                </span>
-              </SummaryRow>
-            </>
-          ) : null}
-        </TxConfirmDialog>
+          error={failure}
+          rows={reviewContext}
+        />
       ) : null}
       {minted ? (
         <div className="mt-2 border border-teal-300 bg-teal-50 p-2 text-xs" role="status">
@@ -1398,6 +1408,44 @@ function ChainPositionRows({
     }
   };
 
+  const claimContext = (positions: UserLpPosition[]) => {
+    const total = (key: "tokenFees" | "pairFees") =>
+      positions.reduce(
+        (sum, position) => sum + (fees.data?.[position.tokenId.toString()]?.[key] ?? 0n),
+        0n,
+      );
+    return [
+      {
+        label: positions.length === 1 ? "Position" : "Positions",
+        value: positions.map((position) => `#${position.tokenId.toString()}`).join(", "),
+      },
+      { label: "On", value: chainName(state.chainId) },
+      {
+        label: "To your wallet",
+        value: `${fmtUnits(total("tokenFees"), 18)} ${tokenSymbol}`,
+        lines: [`${fmtUnits(total("pairFees"), pool.pair.decimals)} ${pool.pair.symbol}`],
+        strong: true,
+      },
+    ];
+  };
+  const removalContext = reviewed
+    ? [
+        {
+          label: "Position",
+          value: `#${reviewed.position.tokenId.toString()} on ${chainName(state.chainId)}`,
+        },
+        {
+          label: "Back to your wallet",
+          value: `~${fmtUnits(reviewed.position.tokenAmount, 18)} ${tokenSymbol} + ${fmtUnits(reviewed.position.pairAmount, pool.pair.decimals)} ${pool.pair.symbol} + unclaimed fees`,
+          strong: true,
+        },
+        {
+          label: "Enforced onchain",
+          value: `At least ${fmtUnits(reviewed.plan.tokenMinimum, 18)} ${tokenSymbol} + ${fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} ${pool.pair.symbol} back (95% floors)`,
+        },
+      ]
+    : [];
+
   // Claim fees only. Nothing is swapped and the position is untouched, so
   // there is no reviewed amount to re-verify — only the wallet's ownership,
   // which the PositionManager enforces itself.
@@ -1421,6 +1469,7 @@ function ChainPositionRows({
           description:
             "Claim this position's unclaimed fees to the connected wallet. The position stays open.",
           confirmLabel: "Agree & claim fees",
+          context: claimContext(positions),
           calls: [
             reviewedCall(
               {
@@ -1444,7 +1493,8 @@ function ChainPositionRows({
       if (result.status === "done") void fees.refetch();
       setClaimReview(null);
     } catch (cause) {
-      setError(txMessage(cause, "Could not claim fees."));
+      if (reviewClosed(cause)) setClaimReview(null);
+      else setError(txMessage(cause, "Could not claim fees."));
     } finally {
       setClaiming(null);
     }
@@ -1468,6 +1518,7 @@ function ChainPositionRows({
           description:
             "Burn this Uniswap V4 position and return both currencies to the connected wallet. The reviewed minimum returns are enforced onchain.",
           confirmLabel: "Agree & remove liquidity",
+          context: removalContext,
           calls: [
             reviewedCall(
               {
@@ -1502,7 +1553,8 @@ function ChainPositionRows({
         void fees.refetch();
       }
     } catch (cause) {
-      setError(txMessage(cause, "Could not remove liquidity."));
+      if (reviewClosed(cause)) setReviewed(null);
+      else setError(txMessage(cause, "Could not remove liquidity."));
     } finally {
       setRemoving(false);
     }
@@ -1770,7 +1822,7 @@ function ChainPositionRows({
         group.kind === "single" ? renderSingle(group.position) : renderMarket(group),
       )}
       {claimReview ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setClaimReview(null)}
           title="Confirm fee claim"
@@ -1781,41 +1833,14 @@ function ChainPositionRows({
             },
           ]}
           activeIndex={isPending ? 0 : -1}
-          action="Claim fees"
-          onConfirm={() => void claimFees(claimReview)}
+          start={() => void claimFees(claimReview)}
           busy={isPending || claiming !== null}
           error={error}
-        >
-          <SummaryRow label={claimReview.length === 1 ? "Position" : "Positions"}>
-            {claimReview.map((position) => `#${position.tokenId.toString()}`).join(", ")}
-          </SummaryRow>
-          <SummaryRow label="On">{chainName(state.chainId)}</SummaryRow>
-          <SummaryRow label="To your wallet">
-            {fmtUnits(
-              claimReview.reduce(
-                (sum, position) =>
-                  sum + (fees.data?.[position.tokenId.toString()]?.tokenFees ?? 0n),
-                0n,
-              ),
-              18,
-            )}{" "}
-            {tokenSymbol}
-            <span className="block text-xs text-zinc-500">
-              {fmtUnits(
-                claimReview.reduce(
-                  (sum, position) =>
-                    sum + (fees.data?.[position.tokenId.toString()]?.pairFees ?? 0n),
-                  0n,
-                ),
-                pool.pair.decimals,
-              )}{" "}
-              {pool.pair.symbol}
-            </span>
-          </SummaryRow>
-        </TxConfirmDialog>
+          rows={claimContext(claimReview)}
+        />
       ) : null}
       {reviewed || refreshing !== null ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => {
             setReviewed(null);
@@ -1843,30 +1868,12 @@ function ChainPositionRows({
             },
           ]}
           activeIndex={isPending || removing || removalSettling ? 0 : -1}
-          action="Remove the position"
-          onConfirm={() => void remove()}
+          start={() => void remove()}
           busy={isPending || removing || removalSettling}
           complete={removalProposed || removalHeld}
           error={error}
-        >
-          {reviewed ? (
-            <>
-              <SummaryRow label="Position">
-                #{reviewed.position.tokenId.toString()} on {chainName(state.chainId)}
-              </SummaryRow>
-              <SummaryRow label="Back to your wallet">
-                ~{fmtUnits(reviewed.position.tokenAmount, 18)} {tokenSymbol} +{" "}
-                {fmtUnits(reviewed.position.pairAmount, pool.pair.decimals)} {pool.pair.symbol} +
-                unclaimed fees
-              </SummaryRow>
-              <SummaryRow label="Enforced onchain">
-                At least {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
-                {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol} back
-                (95% floors)
-              </SummaryRow>
-            </>
-          ) : null}
-        </TxConfirmDialog>
+          rows={removalContext}
+        />
       ) : null}
       {/* The panels live OUTSIDE the scroll wrapper — as table rows they would
           inherit the table's full scrollable width and get cut off. */}

@@ -29,6 +29,7 @@ export {
   isSafeProposalPendingError,
   requireDone,
   requireProposedOrDone,
+  reviewClosed,
   reviewedCall,
   ReviewRefusal,
   SAFE_PROPOSAL_PENDING_LINE,

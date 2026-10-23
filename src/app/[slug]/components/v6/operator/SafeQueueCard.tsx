@@ -9,9 +9,10 @@ import {
 } from "@bananapus/nana-sdk-core/review/safe-relayr";
 
 import { EthereumAddress } from "@/components/EthereumAddress";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import {
   loadEngine,
+  reviewClosed,
   ReviewRefusal,
   useReviewedAction,
   WALLET_CHANGED,
@@ -850,6 +851,32 @@ export function SafeQueueCard({
   if (!queueTargets.length || (!queue.data.length && queueQueries.every((query) => query.data)))
     return null;
 
+  /** The queued transaction's chain, handle, destination, value and signatures, as its review shows them. */
+  const queuedContext = (
+    row: QueueRow,
+    tx: SafeQueuedTransaction,
+    handleBinding = review?.handleBinding,
+  ) => [
+    { label: "Safe transaction", value: `#${tx.nonce} on ${chainName(row.chainId)}`, strong: true },
+    ...(handleBinding
+      ? [
+          {
+            label: "Handle",
+            value:
+              handleBinding.kind === "ens-text"
+                ? `ENS juicebox record → ${handleBinding.value}`
+                : `Publish @${handleBinding.handle.handle} → ${handleBinding.source.chainId}:${handleBinding.source.projectId}`,
+          },
+        ]
+      : []),
+    { label: "To", value: tx.to, mono: true },
+    { label: "Value", value: `${String(tx.value ?? 0)} wei` },
+    {
+      label: "Signatures",
+      value: `${usableSafeConfirmations(tx, row.policy.owners).length}/${row.policy.threshold}`,
+    },
+  ];
+
   const sign = async (row: QueueRow, tx: SafeQueuedTransaction) => {
     if (!address || rowBlocked(row)) return;
     const key = `sign:${row.chainId}:${tx.nonce}`;
@@ -889,7 +916,8 @@ export function SafeQueueCard({
       setReview(null);
       await queue.refetch();
     } catch (cause) {
-      setError(formatWalletError(cause, "Could not sign the Safe transaction."));
+      if (reviewClosed(cause)) setReview(null);
+      else setError(formatWalletError(cause, "Could not sign the Safe transaction."));
     } finally {
       setBusy(null);
     }
@@ -920,7 +948,7 @@ export function SafeQueueCard({
       const wallet = deps.adapter;
       let journaled: string | undefined;
       const result = await executeReviewedSafeTransaction(
-        { chainId: row.chainId, safe: row.safe, tx },
+        { chainId: row.chainId, safe: row.safe, tx, context: queuedContext(row, tx) },
         {
           ...deps,
           adapter: {
@@ -978,11 +1006,34 @@ export function SafeQueueCard({
       setReview(null);
       await queue.refetch();
     } catch (cause) {
-      setError(formatWalletError(cause, "Could not execute the Safe transaction."));
+      if (reviewClosed(cause)) setReview(null);
+      else setError(formatWalletError(cause, "Could not execute the Safe transaction."));
     } finally {
       setBusy(null);
     }
   };
+
+  const batchAction = batch
+    ? batch.running
+      ? batch.phase === "payment-review"
+        ? "Preparing payment…"
+        : batch.phase === "payment-submitting"
+          ? "Confirm payment…"
+          : batch.phase === "payment-confirming"
+            ? "Confirming payment…"
+            : batch.phase === "executing" || batch.phase === "complete"
+              ? "Executing…"
+              : "Checking…"
+      : batch.preparing
+        ? null
+        : batch.recovery
+          ? batch.recovery.bundleUuid
+            ? "Check status"
+            : "Check Safe nonces"
+          : batch.quote
+            ? "Pay"
+            : "Retry checks"
+    : null;
 
   return (
     <OperatorSection title="Pending multisig transactions">
@@ -1200,7 +1251,7 @@ export function SafeQueueCard({
         </p>
       ) : null}
       {review ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReview(null)}
           title={review.kind === "sign" ? "Confirm signature" : "Confirm execution"}
@@ -1216,37 +1267,18 @@ export function SafeQueueCard({
                 },
           ]}
           activeIndex={busy ? 0 : -1}
-          action={review.kind === "sign" ? "Sign" : "Execute"}
-          onConfirm={() =>
+          start={() =>
             void (review.kind === "sign"
               ? sign(review.row, review.tx)
               : execute(review.row, review.tx))
           }
           busy={busy !== null}
           error={error}
-        >
-          <SummaryRow label="Safe transaction">
-            #{review.tx.nonce} on {chainName(review.row.chainId)}
-          </SummaryRow>
-          {review.handleBinding ? (
-            <SummaryRow label="Handle">
-              {review.handleBinding.kind === "ens-text"
-                ? `ENS juicebox record → ${review.handleBinding.value}`
-                : `Publish @${review.handleBinding.handle.handle} → ${review.handleBinding.source.chainId}:${review.handleBinding.source.projectId}`}
-            </SummaryRow>
-          ) : null}
-          <SummaryRow label="To">
-            <span className="break-all font-mono text-xs">{review.tx.to}</span>
-          </SummaryRow>
-          <SummaryRow label="Value">{String(review.tx.value ?? 0)} wei</SummaryRow>
-          <SummaryRow label="Signatures">
-            {usableSafeConfirmations(review.tx, review.row.policy.owners).length}/
-            {review.row.policy.threshold}
-          </SummaryRow>
-        </TxConfirmDialog>
+          rows={queuedContext(review.row, review.tx)}
+        />
       ) : null}
       {batch ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={closeBatch}
           title={`Execute ${batch.rows.length} Safe transactions`}
@@ -1281,73 +1313,70 @@ export function SafeQueueCard({
             ),
           }))}
           activeIndex={-1}
-          action={
-            batch.running
-              ? batch.phase === "payment-review"
-                ? "Preparing payment…"
-                : batch.phase === "payment-submitting"
-                  ? "Confirm payment…"
-                  : batch.phase === "payment-confirming"
-                    ? "Confirming payment…"
-                    : batch.phase === "executing" || batch.phase === "complete"
-                      ? "Executing…"
-                      : "Checking…"
-              : batch.preparing
-                ? null
-                : batch.recovery
-                  ? batch.recovery.bundleUuid
-                    ? "Check status"
-                    : "Check Safe nonces"
-                  : batch.quote
-                    ? "Pay"
-                    : "Retry checks"
-          }
-          actionDisabled={
-            batch.preparing ||
-            batch.account.toLowerCase() !== address?.toLowerCase() ||
-            Boolean(batch.quote && batch.paymentChainId === null)
-          }
-          onConfirm={() =>
-            void (batch.recovery
-              ? checkExistingBundle()
-              : batch.quote
-                ? executeAll()
-                : prepareAll(batch.rows))
-          }
           busy={batch.running}
           complete={batch.done}
           status={batch.message}
           error={batch.error}
           footerContent={
-            batch.quote && !batch.done ? (
-              <label className="block text-sm">
-                Pay network fee on
-                <select
-                  className="mt-2 block w-full border border-melon-300 bg-white p-2"
-                  value={batch.paymentChainId ?? ""}
-                  disabled={batch.running}
-                  onChange={(event) =>
-                    setBatch((current) =>
-                      current
-                        ? {
-                            ...current,
-                            paymentChainId: event.target.value ? Number(event.target.value) : null,
-                          }
-                        : current,
-                    )
-                  }
-                >
-                  <option value="" disabled>
-                    Select a payment chain
-                  </option>
-                  {relayrPaymentOptions(batch.quote.payment_info).map((option) => (
-                    <option key={option.chainId} value={option.chainId}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null
+            // The Relayr bundle's fee chain and its step; R5 moves both into core's review.
+            batch.done ? null : (
+              <div className="space-y-3">
+                {batch.quote && !batch.done ? (
+                  <label className="block text-sm">
+                    Pay network fee on
+                    <select
+                      className="mt-2 block w-full border border-melon-300 bg-white p-2"
+                      value={batch.paymentChainId ?? ""}
+                      disabled={batch.running}
+                      onChange={(event) =>
+                        setBatch((current) =>
+                          current
+                            ? {
+                                ...current,
+                                paymentChainId: event.target.value
+                                  ? Number(event.target.value)
+                                  : null,
+                              }
+                            : current,
+                        )
+                      }
+                    >
+                      <option value="" disabled>
+                        Select a payment chain
+                      </option>
+                      {relayrPaymentOptions(batch.quote.payment_info).map((option) => (
+                        <option key={option.chainId} value={option.chainId}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {batchAction ? (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="min-h-[44px] border border-melon-700 bg-melon-500 px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={
+                        batch.running ||
+                        batch.preparing ||
+                        batch.account.toLowerCase() !== address?.toLowerCase() ||
+                        Boolean(batch.quote && batch.paymentChainId === null)
+                      }
+                      onClick={() =>
+                        void (batch.recovery
+                          ? checkExistingBundle()
+                          : batch.quote
+                            ? executeAll()
+                            : prepareAll(batch.rows))
+                      }
+                    >
+                      {batchAction}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            )
           }
         >
           {batch.recovery ? (
@@ -1404,7 +1433,7 @@ export function SafeQueueCard({
               })}
             </div>
           ) : null}
-        </TxConfirmDialog>
+        </TxProgress>
       ) : null}
     </OperatorSection>
   );

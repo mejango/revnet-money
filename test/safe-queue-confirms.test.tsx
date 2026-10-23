@@ -173,27 +173,16 @@ describe("the Safe queue's signature confirm", () => {
   async function openSign() {
     const service = serveQueues(queued(8453, [COSIGNER]));
     renderCard(8453);
-    fireEvent.click(await screen.findByRole("button", { name: "Sign" }));
+    const sign = await screen.findByRole("button", { name: "Sign" });
+    const release = holdLiveRead();
+    fireEvent.click(sign);
     const confirm = await screen.findByRole("dialog", { name: "Confirm signature" });
-    return { confirm, service };
+    return { confirm, service, release };
   }
 
-  it("goes back with Cancel, and signs nothing", async () => {
-    const { confirm } = await openSign();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(mocks.sign).not.toHaveBeenCalled();
-  });
-
   it("wallet-action:safe-queue refuses every way out from Confirm through the reads before the wallet prompt, then closes once signed", async () => {
-    const { confirm, service } = await openSign();
-    const release = holdLiveRead();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Sign" }));
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled(),
-    );
+    const { confirm, service, release } = await openSign();
+    await waitFor(() => expect(mocks.live).toHaveBeenCalled());
 
     expectEveryWayOutRefused(confirm);
     expect(mocks.sign).not.toHaveBeenCalled();
@@ -207,11 +196,13 @@ describe("the Safe queue's signature confirm", () => {
 });
 
 describe("the Safe queue's execution confirm", () => {
-  async function openExecute() {
+  async function openExecute(before?: () => void) {
     const row = queued(8453, SAFE.owners);
     serveQueues(row);
     renderCard(8453);
-    fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
+    const execute = await screen.findByRole("button", { name: "Execute" });
+    before?.();
+    fireEvent.click(execute);
     return screen.findByRole("dialog", { name: "Confirm execution" });
   }
 
@@ -223,23 +214,10 @@ describe("the Safe queue's execution confirm", () => {
     expect(await screen.findByRole("button", { name: "Execute" })).toBeDisabled();
   });
 
-  it("goes back with Cancel, and executes nothing", async () => {
-    const confirm = await openExecute();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(mocks.review).not.toHaveBeenCalled();
-    expect(mocks.write).not.toHaveBeenCalled();
-  });
-
   it("does not authorize execution from the cached display identity when the fresh identity check fails", async () => {
-    const confirm = await openExecute();
     const unavailable = safeChain(SAFE.address, { nonce: 5n });
     unavailable.getCode.mockRejectedValue(new Error("RPC temporarily unavailable"));
-    mocks.client = unavailable.client;
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Execute" }));
+    const confirm = await openExecute(() => (mocks.client = unavailable.client));
 
     expect(
       await within(confirm).findByText(
@@ -254,12 +232,9 @@ describe("the Safe queue's execution confirm", () => {
   });
 
   it("wallet-action:safe-queue refuses every way out from Confirm through the reads before the wallet prompt, then closes once executed", async () => {
-    const confirm = await openExecute();
-    const release = holdLiveRead();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Execute" }));
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled(),
-    );
+    let release!: () => Promise<void>;
+    const confirm = await openExecute(() => (release = holdLiveRead()));
+    await waitFor(() => expect(mocks.live).toHaveBeenCalled());
 
     expectEveryWayOutRefused(confirm);
     expect(mocks.write).not.toHaveBeenCalled();

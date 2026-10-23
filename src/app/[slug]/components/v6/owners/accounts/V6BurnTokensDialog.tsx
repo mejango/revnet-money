@@ -10,7 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import {
   failedLine,
@@ -119,6 +119,12 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
   } catch {}
   const invalid = count <= 0n || count > row.balance;
   const amountLabel = `${formatUnits(count, JB_TOKEN_DECIMALS, { fractionDigits: 4 })} ${tokenSymbol}`;
+  const context = [
+    { label: "Burns", value: amountLabel, strong: true },
+    { label: "On", value: chainName },
+    { label: "Returns", value: "Nothing. Supply drops permanently." },
+    ...(memo.trim() ? [{ label: "Note", value: memo.trim() }] : []),
+  ];
 
   useEffect(() => {
     if (isSuccess) {
@@ -156,6 +162,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
         title: "Review permanent token burn",
         description:
           "This permanently destroys project tokens and returns no funds. Verify the chain and amount.",
+        context,
         reverify: (call) => reverify(call, holder),
         // Sent: the confirm closes while the burn confirms onchain.
         onSubmitted: () => {
@@ -176,6 +183,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
           ),
         ],
       });
+      if (!result) setReviewing(false);
       if (result?.status === "failed") throw new ReviewRefusal(failedLine(result));
       if (result?.status === "done") setSuccess(true);
     } catch (cause) {
@@ -230,22 +238,17 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
       {isSafeResultUnconfirmed ? (
         <p className="mt-2 text-xs text-zinc-600">{SAFE_PROPOSAL_UNCONFIRMED_LINE}</p>
       ) : null}
-      <TxConfirmDialog
+      <TxProgress
         open={reviewing}
         onClose={() => setReviewing(false)}
         title="Confirm burn"
         steps={[{ title: `Burn ${amountLabel}`, detail: "Credits go first, then ERC-20 tokens." }]}
         activeIndex={sending ? 0 : -1}
-        action="Burn permanently"
-        onConfirm={() => void burn()}
+        start={() => void burn()}
         busy={sending}
         error={error}
-      >
-        <SummaryRow label="Burns">{amountLabel}</SummaryRow>
-        <SummaryRow label="On">{chainName}</SummaryRow>
-        <SummaryRow label="Returns">Nothing. Supply drops permanently.</SummaryRow>
-        {memo.trim() ? <SummaryRow label="Note">{memo.trim()}</SummaryRow> : null}
-      </TxConfirmDialog>
+        rows={context}
+      />
     </div>
   );
 }

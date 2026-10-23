@@ -20,10 +20,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
+import { reviewClosed } from "@/lib/review-refusal";
 import { jb721TiersHookAbi, JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -187,6 +188,25 @@ export function AddItemsModal({
     }
   };
 
+  const context = [
+    ...items.map((item, index) => ({
+      label: item.name.trim() || `Item ${index + 1}`,
+      value: item.supply.trim() ? `${item.supply.trim()} in stock` : "Unlimited stock",
+    })),
+    ...destinations.map((destination) => ({
+      label: `Project #${destination.projectId} on ${chainDisplayName(destination.chainId)}`,
+      value: `${items.length} item${items.length === 1 ? "" : "s"}`,
+      lines: items.map(
+        (item, index) =>
+          `${item.name || `Item ${index + 1}`}: ${
+            prices[`${destination.chainId}:${destination.projectId}`]?.[index] ?? item.price
+          } ${destination.shop.pricing.symbol}, ${
+            item.perChainSupply[destination.chainId] || item.supply || "Unlimited"
+          } stock`,
+      ),
+    })),
+  ];
+
   const submit = async (resume = false) => {
     if (!address || busy || (resume && gate.blocked)) return;
     setError(null);
@@ -219,6 +239,7 @@ export function AddItemsModal({
       setPhase("sending");
       const result = await runBatch({
         label: "Add shop items",
+        context: resume ? undefined : context,
         scope,
         onProgress: setProgress,
         calls: resume
@@ -258,7 +279,8 @@ export function AddItemsModal({
       setPhase("done");
     } catch (err) {
       setPhase("form");
-      setError(shortError(err));
+      if (reviewClosed(err)) setReviewing(false);
+      else setError(shortError(err));
     }
   };
 
@@ -465,7 +487,7 @@ export function AddItemsModal({
         )}
       </DialogContent>
       {reviewing ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReviewing(false)}
           title="Confirm items"
@@ -477,35 +499,12 @@ export function AddItemsModal({
             },
           ]}
           activeIndex={busy ? 0 : -1}
-          action="Add items"
-          onConfirm={() => void submit()}
+          start={() => void submit()}
           busy={busy}
           status={status}
           error={error}
-        >
-          {items.map((item, index) => (
-            <SummaryRow key={index} label={item.name.trim() || `Item ${index + 1}`}>
-              <span className="block text-xs text-zinc-500">
-                {item.supply.trim() ? `${item.supply.trim()} in stock` : "Unlimited stock"}
-              </span>
-            </SummaryRow>
-          ))}
-          {destinations.map((destination) => (
-            <SummaryRow
-              key={`${destination.chainId}:${destination.projectId}`}
-              label={`Project #${destination.projectId} on ${chainDisplayName(destination.chainId)}`}
-            >
-              {items.map((item, index) => (
-                <span className="block" key={index}>
-                  {item.name || `Item ${index + 1}`}:{" "}
-                  {prices[`${destination.chainId}:${destination.projectId}`]?.[index] ?? item.price}{" "}
-                  {destination.shop.pricing.symbol},{" "}
-                  {item.perChainSupply[destination.chainId] || item.supply || "Unlimited"} stock
-                </span>
-              ))}
-            </SummaryRow>
-          ))}
-        </TxConfirmDialog>
+          rows={context}
+        />
       ) : null}
     </Dialog>
   );

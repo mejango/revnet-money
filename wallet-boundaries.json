@@ -10,14 +10,14 @@
     },
     {
       "file": "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
-      "line": 135,
+      "line": 134,
       "api": "useWalletClient",
       "boundary": "Reads the connected wallet client only to require a connected wallet; it never signs or sends. Writes go through the reviewed write hook.",
       "test": "test/borrow-review-cancel.test.tsx"
     },
     {
       "file": "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
-      "line": 939,
+      "line": 967,
       "api": "sendTransaction",
       "boundary": "The reviewed Safe execution's own wallet send, wrapped so the queue rechecks its live transaction, then the reviewed account, the wallet connection and view-as at the wallet, and journals the send under the reviewed account; core reviews, simulates and holds it first.",
       "test": "test/safe-queue-card.test.tsx"
@@ -59,21 +59,21 @@
     },
     {
       "file": "src/hooks/useMultichainBatch.ts",
-      "line": 383,
+      "line": 386,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/multichain-batch.test.tsx"
     },
     {
       "file": "src/hooks/useMultichainBatch.ts",
-      "line": 782,
+      "line": 788,
       "api": "reviewedInParent",
-      "boundary": "The calls are already in this flow's own review dialog, so the reviewed write skips its second review; every other check stays. Removed in R4.",
+      "boundary": "The calls are already in this run's own core review (requireTransactionReview), so the Relayr write skips a second review; every other check stays. Removed in R5 with useReviewedRelayr.",
       "test": "test/multichain-batch.test.tsx"
     },
     {
       "file": "src/hooks/useMultichainBatch.ts",
-      "line": 1021,
+      "line": 1028,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/multichain-batch.test.tsx"

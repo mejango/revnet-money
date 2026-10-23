@@ -25,7 +25,6 @@ const mocks = vi.hoisted(() => ({
   write: vi.fn(),
   prepareCashOut: vi.fn(),
   freshBorrowable: vi.fn(),
-  ensureAllowance: vi.fn(),
   hasPermissions: vi.fn(),
   toast: vi.fn(),
   verifyDestinationMint: vi.fn(),
@@ -44,6 +43,8 @@ const mocks = vi.hoisted(() => ({
    * client usePublicClient returns without a chain (the wallet's).
    */
   allowanceOnLoanChainOnly: false,
+  /** The bridge's token allowance is already enough, so the move is one call. */
+  bridgeAllowed: false,
   /** A pool sale beats cashing out, and the claimed tokens cover it. */
   directSell: false,
   /** A write goes to the Safe as a proposal, which reads as loading until it executes. */
@@ -102,6 +103,7 @@ vi.mock("wagmi", async (importOriginal) => ({
           ];
         }
         if (functionName === "projectId") return 8n;
+        if (functionName === "allowance" && mocks.bridgeAllowed) return 10n ** 30n;
         if (functionName === "TERMINAL") {
           if (mocks.loanSourceFails) throw new Error("The node can't be reached.");
           return "0x5555555555555555555555555555555555555555";
@@ -284,29 +286,45 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
     },
   };
 });
-vi.mock("@/hooks/useAllowance", () => ({
-  useAllowance: () => ({ ensureAllowance: mocks.ensureAllowance, isApproving: false }),
-}));
 vi.mock("@/hooks/useProjectBaseToken", () => ({
   useProjectBaseToken: () => ({ symbol: "ETH", decimals: 18, tokenMap: {} }),
 }));
 vi.mock("@/hooks/useBorrowableAmountFrom", () => ({
   useBorrowableAmountFrom: () => ({ data: 10n ** 18n, capacity: 2n * 10n ** 18n }),
 }));
-vi.mock("@/hooks/useCashOutRoute", () => ({
-  useCashOutRoute: () => ({
-    data: { expectedReturn: 10n ** 17n, minimumReturn: 9n * 10n ** 16n },
-    isFetching: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-}));
+vi.mock("@/hooks/useCashOutRoute", () => {
+  const data = { expectedReturn: 10n ** 17n, minimumReturn: 9n * 10n ** 16n };
+  return {
+    useCashOutRoute: () => ({
+      data,
+      isFetching: false,
+      isError: false,
+      refetch: async () => ({ data, isError: false }),
+    }),
+  };
+});
 vi.mock("@/lib/directSellSwap", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/directSellSwap")>()),
   quoteDirectSellSwap: async () =>
     mocks.directSell
       ? { poolKey: {}, zeroForOne: true, quotedOutput: 2n * 10n ** 17n, minimumOutput: 10n ** 17n }
       : null,
+  buildDirectSellSwapTx: ({ chainId }: { chainId: number }) => ({
+    chainId,
+    address: "0x6666666666666666666666666666666666666666",
+    abi: [
+      {
+        type: "function",
+        name: "execute",
+        stateMutability: "payable",
+        inputs: [{ name: "deadline", type: "uint256" }],
+        outputs: [],
+      },
+    ],
+    functionName: "execute",
+    args: [0n],
+    value: 0n,
+  }),
 }));
 vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/[slug]/components/v6/owners/market/lib")>()),
@@ -413,6 +431,7 @@ beforeEach(() => {
   mocks.writeHooks = 0;
   mocks.nativeBase = true;
   mocks.allowanceOnLoanChainOnly = false;
+  mocks.bridgeAllowed = false;
   mocks.directSell = false;
   mocks.safeProposal = false;
   mocks.safeUnconfirmed = false;
@@ -433,7 +452,6 @@ beforeEach(() => {
   mocks.write.mockReset().mockImplementation(never);
   mocks.prepareCashOut.mockReset().mockImplementation(never);
   mocks.freshBorrowable.mockReset().mockImplementation(never);
-  mocks.ensureAllowance.mockReset().mockResolvedValue(null);
   mocks.hasPermissions.mockReset().mockResolvedValue(true);
   mocks.verifyDestinationMint.mockReset().mockResolvedValue(undefined);
   mocks.beforeReverify.mockReset().mockResolvedValue(undefined);
@@ -451,11 +469,11 @@ async function confirmCashOut() {
   fireEvent.click(await screen.findByRole("option", { name: /Ethereum/ }));
   fireEvent.change(screen.getByLabelText("Tokens to cash out"), { target: { value: "1" } });
   fireEvent.click(screen.getByRole("button", { name: "Cash out" }));
-  const confirm = await confirmPanel();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Cash out" }));
+  await confirmPanel();
 }
 
 async function confirmBridge() {
+  mocks.bridgeAllowed = true;
   renderWithQueries(
     <BridgeDialog
       projects={[
@@ -474,11 +492,7 @@ async function confirmBridge() {
   const move = screen.getByRole("button", { name: "Move REV" });
   await waitFor(() => expect(move).toBeEnabled());
   fireEvent.click(move);
-  const confirm = await confirmPanel();
-  await waitFor(() =>
-    expect(within(confirm).getByRole("button", { name: "Move REV" })).toBeEnabled(),
-  );
-  fireEvent.click(within(confirm).getByRole("button", { name: "Move REV" }));
+  await confirmPanel();
 }
 
 describe("bridge destination mint readiness at the wallet boundary", () => {
@@ -527,8 +541,7 @@ async function confirmBorrow() {
   const open = screen.getByRole("button", { name: "Open loan" });
   await waitFor(() => expect(open).toBeEnabled());
   fireEvent.click(open);
-  const confirm = await confirmPanel();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
+  await confirmPanel();
 }
 
 describe("a loan's source token, decimals and currency", () => {
@@ -577,10 +590,10 @@ describe("a loan's source token, decimals and currency", () => {
     fireEvent.change(await screen.findByLabelText(/How much REV/), { target: { value: "1" } });
     const open = screen.getByRole("button", { name: "Open loan" });
     await waitFor(() => expect(open).toBeEnabled());
-    fireEvent.click(open);
-    const confirm = await confirmPanel();
+    // The read at send fails.
     mocks.loanSourceFails = true;
-    fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
+    fireEvent.click(open);
+    await confirmPanel();
     expect(
       await screen.findByText("Couldn't read this network's loan token onchain. Try again."),
     ).toBeTruthy();
@@ -600,9 +613,8 @@ describe("a loan's source token, decimals and currency", () => {
     const open = screen.getByRole("button", { name: "Open loan" });
     await waitFor(() => expect(open).toBeEnabled());
     fireEvent.click(open);
-    const confirm = await confirmPanel();
     mocks.loanContext = { token: USDC, decimals: 6, currency: 909516616 };
-    fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
+    await confirmPanel();
     expect(
       await screen.findByText(
         "This network's loan token changed. Check the terms and confirm again.",
@@ -623,8 +635,7 @@ async function confirmRefinance() {
   const refinance = await screen.findByRole("button", { name: "Refinance loan" });
   await waitFor(() => expect(refinance).toBeEnabled());
   fireEvent.click(refinance);
-  const confirm = await confirmPanel();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Refinance loan" }));
+  await confirmPanel();
 }
 
 async function confirmRepay() {
@@ -645,8 +656,7 @@ async function confirmRepay() {
   const repay = await screen.findByRole("button", { name: "Repay loan" });
   await waitFor(() => expect(repay).toBeEnabled());
   fireEvent.click(repay);
-  const confirm = await confirmPanel();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Repay loan" }));
+  await confirmPanel();
 }
 
 describe("a repayment's loan token, decimals and currency", () => {
@@ -692,10 +702,9 @@ describe("a repayment's loan token, decimals and currency", () => {
     openRepay();
     const repay = await screen.findByRole("button", { name: "Repay loan" });
     await waitFor(() => expect(repay).toBeEnabled());
+    mocks.loanSourceFails = true;
     fireEvent.click(repay);
     const confirm = await confirmPanel();
-    mocks.loanSourceFails = true;
-    fireEvent.click(within(confirm).getByRole("button", { name: "Repay loan" }));
     expect(
       await within(confirm).findByText(
         "Couldn't read this network's loan token onchain. Try again.",
@@ -754,8 +763,7 @@ async function approveSale() {
   await waitFor(() => expect(sell).toBeEnabled());
   fireEvent.click(sell);
   const confirm = await confirmPanel();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Approve tokens" }));
-  await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
+  await waitFor(() => expect(mocks.write).toHaveBeenCalled());
   expect(mocks.write.mock.calls[0]![0]).toMatchObject({ functionName: "approve", chainId: 1 });
   return confirm;
 }
@@ -839,82 +847,72 @@ describe("cash out's reviewed chain", () => {
 });
 
 describe("cash out's sale approval", () => {
-  it("says the approval couldn't be confirmed yet, and sends nothing more", async () => {
+  it("says the approval couldn't be confirmed yet, sends nothing more, and offers Try again", async () => {
     mocks.neverLands = true;
     const confirm = await approveSale();
 
     await within(confirm).findByText(/Couldn't confirm this yet/);
-    expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(within(confirm).getByRole("button", { name: "Try again" })).toBeEnabled();
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("holds the confirm until the approval's receipt lands", async () => {
+  it("holds the progress until the approval's receipt lands", async () => {
     const confirm = await approveSale();
 
     await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled(),
+      expect(within(confirm).getByRole("button", { name: "Close" })).toBeDisabled(),
     );
     tryEveryWayOut("Cash out");
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("wallet-action:cash-out releases the confirm once the approval's receipt lands on the cash-out chain", async () => {
+  it("wallet-action:cash-out continues to the sale in the same review once the approval's receipt lands on the cash-out chain", async () => {
     mocks.receiptOn = 1;
-    const confirm = await approveSale();
+    await approveSale();
 
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeEnabled(),
-    );
-    expect(mocks.write).toHaveBeenCalledOnce();
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(3));
+    expect(mocks.write.mock.calls.map(([call]) => call.functionName)).toEqual([
+      "approve",
+      "approve",
+      "execute",
+    ]);
   });
 
-  it("shows a reverted approval, and Cancel goes back with nothing more sent", async () => {
+  it("shows a reverted approval, and Close goes back with nothing more sent", async () => {
     mocks.receiptOn = 1;
     mocks.reverted = true;
     const confirm = await approveSale();
 
-    const cancel = within(confirm).getByRole("button", { name: "Cancel" });
-    await waitFor(() => expect(cancel).toBeEnabled());
-    expect(confirm).toHaveTextContent("reverted onchain");
-    fireEvent.click(cancel);
+    await within(confirm).findByText(/reverted onchain/);
+    fireEvent.click(within(confirm).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
     expect(dialogNamed("Cash out").open).toBe(true);
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("ends on Done when proposed to Safe, rather than holding the confirm until the Safe executes it", async () => {
+  it("closes on a Safe proposal and says to finish it in Safe", async () => {
     mocks.safeProposal = true;
-    const confirm = await approveSale();
+    await approveSale();
 
-    const done = await within(confirm).findByRole("button", { name: "Done" });
-    expect(confirm).toHaveTextContent("The approval was proposed to Safe.");
-    expect(mocks.write).toHaveBeenCalledOnce();
-    fireEvent.click(done);
     await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
-    const cashOut = dialogNamed("Cash out");
-    expect(cashOut.open).toBe(true);
-    const sell = within(cashOut).getByRole("button", { name: "Sell on market" });
-    expect(sell).toBeDisabled();
-    expect(sell).not.toHaveAttribute("aria-busy");
-    expect(cashOut).toHaveTextContent("The approval was proposed to Safe.");
+    expect(mocks.toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: "This proposal is waiting in your Safe. Finish it there first.",
+      }),
+    );
+    expect(dialogNamed("Cash out").open).toBe(true);
+    expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("ends on Done with its line, the sale locked, when the approval's Safe proposal can't be confirmed", async () => {
+  it("keeps the line on the form when the approval's Safe proposal can't be confirmed", async () => {
     mocks.safeProposal = true;
     mocks.safeUnconfirmed = true;
-    const confirm = await approveSale();
+    await approveSale();
 
-    const line = "Check this proposal in your Safe before sending it again.";
-    await waitFor(() => expect(confirm).toHaveTextContent(line));
-    expect(confirm).not.toHaveTextContent("The approval was proposed to Safe.");
-    expect(within(confirm).queryByRole("button", { name: /Approv|Sell/ })).toBeNull();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
-    const cashOut = dialogNamed("Cash out");
-    const sell = within(cashOut).getByRole("button", { name: "Sell on market" });
-    expect(sell).toBeDisabled();
-    expect(sell).not.toHaveAttribute("aria-busy");
-    expect(cashOut).toHaveTextContent(line);
+    expect(dialogNamed("Cash out")).toHaveTextContent(
+      "Check this proposal in your Safe before sending it again.",
+    );
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 });
@@ -968,12 +966,12 @@ describe("an ERC-20 repayment after its approval", () => {
         />
       );
     }
+    // The approval lands: the loan's chain now holds enough allowance.
+    mocks.beforeReverify.mockImplementation(async () => {
+      mocks.allowanceOnLoanChainOnly = true;
+    });
     renderWithQueries(<Loans />);
     fireEvent.click(await screen.findByRole("button", { name: "Approve ETH" }));
-    const confirm = await confirmPanel();
-    // The approval lands: the loan's chain now holds enough allowance.
-    mocks.allowanceOnLoanChainOnly = true;
-    fireEvent.click(within(confirm).getByRole("button", { name: "Approve ETH" }));
     const repay = await screen.findByRole("button", { name: "Repay loan" });
     await waitFor(() => expect(repay).toBeEnabled());
     expect(mocks.write).toHaveBeenCalledOnce();

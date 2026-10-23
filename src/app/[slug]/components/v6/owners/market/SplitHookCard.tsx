@@ -3,13 +3,14 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { CardSkeleton } from "@/components/loading/CardSkeleton";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import { failedLine, reviewedCall, useReviewedAction } from "@/hooks/useReviewedAction";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
+import type { ReviewContextRow } from "@bananapus/nana-sdk-core/review";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAccount, usePublicClient } from "wagmi";
@@ -45,9 +46,10 @@ function HookActionButton({
   functionName: "deployPool" | "collectAndRouteLPFees";
   args: readonly [bigint, bigint] | readonly [bigint, `0x${string}`];
   title?: string;
-  rows: React.ReactNode;
+  rows: readonly ReviewContextRow[];
   onDone: () => void;
 }) {
+  const context = [{ label: "On", value: chainName(state.chainId) }, ...rows];
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: state.chainId });
   const { run } = useReviewedAction();
@@ -75,16 +77,16 @@ function HookActionButton({
         {label}
       </ButtonWithWallet>
       {gate.line ? <p className="mt-1 text-xs text-zinc-600">{gate.line}</p> : null}
-      <TxConfirmDialog
+      <TxProgress
         open={review}
         onClose={() => setReview(false)}
         title={confirmTitle}
         steps={[{ title: label, detail: title }]}
         activeIndex={busy ? 0 : -1}
-        action={label}
         busy={busy}
         error={error}
-        onConfirm={async () => {
+        rows={context}
+        start={async () => {
           try {
             gate.assertVerified([state]);
             setBusy(true);
@@ -104,6 +106,7 @@ function HookActionButton({
             }
             const result = await run({
               account: address,
+              context,
               calls: [
                 reviewedCall({
                   chainId: state.chainId,
@@ -114,7 +117,10 @@ function HookActionButton({
                 }),
               ],
             });
-            if (!result) return;
+            if (!result) {
+              setReview(false);
+              return;
+            }
             if (result.status === "failed") {
               setError(failedLine(result));
               return;
@@ -140,10 +146,7 @@ function HookActionButton({
             setBusy(false);
           }
         }}
-      >
-        <SummaryRow label="On">{chainName(state.chainId)}</SummaryRow>
-        {rows}
-      </TxConfirmDialog>
+      />
     </>
   );
 }
@@ -217,18 +220,14 @@ function SplitHookChainBlock({
               functionName="deployPool"
               args={[state.projectId, 0n] as const}
               title="Seed the Uniswap V4 pool from accumulated tokens (accepts any cash out return)"
-              rows={
-                <>
-                  <SummaryRow label="Seeds with">
-                    {fmtUnits(state.accumulated, 18)} {tokenSymbol}
-                    <span className="block text-xs text-zinc-500">
-                      Part is cashed out for {state.pairSymbol}, so both tokens can be offered for
-                      trading
-                    </span>
-                  </SummaryRow>
-                  <SummaryRow label="Minimum cash out return">None</SummaryRow>
-                </>
-              }
+              rows={[
+                {
+                  label: "Seeds with",
+                  value: `${fmtUnits(state.accumulated, 18)} ${tokenSymbol}`,
+                  note: `Part is cashed out for ${state.pairSymbol}, so both tokens can be offered for trading`,
+                },
+                { label: "Minimum cash out return", value: "None" },
+              ]}
               onDone={onDone}
             />
             {state.deployGated && (
@@ -247,14 +246,13 @@ function SplitHookChainBlock({
             functionName="collectAndRouteLPFees"
             args={[state.projectId, state.terminalToken] as const}
             title="Collect trading fees into the project balance (anyone can do this)"
-            rows={
-              <>
-                <SummaryRow label="Collects">
-                  {fmtUnits(state.claimableFees, state.pairDecimals)} {state.pairSymbol}
-                </SummaryRow>
-                <SummaryRow label="Routes to">The project&apos;s terminal balance</SummaryRow>
-              </>
-            }
+            rows={[
+              {
+                label: "Collects",
+                value: `${fmtUnits(state.claimableFees, state.pairDecimals)} ${state.pairSymbol}`,
+              },
+              { label: "Routes to", value: "The project's terminal balance" },
+            ]}
             onDone={onDone}
           />
         )}

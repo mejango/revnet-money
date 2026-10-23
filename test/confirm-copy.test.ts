@@ -6,7 +6,7 @@ import { copyMarks, isTextNode, parseSource, sourceFiles, type Mark } from "./su
 
 /*
  * Confirm copy follows the app's copy rules: no dot separators and no em
- * dashes. This reads every TxConfirmDialog element in src, with its props and
+ * dashes. This reads every TxProgress element in src, with its props and
  * children, and checks each piece of text it renders: string literals,
  * template text and JSX text.
  *
@@ -27,7 +27,7 @@ function isConfirm(node: ts.Node): node is ts.JsxElement | ts.JsxSelfClosingElem
     : ts.isJsxSelfClosingElement(node)
       ? node.tagName
       : null;
-  return tag !== null && ts.isIdentifier(tag) && tag.text === "TxConfirmDialog";
+  return tag !== null && ts.isIdentifier(tag) && tag.text === "TxProgress";
 }
 
 /** Every mark in the text a confirm element renders, with where it sits. */
@@ -61,7 +61,7 @@ function confirmTextCount(file: string): number {
 
 describe("confirm copy", () => {
   const files = sourceFiles(join(root, "src"), (name) => extname(name) === ".tsx").filter((file) =>
-    readFileSync(file, "utf8").includes("<TxConfirmDialog"),
+    readFileSync(file, "utf8").includes("<TxProgress"),
   );
 
   it("reads the confirms it checks", () => {

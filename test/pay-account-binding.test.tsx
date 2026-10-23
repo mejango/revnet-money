@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => ({
   end: (() => undefined) as (hash: `0x${string}`) => unknown,
   runner: null as null | {
     reset: () => void;
+    holdReview: () => () => void;
+    run: { mock: { calls: { context?: unknown }[][] } };
     set: (patch: { phase?: string; held?: unknown; error?: string | null }) => void;
   },
   verifiedPairs: [{ peerChainId: 1, projectId: 7n }] as {
@@ -287,7 +289,6 @@ describe("a payment to a sucker peer", () => {
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("You get at least");
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
   });
@@ -304,26 +305,25 @@ describe("a payment bound to the account it was prepared for", () => {
     fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
     const pay = screen.getByRole("button", { name: "Pay" });
     await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    const release = mocks.runner!.holdReview();
     fireEvent.click(pay);
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("You get at least");
 
-    // The wallet switches accounts while the prepared payment is on screen.
+    // The wallet switches accounts while the payment's review is open.
     mocks.address = B;
     view.rerender(
       <QueryClientProvider client={client}>
         <V6PayCard />
       </QueryClientProvider>,
     );
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    release();
 
-    await within(confirm).findByText("The connected account changed. Review again.");
-    expect(mocks.simulate).not.toHaveBeenCalled();
+    await within(confirm).findByText("The payment changed. Review it again.");
     expect(mocks.write).not.toHaveBeenCalled();
 
-    // Rebuilt for B: the next press pays from B, to B.
-    await waitFor(() => expect(within(confirm).getByText("You get at least")).toBeInTheDocument());
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    // Rebuilt for B: the next review pays from B, to B.
+    fireEvent.click(await within(confirm).findByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     const payment = mocks.write.mock.calls[0]![0] as {
       chainId: number;
@@ -377,7 +377,6 @@ describe("a payment bound to the account it was prepared for", () => {
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText(/Couldn.t verify what this payment returns/);
     expect(within(confirm).queryByText("You get at least")).toBeNull();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(mocks.simulate).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();
@@ -393,6 +392,7 @@ describe("a payment bound to the account it was prepared for", () => {
     fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
     const pay = screen.getByRole("button", { name: "Pay" });
     await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    const release = mocks.runner!.holdReview();
     fireEvent.click(pay);
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("You get at least");
@@ -400,14 +400,11 @@ describe("a payment bound to the account it was prepared for", () => {
     const moved = "0x6666666666666666666666666666666666666666";
     mocks.terminal = moved;
     await client.invalidateQueries({ queryKey: ["v6PayPreview"] });
+    release();
     await within(confirm).findByText("The payment changed. Review it again.");
-    await within(confirm).findByText("You get at least");
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    fireEvent.click(await within(confirm).findByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     expect(mocks.write.mock.calls[0]![0]).toMatchObject({ address: moved });
-    expect(mocks.simulate).not.toHaveBeenCalledWith(
-      expect.objectContaining({ address: "0x3333333333333333333333333333333333333333" }),
-    );
   });
 
   it("rebuilds a ready item checkout when the cart changes, and never sends the old items", async () => {
@@ -421,6 +418,7 @@ describe("a payment bound to the account it was prepared for", () => {
     );
     const pay = screen.getByRole("button", { name: "Pay" });
     await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    const release = mocks.runner!.holdReview();
     fireEvent.click(pay);
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("You get at least");
@@ -431,9 +429,10 @@ describe("a payment bound to the account it was prepared for", () => {
         <V6PayCard />
       </QueryClientProvider>,
     );
+    release();
     await within(confirm).findByText("The payment changed. Review it again.");
     await within(confirm).findByText("2× Hat");
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    fireEvent.click(await within(confirm).findByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     const payment = mocks.write.mock.calls[0]![0] as { args: readonly unknown[] };
     // pay(projectId, token, amount, beneficiary, minReturnedTokens, memo, metadata)
@@ -572,20 +571,21 @@ describe("a payment bound to the account it was prepared for", () => {
     // The card looked healthy; the quote read again at submit could not read the pool.
     mocks.quoteFailed = true;
     mocks.minReturned = 7n * 10n ** 20n;
-    fireEvent.click(pay);
-    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
-    await within(confirm).findByText(PAY_QUOTE_FAILED_MESSAGE);
-    expect(within(confirm).getByText("700 REV")).toBeInTheDocument();
-    // Said once, in the review, not again on the card behind it.
-    expect(screen.getAllByText(PAY_QUOTE_FAILED_MESSAGE, { exact: false })).toHaveLength(1);
-
     // A failed attempt's error stands alone; the quote line does not come back beside it.
     mocks.simulate.mockRejectedValueOnce(new Error("Simulation failed"));
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await waitFor(() => expect(mocks.runner!.run.mock.calls).toHaveLength(1));
+    // Said in the review, beside the minimum it signs.
+    expect(mocks.runner!.run.mock.calls[0]![0].context).toContainEqual({
+      label: "You get at least",
+      value: "700 REV",
+      note: PAY_QUOTE_FAILED_MESSAGE,
+    });
     await waitFor(() => expect(confirm.querySelector(".text-red-600")).not.toBeNull());
     expect(within(confirm).queryByText(PAY_QUOTE_FAILED_MESSAGE)).toBeNull();
-
     fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     const payment = mocks.write.mock.calls[0]![0] as { args: readonly unknown[] };
     expect(payment.args[4]).toBe(7n * 10n ** 20n);
@@ -609,7 +609,6 @@ describe("a payment bound to the account it was prepared for", () => {
 
     mocks.routeError = new Error("buyback hookOf read failed");
     await client.invalidateQueries({ queryKey: ["v6PayPreview"] });
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await within(confirm).findByText(/Couldn.t verify what this payment returns/);
     expect(mocks.write).not.toHaveBeenCalled();
   });
@@ -629,7 +628,6 @@ describe("a payment bound to the account it was prepared for", () => {
     fireEvent.click(pay);
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("You get at least");
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.simulate).toHaveBeenCalledTimes(1));
 
     const moved = "0x6666666666666666666666666666666666666666";
@@ -639,8 +637,7 @@ describe("a payment bound to the account it was prepared for", () => {
 
     await within(confirm).findByText("The payment changed. Review it again.");
     expect(mocks.write).not.toHaveBeenCalled();
-    await within(confirm).findByText("You get at least");
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    fireEvent.click(await within(confirm).findByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     expect(mocks.write.mock.calls[0]![0]).toMatchObject({ address: moved });
   });
@@ -662,7 +659,6 @@ describe("a payment bound to the account it was prepared for", () => {
     fireEvent.click(pay);
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("Approve TKN access");
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     // The terminal being paid is the spender, for exactly the payment amount.
     expect(mocks.write.mock.calls[0]![0]).toMatchObject({
@@ -682,8 +678,7 @@ describe("a payment bound to the account it was prepared for", () => {
     await within(confirm).findByText("The payment changed. Review it again.");
     expect(mocks.write).toHaveBeenCalledTimes(1);
     await within(confirm).findByText("2× Hat");
-    await within(confirm).findByText("You get at least");
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    fireEvent.click(await within(confirm).findByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(3));
     expect(mocks.write.mock.calls[1]![0]).toMatchObject({
       functionName: "approve",
@@ -713,7 +708,6 @@ describe("a payment bound to the account it was prepared for", () => {
     fireEvent.click(pay);
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("Approve TKN access");
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
 
     fireEvent.click(await within(confirm).findByRole("button", { name: "Pay" }));
@@ -736,7 +730,6 @@ describe("a payment bound to the account it was prepared for", () => {
     fireEvent.click(pay);
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("Approve TKN access");
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     expect(mocks.write.mock.calls[0]![0]).toMatchObject({ functionName: "approve" });
 
@@ -767,8 +760,6 @@ describe("a payment bound to the account it was prepared for", () => {
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("You get at least");
 
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
-
     await within(confirm).findByText("Check this proposal in your Safe before sending it again.");
     expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
     expect(within(confirm).getByRole("button", { name: "Pay" })).toBeEnabled();
@@ -790,8 +781,6 @@ describe("a payment bound to the account it was prepared for", () => {
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("You get at least");
 
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
-
     await within(confirm).findByText(line);
     expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
     expect(within(confirm).getByRole("button", { name: "Pay" })).toBeEnabled();
@@ -811,7 +800,6 @@ describe("a payment bound to the account it was prepared for", () => {
     fireEvent.click(pay);
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("You get at least");
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
 
     await within(confirm).findByText(/The payment is proposed in Safe/);
     // A new approvals line leaves the payment held.
@@ -835,7 +823,7 @@ describe("a payment bound to the account it was prepared for", () => {
     expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
   });
 
-  it("holds Pay when the wallet disconnects with the confirm open", async () => {
+  it("holds the payment when the wallet disconnects with its review open", async () => {
     const client = queryClient();
     const view = render(
       <QueryClientProvider client={client}>
@@ -845,21 +833,22 @@ describe("a payment bound to the account it was prepared for", () => {
     fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
     const pay = screen.getByRole("button", { name: "Pay" });
     await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    const release = mocks.runner!.holdReview();
     fireEvent.click(pay);
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("You get at least");
 
-    // The confirm cannot connect a wallet, so without one its action stays shut.
+    // The progress cannot connect a wallet, so without one its recovery stays shut.
     mocks.address = undefined;
     view.rerender(
       <QueryClientProvider client={client}>
         <V6PayCard />
       </QueryClientProvider>,
     );
-    const confirmPay = within(confirm).getByRole("button", { name: "Pay" });
-    expect(confirmPay).toBeDisabled();
-    fireEvent.click(confirmPay);
-    expect(mocks.simulate).not.toHaveBeenCalled();
+    release();
+    const again = await within(confirm).findByRole("button", { name: /again/ });
+    expect(again).toBeDisabled();
+    fireEvent.click(again);
     expect(mocks.write).not.toHaveBeenCalled();
   });
 });
@@ -879,7 +868,6 @@ describe("the payment's intent", () => {
     fireEvent.click(pay);
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("You get at least");
-    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
 
     // The checkout it was, with a lost reply, had the same intent.

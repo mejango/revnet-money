@@ -37,12 +37,6 @@ export default defineConfig({
           functions: 100,
           lines: 69,
         },
-        "src/hooks/useAllowance.ts": {
-          statements: 94,
-          branches: 85,
-          functions: 100,
-          lines: 100,
-        },
         "src/hooks/useReviewedRelayr.ts": {
           statements: 72,
           branches: 62,

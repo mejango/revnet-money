@@ -11,11 +11,12 @@ import {
   FastForward,
   SquareArrowOutUpRightIcon,
 } from "@/components/ui/icons";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import { useGetRelayrTxBundle, useSendRelayrTx } from "@/hooks/useReviewedRelayr";
 import { submittedViaSafe } from "@/lib/held-rows";
 import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
+import { reviewClosed } from "@/lib/review-refusal";
 import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
@@ -78,6 +79,55 @@ export function PayAndDeploy({
   const paymentLocked = paymentSent || isComplete || hasFailed;
   const busy = payIsProcessing || isPolling;
 
+  const payAndLaunch = async () => {
+    if (payIsProcessing || paymentLocked) return;
+    setPayIsProcessing(true);
+    setError(null);
+    try {
+      if (!selectedPayment || !sendRelayrTx) throw new Error("No payment selected");
+      const { bundle, payment } = await ensureFreshQuote({
+        bundle: relayrResponse,
+        payment: selectedPayment,
+        quotedStageStart,
+        rebuildStaleQuote,
+        onRebuild: () =>
+          toast({
+            title: "Refreshing quote",
+            description:
+              "The quoted start time has passed. Sign the new launch requests to avoid a 7-day lock on cash-outs and loans.",
+          }),
+      });
+      if (payment !== selectedPayment) selectPayment(payment);
+      const hash = await sendRelayrTx(payment);
+      setPaymentSubmitted(true);
+      if (submittedViaSafe(hash)) {
+        setSafeProposalSubmitted(true);
+        setReview(false);
+        toast({
+          title: "Safe payment proposal submitted",
+          description:
+            "The launch is not paid yet. Approve and carry out this payment in Safe, then check transaction activity. Do not propose another payment. If it runs after the quoted start time, cash-outs and loans will be locked for 7 days from launch.",
+        });
+        return;
+      }
+      setReview(false);
+      startPolling(bundle.bundle_uuid);
+    } catch (e: any) {
+      if (reviewClosed(e)) {
+        setReview(false);
+        return;
+      }
+      setError(formatWalletError(e));
+      toast({
+        title: "Error",
+        description: formatWalletError(e),
+        variant: "destructive",
+      });
+    } finally {
+      setPayIsProcessing(false);
+    }
+  };
+
   return (
     <div>
       <RelayrPaymentSelect
@@ -115,7 +165,7 @@ export function PayAndDeploy({
         </ButtonWithWallet>
       </div>
       {review && selectedPayment ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReview(false)}
           title="Confirm payment"
@@ -127,64 +177,19 @@ export function PayAndDeploy({
             },
           ]}
           activeIndex={payIsProcessing ? 0 : -1}
-          action="Pay and launch"
           busy={payIsProcessing}
-          actionDisabled={paymentLocked}
           error={error}
-          onConfirm={async () => {
-            if (payIsProcessing || paymentLocked) return;
-            setPayIsProcessing(true);
-            setError(null);
-            try {
-              if (!selectedPayment || !sendRelayrTx) throw new Error("No payment selected");
-              const { bundle, payment } = await ensureFreshQuote({
-                bundle: relayrResponse,
-                payment: selectedPayment,
-                quotedStageStart,
-                rebuildStaleQuote,
-                onRebuild: () =>
-                  toast({
-                    title: "Refreshing quote",
-                    description:
-                      "The quoted start time has passed. Sign the new launch requests to avoid a 7-day lock on cash-outs and loans.",
-                  }),
-              });
-              if (payment !== selectedPayment) selectPayment(payment);
-              const hash = await sendRelayrTx(payment);
-              setPaymentSubmitted(true);
-              if (submittedViaSafe(hash)) {
-                setSafeProposalSubmitted(true);
-                setReview(false);
-                toast({
-                  title: "Safe payment proposal submitted",
-                  description:
-                    "The launch is not paid yet. Approve and carry out this payment in Safe, then check transaction activity. Do not propose another payment. If it runs after the quoted start time, cash-outs and loans will be locked for 7 days from launch.",
-                });
-                return;
-              }
-              setReview(false);
-              startPolling(bundle.bundle_uuid);
-            } catch (e: any) {
-              setError(formatWalletError(e));
-              toast({
-                title: "Error",
-                description: formatWalletError(e),
-                variant: "destructive",
-              });
-            } finally {
-              setPayIsProcessing(false);
-            }
-          }}
-        >
-          <SummaryRow label="Pays">{formatHexEther(selectedPayment.amount)} ETH</SummaryRow>
-          <SummaryRow label="On">{chainDisplayName(selectedPayment.chain)}</SummaryRow>
-          <SummaryRow label="Deploys on">
-            {values.chainIds.map((chainId) => chainDisplayName(chainId)).join(", ")}
-          </SummaryRow>
-          <SummaryRow label="Revnet">
-            {values.name || "Unnamed"} (${revnetTokenSymbol})
-          </SummaryRow>
-        </TxConfirmDialog>
+          start={paymentLocked ? undefined : () => void payAndLaunch()}
+          rows={[
+            { label: "Pays", value: `${formatHexEther(selectedPayment.amount)} ETH`, strong: true },
+            { label: "On", value: chainDisplayName(selectedPayment.chain) },
+            {
+              label: "Deploys on",
+              value: values.chainIds.map((chainId) => chainDisplayName(chainId)).join(", "),
+            },
+            { label: "Revnet", value: `${values.name || "Unnamed"} (${revnetTokenSymbol})` },
+          ]}
+        />
       ) : null}
       {safeProposalSubmitted ? (
         <p className="mt-4 text-sm text-melon-700">

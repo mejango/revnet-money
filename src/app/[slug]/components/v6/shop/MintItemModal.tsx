@@ -12,10 +12,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import {
   requireProposedOrDone,
+  reviewClosed,
   reviewedCall,
   ReviewRefusal,
   useReviewedAction,
@@ -68,6 +69,17 @@ export function MintItemModal({
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
   const maxQuantity = Math.max(0, Math.min(50, remaining));
   const busy = phase === "checking" || phase === "sending" || phase === "confirming";
+  const chainName = JB_CHAINS[chainId]?.name ?? "this chain";
+  const context = [
+    {
+      label: "Mints",
+      value: `${quantity} × ${itemName}`,
+      note: `Item #${tierId}, without payment`,
+      strong: true,
+    },
+    { label: "On", value: chainName },
+    { label: "To", value: beneficiary.trim(), mono: true },
+  ];
 
   const validate = () => {
     const recipient = beneficiary.trim();
@@ -136,6 +148,7 @@ export function MintItemModal({
           description:
             "This consumes shop inventory, sends the items to the beneficiary, collects no payment, and cannot be undone.",
           confirmLabel: "Confirm & mint",
+          context,
           // The live hook, permission, flag and inventory, right before the wallet.
           reverify: async () => {
             await assertCanMint721Tier(publicClient as PublicClient, {
@@ -176,7 +189,8 @@ export function MintItemModal({
       setPhase("done");
     } catch (cause) {
       setPhase("form");
-      setError(cause instanceof Error ? cause.message : "Could not mint this item.");
+      if (reviewClosed(cause)) setReviewing(false);
+      else setError(cause instanceof Error ? cause.message : "Could not mint this item.");
     }
   };
 
@@ -284,7 +298,7 @@ export function MintItemModal({
         )}
       </DialogContent>
       {reviewing ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReviewing(false)}
           title="Confirm mint"
@@ -296,21 +310,12 @@ export function MintItemModal({
             },
           ]}
           activeIndex={busy ? 0 : -1}
-          action="Mint"
-          onConfirm={() => void submit()}
+          start={() => void submit()}
           busy={busy}
           status={status}
           error={error}
-        >
-          <SummaryRow label="Mints">
-            {quantity} × {itemName}
-            <span className="block text-xs text-zinc-500">Item #{tierId}, without payment</span>
-          </SummaryRow>
-          <SummaryRow label="On">{JB_CHAINS[chainId]?.name ?? "this chain"}</SummaryRow>
-          <SummaryRow label="To">
-            <span className="break-all font-mono text-xs">{beneficiary.trim()}</span>
-          </SummaryRow>
-        </TxConfirmDialog>
+          rows={context}
+        />
       ) : null}
     </Dialog>
   );

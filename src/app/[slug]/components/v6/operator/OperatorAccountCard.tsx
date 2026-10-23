@@ -5,11 +5,11 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
-import { isSafeProposalPendingError } from "@/lib/reviewed-call";
+import { isSafeProposalPendingError, reviewClosed } from "@/lib/reviewed-call";
 import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
 import { formatWalletError } from "@/lib/utils";
 import { JB_CHAINS, RevnetCoreContracts, revOwnerAbi } from "@bananapus/nana-sdk-core";
@@ -255,6 +255,16 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
     !!address && !!group.operator && address.toLowerCase() === group.operator.toLowerCase();
   const relinquishing = destination.trim().toLowerCase() === zeroAddress;
   const chains = group.rows.map((row) => chainName(row.chainId)).join(", ");
+  const context = [
+    {
+      label: "Operator becomes",
+      value: relinquishing ? "No one (relinquished)" : destination.trim(),
+      mono: !relinquishing,
+      strong: true,
+    },
+    { label: "Replaces", value: group.operator ?? "Unknown", mono: !!group.operator },
+    { label: "On", value: chains },
+  ];
 
   const beginReview = () => {
     if (busy || !ack) return;
@@ -317,6 +327,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
         writes: buildWrites(),
         account: address,
         label: "Transfer revnet operator",
+        context,
         onProgress: setStatus,
       });
       if (result.safeQueued || result.safeConfirmed) {
@@ -338,7 +349,8 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
       onDone();
     } catch (e) {
       const message = formatWalletError(e) || "Could not transfer the revnet operator.";
-      if (isSafeProposalPendingError(e)) {
+      if (reviewClosed(e)) setReview(false);
+      else if (isSafeProposalPendingError(e)) {
         setStatus(message);
         setProposed(true);
         toast({ title: "Safe proposal submitted", description: message });
@@ -439,7 +451,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
       {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
       {error && !review ? <ErrorNote message={error} /> : null}
       {review ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => {
             setReview(false);
@@ -456,25 +468,13 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
             },
           ]}
           activeIndex={busy ? 0 : -1}
-          action="Transfer revnet operator"
-          onConfirm={() => void submit()}
+          start={() => void submit()}
           busy={busy}
           status={status}
           complete={proposed}
           error={error}
-        >
-          <SummaryRow label="Operator becomes">
-            {relinquishing ? (
-              "No one (relinquished)"
-            ) : (
-              <span className="break-all font-mono text-xs">{destination.trim()}</span>
-            )}
-          </SummaryRow>
-          <SummaryRow label="Replaces">
-            <span className="break-all font-mono text-xs">{group.operator}</span>
-          </SummaryRow>
-          <SummaryRow label="On">{chains}</SummaryRow>
-        </TxConfirmDialog>
+          rows={context}
+        />
       ) : null}
     </div>
   );

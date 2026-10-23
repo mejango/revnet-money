@@ -40,6 +40,7 @@ vi.mock("wagmi", () => ({
         accountingContextForTokenOf: ETH_CONTEXT,
         revnetIdOfLoanWith: LOAN_REVNET_ID,
         loanOf: { amount: 1n, collateral: 1n, sourceToken: ETH_CONTEXT.token },
+        borrowableAmountFrom: [10n ** 18n, 0n],
       })[functionName],
   }),
   useWalletClient: () => ({ data: {} }),
@@ -125,6 +126,7 @@ describe("a closed permission review", () => {
     const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }), { wrapper });
 
     act(() => result.current.handleChainSelection(1));
+    act(() => result.current.setCollateralAmount("1"));
     await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
     await act(() => result.current.handleBorrow());
 
@@ -143,6 +145,7 @@ describe("a permission step that went to the Safe as a proposal", () => {
     const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }), { wrapper });
 
     act(() => result.current.handleChainSelection(1));
+    act(() => result.current.setCollateralAmount("1"));
     await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
     await act(() => result.current.handleBorrow());
 

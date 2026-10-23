@@ -84,30 +84,40 @@ vi.mock("@/lib/waitForReceipt", () => ({ waitForReceiptWithRetry: mocks.receipt 
 vi.mock("@/components/EthereumAddress", () => ({
   EthereumAddress: ({ address }: { address: string }) => <span>{address}</span>,
 }));
-vi.mock("@/components/ui/TxConfirmDialog", () => ({
+// The real progress starts its review on open; here a test starts it, so it can change the
+// listed transaction in between and reach the guards behind the hidden buttons.
+vi.mock("@/components/ui/TxProgress", () => ({
   SummaryRow: ({ label, children }: { label: string; children: ReactNode }) => (
     <p>
       {label}: {children}
     </p>
   ),
-  TxConfirmDialog: ({
+  TxProgress: ({
     open,
-    onConfirm,
-    action,
+    start,
+    rows,
     children,
     error,
+    footerContent,
   }: {
     open: boolean;
-    onConfirm: () => void;
-    action: string;
-    children: ReactNode;
+    start?: () => void;
+    rows?: { label: string; value: ReactNode }[];
+    children?: ReactNode;
     error?: string | null;
+    footerContent?: ReactNode;
   }) =>
     open ? (
       <div role="dialog">
+        {rows?.map((row) => (
+          <p key={row.label}>
+            {row.label}: {row.value}
+          </p>
+        ))}
         {children}
         {error ? <p role="alert">{error}</p> : null}
-        <button onClick={onConfirm}>{action}</button>
+        {footerContent}
+        {start ? <button onClick={start}>Start</button> : null}
       </div>
     ) : null,
 }));
@@ -242,7 +252,7 @@ describe("Safe queue card", () => {
       renderCard(8453);
       fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
       fireEvent.click(
-        within(await screen.findByRole("dialog")).getByRole("button", { name: "Execute" }),
+        within(await screen.findByRole("dialog")).getByRole("button", { name: "Start" }),
       );
       await waitFor(() => expect(mocks.execute).toHaveBeenCalled());
       return row;
@@ -256,6 +266,9 @@ describe("Safe queue card", () => {
           chainId: 8453,
           safe: SAFE.address,
           tx: expect.objectContaining({ safeTxHash: row.safeTxHash, nonce: 5 }),
+          context: expect.arrayContaining([
+            { label: "Safe transaction", value: "#5 on Base", strong: true },
+          ]),
         },
         expect.objectContaining({ adapter: expect.objectContaining({ kind: "wallet" }) }),
       );
@@ -323,7 +336,7 @@ describe("Safe queue card", () => {
       fireEvent.click(await screen.findByRole("button", { name: "Sign" }));
       const dialog = await screen.findByRole("dialog");
       pays(listedTransaction(queryClient, 8453));
-      fireEvent.click(within(dialog).getByRole("button", { name: "Sign" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Start" }));
 
       expect(
         await within(dialog).findByText(
@@ -339,7 +352,7 @@ describe("Safe queue card", () => {
       fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
       const dialog = await screen.findByRole("dialog");
       pays(listedTransaction(queryClient, 8453));
-      fireEvent.click(within(dialog).getByRole("button", { name: "Execute" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: "Start" }));
 
       expect(
         await within(dialog).findByText(

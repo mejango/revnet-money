@@ -290,7 +290,6 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
         expect(confirm).toHaveTextContent("Update the recipients on Base Sepolia");
         expect(confirm).not.toHaveTextContent("Quoted in ETH after you sign");
       }
-      expect(state.submitSplits).not.toHaveBeenCalled();
     },
   );
 
@@ -305,9 +304,6 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
     expect(confirm).toHaveTextContent("1 recipient");
     expect(confirm).toHaveTextContent(`100% to ${BENEFICIARY}`);
     expect(confirm).toHaveTextContent("Your wallet will ask for one action.");
-    expect(state.submitSplits).not.toHaveBeenCalled();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Save changes" }));
 
     await waitFor(() => expect(state.submitSplits).toHaveBeenCalledTimes(1));
     expect(state.submitSplits.mock.calls[0][0]).toHaveLength(1);
@@ -321,8 +317,6 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     const dialog = (await screen.findAllByRole("dialog")).at(-1)!;
     await waitFor(() => expect(dialog).toHaveTextContent("Confirm split recipients"));
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
     // The proposal waits on the Safe's signers, so the confirm is not held busy on it.
     const done = await within(dialog).findByRole("button", { name: "Done" });
     expect(dialog).toHaveTextContent("Proposed to Safe.");
@@ -345,8 +339,6 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     const dialog = (await screen.findAllByRole("dialog")).at(-1)!;
     await waitFor(() => expect(dialog).toHaveTextContent("Confirm split recipients"));
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
     const done = await within(dialog).findByRole("button", { name: "Done" });
     const line = "Check this proposal in your Safe before sending it again.";
     expect(dialog).toHaveTextContent(line);
@@ -367,8 +359,6 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     const dialog = (await screen.findAllByRole("dialog")).at(-1)!;
     await waitFor(() => expect(dialog).toHaveTextContent("Confirm split recipients"));
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
     const done = await within(dialog).findByRole("button", { name: "Done" });
     expect(dialog).toHaveTextContent("Couldn't confirm the change yet.");
     fireEvent.click(done);
@@ -379,18 +369,6 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
   });
 
-  it("goes back to the recipients with Cancel, and saves nothing", async () => {
-    await openDialog(0);
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    const confirm = await findConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(confirmIsOpen()).toBe(false));
-    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
-    expect(state.submitSplits).not.toHaveBeenCalled();
-  });
-
   it("refuses every way out while the change is sent, then closes once it is", async () => {
     let finish!: (result: unknown) => void;
     state.submitSplits = vi.fn(() => new Promise((resolve) => (finish = resolve)));
@@ -399,10 +377,8 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Base Sepolia" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     const confirm = await findConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(state.submitSplits).toHaveBeenCalledTimes(1));
 
-    expect(within(confirm).getByRole("button", { name: "Save changes" })).toBeDisabled();
     expectEveryWayOutRefused(confirm);
 
     finish({ success: true });
@@ -432,7 +408,6 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     const confirm = await findConfirm();
 
-    fireEvent.click(within(confirm).getByRole("button", { name: "Save changes" }));
     const done = await within(confirm).findByRole("button", { name: "Done" });
     expect(confirm).toHaveTextContent(message);
     expect(within(confirm).queryByRole("button", { name: "Save changes" })).toBeNull();

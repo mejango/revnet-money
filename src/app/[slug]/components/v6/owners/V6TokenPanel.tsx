@@ -17,13 +17,14 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import {
   isSafeProposalPendingError,
   requireDone,
+  reviewClosed,
   reviewedCall,
   useReviewedAction,
 } from "@/hooks/useReviewedAction";
@@ -394,6 +395,7 @@ function TokenEditDialog({
         // One review for every chain, sent in order; a later chain resumes without resending.
         const result = await run({
           account: address,
+          context: tokenContext,
           beforeWallet: (_call, index) => setDirectWriteIndex(index),
           ...(states.length > 1
             ? {
@@ -477,6 +479,10 @@ function TokenEditDialog({
       setSelectedPayment(preselectedRelayrPayment(relayrQuote.payment_info, connectedChainId));
       return true;
     } catch (cause) {
+      if (reviewClosed(cause)) {
+        setConfirming(null);
+        return false;
+      }
       if (isSafeProposalPendingError(cause)) {
         setProposed(formatWalletError(cause));
         return false;
@@ -537,7 +543,23 @@ function TokenEditDialog({
   const permissionName = deployed ? "SET_TOKEN_METADATA" : "DEPLOY_ERC20";
   const chainNames = states.map((state) => chainDisplayName(state.chainId)).join(", ");
   const formAction = deployed ? "Save token" : "Deploy token";
-  const actionLabel = relayed ? "Pay and submit" : formAction;
+  const tokenContext = [
+    { label: "Name", value: name.trim(), strong: true },
+    { label: "Symbol", value: symbol.trim() },
+    { label: "On", value: chainNames },
+    {
+      label: "Address",
+      value: deployed ? "Unchanged" : "Same deterministic address on every chain",
+    },
+    ...(confirming === "pay" && selectedPayment
+      ? [
+          {
+            label: "Relay fee",
+            value: `${formatHexEther(selectedPayment.amount)} ETH on ${JB_CHAINS[selectedPayment.chain as JBChainId]?.name ?? selectedPayment.chain}`,
+          },
+        ]
+      : []),
+  ];
   const confirmSteps = relayed
     ? [
         {
@@ -577,7 +599,7 @@ function TokenEditDialog({
         </button>
       </DialogTrigger>
       {confirming ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => {
             setConfirming(null);
@@ -587,10 +609,8 @@ function TokenEditDialog({
           preparing={relayed && confirming === "submit"}
           steps={confirmSteps}
           activeIndex={confirming === "pay" ? 1 : relayed && busy ? 0 : directWriteIndex}
-          action={actionLabel}
-          onConfirm={() => void confirm()}
+          start={confirming === "submit" && !relayed ? () => void confirm() : undefined}
           busy={busy}
-          actionDisabled={confirming === "pay" && !selectedPayment}
           complete={proposed !== null}
           status={
             proposed ??
@@ -599,34 +619,31 @@ function TokenEditDialog({
               : null)
           }
           error={error}
-        >
-          <SummaryRow label="Name">{name.trim()}</SummaryRow>
-          <SummaryRow label="Symbol">{symbol.trim()}</SummaryRow>
-          <SummaryRow label="On">{chainNames}</SummaryRow>
-          {deployed ? (
-            <SummaryRow label="Address">Unchanged</SummaryRow>
-          ) : (
-            <SummaryRow label="Address">Same deterministic address on every chain</SummaryRow>
-          )}
-          {confirming === "pay" && selectedPayment ? (
-            <SummaryRow label="Relay fee">
-              {formatHexEther(selectedPayment.amount)} ETH on{" "}
-              {JB_CHAINS[selectedPayment.chain as JBChainId]?.name ?? selectedPayment.chain}
-            </SummaryRow>
-          ) : null}
-          {quote ? (
-            <RelayrPaymentSelect
-              options={relayrPaymentOptions(quote.payment_info)}
-              value={selectedPayment?.chain ?? null}
-              onValueChange={(chainId) =>
-                setSelectedPayment(
-                  quote.payment_info.find((payment) => payment.chain === chainId) ?? null,
-                )
-              }
-              disabled={busy}
-            />
-          ) : null}
-        </TxConfirmDialog>
+          rows={tokenContext}
+          footerContent={
+            quote ? (
+              <>
+                <RelayrPaymentSelect
+                  options={relayrPaymentOptions(quote.payment_info)}
+                  value={selectedPayment?.chain ?? null}
+                  onValueChange={(chainId) =>
+                    setSelectedPayment(
+                      quote.payment_info.find((payment) => payment.chain === chainId) ?? null,
+                    )
+                  }
+                  disabled={busy}
+                />
+                <Button
+                  className="mt-3 w-full"
+                  disabled={busy || confirming !== "pay" || !selectedPayment}
+                  onClick={() => void confirm()}
+                >
+                  Pay and submit
+                </Button>
+              </>
+            ) : undefined
+          }
+        />
       ) : null}
       <DialogContent className="max-w-xl">
         <DialogHeader>

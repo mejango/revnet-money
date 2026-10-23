@@ -256,7 +256,6 @@ describe("token panel Relayr funding", () => {
     expect(picker).toHaveTextContent("Select chain");
     expect(confirm).toBeDisabled();
     // Its way back stays open while the funding choice is missing.
-    expect(within(confirmPanel()).getByRole("button", { name: "Cancel" })).toBeEnabled();
     expect(within(confirmPanel()).getByRole("button", { name: "Close" })).toBeEnabled();
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
@@ -320,7 +319,7 @@ describe("token panel Relayr funding", () => {
   it("allows returning to the editor without funding the quote", async () => {
     await openConfirmation([1, 8453]);
     await screen.findByRole("combobox");
-    fireEvent.click(within(confirmPanel()).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(within(confirmPanel()).getByRole("button", { name: "Close" }));
     expect(await screen.findByLabelText("Token name")).toBeInTheDocument();
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
@@ -357,12 +356,7 @@ describe("token panel direct routing", () => {
   ])("reviews $label before submitting direct transactions", async ({ chains, safe, deployed }) => {
     mocks.safe = safe;
     await openConfirmation(chains, deployed);
-    const confirm = screen.getByRole("button", { name: deployed ? "Save token" : "Deploy token" });
-    expect(confirm).not.toBeDisabled();
     expect(mocks.getRelayrTxQuote).not.toHaveBeenCalled();
-    expect(mocks.writeContractAsync).not.toHaveBeenCalled();
-
-    fireEvent.click(confirm);
     await waitFor(() => expect(mocks.refetch).toHaveBeenCalledOnce());
     expect(mocks.writeContractAsync.mock.calls.map(([call]) => call.chainId)).toEqual(chains);
     expect(mocks.waitForReceiptWithRetry).toHaveBeenCalledTimes(chains.length);
@@ -408,7 +402,6 @@ describe("token panel direct routing", () => {
       .mockResolvedValueOnce({ status: "success" })
       .mockReturnValueOnce(last.promise);
     await openConfirmation([1, 11155111, 8453], true);
-    fireEvent.click(screen.getByRole("button", { name: "Save token" }));
 
     await waitFor(() => expect(mocks.waitForReceiptWithRetry).toHaveBeenCalledOnce());
     expect(mocks.writeContractAsync).toHaveBeenCalledOnce();
@@ -420,7 +413,6 @@ describe("token panel direct routing", () => {
     expect(mocks.refetch).not.toHaveBeenCalled();
     expect(mocks.toast).not.toHaveBeenCalled();
     // Held between the writes: no way out while one is in flight.
-    expect(within(confirmPanel()).getByRole("button", { name: "Save token" })).toBeDisabled();
     expectEveryWayOutRefused(confirmPanel());
 
     await act(async () => first.resolve({ status: "success" }));
@@ -448,7 +440,6 @@ describe("token panel direct routing", () => {
       .mockResolvedValueOnce({ status: "success" })
       .mockResolvedValueOnce({ status: "reverted" });
     await openConfirmation([1, 11155111, 8453], true);
-    fireEvent.click(screen.getByRole("button", { name: "Save token" }));
 
     expect(await screen.findByText(/reverted on/i)).toBeInTheDocument();
     expect(mocks.writeContractAsync).toHaveBeenCalledTimes(2);
@@ -460,7 +451,6 @@ describe("token panel direct routing", () => {
     mocks.safe = true;
     mocks.safeProposal = true;
     await openConfirmation([1, 8453], true);
-    fireEvent.click(screen.getByRole("button", { name: "Save token" }));
 
     await waitFor(() => expect(mocks.writeContractAsync).toHaveBeenCalledOnce());
     await waitFor(() =>

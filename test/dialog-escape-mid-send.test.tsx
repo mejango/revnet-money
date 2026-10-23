@@ -1,12 +1,12 @@
 import { Dialog, DialogContent, DialogTitle, useHoldEnclosingModal } from "@/components/ui/dialog";
-import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
 import { openModalDialogs, requestCloseWithoutActivation } from "./native-dialog-shim";
 
 // The parity audit's proof for item 1, against the real dialog.tsx,
-// TxConfirmDialog.tsx and this repo's native dialog shim. A confirm hosted in a
+// TxProgress.tsx and this repo's native dialog shim. A confirm hosted in a
 // dialog whose owner does not look at busy (cash out, borrow, refinance, repay,
 // bridge, every liquidity flow) was closed by Escape or a backdrop press
 // mid-send, so a reopened form could send again. A dialog whose owner refuses
@@ -24,8 +24,6 @@ function confirmProps(busy: boolean) {
     title: "Confirm",
     steps: [{ title: "Approve" }, { title: "Send" }],
     activeIndex: 1,
-    action: "Send",
-    onConfirm: () => undefined,
     busy,
   };
 }
@@ -44,7 +42,7 @@ function HostedInUnguardedDialog({ busy, seen }: { busy: boolean; seen: boolean[
       <DialogContent>
         <DialogTitle>Cash out</DialogTitle>
         <p>the form</p>
-        <TxConfirmDialog {...confirmProps(busy)} />
+        <TxProgress {...confirmProps(busy)} />
       </DialogContent>
     </Dialog>
   ) : null;
@@ -64,9 +62,8 @@ describe("a confirm hosted in a dialog whose owner does not look at busy", () =>
     render(<HostedInUnguardedDialog busy seen={seen} />);
     const dialog = hostDialog();
     expect(confirm()).not.toBeNull();
-    // The confirm's own ways back, its × and Cancel, are closed too.
+    // The progress's own way back, its ×, is closed too.
     expect(within(confirm()!).getByRole("button", { name: "Close" })).toBeDisabled();
-    expect(within(confirm()!).getByRole("button", { name: "Cancel" })).toBeDisabled();
     const close = hostClose();
     expect(close.hidden).toBe(true);
     expect(close).toBeDisabled();
@@ -148,11 +145,11 @@ describe("a dialog whose owner refuses to close while busy (Pay's confirm)", () 
   });
 });
 
-describe("a standalone TxConfirmDialog (Create, Payouts, the operator cards)", () => {
+describe("a standalone TxProgress (Create, Payouts, the operator cards)", () => {
   function Standalone({ busy, seen }: { busy: boolean; seen: boolean[] }) {
     const [open, setOpen] = useState(true);
     return (
-      <TxConfirmDialog
+      <TxProgress
         {...confirmProps(busy)}
         open={open}
         onClose={() => {

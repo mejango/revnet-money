@@ -11,11 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
-import { isSafeProposalPendingError } from "@/lib/reviewed-call";
+import { isSafeProposalPendingError, reviewClosed } from "@/lib/reviewed-call";
 import {
   clearExtensionSalt,
   discardUnreadableSalts,
@@ -81,6 +81,15 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
 
   const candidates = extensionCandidateChains(rows);
   const existingChains = rows.map((row) => chainName(row.chainId)).join(", ");
+  const context = [
+    {
+      label: "Extends to",
+      value: `Project #${targetProjectId.trim()} on ${chainName(Number(targetChainId))}`,
+      strong: true,
+    },
+    { label: "Pairs with", value: existingChains },
+    { label: "Transactions", value: String(rows.length + 1) },
+  ];
 
   const beginReview = () => {
     if (busy || !ack) return;
@@ -188,6 +197,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
         writes,
         account: address,
         label: "Deploy suckers",
+        context,
         onProgress: setStatus,
       });
       if (result.safeQueued || result.safeConfirmed) {
@@ -209,7 +219,8 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
       setOpen(false);
     } catch (e) {
       const message = formatWalletError(e) || "Could not extend the revnet.";
-      if (isSafeProposalPendingError(e)) {
+      if (reviewClosed(e)) setReview(false);
+      else if (isSafeProposalPendingError(e)) {
         setStatus(message);
         setProposed(true);
         toast({ title: "Safe proposal submitted", description: message });
@@ -323,7 +334,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
             {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
             {error && !review ? <ErrorNote message={error} /> : null}
             {review ? (
-              <TxConfirmDialog
+              <TxProgress
                 open
                 onClose={() => {
                   setReview(false);
@@ -337,18 +348,13 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
                   },
                 ]}
                 activeIndex={busy ? 0 : -1}
-                action="Deploy suckers"
-                onConfirm={() => void submit()}
+                start={() => void submit()}
                 busy={busy}
                 status={status}
                 complete={proposed}
                 error={error}
+                rows={context}
               >
-                <SummaryRow label="Extends to">
-                  Project #{targetProjectId.trim()} on {chainName(Number(targetChainId))}
-                </SummaryRow>
-                <SummaryRow label="Pairs with">{existingChains}</SummaryRow>
-                <SummaryRow label="Transactions">{rows.length + 1}</SummaryRow>
                 {error === SAVED_ATTEMPT_UNREADABLE_LINE ? (
                   <button
                     type="button"
@@ -356,12 +362,13 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
                     onClick={() => {
                       discardUnreadableSalts();
                       setError(null);
+                      void submit();
                     }}
                   >
                     {SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL}
                   </button>
                 ) : null}
-              </TxConfirmDialog>
+              </TxProgress>
             ) : null}
           </div>
         )}
