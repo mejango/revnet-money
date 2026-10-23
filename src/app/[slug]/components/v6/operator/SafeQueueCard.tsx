@@ -13,6 +13,7 @@ import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import {
   loadEngine,
   reviewClosed,
+  reviewedWalletAdapter,
   ReviewRefusal,
   useReviewedAction,
   useSafeTransactionSignature,
@@ -944,7 +945,8 @@ export function SafeQueueCard({
       // Safe's own success event for this hash.
       const { executeReviewedSafeTransaction } = await loadEngine();
       const { connector, address: sender } = getAccount(config);
-      const wallet = deps.adapter;
+      // Without an account, the check at the wallet below refuses the send.
+      const wallet = sender ? reviewedWalletAdapter(config, sender, connector) : deps.adapter;
       let journaled: string | undefined;
       const result = await executeReviewedSafeTransaction(
         { chainId: row.chainId, safe: row.safe, tx, context: queuedContext(row, tx) },

@@ -107,10 +107,15 @@ const mocks = vi.hoisted(() => ({
   receipt: vi.fn(),
   block: vi.fn(),
   finalGuard: vi.fn(),
+  connector: { id: "injected" } as { id: string },
 }));
 vi.mock("wagmi", () => ({ useConfig: () => ({}) }));
 vi.mock("wagmi/actions", () => ({
-  getAccount: () => ({ address: mocks.account, chainId: mocks.chainId }),
+  getAccount: () => ({
+    address: mocks.account,
+    chainId: mocks.chainId,
+    connector: mocks.connector,
+  }),
   getPublicClient: () => ({
     estimateContractGas: mocks.estimate,
     simulateContract: mocks.simulate,
@@ -794,6 +799,27 @@ describe("fresh review of hashless routing selections", () => {
       expect(findPendingBatch(ACCOUNT, savedScope)).toBeUndefined();
     },
   );
+
+  it("pays no round when another connector takes the same address during the review", async () => {
+    const original = saveUnknownSelection(scope);
+    const connector = mocks.connector;
+    mocks.review.mockImplementation(async () => {
+      mocks.connector = { id: "walletconnect" };
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    try {
+      await act(async () => {
+        await expect(result.current.runBatch(inputFor(original))).rejects.toThrow(
+          /Wallet connection changed/,
+        );
+      });
+    } finally {
+      mocks.connector = connector;
+    }
+    expect(mocks.review).toHaveBeenCalledOnce();
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
 
   it.each([false, true])(
     "keeps the original locked without selecting its exact ID for fresh review (fresh calls: %s)",

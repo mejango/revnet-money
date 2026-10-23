@@ -43,7 +43,7 @@ import {
 } from "@/lib/pending-router-calls";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { requireDone, reviewedCall, ReviewRefusal } from "@/lib/reviewed-call";
-import { reviewedSendDeps } from "@/lib/reviewed-send-deps";
+import { loadEngine, reviewedSendDeps, WALLET_CHANGED } from "@/lib/reviewed-send-deps";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls } from "@/lib/safe-transactions";
 import {
@@ -61,7 +61,6 @@ import {
   discardReviewedSequence,
   findReviewedSequence,
   gasWithHeadroom,
-  reviewPlan,
   type ReviewContextRow,
   type ReviewedPlan,
 } from "@bananapus/nana-sdk-core/review";
@@ -551,11 +550,16 @@ export function useMultichainBatch() {
           input.onProgress?.(message);
           if (batch) updateTransactionActivity(batch.id, { message });
         };
+        // The connection this run starts on; a replacement connector for the same address is refused.
+        const connector = getAccount(config).connector;
+        const safe = isSafeConnection(config);
         const requireAccount = () => {
           input.signal?.throwIfAborted();
           requireNoViewAs();
           if (getAccount(config).address?.toLowerCase() !== account.toLowerCase())
             throw new Error("The connected account changed. Resume with the original account.");
+          if (getAccount(config).connector !== connector || isSafeConnection(config) !== safe)
+            throw new ReviewRefusal(WALLET_CHANGED);
         };
         const result = (status: BatchResult["status"]): BatchResult => ({
           status,
@@ -752,7 +756,9 @@ export function useMultichainBatch() {
                 );
               }
               progress("Review the selected transactions.");
-              plan = await reviewPlan(
+              plan = await (
+                await loadEngine()
+              ).reviewPlan(
                 {
                   account,
                   title: input.calls.every((call) => call.expectedRouterPending)

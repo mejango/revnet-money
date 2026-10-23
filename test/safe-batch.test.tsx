@@ -19,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     connector: { id: "safe", name: "Safe" } as { id: string; name: string } | undefined,
   },
   sendCalls: vi.fn(),
+  walletLoaded: vi.fn(),
   simulateCalls: vi.fn(),
   request: vi.fn(),
 }));
@@ -29,7 +30,10 @@ vi.mock("wagmi", () => ({
 }));
 vi.mock("wagmi/actions", () => ({
   getAccount: () => mocks.account,
-  getWalletClient: async () => ({ sendCalls: mocks.sendCalls }),
+  getWalletClient: async () => {
+    await mocks.walletLoaded();
+    return { sendCalls: mocks.sendCalls };
+  },
   switchChain: async (_config: unknown, { chainId }: { chainId: number }) => {
     mocks.account.chainId = chainId;
   },
@@ -104,6 +108,7 @@ beforeEach(async () => {
   mocks.account.chainId = 8453;
   mocks.account.connector = { id: "safe", name: "Safe" };
   mocks.sendCalls.mockReset().mockResolvedValue({ id: SAFE_TX_HASH });
+  mocks.walletLoaded.mockReset();
   mocks.simulateCalls
     .mockReset()
     .mockResolvedValue({ results: [{ status: "success" }, { status: "success" }] });
@@ -182,6 +187,52 @@ describe("one Safe proposal for a whole flow", () => {
       expect(mocks.sendCalls).not.toHaveBeenCalled();
     },
   );
+
+  it.each(["connector", "view-as"] as const)(
+    "refuses a %s change while the wallet loads, before the wallet opens",
+    async (change) => {
+      mocks.walletLoaded.mockImplementation(() => {
+        if (change === "connector") mocks.account.connector = { id: "safe-2", name: "Safe" };
+        else setViewAs(TOKEN);
+      });
+      const outcome = await proposeBatch(calls());
+      expect(mocks.walletLoaded).toHaveBeenCalled();
+      expect(outcome).toMatchObject({ status: "failed" });
+      expect(mocks.sendCalls).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a run's wallet check when a later run on the same hook ends first", async () => {
+    const { result } = renderHook(() => useReviewedAction());
+    const run = (batch: ReturnType<typeof calls>) =>
+      result.current.run({
+        account: ACCOUNT,
+        title: "Make the market",
+        calls: batch,
+        scope: `market-batch:${batch[0]!.args![1]}`,
+        batch: true,
+      });
+    let release!: () => void;
+    const loading = new Promise<void>((resolve) => (release = resolve));
+    let atWallet!: () => void;
+    const waiting = new Promise<void>((resolve) => (atWallet = resolve));
+    mocks.walletLoaded.mockImplementationOnce(async () => {
+      atWallet();
+      await loading;
+      setViewAs(TOKEN);
+    });
+    let first!: Promise<unknown>;
+    await act(async () => {
+      first = run(calls());
+      await waiting;
+      // The later run is closed at its review and ends while the first waits on the wallet.
+      approve = false;
+      await run(calls());
+      release();
+      await expect(first).resolves.toMatchObject({ status: "failed" });
+    });
+    expect(mocks.sendCalls).not.toHaveBeenCalled();
+  });
 
   it("refuses a batch built for another account, such as a mint to the account that reviewed it", async () => {
     const other = "0x000000000000000000000000000000000000bEEF" as Address;

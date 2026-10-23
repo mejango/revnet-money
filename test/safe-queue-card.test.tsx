@@ -56,6 +56,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
   useSafeTransactionSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
   useReviewedAction: () => ({ deps: mocks.deps }),
+  reviewedWalletAdapter: () => mocks.deps.adapter,
 }));
 vi.mock("wagmi/actions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi/actions")>()),

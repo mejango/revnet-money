@@ -3,7 +3,7 @@ import { verifyActionReceipt, verifyCallPreconditions } from "@/lib/multichain-g
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { verifyMetadataSource } from "@/lib/project-metadata-write";
 import { relayrRecoveryScopeKey, relayrSavedQuote } from "@/lib/relayr-activity";
-import { reviewedSendDeps, reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
+import { loadEngine, reviewedSendDeps, reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
 import { isSafeConnection } from "@/lib/safe-connector";
 import {
   dismissTransactionActivity,
@@ -17,7 +17,6 @@ import { requireNoViewAs } from "@/lib/view-as";
 import {
   browserLocks,
   gasWithHeadroom,
-  safeRelayrWalletDeps,
   simulateStateChangingTransaction,
 } from "@bananapus/nana-sdk-core/review";
 import { RELAYR_NATIVE_TOKEN, type RelayrQuote } from "@bananapus/nana-sdk-core/review/relayr";
@@ -478,7 +477,8 @@ export function safeRelayrController(
       );
     },
     // Core reviews the frozen executions and the selected payment; only a requested payment pays.
-    review: safeRelayrWalletDeps(reviewedSendDeps(config)).review,
+    review: async (...args) =>
+      (await loadEngine()).safeRelayrWalletDeps(reviewedSendDeps(config)).review(...args),
     sendPayment: async (input) => {
       if (!pays) throw new Error("A wallet payment must be explicitly requested.");
       requireAccount(input.session.account);
@@ -489,7 +489,7 @@ export function safeRelayrController(
         input.session.account,
         getAccount(config).connector,
       );
-      return safeRelayrWalletDeps({ ...deps, adapter }).sendPayment(input);
+      return (await loadEngine()).safeRelayrWalletDeps({ ...deps, adapter }).sendPayment(input);
     },
   });
 }

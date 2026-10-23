@@ -40,7 +40,7 @@ import {
   sentPayments,
 } from "@/lib/relayr-activity";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
-import { reviewedSendDeps, reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
+import { loadEngine, reviewedSendDeps, reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import {
@@ -70,10 +70,7 @@ import {
   gasWithHeadroom,
   relayrDiscardLine,
   ReviewedCallRevertedError,
-  reviewPlan,
-  sendReviewed,
   relayrHeldMessage as sharedHeldMessage,
-  signReviewed,
   writeIntentKey,
   type ReviewedForwardRequest,
   type ReviewedPlan,
@@ -2084,7 +2081,9 @@ export function useGetRelayrTxQuote() {
             // the signatures under it ask nothing more.
             const plan =
               options?.plan ??
-              (await reviewPlan(
+              (await (
+                await loadEngine()
+              ).reviewPlan(
                 {
                   account: address,
                   title:
@@ -2115,7 +2114,9 @@ export function useGetRelayrTxQuote() {
             for (const { index, request, client, forwarder, message } of unsigned) {
               // Core signs the exact request on the canonical forwarder's domain, spent from the
               // plan.
-              const [signature] = await signReviewed(
+              const [signature] = await (
+                await loadEngine()
+              ).signReviewed(
                 [{ kind: "forward-request", chainId: request.chainId, request: message }],
                 {
                   account: address,
@@ -2324,6 +2325,11 @@ export function useSendRelayrTx() {
         address,
         "Connected account or chain changed. Review the payment again.",
       );
+      // The payment is refused at the wallet for View-as or another wallet connection.
+      const paymentDeps = {
+        ...reviewedSendDeps(config),
+        adapter: reviewedWalletAdapter(config, address, getAccount(config).connector),
+      };
       const payment = { ...offeredPayment };
       const remembered = quotes.get(paymentKey(payment));
       if (!remembered || remembered.account.toLowerCase() !== address.toLowerCase())
@@ -2399,7 +2405,9 @@ export function useSendRelayrTx() {
         });
         try {
           // Core reviews, simulates, holds and sends exactly this payment, once.
-          const result = await sendReviewed(
+          const result = await (
+            await loadEngine()
+          ).sendReviewed(
             {
               account: address,
               calls: [
@@ -2497,7 +2505,7 @@ export function useSendRelayrTx() {
                 options?.onMessage?.("Checking the submitted network-fee payment.");
               },
             },
-            reviewedSendDeps(config),
+            paymentDeps,
           );
           if (result.status !== "done")
             throw new Error("Pay the network fee from an ordinary wallet. Nothing was sent.");

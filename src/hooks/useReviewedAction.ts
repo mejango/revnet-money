@@ -2,7 +2,14 @@
 
 import { recordSubmittedWrite, settleSubmittedWrite } from "@/lib/held-rows";
 import { revertedStep, ReviewRefusal, type ReviewedRunResult } from "@/lib/reviewed-call";
-import { reviewedSendDeps, reviewedWalletAdapter, WALLET_CHANGED } from "@/lib/reviewed-send-deps";
+import {
+  loadEngine,
+  reviewedSendDeps,
+  reviewedWalletAdapter,
+  reviewedWalletOf,
+  WALLET_CHANGED,
+  type ReviewedWallet,
+} from "@/lib/reviewed-send-deps";
 import { isSafeConnection, safeWalletPeerSettled } from "@/lib/safe-connector";
 import { requireNoViewAs } from "@/lib/view-as";
 import { answerHeldRefusal, isHeldRefusal, writeHolds } from "@/lib/write-hold";
@@ -44,11 +51,7 @@ export type { ReviewedCall } from "@bananapus/nana-sdk-core/review";
 
 export { WALLET_CHANGED };
 
-/**
- * The send engine loads with the first write, not with the page: every send through it (Safe
- * proposals and executions too) takes it from here, never from a static import.
- */
-export const loadEngine = () => import("@bananapus/nana-sdk-core/review");
+export { loadEngine };
 
 export type ReviewedActionInput = Parameters<UseReviewedRunResult["run"]>[0];
 
@@ -61,9 +64,11 @@ export type ReviewedActionInput = Parameters<UseReviewedRunResult["run"]>[0];
 export function useReviewedAction() {
   const config = useConfig();
   const { address } = useAccount();
+  // The wallets running actions were reviewed on, each refused at the wallet if it changes.
+  const reviewed = useRef(new Set<ReviewedWallet>());
   const deps = useMemo<UseReviewedRunDeps>(
     () => ({
-      ...reviewedSendDeps(config),
+      ...reviewedSendDeps(config, () => reviewed.current),
       account: address,
       guard: requireNoViewAs,
       engine: loadEngine,
@@ -84,41 +89,47 @@ export function useReviewedAction() {
       const account = action.account ?? getAccount(config).address;
       const rows: string[] = [];
       const [first] = action.calls;
-      const result = await latest.current.run({
-        ...action,
-        title:
-          action.title ??
-          (action.calls.length === 1 && first?.functionName
-            ? `Review ${first.functionName}`
-            : undefined),
-        confirmLabel: safe
-          ? "Agree & propose to Safe"
-          : (action.confirmLabel ?? "Agree & continue"),
-        description:
-          [action.description, safe ? SAFE_NONCE_GUIDANCE : undefined, writeHolds.reviewLine()]
-            .filter(Boolean)
-            .join("\n\n") || undefined,
-        assertWriteState: () => {
-          requireNoViewAs();
-          if (getAccount(config).connector !== connector || isSafeConnection(config) !== safe)
-            throw new ReviewRefusal(WALLET_CHANGED);
-          action.assertWriteState?.();
-        },
-        onSubmitted: async (call, step, hash, sent) => {
-          // A Safe batch is one proposal: one row, for every call, under its first call's hold.
-          const batch = action.batch && sent.safe && action.calls.length > 1;
-          if (account && !sent.adopted && !(batch && step > 0))
-            rows[step] = recordSubmittedWrite(
-              call,
-              hash,
-              account,
-              action.title ?? call.label ?? "Transaction",
-              sent.safe,
-              batch ? action.calls : undefined,
-            );
-          await action.onSubmitted?.(call, step, hash, sent);
-        },
-      });
+      const wallet = account ? reviewedWalletOf(config, account) : undefined;
+      if (wallet) reviewed.current.add(wallet);
+      const result = await latest.current
+        .run({
+          ...action,
+          title:
+            action.title ??
+            (action.calls.length === 1 && first?.functionName
+              ? `Review ${first.functionName}`
+              : undefined),
+          confirmLabel: safe
+            ? "Agree & propose to Safe"
+            : (action.confirmLabel ?? "Agree & continue"),
+          description:
+            [action.description, safe ? SAFE_NONCE_GUIDANCE : undefined, writeHolds.reviewLine()]
+              .filter(Boolean)
+              .join("\n\n") || undefined,
+          assertWriteState: () => {
+            requireNoViewAs();
+            if (getAccount(config).connector !== connector || isSafeConnection(config) !== safe)
+              throw new ReviewRefusal(WALLET_CHANGED);
+            action.assertWriteState?.();
+          },
+          onSubmitted: async (call, step, hash, sent) => {
+            // A Safe batch is one proposal: one row, for every call, under its first call's hold.
+            const batch = action.batch && sent.safe && action.calls.length > 1;
+            if (account && !sent.adopted && !(batch && step > 0))
+              rows[step] = recordSubmittedWrite(
+                call,
+                hash,
+                account,
+                action.title ?? call.label ?? "Transaction",
+                sent.safe,
+                batch ? action.calls : undefined,
+              );
+            await action.onSubmitted?.(call, step, hash, sent);
+          },
+        })
+        .finally(() => {
+          if (wallet) reviewed.current.delete(wallet);
+        });
       if (result?.status === "done")
         for (const id of rows) if (id) settleSubmittedWrite(id, "success");
       if (result?.status === "failed") {
