@@ -46,7 +46,13 @@ import {
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { legacyIntents } from "@/lib/legacy-intents";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
-import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
+import {
+  hasSuckerPair,
+  isPairCheckPending,
+  unverifiedPairLine,
+  useSuckers,
+  useSuckersUserTokenBalance,
+} from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
 import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
@@ -111,7 +117,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   // A step refused by its own Safe proposal whose result can't be confirmed, which is not a failure.
   const [refusedUnconfirmed, setRefusedUnconfirmed] = useState(false);
   const { toast } = useToast();
-  const { data: suckers } = useSuckers();
+  const suckerQuery = useSuckers();
+  const { data: suckers, verifiedPairs } = suckerQuery;
   const { token } = useJBTokenContext();
   const baseToken = useProjectBaseToken();
   const selectedChainId = activeCashOutChainId
@@ -123,6 +130,14 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const selectedSucker = activeCashOutChainId
     ? suckers?.find((s) => s.peerChainId === Number(activeCashOutChainId))
     : suckers?.find((s) => s.peerChainId === chainId);
+  // The cash out is built for this pair's project id, so it must be one the on-chain
+  // sucker registry lists, not only the indexer.
+  const pairVerified = !!selectedSucker && hasSuckerPair(verifiedPairs, selectedSucker);
+  const pairPending = !pairVerified && isPairCheckPending(suckerQuery);
+  const pairLine =
+    selectedSucker && !pairVerified
+      ? unverifiedPairLine(suckerQuery, chainDisplayName(selectedSucker.peerChainId))
+      : null;
   const cashOutTerminal = selectedSucker
     ? getJBContractAddress(
         JBCoreContracts.JBMultiTerminal,
@@ -591,6 +606,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
           <DialogFooter>
             {approvalStatus && !review ? (
               <p className="self-center text-sm text-zinc-600">{approvalStatus}</p>
+            ) : valid && pairLine ? (
+              <p className="self-center text-sm text-zinc-600">{pairLine}</p>
             ) : null}
             {!isSuccess ? (
               <ButtonWithWallet
@@ -598,12 +615,14 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 loading={
                   loading ||
                   (isApproving && !approvalOutstanding) ||
-                  (valid && (isQuoteFetching || directSellLoading))
+                  (valid && (isQuoteFetching || directSellLoading || pairPending))
                 }
-                disabled={(valid && !cashOutRoute) || approvalOutstanding}
+                disabled={(valid && (!cashOutRoute || !pairVerified)) || approvalOutstanding}
                 onClick={() => {
                   setError(null);
                   setRefusedUnconfirmed(false);
+                  // Pin the reviewed chain: a peer balance arriving later must not unselect it.
+                  if (activeCashOutChainId) setCashOutChainId(activeCashOutChainId);
                   setReview(true);
                 }}
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"
@@ -639,6 +658,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
               setSubmitting(true);
               setRefusedUnconfirmed(false);
               try {
+                if (!pairVerified) {
+                  throw new Error("Couldn't confirm this chain belongs to this project.");
+                }
                 if (
                   !cashOutTerminal ||
                   !address ||

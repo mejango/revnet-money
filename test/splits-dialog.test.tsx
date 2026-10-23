@@ -24,6 +24,9 @@ const state = vi.hoisted(() => ({
   /** The single-chain write's receipt never lands, and its bounded watch ends. */
   neverLands: false,
   address: "0x1111111111111111111111111111111111111111" as string | undefined,
+  /** The on-chain sucker registry's pairs; null = every listed chain is verified. */
+  verifiedPairs: null as { peerChainId: number; projectId: bigint }[] | null,
+  suckersVerified: true,
 }));
 
 vi.mock("wagmi", async (importOriginal) => ({
@@ -42,6 +45,13 @@ vi.mock("@/app/[slug]/owners/components/hooks/useChainSplits", () => ({
     chainSplits: state.chainSplits,
     allRulesets: [],
     isLoading: false,
+    verifiedPairs:
+      state.verifiedPairs ??
+      (state.chainSplits as { chainId: number; projectId: bigint }[]).map((c) => ({
+        peerChainId: c.chainId,
+        projectId: c.projectId,
+      })),
+    suckerCheck: { isVerified: state.suckersVerified, isError: false },
     refetch: vi.fn(),
   }),
 }));
@@ -115,6 +125,8 @@ beforeEach(() => {
   state.txUnconfirmed = false;
   state.proposeToSafe = false;
   state.neverLands = false;
+  state.verifiedPairs = null;
+  state.suckersVerified = true;
   state.address = "0x1111111111111111111111111111111111111111";
 });
 
@@ -127,6 +139,32 @@ describe("ChangeSplitRecipientsDialog over its own Safe proposal the app can't c
     expect(
       within(dialog).getByText("Check this proposal in your Safe before sending it again."),
     ).toBeInTheDocument();
+  });
+});
+
+describe("ChangeSplitRecipientsDialog sucker pairs", () => {
+  it("wallet-action:set-splits refuses a chain whose project id the sucker registry does not list", async () => {
+    // The form's project id (3) came from the indexer; the registry says 4 on Base.
+    state.verifiedPairs = [{ peerChainId: 8453, projectId: 4n }];
+    const dialog = await openDialog(0);
+
+    expect(dialog).toHaveTextContent("The Base project listed here isn't linked onchain.");
+    const save = screen.getByRole("button", { name: "Save changes" });
+    expect(save).toBeDisabled();
+    fireEvent.click(save);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(confirmIsOpen()).toBe(false);
+    expect(state.submitSplits).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChangeSplitRecipientsDialog while the registry read is in flight", () => {
+  it("shows Save as loading, with no message or extra step", async () => {
+    state.verifiedPairs = [];
+    state.suckersVerified = false;
+    const dialog = await openDialog(0);
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    expect(dialog.textContent).not.toMatch(/isn.t linked|belongs to this project/);
   });
 });
 

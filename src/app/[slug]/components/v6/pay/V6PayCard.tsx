@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 
+import { chainDisplayName } from "@/app/constants";
 import { useOnRamp } from "@/components/GetFunds";
 import { ImageWithFallback } from "@/components/IpfsImage";
 import { Button } from "@/components/ui/button";
@@ -21,7 +22,12 @@ import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { legacyIntents } from "@/lib/legacy-intents";
 import { useJBTokenContext } from "@/lib/nana/project";
-import { useSuckers } from "@/lib/nana/suckers";
+import {
+  hasSuckerPair,
+  isPairCheckPending,
+  unverifiedPairLine,
+  useSuckers,
+} from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
 import { Token } from "@/lib/token";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
@@ -120,7 +126,13 @@ export function V6PayCard() {
   const chainId = selectedSucker.peerChainId;
   const projectId = selectedSucker.projectId;
 
-  const { data: suckers } = useSuckers();
+  const suckerQuery = useSuckers();
+  const { data: suckers, verifiedPairs } = suckerQuery;
+  // The picker lists indexer-seeded chains for speed, but a payment is built for the
+  // selected pair, so only a pair the on-chain sucker registry lists can be paid.
+  const pairVerified = hasSuckerPair(verifiedPairs, selectedSucker);
+  const pairPending = !pairVerified && isPairCheckPending(suckerQuery);
+  const pairLine = pairVerified ? null : unverifiedPairLine(suckerQuery, chainDisplayName(chainId));
   const chainOptions = useMemo(
     () => (suckers && suckers.length > 0 ? suckers : [selectedSucker]),
     [suckers, selectedSucker],
@@ -551,6 +563,7 @@ export function V6PayCard() {
   // payment is no longer the one on screen.
   const payIdentity = [
     mode,
+    pairVerified,
     chainId,
     projectId,
     selected ? payTokenKey(selected) : "",
@@ -578,6 +591,7 @@ export function V6PayCard() {
     if (phase === "safe-proposed") return;
     if (!selected) return;
     if (amountRaw <= 0n && !creditOnlyCheckout) return;
+    if (!pairVerified) return;
     if (notStarted || surfaceError || addBalanceViaRouter || insufficientBalance) return;
     if (mode === "pay" && (surface?.pausePay || !previewReady)) return;
     if (cartCount > 0 && (shopRoutesLoading || shopCreditsLoading || !shopMatchesToken)) return;
@@ -600,6 +614,9 @@ export function V6PayCard() {
     let cancelled = false;
     const client = publicClient as PublicClient;
     (async () => {
+      if (!pairVerified) {
+        throw new Error("Couldn't confirm this chain belongs to this project. Nothing was sent.");
+      }
       const cartRows = chainCartItems.map((item) => ({
         tierId: Number(item.tierId),
         quantity: item.quantity,
@@ -1018,6 +1035,7 @@ export function V6PayCard() {
     // Paying in dollars is a purchase, not a send: it needs an amount and nothing else. The
     // checks below are about a token this payer does not hold yet.
     (isConnected && payWithDollars && amountRaw <= 0n) ||
+    (isConnected && !pairVerified) ||
     (isConnected &&
       !payWithDollars &&
       (!selected ||
@@ -1421,7 +1439,7 @@ export function V6PayCard() {
           <div className="relative flex h-14 w-[150px] shrink-0 items-start border-y border-r border-melon-600">
             <Button
               disabled={payDisabled}
-              loading={busy}
+              loading={busy || (isConnected && pairPending)}
               // Load the confirmation dialog on intent, so Pay opens it without waiting.
               onPointerEnter={() => void loadPayConfirm()}
               onFocus={() => void loadPayConfirm()}
@@ -1448,6 +1466,7 @@ export function V6PayCard() {
           You don&apos;t have enough {selected.symbol} on {JB_CHAINS[chainId]?.name}.
         </p>
       ) : null}
+      {pairLine ? <p className="mt-2 text-sm text-zinc-600">{pairLine}</p> : null}
       {surfaceError ? (
         <p className="mt-2 text-sm text-red-600">
           Couldn&apos;t verify this project&apos;s accepted tokens. Payments are off.

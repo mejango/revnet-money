@@ -12,6 +12,16 @@ const mocks = vi.hoisted(() => ({
   readContract: vi.fn(),
   getTransactionReceipt: vi.fn(),
   toast: vi.fn(),
+  verifiedPairs: [] as { peerChainId: number; projectId: bigint }[],
+  suckersVerified: true,
+}));
+vi.mock("@/lib/nana/suckers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/nana/suckers")>()),
+  useSuckers: () => ({
+    verifiedPairs: mocks.verifiedPairs,
+    isVerified: mocks.suckersVerified,
+    isError: false,
+  }),
 }));
 vi.mock("wagmi", () => ({ useAccount: () => ({ address: mocks.account }) }));
 vi.mock("wagmi/actions", () => ({
@@ -60,6 +70,11 @@ async function confirmAction() {
 
 beforeEach(() => {
   mocks.account = "0x0000000000000000000000000000000000000001";
+  mocks.verifiedPairs = [
+    { peerChainId: 8453, projectId: 42n },
+    { peerChainId: 42161, projectId: 99n },
+  ];
+  mocks.suckersVerified = true;
   mocks.getPendingBatch.mockReturnValue(undefined);
   mocks.runBatch.mockResolvedValue({ status: "pending", hashes: [] });
   mocks.readContract.mockResolvedValue(directory);
@@ -67,6 +82,54 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+});
+
+describe("sucker pairs the payer forwards to", () => {
+  it("wallet-action:project-payer will not deploy for a chain whose project id the sucker registry does not list", async () => {
+    // The indexer said project 99 on Arbitrum; the registry lists 100 there.
+    mocks.verifiedPairs = [
+      { peerChainId: 8453, projectId: 42n },
+      { peerChainId: 42161, projectId: 100n },
+    ];
+    setup();
+    expect(screen.getByText("The Arbitrum project listed here isn't linked onchain.")).toBeTruthy();
+    const deploy = screen.getByRole("button", { name: "Deploy payer addresses" });
+    expect(deploy).toBeDisabled();
+    fireEvent.click(deploy);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(mocks.readContract).not.toHaveBeenCalled();
+    expect(mocks.runBatch).not.toHaveBeenCalled();
+  });
+
+  it("wallet-action:project-payer will not resume a saved deployment whose unsent call targets an unlisted pair", async () => {
+    mocks.verifiedPairs = [
+      { peerChainId: 8453, projectId: 42n },
+      { peerChainId: 42161, projectId: 100n },
+    ];
+    mocks.getPendingBatch.mockReturnValue({
+      label: "Deploy payer addresses",
+      completed: 1,
+      total: 2,
+      calls: [
+        { chainId: 8453, state: "success", expectedDeployment: { projectId: "42" } },
+        { chainId: 42161, state: "ready", expectedDeployment: { projectId: "99" } },
+      ],
+    });
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Resume saved deployment" }));
+    expect(
+      await screen.findAllByText("The Arbitrum project listed here isn't linked onchain."),
+    ).not.toHaveLength(0);
+    expect(mocks.runBatch).not.toHaveBeenCalled();
+  });
+
+  it("waits for the registry read before a peer chain can be deployed", () => {
+    mocks.verifiedPairs = [{ peerChainId: 8453, projectId: 42n }];
+    mocks.suckersVerified = false;
+    setup();
+    expect(screen.queryByText(/belongs to this project|isn.t linked/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Deploy payer addresses" })).toBeDisabled();
+  });
 });
 
 describe("multichain deployment form", () => {

@@ -23,6 +23,7 @@ import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/hooks/useReviewedWriteContract
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
+import { hasSuckerPair, isPairCheckPending, unverifiedPairLine } from "@/lib/nana/suckers";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import {
   isStickyHook,
@@ -111,7 +112,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   const { address } = useAccount();
 
   const { hasPermission } = useUserPermissions();
-  const { chainSplits, refetch } = useChainSplits(stageIdx);
+  const { chainSplits, verifiedPairs, suckerCheck, refetch } = useChainSplits(stageIdx);
 
   const {
     submitSplits,
@@ -191,6 +192,14 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       (chainId) => JB_CHAINS[chainId as JBChainId]?.name ?? `chain ${chainId}`,
     );
 
+  // Each chain's project id is written into the call, so it must be a pair the
+  // on-chain sucker registry lists, not only the indexer.
+  const unverifiedChain = (chains: ChainFormData[]) =>
+    chains.find(
+      (chain) =>
+        !hasSuckerPair(verifiedPairs, { peerChainId: chain.chainId, projectId: chain.projectId }),
+    );
+
   const [stickyProblem, setStickyProblem] = useState<string | null>(null);
   const handleSubmit = async (values: FormData) => {
     // Permission can come from a viewed account. The confirm sends from the
@@ -202,6 +211,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       return;
     }
     if (blockMessageFor(values.chains)) return;
+    if (unverifiedChain(selectedChains)) return;
     // The distributor never reverts, so an unregistered token would quietly pay group 0.
     // Check every Sticky token on the chain it is saved to before anything is signed.
     setStickyProblem(null);
@@ -231,6 +241,11 @@ export function ChangeSplitRecipientsDialog(props: Props) {
 
   const confirmSubmit = async () => {
     if (!reviewing) return;
+    // Back to the form, which names the pair that is no longer chain-verified.
+    if (unverifiedChain(reviewing)) {
+      setReviewing(null);
+      return;
+    }
     const result = await submitSplits(reviewing);
     if (result?.proposal) setProposal(result.proposal);
     if (result?.success && reviewing.length > 1) setReviewing(null);
@@ -356,6 +371,13 @@ export function ChangeSplitRecipientsDialog(props: Props) {
         >
           {({ values, setFieldValue, isValid }) => {
             const emptySaveBlock = blockMessageFor(values.chains);
+            const unverified = unverifiedChain(values.chains.filter((c) => c.selected));
+            // While the registry read is in flight Save shows its loading state;
+            // a mismatch or failure says so inline.
+            const pairPending = !!unverified && isPairCheckPending(suckerCheck);
+            const pairLine = unverified
+              ? unverifiedPairLine(suckerCheck, chainDisplayName(unverified.chainId))
+              : null;
             return (
               <Form>
                 <div className="space-y-6 mt-4">
@@ -591,6 +613,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                   </FieldArray>
                 </div>
 
+                {pairLine ? <p className="mt-4 text-sm text-zinc-600">{pairLine}</p> : null}
                 {stickyProblem ? (
                   <p role="alert" className="mt-4 text-sm text-red-600">
                     {stickyProblem}
@@ -614,12 +637,13 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                       disabled={
                         !isValid ||
                         !!emptySaveBlock ||
+                        !!unverified ||
                         isSubmitting ||
                         isPending ||
                         isTxLoading ||
                         saveLocked
                       }
-                      loading={isSubmitting || isPending || isTxLoading}
+                      loading={isSubmitting || isPending || isTxLoading || pairPending}
                       className="bg-teal-500 text-melon-950 hover:bg-teal-600"
                     >
                       Save changes

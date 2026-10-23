@@ -24,6 +24,9 @@ type ReviewedWriteContractOptions = NonNullable<
 // the next open could send again.
 
 const mocks = vi.hoisted(() => ({
+  /** The balance rows' chain/project pairs; null = the default home and peer rows. */
+  balanceRows: null as [number, number][] | null,
+  verifiedPairs: [] as { peerChainId: number; projectId: bigint }[],
   write: vi.fn(),
   prepareCashOut: vi.fn(),
   freshBorrowable: vi.fn(),
@@ -270,10 +273,21 @@ vi.mock("@/lib/nana/project", () => ({
   }),
   useJBTokenContext: () => ({ token: { data: { decimals: 18, symbol: "REV" } } }),
 }));
-vi.mock("@/lib/nana/suckers", () => ({
-  useSuckers: () => ({ data: [{ peerChainId: 1, projectId: 7n }] }),
+vi.mock("@/lib/nana/suckers", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/nana/suckers")>()),
+  useSuckers: () => ({
+    data: [{ peerChainId: 1, projectId: 7n }],
+    verifiedPairs: mocks.verifiedPairs,
+    isVerified: true,
+    isError: false,
+  }),
   useSuckersUserTokenBalance: () => ({
-    data: [tokenBalance(1, 7), tokenBalance(10, 8)],
+    data: (
+      mocks.balanceRows ?? [
+        [1, 7],
+        [10, 8],
+      ]
+    ).map(([chainId, projectId]) => tokenBalance(chainId, projectId)),
     isLoading: false,
   }),
 }));
@@ -349,6 +363,8 @@ beforeEach(() => {
   mocks.receiptOn = null;
   mocks.neverLands = false;
   mocks.reverted = false;
+  mocks.verifiedPairs = [{ peerChainId: 1, projectId: 7n }];
+  mocks.balanceRows = null;
   mocks.write.mockReset().mockImplementation(never);
   mocks.prepareCashOut.mockReset().mockImplementation(never);
   mocks.freshBorrowable.mockReset().mockImplementation(never);
@@ -549,6 +565,58 @@ async function approveSale() {
   expect(mocks.write.mock.calls[0]![0]).toMatchObject({ functionName: "approve", chainId: 1 });
   return confirm;
 }
+
+describe("cash out's sucker pair", () => {
+  it("wallet-action:cash-out stays off for a pair the on-chain sucker registry does not list", async () => {
+    mocks.verifiedPairs = [{ peerChainId: 1, projectId: 9n }];
+    renderWithQueries(
+      <RedeemDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open cash out</button>
+      </RedeemDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
+    fireEvent.click(await screen.findByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: /Ethereum/ }));
+    fireEvent.change(screen.getByLabelText("Tokens to cash out"), { target: { value: "1" } });
+    expect(
+      await screen.findByText("The Ethereum project listed here isn't linked onchain."),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cash out" })).toBeDisabled();
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+});
+
+describe("cash out's reviewed chain", () => {
+  it("stays reviewed when a verified peer's balance arrives after Cash out", async () => {
+    // Only the home balance has loaded, so the home chain is chosen without a pick.
+    mocks.balanceRows = [[1, 7]];
+    const view = renderWithQueries(
+      <RedeemDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open cash out</button>
+      </RedeemDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
+    fireEvent.change(await screen.findByLabelText("Tokens to cash out"), {
+      target: { value: "1" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cash out" }));
+    await confirmPanel();
+
+    mocks.balanceRows = [
+      [1, 7],
+      [10, 8],
+    ];
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <RedeemDialog projectId={7n} tokenSymbol="REV">
+          <button type="button">Open cash out</button>
+        </RedeemDialog>
+      </QueryClientProvider>,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(document.querySelector("[data-tx-confirm]")).not.toBeNull();
+  });
+});
 
 describe("cash out's sale approval", () => {
   it("ends on Done, with the sale locked, when the approval's receipt never lands", async () => {

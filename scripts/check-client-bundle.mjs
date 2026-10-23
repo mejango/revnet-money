@@ -34,11 +34,11 @@ const routes = [
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 675 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 630 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 576 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 570 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 419 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 571 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 420 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 409 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
-  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 384 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 385 },
   { route: "/_not-found", path: "/no-such-page/x/y", kib: 300, status: 404 },
 ];
 // Next renders its global error page only when the root layout itself throws; no URL reaches it.
@@ -47,7 +47,8 @@ const unmeasuredRoutes = new Set(["/_global-error"]);
 const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
   ? JSON.parse(process.env.CLIENT_BUNDLE_ROUTES)
   : routes;
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 920);
+// 920 -> 921 with the account routes +1: the onchain sucker-peer check on top of Next 16.4.2.
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 921);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
