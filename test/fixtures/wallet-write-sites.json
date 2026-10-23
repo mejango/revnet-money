@@ -153,13 +153,6 @@
           1
         ],
         [
-          "reviewed-safe-batch-hook",
-          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-          "AddLiquidityForm",
-          "useProposeSafeBatch",
-          1
-        ],
-        [
           "reviewed-action-hook",
           "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
           "ChainPositionRows",
@@ -181,13 +174,6 @@
           1
         ],
         [
-          "reviewed-safe-batch-hook",
-          "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
-          "EditPositionPanel",
-          "useProposeSafeBatch",
-          1
-        ],
-        [
           "reviewed-action",
           "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
           "execute",
@@ -206,13 +192,6 @@
           "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
           "MarketEditPanel",
           "useReviewedAction",
-          1
-        ],
-        [
-          "reviewed-safe-batch-hook",
-          "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
-          "MarketEditPanel",
-          "useProposeSafeBatch",
           1
         ],
         [
@@ -442,7 +421,7 @@
           "reviewed-safe-signature-hook",
           "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
           "SafeQueueCard",
-          "useReviewedSafeSignature",
+          "useSafeTransactionSignature",
           1
         ],
         [
@@ -498,7 +477,7 @@
           "reviewed-safe-signature-hook",
           "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
           "useOperatorWrites",
-          "useReviewedSafeSignature",
+          "useSafeTransactionSignature",
           1
         ],
         [
@@ -513,13 +492,6 @@
           "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
           "useSafeBatchSubmit",
           "useReviewedAction",
-          1
-        ],
-        [
-          "reviewed-safe-batch-hook",
-          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
-          "useSafeBatchSubmit",
-          "useProposeSafeBatch",
           1
         ],
         [

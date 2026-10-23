@@ -24,8 +24,9 @@ vi.mock("@/lib/fee-buyback-client", () => ({
 }));
 
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
-import { requireTransactionReview, type TransactionReviewRequest } from "@/lib/transaction-review";
-import { REVIEW_REQUESTS } from "@bananapus/nana-sdk-core/testing";
+import { type TransactionReviewRequest } from "@/lib/transaction-review";
+import { promptReviewForTests, REVIEW_REQUESTS } from "@bananapus/nana-sdk-core/testing";
+import { requireReview as requireTransactionReview } from "./support/core-review";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -55,6 +56,13 @@ async function renderedDialog(
   const dialog = document.querySelector("dialog");
   if (!dialog) throw new Error("The review dialog did not render.");
   return dialog.outerHTML;
+}
+
+/** The model core shows for `request`, as its review prompt builds it. */
+function modelOf(request: TransactionReviewRequest) {
+  const { model, outcome } = promptReviewForTests(request);
+  outcome.catch(() => {});
+  return model;
 }
 
 describe("transaction review dialog", () => {
@@ -93,7 +101,7 @@ describe("transaction review dialog", () => {
     act(() =>
       root.render(
         <TransactionReviewDialog
-          pending={{ kind: "review", id: 1, request, resolve: () => {} }}
+          pending={{ kind: "review", id: 1, model: modelOf(request), resolve: () => {} }}
           onFinish={() => {}}
         />,
       ),
@@ -113,13 +121,14 @@ describe("transaction review dialog", () => {
     const payment = REVIEW_REQUESTS["pay with 721 metadata"].calls[0];
     const { TransactionReviewDialog } = await import("@/components/TransactionReviewDialog");
     const request = {
+      kind: "authorization",
       calls: [payment],
       authorization: { kind: "message", message: "hello" },
     } as unknown as TransactionReviewRequest;
     act(() =>
       root.render(
         <TransactionReviewDialog
-          pending={{ kind: "review", id: 1, request, resolve: () => {} }}
+          pending={{ kind: "review", id: 1, model: modelOf(request), resolve: () => {} }}
           onFinish={() => {}}
         />,
       ),
@@ -140,7 +149,7 @@ describe("transaction review dialog", () => {
     act(() =>
       root.render(
         <TransactionReviewDialog
-          pending={{ kind: "review", id: 1, request, resolve: () => {} }}
+          pending={{ kind: "review", id: 1, model: modelOf(request), resolve: () => {} }}
           onFinish={(approved) => finished.push(approved)}
         />,
       ),
@@ -151,58 +160,6 @@ describe("transaction review dialog", () => {
       (button) => button.textContent === "Close",
     );
     act(() => close?.click());
-    expect(finished).toEqual([false]);
-  });
-
-  it("declines when the request changed after it was shown", async () => {
-    const claim = REVIEW_REQUESTS["sucker claim"].calls[0];
-    const { TransactionReviewDialog } = await import("@/components/TransactionReviewDialog");
-    const finished: unknown[] = [];
-    const authorization = { kind: "message", message: "A" };
-    const request = { calls: [claim], authorization } as unknown as TransactionReviewRequest;
-    act(() =>
-      root.render(
-        <TransactionReviewDialog
-          pending={{ kind: "review", id: 1, request, resolve: () => {} }}
-          onFinish={(approved) => finished.push(approved)}
-        />,
-      ),
-    );
-    const dialog = document.querySelector("dialog")!;
-    authorization.message = "B";
-    const agree = dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    act(() => agree.click());
-    // The footer's primary button, whatever the fee notice names it.
-    const approve = dialog.querySelector<HTMLButtonElement>("footer button.bg-melon-500")!;
-    expect(approve).toBeEnabled();
-    await act(async () => approve.click());
-    expect(finished).toEqual([false]);
-  });
-
-  it("declines when an authorization beside signatures changed after it was shown", async () => {
-    const claim = REVIEW_REQUESTS["sucker claim"].calls[0];
-    const { TransactionReviewDialog } = await import("@/components/TransactionReviewDialog");
-    const finished: unknown[] = [];
-    const authorization = { kind: "message", message: "A" };
-    const request = {
-      calls: [claim],
-      authorization,
-      signatures: [{ kind: "message", chainId: 1, message: "List my project" }],
-    } as unknown as TransactionReviewRequest;
-    act(() =>
-      root.render(
-        <TransactionReviewDialog
-          pending={{ kind: "review", id: 1, request, resolve: () => {} }}
-          onFinish={(approved) => finished.push(approved)}
-        />,
-      ),
-    );
-    const dialog = document.querySelector("dialog")!;
-    authorization.message = "B";
-    act(() => dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click());
-    await act(async () =>
-      dialog.querySelector<HTMLButtonElement>("footer button.bg-melon-500")!.click(),
-    );
     expect(finished).toEqual([false]);
   });
 });

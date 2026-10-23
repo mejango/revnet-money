@@ -18,11 +18,10 @@ import {
   writeIntentKey,
   type WriteHeldState,
   type WriteHoldClient,
-  type WriteHoldGate,
   type WriteHoldHandle,
   type WriteHoldState,
 } from "@bananapus/nana-sdk-core/review";
-import type { HeldSendInput, UseHeldSendResult } from "@bananapus/nana-sdk-core/review/react";
+import type { HeldSendInput } from "@bananapus/nana-sdk-core/review/react";
 import { encodeMultiSend, MULTI_SEND_CALL_ONLY } from "@bananapus/nana-sdk-core/safe";
 import { type Address, type Hex } from "viem";
 
@@ -41,7 +40,7 @@ export type HoldInput = HeldSendInput;
  * intent also answers for the exact-call holds an earlier build left: its call, and any call of
  * the same function on the same target.
  */
-export function safeHoldInputOf(chainId: number, proposal: ReviewedSafeProposal): HoldInput {
+function safeHoldInputOf(chainId: number, proposal: ReviewedSafeProposal): HoldInput {
   const [first] = proposal.calls;
   if (!first) throw new Error("A Safe proposal runs at least one call.");
   const call = proposal.batch
@@ -228,25 +227,6 @@ export function isHeldRefusal(error: unknown): boolean {
     error instanceof WriteHoldBusyError ||
     error instanceof WriteHeldError
   );
-}
-
-/**
- * One send through the SDK's held send (`send`, from useHeldSend), answering its refusals as
- * `answerHeldRefusal` does.
- */
-export async function sendHeld(
-  send: UseHeldSendResult["send"],
-  input: HoldInput,
-  client: WriteHoldClient,
-  run: (gate: WriteHoldGate) => Promise<Hex>,
-): Promise<Hex> {
-  for (;;) {
-    try {
-      return await send(input, run);
-    } catch (error) {
-      await answerHeldRefusal(error, holdOf(input), client);
-    }
-  }
 }
 
 /**

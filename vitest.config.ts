@@ -43,12 +43,6 @@ export default defineConfig({
           functions: 54,
           lines: 76,
         },
-        "src/hooks/useReviewedWriteContract.ts": {
-          statements: 59,
-          branches: 42,
-          functions: 44,
-          lines: 63,
-        },
         "src/lib/bridgePrepare.ts": {
           statements: 84,
           branches: 78,

@@ -41,7 +41,6 @@ const mocks = vi.hoisted(() => ({
   /** The live operator check, the first read after each Confirm. */
   live: vi.fn(),
   sign: vi.fn(),
-  review: vi.fn(),
   write: vi.fn(),
   receipt: vi.fn(),
   quote: vi.fn(),
@@ -69,12 +68,10 @@ vi.mock("@/app/[slug]/components/v6/operator/operatorLib", async (importOriginal
   isLiveRevnetOperator: mocks.live,
   publicClientFor: () => mocks.client,
 }));
-vi.mock("@/hooks/useReviewedSafeSignature", () => ({
-  useReviewedSafeSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
-}));
 vi.mock("@/lib/safe-connector", () => ({ useSafeConnection: () => false }));
 vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useSafeTransactionSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
   useReviewedAction: () => ({ deps: {} }),
 }));
 vi.mock("wagmi/actions", async (importOriginal) => ({
@@ -95,7 +92,6 @@ vi.mock("@/hooks/useReviewedRelayr", async (importOriginal) => ({
 }));
 vi.mock("@/lib/transaction-review", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/transaction-review")>()),
-  requireTransactionReview: mocks.review,
   chooseRelayrPayment: async (payments: unknown[]) => payments[0],
 }));
 vi.mock("@/lib/waitForReceipt", async (importOriginal) => ({
@@ -153,7 +149,6 @@ beforeEach(() => {
   };
   mocks.live.mockReset().mockResolvedValue(true);
   mocks.sign.mockReset().mockResolvedValue(`0x${"9".repeat(130)}`);
-  mocks.review.mockReset().mockResolvedValue(undefined);
   mocks.write.mockReset().mockResolvedValue({
     status: "done",
     hashes: [EXECUTION],
@@ -225,7 +220,6 @@ describe("the Safe queue's execution confirm", () => {
       ),
     ).toBeVisible();
     expect(unavailable.getCode).toHaveBeenCalled();
-    expect(mocks.review).not.toHaveBeenCalled();
     expect(mocks.sign).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();
     expect(mocks.pay).not.toHaveBeenCalled();

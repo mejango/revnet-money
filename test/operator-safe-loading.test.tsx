@@ -9,6 +9,10 @@ import type { Address, Hex, PublicClient } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { provenSafe, queuedRow, safeChain } from "./fixtures/safe-chain";
 
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useSafeTransactionSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
+}));
 vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 
 const SAFE = provenSafe();
@@ -45,10 +49,6 @@ vi.mock("@/app/[slug]/components/v6/operator/useLiveRevnetOperators", () => ({
 vi.mock("@/app/[slug]/components/v6/operator/useOperatorWrites", () => ({
   useOperatorWrites: () => ({ runWrites: mocks.write }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  followSubmission: vi.fn(),
-  useProposeSafeBatch: () => vi.fn(),
-}));
 vi.mock("@/hooks/useReviewedRelayr", async (importOriginal) => ({
   RelayrRecoveryError: (await importOriginal<typeof import("@/hooks/useReviewedRelayr")>())
     .RelayrRecoveryError,
@@ -56,9 +56,6 @@ vi.mock("@/hooks/useReviewedRelayr", async (importOriginal) => ({
   useGetRelayrTxQuote: () => ({ getRelayrTxQuote: mocks.quote, reset: vi.fn() }),
   useSendRelayrTx: () => ({ sendRelayrTx: vi.fn() }),
   waitForRelayrBundle: vi.fn(),
-}));
-vi.mock("@/hooks/useReviewedSafeSignature", () => ({
-  useReviewedSafeSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
 }));
 vi.mock("@/components/EthereumAddress", () => ({
   EthereumAddress: ({ address }: { address: string }) => <span>{address}</span>,

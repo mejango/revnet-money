@@ -57,6 +57,8 @@ export function onchain(to: Address, input: Hex, value = 16n, chainId = 1) {
     status: "success",
     blockHash: BLOCK_HASH,
     blockNumber: 123n,
+    transactionIndex: 0,
+    nonce: 5,
   };
 }
 

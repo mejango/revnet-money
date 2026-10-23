@@ -14,6 +14,7 @@ import { liquidityBatchCalls } from "@/app/[slug]/components/v6/owners/market/li
 import { MarketEditPanel } from "@/app/[slug]/components/v6/owners/market/MarketEditPanel";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import type { ReviewedCall } from "@bananapus/nana-sdk-core/review";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import { type Address, type Hex } from "viem";
@@ -24,8 +25,8 @@ import { groupGateState } from "./support/group-write-gate";
 vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 
 // Under a Safe app, an LP edit with pending approvals goes out as ONE batch
-// (approve → Permit2 → modifyLiquidities), in that order, through the reviewed
-// proposeSafeBatch boundary — never as separate proposals.
+// (approve → Permit2 → modifyLiquidities), in that order, through core's reviewed
+// batch run, never as separate proposals.
 
 const ACCOUNT = "0x1111111111111111111111111111111111111111" as Address;
 const PROJECT_TOKEN = "0x2222222222222222222222222222222222222222" as Address;
@@ -34,7 +35,6 @@ const UNLOCK = `0x${"ab".repeat(40)}` as Hex;
 
 const mocks = vi.hoisted(() => ({
   marketPlan: undefined as unknown,
-  proposeSafeBatch: vi.fn(),
   writeContractAsync: vi.fn(),
   reverifyEditLiquidity: vi.fn(),
   reverifyMarketEdit: vi.fn(),
@@ -63,9 +63,6 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     connectWalletText?: string;
   }) => <button {...props}>{children}</button>,
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  useProposeSafeBatch: () => mocks.proposeSafeBatch,
-}));
 vi.mock("@/lib/safe-connector", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
   isSafeConnection: () => true,
@@ -75,7 +72,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
   const { reviewedActionThrough } = await import("./support/reviewed-action");
   return {
     ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
-    useReviewedAction: reviewedActionThrough(mocks.writeContractAsync).hook,
+    useReviewedAction: reviewedActionThrough(mocks.writeContractAsync, { safeBatch: true }).hook,
   };
 });
 vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) => {
@@ -198,40 +195,34 @@ const marketPlan = {
 const render = (ui: React.ReactElement) =>
   rtlRender(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>);
 
-/** The batch every converted flow must hand to proposeSafeBatch, in this order. */
+/** The one batch every converted flow must run, in this order. */
 function expectOneOrderedBatch(title: string) {
-  expect(mocks.proposeSafeBatch).toHaveBeenCalledTimes(1);
-  const [config, chainId, seenTitle, calls] = mocks.proposeSafeBatch.mock.calls[0]!;
-  expect(config).toEqual({ id: "config" });
-  expect(chainId).toBe(8453);
-  expect(seenTitle).toBe(title);
-  expect(
-    calls.map((call: { functionName: string; address: Address }) => call.functionName),
-  ).toEqual(["approve", "approve", "modifyLiquidities"]);
+  expect(mocks.writeContractAsync).toHaveBeenCalledTimes(1);
+  const [{ batch: calls }, action] = mocks.writeContractAsync.mock.calls[0]!;
+  expect(action).toMatchObject({ batch: true, title });
+  expect(calls.map((call: ReviewedCall) => call.chainId)).toEqual([8453, 8453, 8453]);
+  expect(calls.map((call: ReviewedCall) => call.functionName)).toEqual([
+    "approve",
+    "approve",
+    "modifyLiquidities",
+  ]);
   // No declared return, so a token whose approve returns nothing (USDT) still simulates.
   expect(calls[0]).toMatchObject({
-    address: USDC,
+    to: USDC,
     abi: erc20ApproveAbi,
     args: [PERMIT2_ADDRESS, 5_000n],
   });
-  expect(calls[1]).toMatchObject({ address: PERMIT2_ADDRESS, functionName: "approve" });
+  expect(calls[1]).toMatchObject({ to: PERMIT2_ADDRESS, functionName: "approve" });
   expect(calls[1].args.slice(0, 3)).toEqual([USDC, POSITION_MANAGER_BY_CHAIN[8453], 5_000n]);
-  expect(calls[2]).toMatchObject({
-    address: POSITION_MANAGER_BY_CHAIN[8453],
-    dependsOnPrior: true,
-    value: 0n,
-  });
+  expect(calls[2]).toMatchObject({ to: POSITION_MANAGER_BY_CHAIN[8453], value: 0n });
   expect(calls[2].args[0]).toBe(UNLOCK);
-  // The direct path was never taken: nothing went through the per-write hook.
-  expect(mocks.writeContractAsync).not.toHaveBeenCalled();
 }
 
 describe("LP edits under a Safe app go out as one batch", () => {
   beforeEach(() => {
     groupGateState.reset();
     mocks.marketPlan = undefined;
-    mocks.proposeSafeBatch.mockReset().mockResolvedValue(`0x${"cd".repeat(32)}`);
-    mocks.writeContractAsync.mockReset();
+    mocks.writeContractAsync.mockReset().mockResolvedValue(`0x${"cd".repeat(32)}`);
     mocks.reverifyEditLiquidity.mockReset().mockResolvedValue(undefined);
     mocks.reverifyMarketEdit.mockReset().mockResolvedValue(undefined);
   });
@@ -251,7 +242,7 @@ describe("LP edits under a Safe app go out as one batch", () => {
     fireEvent.click(screen.getByRole("button", { name: "Increase the position" }));
     expect(await screen.findByText("A project listed here isn't linked onchain.")).toBeTruthy();
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(mocks.proposeSafeBatch).not.toHaveBeenCalled();
+    expect(mocks.writeContractAsync).not.toHaveBeenCalled();
   });
 
   it("still lets the wallet withdraw its own market from that pool", async () => {
@@ -293,11 +284,11 @@ describe("LP edits under a Safe app go out as one batch", () => {
     expect(dialog.textContent).toContain("Approve USDC access");
 
     fireEvent.click(screen.getAllByRole("button", { name: "Increase the position" }).at(-1)!);
-    await waitFor(() => expect(mocks.proposeSafeBatch).toHaveBeenCalled());
-    expectOneOrderedBatch("Edit position");
+    await waitFor(() => expect(mocks.writeContractAsync).toHaveBeenCalled());
+    expectOneOrderedBatch("Review position edit");
     expect(mocks.reverifyEditLiquidity).toHaveBeenCalledWith(pool, editPlan, ACCOUNT);
     expect(mocks.reverifyEditLiquidity.mock.invocationCallOrder[0]!).toBeLessThan(
-      mocks.proposeSafeBatch.mock.invocationCallOrder[0]!,
+      mocks.writeContractAsync.mock.invocationCallOrder[0]!,
     );
     await waitFor(() => expect(onDone).toHaveBeenCalledWith(null));
   });
@@ -321,15 +312,15 @@ describe("LP edits under a Safe app go out as one batch", () => {
     );
 
     fireEvent.click(screen.getAllByRole("button", { name: "Edit the market" }).at(-1)!);
-    await waitFor(() => expect(mocks.proposeSafeBatch).toHaveBeenCalled());
-    expectOneOrderedBatch("Edit the market");
+    await waitFor(() => expect(mocks.writeContractAsync).toHaveBeenCalled());
+    expectOneOrderedBatch("Review market edit");
     expect(mocks.reverifyMarketEdit).toHaveBeenCalledWith(pool, marketPlan, ACCOUNT);
     await waitFor(() => expect(onDone).toHaveBeenCalledWith(null));
   });
 
   it("refuses every way out while the batch is proposed, then hands back once it is", async () => {
     let finish!: (hash: Hex) => void;
-    mocks.proposeSafeBatch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    mocks.writeContractAsync.mockReturnValue(new Promise((resolve) => (finish = resolve)));
     const onDone = vi.fn();
     render(
       <EditPositionPanel
@@ -343,14 +334,14 @@ describe("LP edits under a Safe app go out as one batch", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Increase the position" }));
     const confirm = await findConfirm();
-    await waitFor(() => expect(mocks.proposeSafeBatch).toHaveBeenCalledOnce());
+    await waitFor(() => expect(mocks.writeContractAsync).toHaveBeenCalledOnce());
 
     expectEveryWayOutRefused(confirm);
 
     finish(`0x${"cd".repeat(32)}`);
     await waitFor(() => expect(onDone).toHaveBeenCalledWith(null));
     await waitFor(() => expect(confirmIsOpen()).toBe(false));
-    expect(mocks.proposeSafeBatch).toHaveBeenCalledOnce();
+    expect(mocks.writeContractAsync).toHaveBeenCalledOnce();
   });
 
   it("builds the batch list the three LP flows share, with only the final write dependent", () => {

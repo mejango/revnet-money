@@ -34,11 +34,6 @@ vi.mock("@/components/ButtonWithWallet", () => ({
   }) => <button {...props}>{children}</button>,
 }));
 
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  followSubmission: vi.fn(),
-  useProposeSafeBatch: () => vi.fn(),
-}));
-
 const pool = {
   chainId: 8453 as JBChainId,
   price: 0.00001,

@@ -20,7 +20,7 @@ vi.mock("next/image", () => ({
 }));
 
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
-import { requireTransactionReview } from "@/lib/transaction-review";
+import { requireReview as requireTransactionReview } from "./support/core-review";
 
 let container: HTMLDivElement;
 let root: Root;

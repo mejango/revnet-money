@@ -70,7 +70,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
     run: async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
       const call = action.calls[0]!;
       mocks.options = {
-        reverify: () => action.reverify!(call, 0),
+        reverify: () => action.reverify!(call, 0, undefined),
         beforeSubmission: async () => {
           await action.beforeWallet!(call, 0);
         },

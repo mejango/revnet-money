@@ -8,7 +8,6 @@ import { RelayrPaymentSelect } from "@/components/RelayrPaymentSelect";
 import { ModalCloseButton, ModalDialog } from "@/components/ui/ModalShell";
 import { buildTransactionReviewPrompt } from "@/lib/transaction-review";
 import {
-  buildReviewModel,
   type ReviewArgument,
   type ReviewCallModel,
   type ReviewSignatureModel,
@@ -505,14 +504,9 @@ function ReviewModal({
   pending: PendingReview;
   onFinish: (approved: boolean) => void;
 }) {
-  const { request } = pending;
-  const model = useMemo(
-    () => pending.model ?? buildReviewModel(request!),
-    [pending.model, request],
-  );
+  const { model } = pending;
   const feeCalls = useMemo(
     () =>
-      request?.calls ??
       model.calls.map((call) => ({
         chainId: call.chainId,
         to: call.to,
@@ -520,7 +514,7 @@ function ReviewModal({
         value: call.value,
         functionName: call.functionName ?? undefined,
       })),
-    [request, model],
+    [model],
   );
   const feeReview = useFeeBuybackReview(feeCalls);
   const [agreed, setAgreed] = useState(false);
@@ -528,7 +522,7 @@ function ReviewModal({
 
   const copyPrompt = async () => {
     try {
-      await navigator.clipboard.writeText(buildTransactionReviewPrompt(request ?? model));
+      await navigator.clipboard.writeText(buildTransactionReviewPrompt(model));
       setCopyState("copied");
     } catch {
       setCopyState("failed");
@@ -544,10 +538,8 @@ function ReviewModal({
 
   const isAuthorization = model.kind !== "transaction";
   /** Some authorizations are signed as a plain message rather than typed data. */
-  const authorizationIsMessage = request
-    ? (request.authorization as { kind?: string } | undefined)?.kind === "message"
-    : model.kind === "message";
-  const authorizes = request ? Boolean(request.authorization) : isAuthorization;
+  const authorizationIsMessage = model.kind === "message";
+  const authorizes = isAuthorization;
   const kinds = model.signatures.map((signature) => signature.kind);
   const signsMessage = (authorizes && authorizationIsMessage) || kinds.includes("message");
   const signsTypedData =
@@ -704,19 +696,6 @@ function ReviewModal({
               onClick={async () => {
                 if (!(await feeReview.confirm())) return;
                 // Core binds its own model to the confirmation it minted for it.
-                if (!request) {
-                  onFinish(true);
-                  return;
-                }
-                // Approve only what was shown: a request changed since then is declined.
-                const now = buildReviewModel(request);
-                if (
-                  now.id !== model.id ||
-                  now.warnings.some((warning) => warning.code === "unreadable")
-                ) {
-                  onFinish(false);
-                  return;
-                }
                 onFinish(true);
               }}
               disabled={!agreed || feeReview.busy || projectCheckPending}

@@ -94,6 +94,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
   mocks.runner = runner;
   return {
     ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useSafeTransactionSignature: () => ({ signSafeTransactionAsync: vi.fn() }),
     useReviewedAction: runner.hook,
   };
 });
@@ -114,9 +115,6 @@ vi.mock("@bananapus/nana-sdk-core/safe", async (importOriginal) => ({
 vi.mock("@bananapus/nana-sdk-core/safe-service", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/safe-service")>()),
   listPendingSafeTransactions: mocks.listPendingSafeTransactions,
-}));
-vi.mock("@/hooks/useReviewedSafeSignature", () => ({
-  useReviewedSafeSignature: () => ({ signSafeTransactionAsync: vi.fn() }),
 }));
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),

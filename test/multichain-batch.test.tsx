@@ -129,6 +129,20 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   requireRelayrRecoveryScopeAvailable: mocks.scopeAvailable,
   hasRelayrRecoveryScopeSession: mocks.scopeSession,
   isReleasedUnpaidRelayrBundle: mocks.releasedUnpaid,
+  forwardedRequestGas: async (
+    _client: unknown,
+    _forwarder: unknown,
+    _account: unknown,
+    request: { data: { gas: bigint } },
+  ) => request.data.gas,
+}));
+// Core's one plan review of every call the batch's Relayr rounds run.
+vi.mock("@bananapus/nana-sdk-core/review", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/review")>()),
+  reviewPlan: async (action: unknown) => {
+    await mocks.review(action);
+    return { reviewed: action };
+  },
 }));
 vi.mock("@/lib/safe-connector", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
@@ -154,7 +168,7 @@ vi.mock("@/hooks/useReviewedAction", async () => {
       });
       try {
         mocks.chainId = call.chainId;
-        await action.reverify?.(call, step);
+        await action.reverify?.(call, step, undefined);
         // Core's eth_call at the call's exact gas, when it has one.
         if (call.gas !== undefined)
           await mocks.rawCall({
@@ -204,7 +218,6 @@ vi.mock("@/hooks/useReviewedAction", async () => {
   return { useReviewedAction: () => ({ run }) };
 });
 vi.mock("@/lib/transaction-review", () => ({
-  requireTransactionReview: mocks.review,
   chooseRelayrPayment: mocks.choose,
 }));
 afterEach(() => vi.unstubAllGlobals());
@@ -2440,7 +2453,7 @@ describe("reviewed selected-call orchestration", () => {
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("tells Relayr the batch review showed its calls only in the run that showed it", async () => {
+  it("spends the batch's plan review only in the run that showed it", async () => {
     const { result } = renderHook(() => useMultichainBatch());
     await act(async () => {
       await result.current.runBatch({
@@ -2450,10 +2463,8 @@ describe("reviewed selected-call orchestration", () => {
       });
     });
     expect(mocks.review).toHaveBeenCalledOnce();
-    expect(mocks.quote.mock.calls[0][0]).toEqual([
-      expect.objectContaining({ chainId: 1, relayrMode: "raw", reviewedInParent: true }),
-      expect.objectContaining({ chainId: 10, relayrMode: "raw", reviewedInParent: true }),
-    ]);
+    // The round's quote spends the batch's one plan review.
+    expect(mocks.quote.mock.calls[0][1]).toMatchObject({ plan: expect.anything() });
 
     const saved = createMultichainBatch(
       ACCOUNT,
@@ -2467,10 +2478,8 @@ describe("reviewed selected-call orchestration", () => {
       await result.current.runBatch({ scope: "relayr-resume", label: "Deploy payers", calls: [] });
     });
     expect(mocks.review).toHaveBeenCalledOnce();
-    expect(mocks.quote.mock.calls[1][0]).toEqual([
-      expect.objectContaining({ chainId: 1, reviewedInParent: false }),
-      expect.objectContaining({ chainId: 10, reviewedInParent: false }),
-    ]);
+    // A resumed run showed no review, so its quote reviews its own calls.
+    expect(mocks.quote.mock.calls[1][1]?.plan).toBeUndefined();
   });
 
   it("never sends when the recovery journal cannot be persisted", async () => {

@@ -11,9 +11,7 @@ import { ModalDialog } from "@/components/ui/ModalShell";
 import { registerFlowChoiceHandler, type FlowChoice } from "@/lib/flow-choice";
 import {
   registerFundingChainSelectionHandler,
-  registerTransactionReviewHandler,
   type FundingChainOption,
-  type TransactionReviewRequest,
 } from "@/lib/transaction-review";
 import { registerReviewHandler, type ReviewModel } from "@bananapus/nana-sdk-core/review";
 import {
@@ -24,21 +22,15 @@ import {
   type ComponentType,
   type PropsWithChildren,
 } from "react";
-import type { Address } from "viem";
-import { useAccount } from "wagmi";
 
 export type PendingReview = {
   scope?: TransactionReviewScope | null;
   kind: "review";
   id: number;
   resolve: (approved: boolean) => void;
-} &
-  /** A boolean review (the Safe, Relayr and authority paths) of the request itself. */
-  (
-    | { request: TransactionReviewRequest; model?: undefined }
-    /** Core's prompt: the model it bound, confirmed only by the confirmation it minted. */
-    | { model: ReviewModel; request?: undefined }
-  );
+  /** Core's prompt: the model it bound, confirmed only by the confirmation it minted. */
+  model: ReviewModel;
+};
 
 export type PendingFundingChainSelection = {
   scope?: TransactionReviewScope | null;
@@ -80,9 +72,6 @@ function cancelPendingDialog(pending: PendingDialog) {
  * sequentially and each approval applies to one immutable call snapshot.
  */
 export function TransactionReviewProvider({ children }: PropsWithChildren) {
-  const { address } = useAccount();
-  const accountRef = useRef<Address | undefined>(address);
-  accountRef.current = address;
   const nextId = useRef(1);
   const scopeRef = useRef<TransactionReviewScope | null>(null);
   const [checkingScopeId, setCheckingScopeId] = useState<number | null>(null);
@@ -99,32 +88,6 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     activeRef.current = pending;
     setActive(pending);
   }, []);
-
-  const enqueue = useCallback(
-    (request: TransactionReviewRequest) =>
-      new Promise<boolean>((resolve) => {
-        const snapshot: TransactionReviewRequest = {
-          ...request,
-          calls: request.calls.map((call) => ({
-            ...call,
-            // The connected wallet sends a transaction. An authorization is sent
-            // by a relayer, a Safe or a sponsor, so only a call that names its
-            // own sender shows one.
-            from: call.from ?? (request.kind === "authorization" ? undefined : accountRef.current),
-            args: call.args ? [...call.args] : undefined,
-          })),
-        };
-        const pending: PendingReview = {
-          kind: "review",
-          scope: scopeRef.current,
-          id: nextId.current++,
-          request: snapshot,
-          resolve,
-        };
-        enqueueDialog(pending);
-      }),
-    [enqueueDialog],
-  );
 
   const enqueueFundingChainSelection = useCallback(
     (options: readonly FundingChainOption[], initialChainId: number | null) =>
@@ -170,7 +133,6 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     [enqueueDialog],
   );
 
-  useEffect(() => registerTransactionReviewHandler(enqueue), [enqueue]);
   useEffect(
     () =>
       registerReviewHandler(async (prompt) => {

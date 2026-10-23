@@ -3,7 +3,6 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { TxProgress } from "@/components/ui/TxProgress";
 import { useReviewedAction } from "@/hooks/useReviewedAction";
-import { useProposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { ACCOUNT_CHANGED, requireProposedOrDone, reviewClosed } from "@/lib/reviewed-call";
 import { isSafeConnection, useSafeConnection } from "@/lib/safe-connector";
@@ -36,7 +35,6 @@ import {
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
 import {
   approvalStepsFor,
-  liquidityBatchCalls,
   liquidityReviewedCalls,
   parseAmountText,
   safeBatchIntro,
@@ -104,7 +102,6 @@ export function EditPositionPanel({
 }) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
-  const proposeSafeBatch = useProposeSafeBatch();
   const viaSafe = useSafeConnection(wagmiConfig);
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });
@@ -318,29 +315,6 @@ export function EditPositionPanel({
     setStatus(null);
     setFailure(null);
     try {
-      // ponytail: Safe app only; other EIP-5792 wallets keep the sequential path.
-      if (isSafeConnection(wagmiConfig) && steps.length > 1) {
-        await reverifyEditLiquidity(current.pool, plan, account);
-        await proposeSafeBatch(
-          wagmiConfig,
-          chainId,
-          "Edit position",
-          liquidityBatchCalls({
-            chainId: state.chainId,
-            steps,
-            unlockData: plan.unlockData,
-            value: plan.value,
-          }),
-          account,
-          lpIntent,
-        );
-        setStatus(
-          "Proposed to Safe as one batch. The position shows its new state under Your liquidity once it executes.",
-        );
-        setReviewed(null);
-        onDone(null);
-        return;
-      }
       const result = requireProposedOrDone(
         await run({
           account,
@@ -356,6 +330,8 @@ export function EditPositionPanel({
             safe: isSafeConnection(wagmiConfig),
           }),
           scope: steps.length > 1 ? lpIntent : undefined,
+          // A Safe proposes the approvals and the write as one transaction.
+          batch: true,
           // After the review, however long it sat open, a changed position or drift beyond the
           // reviewed maxima still aborts first.
           reverify: async (call) => {
@@ -367,7 +343,11 @@ export function EditPositionPanel({
       );
       setReviewed(null);
       if (result.status === "proposed") {
-        setStatus("The edit was proposed to Safe and awaits approvals and execution.");
+        setStatus(
+          steps.length > 1
+            ? "Proposed to Safe as one batch. The position shows its new state under Your liquidity once it executes."
+            : "The edit was proposed to Safe and awaits approvals and execution.",
+        );
         onDone(null);
         return;
       }

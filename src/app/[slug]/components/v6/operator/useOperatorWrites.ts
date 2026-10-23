@@ -1,12 +1,11 @@
 "use client";
 
-import { useReviewedAction } from "@/hooks/useReviewedAction";
+import { useReviewedAction, useSafeTransactionSignature } from "@/hooks/useReviewedAction";
 import {
   useGetRelayrTxQuote,
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
-import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
 import { submittedViaSafe } from "@/lib/held-rows";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { isSafeConnection } from "@/lib/safe-connector";
@@ -76,7 +75,7 @@ export function useOperatorWrites() {
   const { run } = useReviewedAction();
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
-  const { signSafeTransactionAsync } = useReviewedSafeSignature();
+  const { signSafeTransactionAsync } = useSafeTransactionSignature();
   const config = useConfig();
   const queryClient = useQueryClient();
 

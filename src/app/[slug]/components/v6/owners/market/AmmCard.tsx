@@ -21,7 +21,6 @@ import { ErrorNote } from "@/components/ui/TxError";
 import { TxProgress } from "@/components/ui/TxProgress";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useReviewedAction } from "@/hooks/useReviewedAction";
-import { useProposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { cachedQuery } from "@/lib/query-persist";
 import {
@@ -93,7 +92,6 @@ import {
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
 import {
   approvalStepsFor,
-  liquidityBatchCalls,
   liquidityReviewedCalls,
   safeBatchIntro,
   type LiquidityStep,
@@ -630,7 +628,6 @@ export function AddLiquidityForm({
 }) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
-  const proposeSafeBatch = useProposeSafeBatch();
   const viaSafe = useSafeConnection(wagmiConfig);
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });
@@ -917,29 +914,6 @@ export function AddLiquidityForm({
     setStatus(null);
     setFailure(null);
     try {
-      // ponytail: Safe app only; other EIP-5792 wallets keep the sequential path.
-      if (isSafeConnection(wagmiConfig) && steps.length > 1) {
-        if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
-        else await reverifyAddLiquidity(pool, built.plan);
-        await proposeSafeBatch(
-          wagmiConfig,
-          chainId,
-          built.kind === "market" ? "Make the market" : "Add liquidity",
-          liquidityBatchCalls({
-            chainId: state.chainId,
-            steps,
-            unlockData: plan.unlockData,
-            value: plan.value,
-          }),
-          account,
-          lpIntent,
-        );
-        setStatus(
-          "Proposed to Safe as one batch. Once its signers approve and it executes, the position shows under Your liquidity.",
-        );
-        setReviewed(null);
-        return;
-      }
       const result = requireProposedOrDone(
         await run({
           // The position goes to the reviewed account: only it may fund the mint.
@@ -956,6 +930,8 @@ export function AddLiquidityForm({
             safe: isSafeConnection(wagmiConfig),
           }),
           scope: steps.length > 1 ? lpIntent : undefined,
+          // A Safe proposes the approvals and the write as one transaction.
+          batch: true,
           reverify: async (call) => {
             if (call.functionName !== "modifyLiquidities") return;
             if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
@@ -965,7 +941,11 @@ export function AddLiquidityForm({
         }),
       );
       if (result.status === "proposed") {
-        setStatus("Liquidity mint was proposed to Safe and awaits approvals and execution.");
+        setStatus(
+          steps.length > 1
+            ? "Proposed to Safe as one batch. Once its signers approve and it executes, the position shows under Your liquidity."
+            : "Liquidity mint was proposed to Safe and awaits approvals and execution.",
+        );
         setReviewed(null);
         return;
       }

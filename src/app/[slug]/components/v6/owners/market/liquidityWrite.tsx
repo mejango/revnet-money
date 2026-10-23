@@ -1,11 +1,11 @@
 "use client";
 
-import type { ProposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
-import { reviewedCall } from "@/lib/reviewed-call";
+import { legacyBatchNamespace } from "@/lib/legacy-intents";
+import { reviewedCall, type WriteRequest } from "@/lib/reviewed-call";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { approvalIntent, type ReviewedCall } from "@bananapus/nana-sdk-core/review";
-import { erc20Abi, parseUnits, type Address, type Hex, type PublicClient } from "viem";
+import { erc20Abi, parseUnits, type Abi, type Address, type Hex, type PublicClient } from "viem";
 import {
   lpDeadline,
   PERMIT2_ABI,
@@ -74,7 +74,11 @@ export async function approvalStepsFor({
   return steps;
 }
 
-export type LiquidityBatchCall = Parameters<ProposeSafeBatch>[3][number];
+export type LiquidityBatchCall = Omit<WriteRequest, "chainId" | "abi"> & {
+  abi: Abi;
+  /** Needs an earlier call's effect (an allowance), so it cannot simulate alone. */
+  dependsOnPrior?: boolean;
+};
 
 /**
  * The reviewed step list as ONE Safe batch: each approval becomes its call,
@@ -127,26 +131,34 @@ export function liquidityBatchCalls({
  * The reviewed step list as one reviewed action of `lpIntent`: each approval held as a step of it
  * (the SDK's approvalIntent; the plan's calculated maxima are not part of it), then the
  * position-manager write. Everything that touches funds is frozen inside unlockData; the deadline
- * is stamped when the review opens.
+ * is stamped when the review opens. Sent with `batch`, a Safe proposes them as one transaction,
+ * held by the first call's intent, so that call carries `lpIntent` (and the batch namespace the
+ * build before held every batch by).
  */
 export function liquidityReviewedCalls(
   lpIntent: string,
   input: Parameters<typeof liquidityBatchCalls>[0],
 ): ReviewedCall[] {
-  return liquidityBatchCalls(input).map(({ dependsOnPrior, ...call }, index) =>
+  const writes = liquidityBatchCalls(input);
+  const batch = input.safe && writes.length > 1;
+  return writes.map(({ dependsOnPrior, ...call }, index) =>
     reviewedCall(
       { chainId: input.chainId, ...call },
-      {
-        dependsOnPrior: index > 0 && !!dependsOnPrior,
-        intent:
-          call.functionName === "modifyLiquidities"
-            ? lpIntent
-            : approvalIntent(lpIntent, {
-                step: call.address === PERMIT2_ADDRESS ? "permit2" : "erc20",
-                token: (call.address === PERMIT2_ADDRESS ? call.args![0] : call.address) as Address,
-                spender: call.args![call.address === PERMIT2_ADDRESS ? 1 : 0] as Address,
-              }),
-      },
+      batch && index === 0
+        ? { intent: lpIntent, legacyIntents: [legacyBatchNamespace(writes)] }
+        : {
+            dependsOnPrior: index > 0 && !!dependsOnPrior,
+            intent:
+              call.functionName === "modifyLiquidities"
+                ? lpIntent
+                : approvalIntent(lpIntent, {
+                    step: call.address === PERMIT2_ADDRESS ? "permit2" : "erc20",
+                    token: (call.address === PERMIT2_ADDRESS
+                      ? call.args![0]
+                      : call.address) as Address,
+                    spender: call.args![call.address === PERMIT2_ADDRESS ? 1 : 0] as Address,
+                  }),
+          },
     ),
   );
 }

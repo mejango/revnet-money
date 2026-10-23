@@ -67,7 +67,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
   useReviewedAction: () => ({
     run: async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
       const call = action.calls[0]!;
-      await action.reverify?.(call, 0);
+      await action.reverify?.(call, 0, undefined);
       const hash = await mocks.write({ ...call, address: call.to });
       try {
         mocks.requireOnchain(hash);

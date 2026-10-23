@@ -15,6 +15,7 @@ import {
   reviewClosed,
   ReviewRefusal,
   useReviewedAction,
+  useSafeTransactionSignature,
   WALLET_CHANGED,
 } from "@/hooks/useReviewedAction";
 import {
@@ -25,7 +26,6 @@ import {
   waitForRelayrBundle,
   type ReviewedRelayrRequest,
 } from "@/hooks/useReviewedRelayr";
-import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { readHandleAuthority, unprovenSafeMessage } from "@/lib/handle-authority";
 import { recordSubmittedWrite, settleSubmittedWrite } from "@/lib/held-rows";
@@ -345,7 +345,7 @@ export function SafeQueueCard({
   // or paying Relayr from it would take the very nonce the queued transaction
   // needs. Safe{Wallet}'s own queue is where its owners sign and execute.
   const viaSafeApp = useSafeConnection(config);
-  const { signSafeTransactionAsync } = useReviewedSafeSignature();
+  const { signSafeTransactionAsync } = useSafeTransactionSignature();
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -894,7 +894,6 @@ export function SafeQueueCard({
         chainId: row.chainId,
         safe: row.safe,
         tx,
-        review: queuedSafeReviewCall(row.chainId, tx),
         reverify: async (liveAccount) => {
           await verifyLiveQueuedTransaction(row, tx);
           const confirmed = await readLiveSafePolicy(row);

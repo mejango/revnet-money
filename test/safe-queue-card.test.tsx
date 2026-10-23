@@ -31,7 +31,6 @@ const mocks = vi.hoisted(() => ({
   connector: { id: "injected" } as unknown,
   address: "0x2222222222222222222222222222222222222222",
   receipt: vi.fn(),
-  review: vi.fn(),
   sign: vi.fn(),
   quote: vi.fn(),
 }));
@@ -55,6 +54,7 @@ vi.mock("@/app/[slug]/components/v6/operator/useLiveRevnetOperators", () => ({
 vi.mock("@/lib/safe-connector", () => ({ useSafeConnection: () => false }));
 vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useSafeTransactionSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
   useReviewedAction: () => ({ deps: mocks.deps }),
 }));
 vi.mock("wagmi/actions", async (importOriginal) => ({
@@ -72,13 +72,6 @@ vi.mock("@/hooks/useReviewedRelayr", async (importOriginal) => ({
   useGetRelayrTxQuote: () => ({ getRelayrTxQuote: mocks.quote, reset: vi.fn() }),
   useSendRelayrTx: () => ({ sendRelayrTx: vi.fn() }),
   waitForRelayrBundle: vi.fn(),
-}));
-vi.mock("@/hooks/useReviewedSafeSignature", () => ({
-  useReviewedSafeSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
-}));
-vi.mock("@/lib/transaction-review", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@/lib/transaction-review")>()),
-  requireTransactionReview: mocks.review,
 }));
 vi.mock("@/lib/waitForReceipt", () => ({ waitForReceiptWithRetry: mocks.receipt }));
 vi.mock("@/components/EthereumAddress", () => ({
@@ -165,7 +158,6 @@ beforeEach(() => {
   window.localStorage.clear();
   groupGateState.reset();
   mocks.client = safeChain(SAFE.address, { nonce: 5n }).client;
-  mocks.review.mockResolvedValue(undefined);
   mocks.execute.mockReset();
   mocks.execute.mockResolvedValue({
     status: "done",

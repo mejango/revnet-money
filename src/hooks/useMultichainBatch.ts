@@ -2,6 +2,7 @@
 
 import { useReviewedAction } from "@/hooks/useReviewedAction";
 import {
+  forwardedRequestGas,
   hasRelayrRecoveryScopeSession,
   isReleasedUnpaidRelayrBundle,
   requireRelayrRecoveryScopeAvailable,
@@ -42,6 +43,7 @@ import {
 } from "@/lib/pending-router-calls";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { requireDone, reviewedCall, ReviewRefusal } from "@/lib/reviewed-call";
+import { reviewedSendDeps } from "@/lib/reviewed-send-deps";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls } from "@/lib/safe-transactions";
 import {
@@ -51,14 +53,17 @@ import {
   requireTransactionActivityPersistence,
   updateTransactionActivity,
 } from "@/lib/transaction-activity";
-import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction-review";
+import { chooseRelayrPayment } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
+import { jbContractAddress } from "@bananapus/nana-sdk-core";
 import {
   browserLocks,
   discardReviewedSequence,
   findReviewedSequence,
   gasWithHeadroom,
+  reviewPlan,
   type ReviewContextRow,
+  type ReviewedPlan,
 } from "@bananapus/nana-sdk-core/review";
 import { relayrDestinationHash } from "@bananapus/nana-sdk-core/review/relayr";
 import {
@@ -94,6 +99,27 @@ export type BatchCallProgress = {
   status: "pending" | "submitted" | "confirmed" | "reverted" | "skipped";
   hash?: Hash;
 };
+
+/** A call's gas as Relayr runs it: the call's own bound, or its estimate with headroom. */
+async function callGas(
+  client: { estimateContractGas: PublicClient["estimateContractGas"] },
+  account: Address,
+  call: FrozenBatchCall,
+): Promise<bigint> {
+  return (
+    call.gas ??
+    gasWithHeadroom(
+      await client.estimateContractGas({
+        account,
+        address: call.address,
+        abi: call.abi,
+        functionName: call.functionName,
+        args: call.args,
+        value: call.value,
+      }),
+    )
+  );
+}
 
 function callProgress(call: FrozenBatchCall): BatchCallProgress {
   return {
@@ -515,8 +541,10 @@ export function useMultichainBatch() {
         let batch: MultichainBatch | undefined;
         let replacingDraft: MultichainBatch | undefined;
         let replacementCommitted = false;
-        // True once this run showed the batch review of every exact call.
-        let reviewedHere = false;
+        // This run's one review of every exact call, which each round's signatures spend.
+        let plan: ReviewedPlan | undefined;
+        /** The gas the plan bound for each forward request, by call index. */
+        const plannedGas = new Map<number, bigint>();
         // A fresh direct batch's save, run once its review is confirmed.
         let commitFresh: (() => Promise<void>) | undefined;
         const progress = (message: string) => {
@@ -703,27 +731,52 @@ export function useMultichainBatch() {
               });
             };
             if (relayr) {
+              progress("Checking the selected transactions…");
+              // Each forward request's signed gas, fixed now so the review binds it.
+              for (const [index, call] of batch.calls.entries()) {
+                if (call.relayrMode === "raw") continue;
+                const client = getPublicClient(config, { chainId: call.chainId });
+                const forwarder = jbContractAddress[6].ERC2771Forwarder[call.chainId as JBChainId];
+                if (!client || !forwarder) throw new Error("Destination RPC unavailable.");
+                plannedGas.set(
+                  index,
+                  await forwardedRequestGas(client, forwarder, account, {
+                    data: {
+                      from: account,
+                      to: call.address,
+                      value: call.value ?? 0n,
+                      gas: await callGas(client, account, call),
+                      data: call.data,
+                    },
+                  }),
+                );
+              }
               progress("Review the selected transactions.");
-              await requireTransactionReview({
-                title: input.calls.every((call) => call.expectedRouterPending)
-                  ? "Retry payments"
-                  : `Review ${input.label}`,
-                description: `Pay network fees ${batch.rounds.length === 1 ? "once for this batch" : `in ${batch.rounds.length} separate payments`}. Each ${input.calls.every((call) => call.expectedRouterPending) ? "payment" : "transaction"} has its own result.`,
-                confirmLabel: "Agree & prepare batch",
-                calls: batch.calls.map((call) => ({
-                  chainId: call.chainId,
-                  from: account,
-                  to: call.address,
-                  value: call.value,
-                  gas: call.gas,
-                  data: call.data,
-                  abi: call.abi,
-                  functionName: call.functionName,
-                  args: call.args,
-                  contractName: call.contractName,
-                })),
-              });
-              reviewedHere = true;
+              plan = await reviewPlan(
+                {
+                  account,
+                  title: input.calls.every((call) => call.expectedRouterPending)
+                    ? "Retry payments"
+                    : `Review ${input.label}`,
+                  description: `Pay network fees ${batch.rounds.length === 1 ? "once for this batch" : `in ${batch.rounds.length} separate payments`}. Each ${input.calls.every((call) => call.expectedRouterPending) ? "payment" : "transaction"} has its own result.`,
+                  confirmLabel: "Agree & prepare batch",
+                  calls: batch.calls.map((call, index) => ({
+                    chainId: call.chainId,
+                    // A raw call runs from Relayr's own account.
+                    from: call.relayrMode === "raw" ? ("relayr" as const) : account,
+                    to: call.address,
+                    value: call.value ?? 0n,
+                    data: call.data,
+                    ...(plannedGas.has(index) ? { gas: plannedGas.get(index) } : {}),
+                    abi: call.abi,
+                    functionName: call.functionName,
+                    args: call.args,
+                    contractName: call.contractName,
+                  })),
+                  signal: input.signal,
+                },
+                reviewedSendDeps(config),
+              );
               await commit();
               // A direct batch is reviewed once by the reviewed send that sends it.
             } else commitFresh = commit;
@@ -768,24 +821,12 @@ export function useMultichainBatch() {
                   const client = getPublicClient(config, { chainId: call.chainId });
                   if (!client) throw new Error("Destination RPC unavailable.");
                   await verifyCallPreconditions(client, call.preconditions);
-                  const gas =
-                    call.gas ??
-                    gasWithHeadroom(
-                      await client.estimateContractGas({
-                        account,
-                        address: call.address,
-                        abi: call.abi,
-                        functionName: call.functionName,
-                        args: call.args,
-                        value: call.value,
-                      }),
-                    );
+                  // A forward request signs the gas its plan reviewed.
+                  const gas = plannedGas.get(index) ?? (await callGas(client, account, call));
                   return {
                     chainId: call.chainId as JBChainId,
                     version: 6 as const,
                     relayrMode: call.relayrMode,
-                    // The batch review in this run showed this exact call.
-                    reviewedInParent: reviewedHere,
                     recoveryScope: batchCallScope(batch!, call, index),
                     preconditions: call.preconditions,
                     expectedDeployment: call.expectedDeployment,
@@ -813,6 +854,7 @@ export function useMultichainBatch() {
                 const quote = await getRelayrTxQuote(requests, {
                   signal: input.signal,
                   onMessage: progress,
+                  plan,
                 });
                 requireAccount();
                 if (!quote) throw new Error("No payable quote is available.");

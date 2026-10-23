@@ -102,7 +102,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
   const run = vi.fn(async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
     const hashes: `0x${string}`[] = [];
     for (const [step, call] of action.calls.entries()) {
-      await action.reverify?.(call, step);
+      await action.reverify?.(call, step, undefined);
       await action.beforeWallet?.(call, step);
       const hash = await mocks.writeContractAsync({ ...call, address: call.to }, action);
       if (mocks.proposed) return { status: "proposed" as const, step, safeTxHash: hash };

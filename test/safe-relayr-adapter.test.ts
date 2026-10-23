@@ -296,7 +296,7 @@ describe("Safe Relayr shared ownership gate", () => {
     expect(hook).toMatch(
       /safeRelayrController\(\s*config,\s*undefined,\s*options\?\.onProgress,?\s*\)\s*\.prepare\(/,
     );
-    expect(hook).toContain("controller = safeRelayrController(config, wallet,");
+    expect(hook).toContain("controller = safeRelayrController(config, pays,");
     expect(hook).toMatch(/\.fund\(\{/);
     expect(hook).toMatch(/safeBundleController\(wagmiConfig, key\)\.check\(/);
     expect(hook).toMatch(/safeBundleController\(wagmiConfig, bundleUuid\)\s*\.watch\(/);

@@ -20,9 +20,10 @@ const reviewedHookModules = {
       hookKind: "reviewed-action-hook",
       bindings: { run: "reviewed-action" },
     },
-  },
-  "@/hooks/useReviewedWriteContract": {
-    useProposeSafeBatch: { hookKind: "reviewed-safe-batch-hook", bindings: {} },
+    useSafeTransactionSignature: {
+      hookKind: "reviewed-safe-signature-hook",
+      bindings: { signSafeTransactionAsync: "reviewed-safe-signature" },
+    },
   },
   "@/hooks/useReviewedRelayr": {
     useGetRelayrTxQuote: {
@@ -32,12 +33,6 @@ const reviewedHookModules = {
     useSendRelayrTx: {
       hookKind: "reviewed-relayr-payment-hook",
       bindings: { sendRelayrTx: "reviewed-relayr-payment" },
-    },
-  },
-  "@/hooks/useReviewedSafeSignature": {
-    useReviewedSafeSignature: {
-      hookKind: "reviewed-safe-signature-hook",
-      bindings: { signSafeTransactionAsync: "reviewed-safe-signature" },
     },
   },
 };

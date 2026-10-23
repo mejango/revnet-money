@@ -46,7 +46,7 @@ async function load(sends: (() => unknown)[]) {
   const prompt = vi.fn().mockResolvedValue(false);
   choice.registerFlowChoiceHandler(prompt);
   // The SDK's held send (useHeldSend): each call does what's next, then sends.
-  const send = vi.fn(async () => {
+  const send = vi.fn(async (..._args: unknown[]) => {
     sends.shift()?.();
     return HASH;
   });
@@ -54,7 +54,16 @@ async function load(sends: (() => unknown)[]) {
   return {
     prompt,
     send,
-    sendHeld: () => holds.sendHeld(send as never, INPUT as never, {} as never, run as never),
+    // A held send answered the way every reviewed write answers its refusals.
+    sendHeld: async () => {
+      for (;;) {
+        try {
+          return await send(INPUT as never, run as never);
+        } catch (error) {
+          await holds.answerHeldRefusal(error, holds.holdOf(INPUT as never), {} as never);
+        }
+      }
+    },
   };
 }
 
@@ -63,7 +72,7 @@ beforeEach(() => {
   sdk.handle.peek.mockReturnValue({ status: "clear" });
 });
 
-describe("sendHeld: the flow's dialogs over the SDK's held send", () => {
+describe("answerHeldRefusal: the flow's dialogs over the SDK's held send", () => {
   it("sends straight through a clear hold", async () => {
     const { sendHeld, send, prompt } = await load([]);
     await expect(sendHeld()).resolves.toBe(HASH);

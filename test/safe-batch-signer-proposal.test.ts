@@ -2,7 +2,7 @@ import {
   routeSafeBatch,
   useSafeBatchSubmit,
 } from "@/app/[slug]/components/v6/operator/useSafeBatchSubmit";
-import { followSubmission } from "@/hooks/useReviewedWriteContract";
+import { recordSafeProposal } from "@/lib/held-rows";
 import { buildStep, composeBatch } from "@/lib/safe-batch";
 import { clearViewAs, setViewAs, VIEW_AS_WRITE_ERROR } from "@/lib/view-as";
 import { registerReviewHandler } from "@bananapus/nana-sdk-core/review";
@@ -30,16 +30,23 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("wagmi", () => ({ useConfig: () => ({}) }));
-vi.mock("wagmi/actions", () => ({ getAccount: () => ({ address: mocks.account, chainId: 8453 }) }));
+vi.mock("wagmi/actions", () => ({
+  getAccount: () => ({ address: mocks.account, chainId: 8453 }),
+  getWalletClient: async () => ({ signTypedData: mocks.sign }),
+  switchChain: vi.fn(),
+}));
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  followSubmission: vi.fn(),
-  useProposeSafeBatch: () => vi.fn(),
+vi.mock("@/lib/held-rows", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/held-rows")>()),
+  recordSafeProposal: vi.fn(),
 }));
-vi.mock("@/lib/safe-connector", () => ({ isSafeConnection: () => false }));
+vi.mock("@/lib/safe-connector", () => ({
+  isSafeConnection: () => false,
+  safeWalletPeerSettled: async () => undefined,
+}));
 vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
   const { writeHolds } = await import("@/lib/write-hold");
   return {
@@ -157,7 +164,7 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
       },
     ]);
     // One call is proposed as itself, so its follow-up expects a direct call, not a MultiSend.
-    expect(vi.mocked(followSubmission).mock.calls.at(-1)?.[6]).toMatchObject({ batch: false });
+    expect(vi.mocked(recordSafeProposal).mock.calls.at(-1)?.[5]).toMatchObject({ batch: false });
   });
 
   it("signs nothing when View-as was turned on while the proposal sat in review", async () => {

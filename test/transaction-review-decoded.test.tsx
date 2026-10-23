@@ -25,9 +25,9 @@ import { TransactionReviewProvider } from "@/components/TransactionReviewProvide
 import { relayrPaymentReview } from "@/lib/relayr-payment-review";
 import {
   buildTransactionReviewPrompt,
-  requireTransactionReview,
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
+import { requireReview as requireTransactionReview } from "./support/core-review";
 
 const TOKEN = "0x3333333333333333333333333333333333333333";
 const TARGET = "0x1111111111111111111111111111111111111111";
@@ -173,8 +173,10 @@ describe("decoded transaction review", () => {
     );
   });
 
-  it("shows the connected wallet as the sender of a transaction, and no sender it was not given for an authorization", async () => {
-    let text = await review({ calls: [{ chainId: 1, to: TARGET, data: "0xdeadbeef" as Hex }] });
+  it("shows a transaction's sender, and no sender it was not given for an authorization", async () => {
+    let text = await review({
+      calls: [{ chainId: 1, from: ACCOUNT, to: TARGET, data: "0xdeadbeef" as Hex }],
+    });
     expect(text).toContain(`From${ACCOUNT}`);
     act(() => root.unmount());
     root = createRoot(container);

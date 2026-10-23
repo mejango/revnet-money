@@ -62,7 +62,6 @@ vi.mock("@/components/ButtonWithWallet", () => ({
   }) => <button {...props}>{children}</button>,
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({ useProposeSafeBatch: () => vi.fn() }));
 vi.mock("@/lib/safe-connector", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
   isSafeConnection: () => false,

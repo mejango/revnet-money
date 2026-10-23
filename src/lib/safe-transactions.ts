@@ -4,11 +4,7 @@ import { chainDisplayName } from "@/app/constants";
 import {
   requireSafeExecutionSuccess,
   safeTransactionRunsCalls as runsCalls,
-  safeBatchProposalFor,
   safeExecutionResult,
-  safeProposalFor,
-  safeTransactionHash,
-  type SafeQueuedTransaction,
 } from "@bananapus/nana-sdk-core/safe-service";
 import { type Address, type Hex } from "viem";
 
@@ -44,40 +40,6 @@ export function safeTransactionRunsCalls(
   batch: boolean,
 ): boolean {
   return runsCalls(tx, calls, batch);
-}
-
-/**
- * The Safe transaction this app proposes for `proposal` that hashes to `hash`, at a nonce from
- * `from` to `to`: the reviewed calls as a zero-refund proposal, with its safeTxGas when saved. It
- * carries the proposal's nonce. Undefined when none does (another proposer's fields, or a reply
- * that is an execution).
- */
-export function safeProposalAt(
-  chainId: number,
-  proposal: ReviewedSafeProposal,
-  hash: Hex,
-  from: bigint,
-  to: bigint,
-): SafeQueuedTransaction | undefined {
-  const calls = proposal.calls.map((call) => ({ ...call, value: BigInt(call.value) }));
-  if (!calls.length) return undefined;
-  for (let nonce = from; nonce <= to; nonce += 1n) {
-    try {
-      const tx = proposal.batch
-        ? safeBatchProposalFor(calls, Number(nonce))
-        : safeProposalFor(calls[0]!, Number(nonce));
-      const candidates = proposal.safeTxGas ? [tx, { ...tx, safeTxGas: proposal.safeTxGas }] : [tx];
-      const found = candidates.find(
-        (candidate) =>
-          safeTransactionHash(chainId, proposal.safe, candidate).toLowerCase() ===
-          hash.toLowerCase(),
-      );
-      if (found) return found;
-    } catch {
-      return undefined;
-    }
-  }
-  return undefined;
 }
 
 /** What a Safe queue shows on a chain where Safe hosts no transaction service. */

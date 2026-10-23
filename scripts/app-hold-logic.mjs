@@ -6,7 +6,7 @@ export const APP_HOLD_LOGIC = [
     /\b(createHeldWriteView|followHeldWrite)\b/,
     "an app-made held-write view or follower (useHeldSend, useHeldWrite)",
   ],
-  [/\bsendUnderHold\b/, "an app send-under-hold loop (use sendHeld over the SDK view)"],
+  [/\bsendUnderHold\b/, "an app send-under-hold loop (send through the reviewed engine, which holds every write)"],
   [/\btakeHeldExit\b/, "an app held-exit loop (the SDK view's exit)"],
   [/\bWENT_THROUGH\b|earlier transaction went through/, "the app's went-through gate"],
   [

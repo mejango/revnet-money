@@ -8,6 +8,7 @@ import { baseSepolia, sepolia } from "viem/chains";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TEST_ACCOUNT, validRevnetForm } from "./fixtures/revnet";
 import { BUNDLE_UUID, HASH, NOW, OTHER_BUNDLE_UUID, payment, relayrApi } from "./relayr-fixtures";
+import { answerReviews, stopAnswering } from "./support/core-review";
 
 // The Create page with the real Relayr hook, recovery guard and journal: only
 // the wallet, the chain reads and Relayr's API are stubbed.
@@ -53,18 +54,20 @@ vi.mock("wagmi", () => ({
 }));
 vi.mock("wagmi/actions", () => ({
   getAccount: () => mocks.account,
-  getPublicClient: () => ({
+  // One client per chain: a forwarder's domain names the chain whose client read it.
+  getPublicClient: (_config: unknown, at?: { chainId?: number }) => ({
+    chain: { id: at?.chainId ?? mocks.account.chainId },
     call: mocks.call,
-    readContract: mocks.readContract,
+    readContract: (args: object) =>
+      mocks.readContract({ ...args, clientChainId: at?.chainId ?? mocks.account.chainId }),
     getBlock: mocks.getBlock,
+    getChainId: async () => at?.chainId ?? mocks.account.chainId,
     estimateGas: async () => 21_000n,
     estimateContractGas: async () => 1_000_000n,
   }),
+  getWalletClient: async () => ({ signTypedData: mocks.signTypedData }),
+  switchChain: (_config: unknown, request: { chainId: number }) => mocks.switchChain(request),
   waitForTransactionReceipt: vi.fn(),
-}));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  followSubmission: vi.fn(),
-  useProposeSafeBatch: () => vi.fn(),
 }));
 vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
@@ -141,12 +144,13 @@ async function createPage() {
   vi.resetModules();
   const [{ default: Page }, review, activity, relayr, staleQuote] = await Promise.all([
     import("@/app/create/page"),
-    import("@/lib/transaction-review"),
+    import("@bananapus/nana-sdk-core/review"),
     import("@/lib/transaction-activity"),
     import("@/hooks/useReviewedRelayr"),
     import("@/app/create/helpers/staleQuote"),
   ]);
-  review.registerTransactionReviewHandler(async () => true);
+  stopAnswering();
+  answerReviews(async () => true, review);
   render(<Page />);
   return { activity, relayr, staleQuote };
 }
@@ -175,11 +179,19 @@ beforeEach(() => {
   // No finalized block is known, so a signed request counts as live.
   mocks.getBlock.mockResolvedValue({ hash: FINAL_HASH });
   mocks.readContract.mockImplementation(
-    async ({ functionName, address }: { functionName: string; address: Address }) =>
+    async ({
+      functionName,
+      address,
+      clientChainId,
+    }: {
+      functionName: string;
+      address: Address;
+      clientChainId: number;
+    }) =>
       functionName === "isTrustedForwarder"
         ? true
         : functionName === "eip712Domain"
-          ? ["0x0f", "Juicebox", "1", BigInt(mocks.account.chainId), address, HASH, []]
+          ? ["0x0f", "Juicebox", "1", BigInt(clientChainId), address, HASH, []]
           : 4n,
   );
   mocks.signTypedData.mockResolvedValue(`0x${"12".repeat(65)}` as Hex);

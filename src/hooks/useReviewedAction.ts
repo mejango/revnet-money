@@ -2,15 +2,15 @@
 
 import { recordSubmittedWrite, settleSubmittedWrite } from "@/lib/held-rows";
 import { revertedStep, ReviewRefusal, type ReviewedRunResult } from "@/lib/reviewed-call";
+import { reviewedSendDeps, reviewedWalletAdapter, WALLET_CHANGED } from "@/lib/reviewed-send-deps";
 import { isSafeConnection, safeWalletPeerSettled } from "@/lib/safe-connector";
 import { requireNoViewAs } from "@/lib/view-as";
 import { answerHeldRefusal, isHeldRefusal, writeHolds } from "@/lib/write-hold";
-import type { ReviewedCall } from "@bananapus/nana-sdk-core/review";
+import type { ReviewedCall, ReviewedPlan } from "@bananapus/nana-sdk-core/review";
 import {
   discardReviewedSequence,
   findReviewedSequence,
   openStepHold,
-  viemWalletAdapter,
   type WriteHoldClient,
 } from "@bananapus/nana-sdk-core/review";
 import {
@@ -18,11 +18,12 @@ import {
   type UseReviewedRunDeps,
   type UseReviewedRunResult,
 } from "@bananapus/nana-sdk-core/review/react";
-import { SAFE_NONCE_GUIDANCE } from "@bananapus/nana-sdk-core/safe-service";
+import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
+import { canonicalSafeTxHash, SAFE_NONCE_GUIDANCE } from "@bananapus/nana-sdk-core/safe-service";
 import { useCallback, useMemo, useRef } from "react";
-import type { PublicClient } from "viem";
+import type { Address, Hex } from "viem";
 import { useAccount, useConfig } from "wagmi";
-import { getAccount, getPublicClient, getWalletClient, switchChain } from "wagmi/actions";
+import { getAccount, getPublicClient } from "wagmi/actions";
 
 export {
   failedLine,
@@ -38,9 +39,10 @@ export {
   type ReviewedRunResult,
   type WriteRequest,
 } from "@/lib/reviewed-call";
+export { reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
 export type { ReviewedCall } from "@bananapus/nana-sdk-core/review";
 
-export const WALLET_CHANGED = "Wallet connection changed. Review the transaction again.";
+export { WALLET_CHANGED };
 
 /**
  * The send engine loads with the first write, not with the page: every send through it (Safe
@@ -61,17 +63,7 @@ export function useReviewedAction() {
   const { address } = useAccount();
   const deps = useMemo<UseReviewedRunDeps>(
     () => ({
-      adapter: viemWalletAdapter({
-        walletClient: () => getWalletClient(config),
-        account: () => getAccount(config).address,
-        chainId: () => getAccount(config).chainId,
-        isSafe: () => isSafeConnection(config),
-        switchChain: (chainId) => switchChain(config, { chainId } as never),
-        // Safe{Wallet} over WalletConnect is known only once its peer check answers.
-        ready: safeWalletPeerSettled,
-      }),
-      clientFor: (chainId) => getPublicClient(config, { chainId } as never) as PublicClient,
-      hold: writeHolds,
+      ...reviewedSendDeps(config),
       account: address,
       guard: requireNoViewAs,
       engine: loadEngine,
@@ -113,13 +105,16 @@ export function useReviewedAction() {
           action.assertWriteState?.();
         },
         onSubmitted: async (call, step, hash, sent) => {
-          if (account && !sent.adopted)
+          // A Safe batch is one proposal: one row, for every call, under its first call's hold.
+          const batch = action.batch && sent.safe && action.calls.length > 1;
+          if (account && !sent.adopted && !(batch && step > 0))
             rows[step] = recordSubmittedWrite(
               call,
               hash,
               account,
               action.title ?? call.label ?? "Transaction",
               sent.safe,
+              batch ? action.calls : undefined,
             );
           await action.onSubmitted?.(call, step, hash, sent);
         },
@@ -202,6 +197,57 @@ export function useReviewedAction() {
 }
 
 export type ReviewedAction = ReturnType<typeof useReviewedAction>;
+
+/**
+ * Signs one Safe transaction after core's review of it (its calls decoded), or under `plan`, one
+ * the person already reviewed. `reverify` rechecks the Safe and signer before the wallet opens
+ * and again once it closes, before the signature can be used.
+ */
+export function useSafeTransactionSignature() {
+  const config = useConfig();
+  const signSafeTransactionAsync = useCallback(
+    async ({
+      chainId,
+      safe,
+      tx,
+      reverify,
+      plan,
+    }: {
+      chainId: number;
+      safe: Address;
+      tx: SafeQueuedTransaction;
+      reverify?: (account: Address) => Promise<void>;
+      plan?: ReviewedPlan;
+    }): Promise<Hex> => {
+      const { address: account, connector } = getAccount(config);
+      if (!account) throw new Error("Connect a wallet first.");
+      // The service's advertised hash must be the call rebuilt from its fields.
+      canonicalSafeTxHash(chainId, safe, tx);
+      const { signReviewed } = await loadEngine();
+      const adapter = reviewedWalletAdapter(config, account, connector);
+      const [signature] = await signReviewed(
+        [{ kind: "safe-tx", chainId, safe, tx }],
+        {
+          account,
+          title: "Review Safe transaction signature",
+          description:
+            "This signature approves the exact queued Safe call. It does not execute until the threshold and nonce requirements are met.",
+          reverify: async () => reverify?.(account),
+          plan,
+        },
+        { adapter },
+      );
+      // A wallet prompt has no time bound: the wallet, the Safe and the signer are checked again
+      // before the signature goes anywhere.
+      adapter.requireUnchanged();
+      await reverify?.(account);
+      adapter.requireUnchanged();
+      return signature!;
+    },
+    [config],
+  );
+  return { signSafeTransactionAsync };
+}
 
 /** The calls as core compares an unfinished run with a new one (useReviewedRun's `sent`). */
 function sameCalls(a: readonly ReviewedCall[], b: readonly ReviewedCall[]): boolean {

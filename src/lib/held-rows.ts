@@ -227,6 +227,8 @@ export function recordSubmittedWrite(
   account: Address,
   title: string,
   safe: boolean,
+  /** Every call of a Safe batch `call` heads, proposed as one transaction. */
+  batch?: readonly ReviewedCall[],
 ): string {
   const id = `tx:${call.chainId}:${hash.toLowerCase()}`;
   const callKey = reviewedCallKey(account, call);
@@ -242,8 +244,12 @@ export function recordSubmittedWrite(
   const proposal: ReviewedSafeProposal | undefined = safe
     ? {
         safe: account,
-        calls: [{ to: call.to, value: String(call.value ?? 0n), data: call.data }],
-        batch: false,
+        calls: (batch ?? [call]).map((sent) => ({
+          to: sent.to,
+          value: String(sent.value ?? 0n),
+          data: sent.data,
+        })),
+        batch: !!batch,
         ...(call.intent ? { holdNamespace: call.intent } : {}),
         ...(legacyNamespaces.length ? { legacyNamespaces } : {}),
       }
@@ -280,4 +286,31 @@ export function settleSubmittedWrite(id: string, result: "success" | "failed"): 
 /** Whether `hash` is a Safe proposal the journal still shows awaiting its Safe. */
 export function submittedViaSafe(hash?: Hex): boolean {
   return transactionActivityForHash(hash)?.status === "safe-proposed";
+}
+
+/**
+ * Journal a Safe proposal the connected wallet signed for a Safe it co-signs. Not sent under the
+ * hold, so the row's follower adopts it into the hold and follows it to its result.
+ */
+export function recordSafeProposal(
+  hash: Hex,
+  chainId: number,
+  title: string,
+  account: Address,
+  callKey: string,
+  proposal: ReviewedSafeProposal,
+): void {
+  recordTransactionActivity({
+    id: `tx:${chainId}:${hash.toLowerCase()}`,
+    kind: "safe",
+    title,
+    status: "safe-proposed",
+    message: SAFE_PROPOSAL_AWAITING,
+    chainId,
+    account,
+    hash,
+    safeProposalHash: hash,
+    safeProposal: proposal,
+    callKey,
+  });
 }

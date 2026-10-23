@@ -236,7 +236,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
           const variables = { ...call, address: call.to, account: action.account };
           await mocks.beforeReverify(variables);
           try {
-            await action.reverify?.(call, step);
+            await action.reverify?.(call, step, undefined);
           } catch (failure) {
             return { status: "failed", error: (failure as Error).message, failure };
           }

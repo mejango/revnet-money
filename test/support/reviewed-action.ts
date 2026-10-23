@@ -58,6 +58,8 @@ export function reviewedActionThrough(
     proposed?: (hash: Hex) => boolean;
     /** The connected account, which core's wallet step requires to still be the run's. */
     connected?: () => string;
+    /** A Safe app: a `batch` run of several calls is one proposal, written once as `{ batch }`. */
+    safeBatch?: boolean;
   } = {},
 ) {
   const state: RunState = { phase: "idle", held: null };
@@ -74,6 +76,27 @@ export function reviewedActionThrough(
   const run = vi.fn(async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
     const hashes: Hex[] = [];
     await review;
+    if (options.safeBatch && action.batch && action.calls.length > 1) {
+      for (const [step, call] of action.calls.entries()) {
+        action.guard?.();
+        await action.reverify?.(call, step, undefined);
+      }
+      await action.beforeWallet?.(action.calls[0]!, 0);
+      action.assertWriteState?.();
+      let hash: Hex;
+      try {
+        hash = (await write({ batch: action.calls, account: action.account }, action)) as Hex;
+      } catch (failure) {
+        state.phase = "idle";
+        return { status: "failed" as const, error: (failure as Error).message, failure };
+      }
+      // Core reports the one proposal once per step.
+      for (const [step, call] of action.calls.entries())
+        await action.onSubmitted?.(call, step, hash, { safe: true, adopted: false });
+      state.phase = "proposed";
+      state.held = { exit: { label: "Check it in Safe" } };
+      return { status: "proposed" as const, step: 0, safeTxHash: hash };
+    }
     for (const [step, call] of action.calls.entries()) {
       // Core refuses a run whose reviewed account is no longer the connected one.
       const connected = options.connected?.();
@@ -83,7 +106,7 @@ export function reviewedActionThrough(
         return { status: "failed" as const, error: failure.message, failure };
       }
       action.guard?.();
-      await action.reverify?.(call, step);
+      await action.reverify?.(call, step, undefined);
       await action.beforeWallet?.(call, step);
       action.assertWriteState?.();
       let hash: Hex;
@@ -167,7 +190,7 @@ export function liveReviewedAction(
       try {
         const sent = { ...call, address: call.to, account: action.account };
         action.guard?.();
-        await action.reverify?.(call, step);
+        await action.reverify?.(call, step, undefined);
         set({ phase: "simulating" });
         await simulate?.(sent);
         await action.beforeWallet?.(call, step);

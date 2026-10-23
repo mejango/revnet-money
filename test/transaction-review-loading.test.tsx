@@ -4,6 +4,7 @@ import type { TransactionReviewDialogProps } from "@/components/TransactionRevie
 import { act, createElement, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { requireReview } from "./support/core-review";
 
 vi.mock("wagmi", () => ({ useAccount: () => ({ address: undefined }) }));
 
@@ -33,7 +34,7 @@ function ControlledDialog({ pending, onFinish }: TransactionReviewDialogProps) {
   return createElement(
     "div",
     { "data-loaded-review": pending.id },
-    createElement("p", null, pending.kind === "review" ? pending.request?.title : "Funding choice"),
+    createElement("p", null, pending.kind === "review" ? pending.model.title : "Funding choice"),
     createElement(
       "button",
       { onClick: () => onFinish(pending.kind === "review" ? true : 8453) },
@@ -73,7 +74,7 @@ afterEach(async () => {
 });
 
 function requestReview(title: string) {
-  return api.requireTransactionReview({
+  return requireReview({
     title,
     calls: [{ chainId: 1, to: "0x1111111111111111111111111111111111111111", data: "0x" }],
   });
