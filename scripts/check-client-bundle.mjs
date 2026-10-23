@@ -47,7 +47,7 @@ const routes = [
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 584 },
   { route: "/[slug]/extras", path: "/eth:1/extras", kib: 595 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 424 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 413 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 414 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
   { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 389 },
   { route: "/_not-found", path: "/no-such-page/x/y", kib: 300, status: 404 },
@@ -60,7 +60,7 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
   : routes;
 // 920 -> 922 (and all JS 2726 -> 2727): the onchain sucker-peer and group-write checks on top of Next 16.4.2.
 // All JS 2727 -> 2730: the loan dialogs read their token, decimals and currency onchain.
-// All JS 2730 -> 2753: the R stack on SDK 4.0.0 (core reviewed runs and Relayr rounds), measured on the 4.0.0 build.
+// All JS 2730 -> 2754: the R stack on SDK 4.0.0 (core reviewed runs and Relayr rounds), measured 2752.4 locally and 2753.1 on CI.
 // SDK 4.0.0 measures 921.2 KiB route-referenced (919.7 before); the ceiling moves up 1 KiB.
 // Next 16.4.2 measures 923.0 KiB; the ceiling moves to 924.
 const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
@@ -208,7 +208,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // 2733.2 KiB, routes unchanged; builds vary by 0.1 KiB. The aggregate ceiling moves to 2734.
 // Every write on core's useReviewedRun measures 2766.6 KiB: core's hold and lines load with each
 // writing page, and the app's own send engine is gone. The aggregate ceiling moves to 2767.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2753);
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2754);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
