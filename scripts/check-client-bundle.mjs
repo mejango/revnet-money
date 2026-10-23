@@ -20,24 +20,26 @@ import { vendorWallets } from "./lib/vendor-wallets.mjs";
 const account = `0x${"1".repeat(40)}`;
 // Project routes +4 KiB (2026-10-20): SDK 3.3.0 decodePayFailure revert table and the pay card's failure
 // reason and retry (+2), then SDK 3.4.1's retry rule and router-converted quote minimums (+2).
+// Routes +1-2 KiB (2026-10-22): Next 16.4.2's client runtime (critical advisories) adds 1.6-1.9 KiB to each;
+// each ceiling is the new measurement rounded up.
 const routes = [
-  { route: "/", path: "/", kib: 388 },
-  { route: "/learn", path: "/learn", kib: 352 },
-  { route: "/build", path: "/build", kib: 354 },
-  { route: "/audit", path: "/audit", kib: 355 },
+  { route: "/", path: "/", kib: 389 },
+  { route: "/learn", path: "/learn", kib: 353 },
+  { route: "/build", path: "/build", kib: 355 },
+  { route: "/audit", path: "/audit", kib: 356 },
   { route: "/discover", path: "/discover", kib: 338 },
-  { route: "/create", path: "/create", kib: 542 },
-  { route: "/[slug]", path: "/eth:1", kib: 568 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 567 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 674 },
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 629 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 574 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 569 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 418 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 408 },
+  { route: "/create", path: "/create", kib: 543 },
+  { route: "/[slug]", path: "/eth:1", kib: 570 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 569 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 676 },
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 576 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 571 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 420 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 409 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
-  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 384 },
-  { route: "/_not-found", path: "/no-such-page/x/y", kib: 299, status: 404 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 385 },
+  { route: "/_not-found", path: "/no-such-page/x/y", kib: 300, status: 404 },
 ];
 // Next renders its global error page only when the root layout itself throws; no URL reaches it.
 const unmeasuredRoutes = new Set(["/_global-error"]);
@@ -45,7 +47,8 @@ const unmeasuredRoutes = new Set(["/_global-error"]);
 const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
   ? JSON.parse(process.env.CLIENT_BUNDLE_ROUTES)
   : routes;
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 920);
+// 920 -> 921 with the account routes +1: the onchain sucker-peer check on top of Next 16.4.2.
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 921);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
