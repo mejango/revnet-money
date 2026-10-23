@@ -110,6 +110,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   const [reviewing, setReviewing] = useState<ChainFormData[] | null>(null);
   // A multi-chain change stopped at a Safe proposal: nothing more to send from here.
   const [proposal, setProposal] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const { address } = useAccount();
 
   const { hasPermission } = useUserPermissions();
@@ -247,6 +248,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       setReviewing(null);
       return;
     }
+    setFailure(null);
     const result = await submitSplits(reviewing, [
       { label: "Stage", value: String(stageIdx + 1) },
       ...reviewing.map((chain) => ({
@@ -276,6 +278,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       return;
     }
     if (result?.proposal) setProposal(result.proposal);
+    if (result?.error) setFailure(result.error);
     if (result?.success && reviewing.length > 1) setReviewing(null);
   };
 
@@ -309,6 +312,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
           onClose={() => {
             setReviewing(null);
             setProposal(null);
+            setFailure(null);
           }}
           title="Confirm split recipients"
           steps={
@@ -331,6 +335,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
           start={() => void confirmSubmit()}
           busy={writing && !proposed}
           complete={proposed || unconfirmed}
+          error={failure}
           status={
             proposal ??
             (isTxUnconfirmed

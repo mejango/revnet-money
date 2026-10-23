@@ -172,7 +172,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const isWriteLoading =
     sale.phase === "review" || sale.phase === "simulating" || sale.phase === "signing";
   const isTxLoading = sale.phase === "receipt";
-  const isSuccess = sale.phase === "done";
+  // Only the sale's own hash is success: a Safe that ran just the approval leaves the sale to send.
+  const isSuccess = sale.phase === "done" && !!hash;
   const isTxUnconfirmed = sale.phase === "proposed" && !!sale.held?.exit;
   // const { data: redeemQuote } = useTokenCashOutQuoteEth(redeemAmountBN, {
   //   chainId: selectedSucker?.peerChainId as JBChainId,

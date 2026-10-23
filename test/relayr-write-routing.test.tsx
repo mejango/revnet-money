@@ -323,7 +323,7 @@ describe("reserved token split routing", () => {
     });
     const { result } = renderHook(() => useSetSplitGroups({ onSuccess: vi.fn() }));
     await act(async () => {
-      await expect(result.current.submitSplits(splitChains([10]))).resolves.toEqual({
+      await expect(result.current.submitSplits(splitChains([10]))).resolves.toMatchObject({
         success: false,
       });
     });
@@ -471,7 +471,7 @@ describe("reserved token split routing", () => {
     const onSuccess = vi.fn();
     const { result } = renderHook(() => useSetSplitGroups({ onSuccess }));
     await act(async () => {
-      await expect(result.current.submitSplits(splitChains([1, 10]))).resolves.toEqual({
+      await expect(result.current.submitSplits(splitChains([1, 10]))).resolves.toMatchObject({
         success: false,
       });
     });
@@ -499,7 +499,9 @@ describe("reserved token split routing", () => {
       await act(async () => {
         if (fails) finish.reject(new Error("Second chain simulation failed"));
         else finish.resolve([FIRST_HASH, LAST_HASH]);
-        await expect(pending).resolves.toEqual({ success: !fails });
+        await expect(pending).resolves.toEqual(
+          fails ? { success: false, error: "Second chain simulation failed" } : { success: true },
+        );
       });
       if (fails) expect(onSuccess).not.toHaveBeenCalled();
       else expect(onSuccess).toHaveBeenCalledExactlyOnceWith(LAST_HASH);

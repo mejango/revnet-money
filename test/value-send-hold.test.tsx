@@ -51,6 +51,8 @@ const mocks = vi.hoisted(() => ({
   safeProposal: false,
   /** That proposal's result can't be confirmed here. */
   safeUnconfirmed: false,
+  /** The Safe runs the proposed step later, which core reports as done. */
+  safeLands: false,
   /** The chain whose node has a sent hash's receipt; no other chain's node has it. */
   receiptOn: null as number | null,
   /** Whether that receipt shows a revert. */
@@ -252,6 +254,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
           });
           if (mocks.safeProposal) {
             setState({ phase: "proposed", held: mocks.safeUnconfirmed ? { exit: {} } : null });
+            if (mocks.safeLands) setTimeout(() => setState({ phase: "done", held: null }), 0);
             return { status: "proposed", step, safeTxHash: hash };
           }
           setState({ phase: "receipt", held: null });
@@ -435,6 +438,7 @@ beforeEach(() => {
   mocks.directSell = false;
   mocks.safeProposal = false;
   mocks.safeUnconfirmed = false;
+  mocks.safeLands = false;
   mocks.receiptOn = null;
   mocks.neverLands = false;
   mocks.reverted = false;
@@ -901,6 +905,18 @@ describe("cash out's sale approval", () => {
       }),
     );
     expect(dialogNamed("Cash out").open).toBe(true);
+    expect(mocks.write).toHaveBeenCalledOnce();
+  });
+
+  it("returns to the sale, not its success, once the Safe runs only the approval", async () => {
+    mocks.safeProposal = true;
+    mocks.safeLands = true;
+    await approveSale();
+
+    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(dialogNamed("Cash out")).not.toHaveTextContent("Success!");
+    expect(screen.getByRole("button", { name: "Sell on market" })).toBeInTheDocument();
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 

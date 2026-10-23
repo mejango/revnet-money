@@ -86,7 +86,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const { run, phase, held, reset } = useReviewedAction();
   const [hash, setHash] = useState<Hex>();
   const isLoading = phase === "receipt";
-  const isSuccess = phase === "done";
+  // Only the move's own hash is success: a Safe that ran just the approval leaves the move to send.
+  const isSuccess = phase === "done" && !!hash;
   const isSafeResultUnconfirmed = phase === "proposed" && !!held?.exit;
   const { data: balances, isLoading: isBalanceLoading } = useSuckersUserTokenBalance();
   const { balance } = balances?.find((b) => b.chainId === sourceChainId) || {

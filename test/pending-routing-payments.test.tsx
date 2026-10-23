@@ -107,6 +107,21 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/** Holds every payment preparation until released, so the journal can change mid-review. */
+function holdPreparation() {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const prepare = mocks.prepare.getMockImplementation()!;
+  mocks.prepare.mockImplementation(async (...args: Parameters<typeof prepare>) => {
+    await gate;
+    return prepare(...args);
+  });
+  return () => act(async () => release());
+}
+
+/** A newer journal entry, written while the review was open. */
+const NEWER_JOURNAL = { id: "different", scope: "other", completed: 0, total: 1 };
+
 describe("payment recovery", () => {
   it("starts collapsed and hides raw amounts until payment details are verified", async () => {
     let resolve!: (value: ReturnType<typeof row>) => void;
@@ -251,14 +266,25 @@ describe("payment recovery", () => {
     mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
       project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
     );
-    setup();
+    const rendered = setup();
     await screen.findByText("14 payments ready to retry.");
     expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Re-check saved status" })).toBeNull();
     expect(screen.queryByText(/Saved batch:/)).toBeNull();
     expect(screen.queryByText(/A wallet submission has an unknown result/)).toBeNull();
     expect(mocks.recheck).not.toHaveBeenCalled();
+    const release = holdPreparation();
     fireEvent.click(screen.getByRole("button", { name: "Retry all payments" }));
+    await waitFor(() => expect(mocks.prepare).toHaveBeenCalled());
+
+    // The eventual write must recheck the reviewed ID, never silently supersede a newer journal.
+    mocks.saved.mockReturnValue({ ...NEWER_JOURNAL, refreshable: true });
+    rendered.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <PendingRoutingPayments projects={projects} />
+      </QueryClientProvider>,
+    );
+    await release();
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getAllByRole("listitem")).toHaveLength(14);
     expect(within(dialog).queryByRole("checkbox")).toBeNull();
@@ -486,10 +512,20 @@ describe("payment recovery", () => {
     mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
       project.chainId === 1 ? Array.from({ length: 8 }, (_, i) => row(`item-${i}`).indexed) : [],
     );
-    setup();
+    const rendered = setup();
+    const release = holdPreparation();
     fireEvent.click(await screen.findByRole("button", { name: "Retry all payments" }));
     expect(screen.queryByRole("button", { name: "Resume saved batch" })).toBeNull();
     expect(screen.queryByText(/Saved batch:/)).toBeNull();
+    // A later journal update must not silently change the selection under review.
+    await waitFor(() => expect(mocks.prepare).toHaveBeenCalled());
+    mocks.saved.mockReturnValue({ ...NEWER_JOURNAL, replaceableDraft: false });
+    rendered.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <PendingRoutingPayments projects={projects} />
+      </QueryClientProvider>,
+    );
+    await release();
     await waitFor(() =>
       expect(mocks.batch).toHaveBeenCalledWith(
         expect.objectContaining({

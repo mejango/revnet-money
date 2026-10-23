@@ -310,6 +310,20 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
     expect(state.submitSplits.mock.calls[0][0][0].chainId).toBe(8453);
   });
 
+  it("shows a failed update's line with Try again, which sends the same review again", async () => {
+    state.submitSplits = vi
+      .fn()
+      .mockResolvedValueOnce({ success: false, error: "The update reverted." })
+      .mockResolvedValueOnce({ success: true });
+    await openDialog(0);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    const dialog = (await screen.findAllByRole("dialog")).at(-1)!;
+    await within(dialog).findByText("The update reverted.");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(state.submitSplits).toHaveBeenCalledTimes(2));
+    expect(state.submitSplits.mock.calls[1][0]).toEqual(state.submitSplits.mock.calls[0][0]);
+  });
+
   it("ends on Done when a single-chain change went to the Safe as a proposal", async () => {
     state.submitSplits = vi.fn().mockResolvedValue({ success: true });
     state.proposeToSafe = true;

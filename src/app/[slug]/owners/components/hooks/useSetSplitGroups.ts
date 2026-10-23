@@ -157,13 +157,10 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
           toast({ title: "Safe proposal submitted", description: formatWalletError(e) });
           return { success: false, proposal: formatWalletError(e) };
         }
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: formatWalletError(e, "Failed to update splits"),
-        });
+        const error = formatWalletError(e, "Failed to update splits");
+        toast({ variant: "destructive", title: "Error", description: error });
         console.error(e);
-        return { success: false };
+        return { success: false, error };
       } finally {
         setIsSubmitting(false);
       }
