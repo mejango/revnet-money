@@ -15,8 +15,12 @@ import { legacyIntents } from "@/lib/legacy-intents";
 import {
   buildProtectedBorrowTx,
   buildProtectedReallocateCollateralTx,
+  LOAN_SOURCE_CHANGED,
+  LOAN_SOURCE_UNREADABLE,
   minimumBorrowAmount,
   readFreshBorrowableAmount,
+  readLoanSource,
+  sameLoanSource,
 } from "@/lib/loanTransactions";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
@@ -36,8 +40,9 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { borrowIntent, loanIntent } from "@bananapus/nana-sdk-core/review";
 import { hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
-import { useCallback, useEffect, useState } from "react";
-import { formatUnits, parseUnits } from "viem";
+import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { formatUnits, isAddressEqual, parseUnits } from "viem";
 import { useAccount, usePublicClient, useReadContract, useWalletClient } from "wagmi";
 
 // Types
@@ -93,6 +98,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
   // Borrow-related state
   const [borrowStatus, setBorrowStatus] = useState<BorrowState>("idle");
+  // A send-time read of the loan source that failed or disagreed with the reviewed one.
+  const [sourceNotice, setSourceNotice] = useState<{ key?: string; line: string }>();
   // The burn permission is read live at submission, so a run only learns it is
   // two prompts once the grant starts. Remembering that keeps the finished
   // grant listed instead of vanishing when the loan step begins.
@@ -149,15 +156,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     { enabled: !!suckerGroupId, pollInterval: 30000, chainId: Number(chainId) },
   );
 
-  // ===== PHASE 1: TOKEN RESOLUTION FUNCTION =====
-  // Get the correct token configuration for a specific chain
-  const tokenConfigForChain = useCallback(
-    (chainId: string | number) => {
-      return getTokenConfigForChain(suckerGroupData, Number(chainId));
-    },
-    [suckerGroupData],
-  );
-
   const revLoansContractAddress = cashOutChainId
     ? getRevnetLoanContract(6, Number(cashOutChainId) as JBChainId)
     : undefined;
@@ -197,13 +195,98 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     ? BigInt(selectedBalance.projectId)
     : projectId;
 
+  // ===== PHASE 1: THE LOAN SOURCE, READ ONCHAIN =====
+  // REVLoans prices a loan in its terminal's accounting context for the source token, and an
+  // existing loan fixes its own revnet and token. Those come from the loans contract, never the
+  // indexer: the indexer's token only says which of the revnet's own contexts to prefer. The read
+  // starts when a chain is picked, so it has normally landed before the confirm opens.
+  const indexedTokenConfig = selectedBorrowChainId
+    ? getTokenConfigForChain(suckerGroupData, selectedBorrowChainId)
+    : null;
+  const selectedLoanId = internalSelectedLoan?.id;
+  const preferredToken = indexedTokenConfig?.token;
+  const loanSourceArgs = useMemo(
+    () =>
+      selectedBorrowChainId
+        ? {
+            chainId: selectedBorrowChainId,
+            revnetId: effectiveProjectId,
+            loanId: selectedLoanId != null ? BigInt(selectedLoanId) : undefined,
+            preferredToken,
+          }
+        : undefined,
+    [selectedBorrowChainId, effectiveProjectId, selectedLoanId, preferredToken],
+  );
+  const loanSourceKey = loanSourceArgs
+    ? [
+        loanSourceArgs.chainId,
+        loanSourceArgs.revnetId,
+        loanSourceArgs.loanId,
+        loanSourceArgs.preferredToken,
+      ].join(":")
+    : undefined;
+  const loanSourceQuery = useQuery({
+    queryKey: ["revLoanSource", loanSourceKey],
+    enabled: !!publicClient && !!loanSourceArgs,
+    staleTime: 60_000,
+    retry: 1,
+    retryDelay: 250,
+    // A failed read retries on its own, so the line clears without a click.
+    refetchInterval: (query) => (query.state.status === "error" ? 15_000 : false),
+    queryFn: () => readLoanSource(publicClient!, loanSourceArgs!),
+  });
+  const loanSource = loanSourceQuery.data;
+  const refetchLoanSource = loanSourceQuery.refetch;
+  const reviewedLoanSource = loanSource;
+  const loanSourceUpdatedAt = loanSourceQuery.dataUpdatedAt;
+  useEffect(() => {
+    // A read that lands again ends a send-time failure.
+    if (loanSourceUpdatedAt)
+      setSourceNotice((notice) => (notice?.line === LOAN_SOURCE_UNREADABLE ? undefined : notice));
+  }, [loanSourceUpdatedAt]);
+  const notice = sourceNotice?.key === loanSourceKey ? sourceNotice?.line : undefined;
+  const loanSourceLine = loanSourceQuery.isError ? LOAN_SOURCE_UNREADABLE : (notice ?? null);
+  // Only an unreadable source blocks the send; a changed one is shown and confirmed again.
+  const loanSourceBlocked = loanSourceLine === LOAN_SOURCE_UNREADABLE;
+
+  // Get the correct token configuration for a specific chain: the selected chain's is the
+  // onchain loan source (null while it loads or fails); any other chain's is display only.
+  const indexedSymbol =
+    loanSource && indexedTokenConfig && isAddressEqual(indexedTokenConfig.token, loanSource.token)
+      ? indexedTokenConfig.symbol
+      : undefined;
+  const selectedLoanSourceConfig = useMemo(
+    () =>
+      loanSource
+        ? {
+            token: loanSource.token,
+            decimals: loanSource.decimals,
+            currency: loanSource.currency,
+            symbol: indexedSymbol ?? getTokenSymbolFromAddress(loanSource.token),
+          }
+        : null,
+    [loanSource, indexedSymbol],
+  );
+  const tokenConfigForChain = useCallback(
+    (chainId: string | number) =>
+      Number(chainId) === selectedBorrowChainId
+        ? selectedLoanSourceConfig
+        : getTokenConfigForChain(suckerGroupData, Number(chainId)),
+    [suckerGroupData, selectedBorrowChainId, selectedLoanSourceConfig],
+  );
+
   // V6 project ids are a per-chain namespace: the page's prop is the ROUTE chain's id, and
   // quoting it on the loan's chain prices a different revnet. Per-loan reads key on the
-  // loan row's own id, falling back to the sucker-pair id for the selected chain.
+  // loan's own revnet as the loans contract reports it, falling back to the loan row's id
+  // until that read lands (no quote runs before it), else the sucker-pair id for the chain.
   const loanProjectId =
-    internalSelectedLoan?.projectId != null
+    (internalSelectedLoan ? loanSource?.revnetId : undefined) ??
+    (internalSelectedLoan?.projectId != null
       ? BigInt(internalSelectedLoan.projectId)
-      : effectiveProjectId;
+      : effectiveProjectId);
+
+  // Every quote on the selected chain prices the revnet the loans contract names.
+  const quoteRevnetId = loanSource?.revnetId ?? effectiveProjectId;
 
   // Calculate total fixed fees from contract values (in basis points)
   const totalFixedFees =
@@ -231,7 +314,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     args:
       cashOutChainId && selectedChainTokenConfig
         ? ([
-            effectiveProjectId,
+            quoteRevnetId,
             userProjectTokenBalance,
             BigInt(selectedChainTokenConfig.decimals),
             BigInt(selectedChainTokenConfig.currency),
@@ -245,7 +328,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     args:
       collateralAmount && selectedChainTokenConfig
         ? [
-            effectiveProjectId,
+            quoteRevnetId,
             parseUnits(collateralAmount, projectTokenDecimals),
             BigInt(selectedChainTokenConfig.decimals),
             BigInt(selectedChainTokenConfig.currency),
@@ -577,19 +660,29 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   ]);
 
   const handleBorrow = useCallback(async () => {
-    // Get token configuration for the selected chain
-    const selectedChainTokenConfig = cashOutChainId ? tokenConfigForChain(cashOutChainId) : null;
-
-    // Validate that we have token configuration for the selected chain
-    if (!selectedChainTokenConfig) {
+    // The loan source is read again from the loans contract at send: the quote, the
+    // minimum and the calldata all use what the chain says now.
+    // Busy from the first read, so the dialog cannot close under the send.
+    setBorrowStatus("checking");
+    let selectedChainTokenConfig: Awaited<ReturnType<typeof readLoanSource>>;
+    try {
+      if (!publicClient || !loanSourceArgs) throw new Error(LOAN_SOURCE_UNREADABLE);
+      selectedChainTokenConfig = await readLoanSource(publicClient, loanSourceArgs);
+    } catch {
+      setSourceNotice({ key: loanSourceKey, line: LOAN_SOURCE_UNREADABLE });
       setBorrowStatus("error");
-      toast({
-        variant: "destructive",
-        title: "Configuration Error",
-        description: "Could not load the token details for this network.",
-      });
+      void refetchLoanSource();
       return;
     }
+    // The confirm showed the cached source; if the chain now says otherwise, show the new
+    // terms in place and send nothing until they are confirmed.
+    if (!reviewedLoanSource || !sameLoanSource(reviewedLoanSource, selectedChainTokenConfig)) {
+      setSourceNotice({ key: loanSourceKey, line: LOAN_SOURCE_CHANGED });
+      setBorrowStatus("error");
+      void refetchLoanSource();
+      return;
+    }
+    setSourceNotice(undefined);
 
     if (
       internalSelectedLoan &&
@@ -643,7 +736,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           // The loan's chain carries its OWN revnet id — the page's prop is the route chain's.
           // A mismatch quotes a different revnet's borrowable amount, which then becomes both the
           // tx's collateral-transfer argument and its slippage floor.
-          revnetId: loanProjectId,
+          revnetId: selectedChainTokenConfig.revnetId,
           collateralCount: newLoanCollateralCount,
           decimals: BigInt(selectedChainTokenConfig.decimals),
           currency: BigInt(selectedChainTokenConfig.currency),
@@ -711,7 +804,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         try {
           const freshBorrowableAmount = await readFreshBorrowableAmount(publicClient, {
             chainId: Number(cashOutChainId) as JBChainId,
-            revnetId: effectiveProjectId,
+            revnetId: selectedChainTokenConfig.revnetId,
             collateralCount: collateralBigInt,
             decimals: BigInt(selectedChainTokenConfig.decimals),
             currency: BigInt(selectedChainTokenConfig.currency),
@@ -777,10 +870,12 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     resolvedPermissionsAddress,
     writeContractAsync,
     effectiveProjectId,
-    loanProjectId,
     publicClient,
     projectTokenDecimals,
-    tokenConfigForChain,
+    loanSourceArgs,
+    loanSourceKey,
+    refetchLoanSource,
+    reviewedLoanSource,
     collateralCountToTransfer,
     ensureBurnTokensPermission,
     showUnconfirmedProposal,
@@ -963,6 +1058,10 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     baseToken,
     selectedChainTokenConfig,
     tokenConfigForChain,
+    /** One line when the onchain loan token can't be read; the loan stays off. */
+    loanSourceLine,
+    loanSourceBlocked,
+    loanSourcePending: !!loanSourceArgs && loanSourceQuery.isPending && !loanSourceQuery.isError,
     // Undefined until the selected chain's token config resolves — consumers
     // must render a loading state, never assume ETH.
     selectedChainTokenSymbol: selectedChainTokenConfig

@@ -13,7 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/hooks/useReviewedWriteContract";
-import { JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
 import { formatUnits } from "viem";
 import { ImportantInfo } from "./ImportantInfo";
@@ -85,6 +85,9 @@ export function ReallocateDialog({
     balances,
     selectedChainTokenSymbol,
     tokenConfigForChain,
+    loanSourceLine,
+    loanSourceBlocked,
+    loanSourcePending,
   } = reallocateDialog;
 
   // Get the borrowable amount for the specific loan's chain
@@ -113,11 +116,13 @@ export function ReallocateDialog({
   const loanChainTokenConfig = selectedLoan?.chainId
     ? tokenConfigForChain(selectedLoan.chainId)
     : null;
-  // `??`, not `||`: a legitimate 0-decimal accounting token must not be read as 18.
-  const baseTokenDecimals = loanChainTokenConfig?.decimals ?? NATIVE_TOKEN_DECIMALS;
-  const existingBorrowed = selectedLoan
-    ? Number(formatUnits(BigInt(selectedLoan.borrowAmount), baseTokenDecimals))
-    : 0;
+  // The loans contract's own context for the loan's source token, read onchain; undefined
+  // while it loads or fails, never a guessed decimal.
+  const baseTokenDecimals = loanChainTokenConfig?.decimals;
+  const existingBorrowed =
+    selectedLoan && baseTokenDecimals !== undefined
+      ? Number(formatUnits(BigInt(selectedLoan.borrowAmount), baseTokenDecimals))
+      : undefined;
 
   // Use provided open state or internal state
   const dialogOpen = open !== undefined ? open : isDialogOpen;
@@ -174,7 +179,8 @@ export function ReallocateDialog({
               <div>
                 <span className="text-zinc-600">Borrowed:</span>
                 <div className="font-medium">
-                  {existingBorrowed.toFixed(6)} {selectedChainTokenSymbol}
+                  {existingBorrowed !== undefined ? existingBorrowed.toFixed(6) : "…"}{" "}
+                  {selectedChainTokenSymbol}
                 </div>
               </div>
               <div>
@@ -203,14 +209,14 @@ export function ReallocateDialog({
               )}
               <div className="text-sm text-zinc-600 mb-2">
                 New loan can borrow:{" "}
-                {newLoanBorrowableAmount
+                {newLoanBorrowableAmount && baseTokenDecimals !== undefined
                   ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals)).toFixed(8)
                   : "0.000000"}{" "}
                 {selectedChainTokenSymbol}
               </div>
               <div className="text-sm text-zinc-600 mb-2">
                 Minimum borrowed (99% of the quote):{" "}
-                {minimumBorrowAmountPreview !== undefined
+                {minimumBorrowAmountPreview !== undefined && baseTokenDecimals !== undefined
                   ? Number(formatUnits(minimumBorrowAmountPreview, baseTokenDecimals)).toFixed(8)
                   : "Unavailable"}{" "}
                 {selectedChainTokenSymbol}
@@ -319,7 +325,7 @@ export function ReallocateDialog({
               tokenSymbol={selectedChainTokenSymbol ?? "…"}
               collateralTokenSymbol={tokenSymbol}
               amountBorrowed={
-                newLoanBorrowableAmount
+                newLoanBorrowableAmount && baseTokenDecimals !== undefined
                   ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals))
                   : 0
               }
@@ -350,7 +356,7 @@ export function ReallocateDialog({
                     The new loan uses {newLoanCollateral.toFixed(6)} {tokenSymbol}:{" "}
                     {collateralToTransfer.toFixed(6)} from the existing loan and{" "}
                     {additionalCollateral.toFixed(6)} from your wallet. You can borrow{" "}
-                    {newLoanBorrowableAmount
+                    {newLoanBorrowableAmount && baseTokenDecimals !== undefined
                       ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals)).toFixed(8)
                       : "0.000000"}{" "}
                     {selectedChainTokenSymbol}.
@@ -393,16 +399,23 @@ export function ReallocateDialog({
           )}
 
           {/* Status and Action */}
+          {loanSourceLine && !review && !(collateralToTransfer > 0) ? (
+            <p className="text-sm text-zinc-600">{loanSourceLine}</p>
+          ) : null}
           {collateralToTransfer > 0 && (
             <DialogFooter className="flex flex-row items-center justify-between w-full gap-4">
               <div className="flex-1 text-left">
                 {statusText ? <p className="text-sm text-zinc-600">{statusText}</p> : null}
+                {loanSourceLine && !review ? (
+                  <p className="text-sm text-zinc-600">{loanSourceLine}</p>
+                ) : null}
               </div>
               <ButtonWithWallet
                 targetChainId={cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined}
-                loading={loading}
+                loading={loading || loanSourcePending}
                 onClick={() => setReview(true)}
                 disabled={
+                  loanSourceBlocked ||
                   !collateralAmount ||
                   Number(collateralAmount) > Number(borrowableAmountFormatted) ||
                   Number(collateralAmount) < 0 ||
@@ -439,7 +452,7 @@ export function ReallocateDialog({
               onConfirm={() => void handleBorrow()}
               busy={busy}
               status={busy || borrowStatus === "safe-unconfirmed" ? statusText : null}
-              error={borrowStatus.startsWith("error") ? statusText : null}
+              error={loanSourceLine ?? (borrowStatus.startsWith("error") ? statusText : null)}
             >
               <SummaryRow label="Loan">
                 #{selectedLoan?.id} on {chainDisplayName(Number(cashOutChainId) as JBChainId)}
@@ -455,11 +468,11 @@ export function ReallocateDialog({
               </SummaryRow>
               <SummaryRow label="New loan borrows">
                 ~
-                {newLoanBorrowableAmount
+                {newLoanBorrowableAmount && baseTokenDecimals !== undefined
                   ? Number(formatUnits(newLoanBorrowableAmount, baseTokenDecimals)).toFixed(8)
                   : "0"}{" "}
                 {selectedChainTokenSymbol}
-                {minimumBorrowAmountPreview !== undefined ? (
+                {minimumBorrowAmountPreview !== undefined && baseTokenDecimals !== undefined ? (
                   <span className="block text-xs text-zinc-500">
                     At least{" "}
                     {Number(formatUnits(minimumBorrowAmountPreview, baseTokenDecimals)).toFixed(8)}{" "}

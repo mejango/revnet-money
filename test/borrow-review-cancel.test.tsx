@@ -1,9 +1,25 @@
 import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { recordTransactionActivity } from "@/lib/transaction-activity";
 import { TransactionReviewCancelledError } from "@/lib/transaction-review";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
+import type { ReactNode } from "react";
 import type { Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const { ETH_CONTEXT, LOAN_REVNET_ID } = vi.hoisted(() => ({
+  ETH_CONTEXT: {
+    token: "0x000000000000000000000000000000000000EEEe",
+    decimals: 18,
+    currency: 61166,
+  },
+  LOAN_REVNET_ID: 7n,
+}));
+
+let queryClient = new QueryClient();
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+);
 
 const mocks = vi.hoisted(() => ({
   write: vi.fn(),
@@ -15,7 +31,17 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("wagmi", () => ({
   useAccount: () => ({ address: "0x000000000000000000000000000000000000dEaD" }),
-  usePublicClient: () => ({}),
+  // The loans contract's own reads of the loan source: ETH, 18 decimals, on its terminal.
+  usePublicClient: () => ({
+    readContract: async ({ functionName }: { functionName: string }) =>
+      ({
+        TERMINAL: "0x5555555555555555555555555555555555555555",
+        accountingContextsOf: [ETH_CONTEXT],
+        accountingContextForTokenOf: ETH_CONTEXT,
+        revnetIdOfLoanWith: LOAN_REVNET_ID,
+        loanOf: { amount: 1n, collateral: 1n, sourceToken: ETH_CONTEXT.token },
+      })[functionName],
+  }),
   useWalletClient: () => ({ data: {} }),
   useReadContract: ({ functionName }: { functionName?: string }) => ({
     data: functionName === "PERMISSIONS" ? "0x0000000000000000000000000000000000000004" : undefined,
@@ -88,6 +114,7 @@ vi.mock("@/lib/tokenUtils", () => ({
 import { useBorrowDialog } from "@/app/[slug]/components/Value/hooks/useBorrowDialog";
 
 beforeEach(() => {
+  queryClient = new QueryClient();
   window.localStorage.clear();
   mocks.sent = undefined;
   mocks.hasPermissions.mockResolvedValue(false);
@@ -96,9 +123,10 @@ beforeEach(() => {
 describe("a closed permission review", () => {
   it("wallet-action:loans returns the borrow flow to its start without reporting a denied permission", async () => {
     mocks.write.mockRejectedValue(new TransactionReviewCancelledError());
-    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }));
+    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }), { wrapper });
 
     act(() => result.current.handleChainSelection(1));
+    await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
     await act(() => result.current.handleBorrow());
 
     expect(mocks.write).toHaveBeenCalledExactlyOnceWith(
@@ -113,9 +141,10 @@ describe("a permission step refused by a Safe proposal the app can't confirm", (
   it("wallet-action:loans says to check the proposal in Safe, and neither that permission was denied nor that it failed", async () => {
     const proposal = `0x${"ab".repeat(32)}` as Hex;
     mocks.write.mockRejectedValue(new SafeProposalPendingError(proposal, true));
-    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }));
+    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }), { wrapper });
 
     act(() => result.current.handleChainSelection(1));
+    await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
     await act(() => result.current.handleBorrow());
 
     expect(result.current.borrowStatus).toBe("safe-unconfirmed");
@@ -143,7 +172,8 @@ describe("a loan left open over its own Safe proposal the app can't confirm", ()
     });
     mocks.sent = proposal;
 
-    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }));
+    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }), { wrapper });
+    await waitFor(() => expect(result.current.loanSourcePending).toBe(false));
 
     await waitFor(() => expect(result.current.borrowStatus).toBe("safe-unconfirmed"));
     expect(result.current.loading).toBe(false);
@@ -163,9 +193,12 @@ describe("a refinance whose permission check can't be read", () => {
   it("ends in an error the dialog can be closed from, instead of holding the check", async () => {
     mocks.hasPermissions.mockRejectedValue(new Error("The node can't be reached."));
     // The loan names its own chain.
-    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n, selectedLoan: LOAN }));
+    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n, selectedLoan: LOAN }), {
+      wrapper,
+    });
     // Adding collateral needs the permission check.
     act(() => result.current.setCollateralAmount("1"));
+    await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
 
     await act(() => result.current.handleBorrow());
 

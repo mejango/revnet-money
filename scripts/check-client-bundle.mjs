@@ -48,6 +48,7 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
   ? JSON.parse(process.env.CLIENT_BUNDLE_ROUTES)
   : routes;
 // 920 -> 922 (and all JS 2726 -> 2727): the onchain sucker-peer and group-write checks on top of Next 16.4.2.
+// All JS 2727 -> 2730: the loan dialogs read their token, decimals and currency onchain.
 const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
@@ -187,7 +188,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // 2747.6 KiB. Raise only the aggregate ceiling to 2750 KiB; route and lazy-load limits stay fixed.
 // The load-size pass (rendered-HTML gate, splitChunks, lazy dialogs and write machinery, SDK
 // 3.1.0) measures 2714.9 KiB, route-referenced 912.1 KiB. Every ceiling drops to its measure.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2727);
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2730);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");

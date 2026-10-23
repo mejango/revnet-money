@@ -166,9 +166,12 @@ ${unsafePara ? "secp256k1.sign(message);" : ""}`,
     write(
       "bin/npm",
       `#!${process.execPath}
-const { writeFileSync } = require("node:fs");
+const { existsSync, writeFileSync } = require("node:fs");
 writeFileSync(process.env.AUDIT_STUB_CALLED, JSON.stringify(process.argv.slice(2)));
-process.stdout.write(process.env.AUDIT_STUB_STDOUT || "");
+const seen = process.env.AUDIT_STUB_CALLED + ".seen";
+const first = process.env.AUDIT_STUB_FIRST_STDOUT && !existsSync(seen);
+if (first) writeFileSync(seen, "");
+process.stdout.write(first ? process.env.AUDIT_STUB_FIRST_STDOUT : process.env.AUDIT_STUB_STDOUT || "");
 process.stderr.write(process.env.AUDIT_STUB_STDERR || "");
 if (process.env.AUDIT_STUB_SIGNAL) {
   process.kill(process.pid, process.env.AUDIT_STUB_SIGNAL);
@@ -187,11 +190,13 @@ if (process.env.AUDIT_STUB_SIGNAL) {
       status = 0,
       signal = "",
       sourceOnly = false,
+      firstOutput = "",
     }: {
       output?: string;
       status?: number;
       signal?: string;
       sourceOnly?: boolean;
+      firstOutput?: string;
     } = {}) => {
       const result = spawnSync(
         process.execPath,
@@ -203,6 +208,7 @@ if (process.env.AUDIT_STUB_SIGNAL) {
             PATH: binDirectory,
             AUDIT_STUB_CALLED: calledPath,
             AUDIT_STUB_STDOUT: output,
+            AUDIT_STUB_FIRST_STDOUT: firstOutput,
             AUDIT_STUB_STATUS: String(status),
             AUDIT_STUB_SIGNAL: signal,
           },
@@ -348,6 +354,31 @@ describe("production audit runner fails closed", () => {
     expect(result.status).toBe(1);
     expect(result.output).toContain("error response");
     expect(result.output).not.toContain("audit passed");
+  });
+
+  it("asks again after an error report and passes when the second report is complete", () => {
+    const result = fixture().run({
+      firstOutput: JSON.stringify({ error: { code: "E503", summary: "Service unavailable" } }),
+    });
+    expect(result.status).toBe(0);
+    expect(result.output).toContain("Production dependency audit passed.");
+  });
+
+  it("does not retry an error field that sits beside a report", () => {
+    const result = fixture().run({
+      firstOutput: JSON.stringify({ ...report(), error: null }),
+    });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("error response");
+  });
+
+  it("stops after one more attempt when the error report repeats", () => {
+    const result = fixture().run({
+      firstOutput: JSON.stringify({ error: { code: "E503" } }),
+      output: JSON.stringify({ error: { code: "E503" } }),
+    });
+    expect(result.status).toBe(1);
+    expect(result.output).toContain("error response");
   });
 
   it("rejects an error field even alongside an otherwise valid clean report", () => {

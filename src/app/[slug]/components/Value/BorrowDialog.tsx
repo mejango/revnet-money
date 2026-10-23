@@ -23,7 +23,7 @@ import {
 import { toast } from "@/components/ui/use-toast";
 import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/hooks/useReviewedWriteContract";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
-import { JBChainId, NATIVE_TOKEN_DECIMALS } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits } from "viem";
 import { ImportantInfo } from "./ImportantInfo";
@@ -90,6 +90,9 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
     baseToken,
     selectedChainTokenConfig,
     tokenConfigForChain,
+    loanSourceLine,
+    loanSourceBlocked,
+    loanSourcePending,
   } = borrowDialog;
 
   // ===== PHASE 3: DYNAMIC TOKEN SYMBOL =====
@@ -153,12 +156,12 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
       ? selectedLoanReallocAmount - BigInt(internalSelectedLoan.borrowAmount)
       : estimatedBorrowFromInputOnly;
 
-  // Use correct decimals for the selected chain. `??`, not `||`: a legitimate
-  // 0-decimal accounting token must not be read as 18.
-  const tokenDecimals = selectedChainTokenConfig?.decimals ?? NATIVE_TOKEN_DECIMALS;
-  const simulatedAmountBorrowed = effectiveBorrowableAmount
-    ? Number(formatUnits(effectiveBorrowableAmount, tokenDecimals))
-    : 0;
+  // The selected chain's decimals as the loans contract reports them; no amount before they land.
+  const tokenDecimals = selectedChainTokenConfig?.decimals;
+  const simulatedAmountBorrowed =
+    effectiveBorrowableAmount && tokenDecimals !== undefined
+      ? Number(formatUnits(effectiveBorrowableAmount, tokenDecimals))
+      : 0;
 
   const busy =
     loading ||
@@ -385,13 +388,17 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
         <DialogFooter className="flex items-center justify-between w-full gap-4">
           <div className="flex-1 text-left">
             {statusText ? <p className="text-sm text-zinc-600">{statusText}</p> : null}
+            {loanSourceLine && !review ? (
+              <p className="text-sm text-zinc-600">{loanSourceLine}</p>
+            ) : null}
           </div>
           {/* Single borrow button for both reallocation and standard borrowing */}
           <ButtonWithWallet
             targetChainId={Number(cashOutChainId) as JBChainId}
-            loading={loading}
+            loading={loading || (loanSourcePending && !!collateralAmount)}
             disabled={
               !cashOutChainId ||
+              loanSourceBlocked ||
               !collateralAmount ||
               Number(collateralAmount) <= 0 ||
               minimumBorrowAmountPreview === undefined
@@ -427,7 +434,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
             onConfirm={() => void handleBorrow()}
             busy={busy}
             status={busy || borrowStatus === "safe-unconfirmed" ? statusText : null}
-            error={borrowStatus.startsWith("error") ? statusText : null}
+            error={loanSourceLine ?? (borrowStatus.startsWith("error") ? statusText : null)}
           >
             <SummaryRow label="Tokens used for loan">
               {collateralAmount} {tokenSymbol}
