@@ -16,6 +16,34 @@
       "test": "test/borrow-review-cancel.test.tsx"
     },
     {
+      "file": "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+      "line": 939,
+      "api": "sendTransaction",
+      "boundary": "The reviewed Safe execution's own wallet send, wrapped so the queue rechecks its live transaction, then the reviewed account, the wallet connection and view-as at the wallet, and journals the send under the reviewed account; core reviews, simulates and holds it first.",
+      "test": "test/safe-queue-card.test.tsx"
+    },
+    {
+      "file": "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
+      "line": 410,
+      "api": "signTypedData",
+      "boundary": "Core's reviewed Safe proposal signs through this wrapper after its review, so view-as and the reviewed wallet (account and connector) are rechecked at the signature.",
+      "test": "test/safe-batch-signer-proposal.test.ts"
+    },
+    {
+      "file": "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
+      "line": 414,
+      "api": "signMessage",
+      "boundary": "Core's reviewed Safe proposal signs through this wrapper after its review, so view-as and the reviewed wallet (account and connector) are rechecked at the signature.",
+      "test": "test/safe-batch-signer-proposal.test.ts"
+    },
+    {
+      "file": "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
+      "line": 418,
+      "api": "sendTransaction",
+      "boundary": "Core's reviewed Safe proposal signs through this wrapper after its review, so view-as and the reviewed wallet (account and connector) are rechecked at the signature.",
+      "test": "test/safe-batch-signer-proposal.test.ts"
+    },
+    {
       "file": "src/components/TransactionReviewProvider.tsx",
       "line": 173,
       "api": "registerTransactionReviewHandler",
@@ -38,14 +66,14 @@
     },
     {
       "file": "src/hooks/useMultichainBatch.ts",
-      "line": 769,
+      "line": 782,
       "api": "reviewedInParent",
       "boundary": "The calls are already in this flow's own review dialog, so the reviewed write skips its second review; every other check stays. Removed in R4.",
       "test": "test/multichain-batch.test.tsx"
     },
     {
       "file": "src/hooks/useMultichainBatch.ts",
-      "line": 1008,
+      "line": 1021,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/multichain-batch.test.tsx"

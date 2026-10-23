@@ -696,6 +696,31 @@ describe("a payment bound to the account it was prepared for", () => {
     expect(payment.value).toBe(0n);
   });
 
+  it("sends the token approval again after one that reverted, never the payment alone", async () => {
+    mocks.erc20 = true;
+    mocks.shop = SHOP;
+    mocks.cart = cartOf(1);
+    let sends = 0;
+    mocks.end = () =>
+      ++sends === 1 ? { phase: "failed", error: "The approval reverted." } : undefined;
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText("Approve TKN access");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(await within(confirm).findByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(3));
+    expect(mocks.write.mock.calls[1]![0]).toMatchObject({ functionName: "approve" });
+  });
+
   it("returns to the payment, not its success, once the Safe runs the token approval it proposed", async () => {
     mocks.erc20 = true;
     mocks.shop = SHOP;

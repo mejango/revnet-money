@@ -39,9 +39,9 @@ const routes = [
   { route: "/[slug]", path: "/eth:1", kib: 585 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 584 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 636 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 590 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 582 },
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 637 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 591 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 583 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 423 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 412 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 431 },
@@ -199,7 +199,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 924);
 // Next 16.4.2 measures 2729.5 KiB; the aggregate ceiling moves to 2730.
 // The lazy review dialog renders SDK 4.0.0's review model (buildReviewModel and its decoders):
 // 2733.2 KiB, routes unchanged; builds vary by 0.1 KiB. The aggregate ceiling moves to 2734.
-// Every write on core's useReviewedRun measures 2766.3 KiB: core's hold and lines load with each
+// Every write on core's useReviewedRun measures 2766.6 KiB: core's hold and lines load with each
 // writing page, and the app's own send engine is gone. The aggregate ceiling moves to 2767.
 const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2767);
 const totalBudget = totalBudgetKiB * 1024;

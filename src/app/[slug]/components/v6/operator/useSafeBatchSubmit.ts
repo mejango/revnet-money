@@ -6,6 +6,7 @@ import {
   reviewedCall,
   ReviewRefusal,
   useReviewedAction,
+  WALLET_CHANGED,
 } from "@/hooks/useReviewedAction";
 import { followSubmission, useProposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { composeBatch, type BatchCall, type BatchStep } from "@/lib/safe-batch";
@@ -172,7 +173,7 @@ export function useSafeBatchSubmit() {
     /** The index of the step the wallet is on (direct writes only). */
     onStep: (index: number) => void;
   }): Promise<SafeBatchOutcome> => {
-    const account = getAccount(config).address;
+    const { address: account, connector } = getAccount(config);
     if (!account) throw new Error("Connect a wallet first.");
     if (!steps.length) throw new Error("The batch is empty.");
     const { calls, problems } = composeBatch(steps);
@@ -391,9 +392,33 @@ export function useSafeBatchSubmit() {
         : `Sign the batch proposal for ${name} in your wallet…`,
     );
     const { proposeReviewedSafeTransaction } = await loadEngine();
+    // The proposal signs after its review, so View-as and the reviewed wallet are checked there.
+    const signer = () => {
+      requireNoViewAs();
+      const live = getAccount(config);
+      if (live.connector !== connector || !live.address || !isAddressEqual(live.address, account))
+        throw new ReviewRefusal(WALLET_CHANGED);
+    };
     const { safeTxHash: hash } = await proposeReviewedSafeTransaction(
       { chainId, safe, calls: reviewedSteps, context, title, origin: SAFE_PROPOSAL_ORIGIN },
-      deps,
+      {
+        ...deps,
+        adapter: {
+          ...deps.adapter,
+          signTypedData: async (data) => {
+            signer();
+            return deps.adapter.signTypedData(data);
+          },
+          signMessage: async (data) => {
+            signer();
+            return deps.adapter.signMessage(data);
+          },
+          sendTransaction: async (call) => {
+            signer();
+            return deps.adapter.sendTransaction(call);
+          },
+        },
+      },
     );
     void queryClient.invalidateQueries({ queryKey: ["revnet-safe-queues"] });
     if (queued) return { kind: "confirmed", hash, calls: steps.length };
@@ -410,7 +435,7 @@ export function useSafeBatchSubmit() {
       {
         safe,
         calls: calls.map((call) => ({ to: call.to, value: String(call.value), data: call.data })),
-        batch: true,
+        batch: calls.length > 1,
       },
       false,
     );

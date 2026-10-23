@@ -869,18 +869,18 @@ export function V6PayCard() {
         // Sent only while it is still the payment on screen.
         assertWriteState: () => requireCurrent(prepared, currentPayRef.current),
         beforeWallet: async (_call, step) => {
+          // The payment step opens only after the approval's receipt succeeded.
+          if (approval && step === 1)
+            setPrepared((current) =>
+              current ? { ...current, tokenApprovalComplete: true } : current,
+            );
           setPhase(approval && step === 0 ? "approving-token" : "signing");
           await nextUiPaint();
         },
         onSubmitted: (_call, step, hash) => {
-          if (approval && step === 0)
-            setPrepared((current) =>
-              current ? { ...current, tokenApprovalComplete: true } : current,
-            );
-          else {
-            setTxHash(hash);
-            setPhase("pending");
-          }
+          if (approval && step === 0) return;
+          setTxHash(hash);
+          setPhase("pending");
         },
       });
       if (!result) {

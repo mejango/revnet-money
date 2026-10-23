@@ -2,7 +2,9 @@ import {
   routeSafeBatch,
   useSafeBatchSubmit,
 } from "@/app/[slug]/components/v6/operator/useSafeBatchSubmit";
+import { followSubmission } from "@/hooks/useReviewedWriteContract";
 import { buildStep, composeBatch } from "@/lib/safe-batch";
+import { clearViewAs, setViewAs, VIEW_AS_WRITE_ERROR } from "@/lib/view-as";
 import { registerReviewHandler } from "@bananapus/nana-sdk-core/review";
 import { MULTI_SEND_CALL_ONLY, type AuthorityIdentity } from "@bananapus/nana-sdk-core/safe";
 import {
@@ -154,6 +156,21 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
         }),
       },
     ]);
+    // One call is proposed as itself, so its follow-up expects a direct call, not a MultiSend.
+    expect(vi.mocked(followSubmission).mock.calls.at(-1)?.[6]).toMatchObject({ batch: false });
+  });
+
+  it("signs nothing when View-as was turned on while the proposal sat in review", async () => {
+    const service = queue();
+    registerReviewHandler(async (prompt) => {
+      setViewAs(CO_SIGNER);
+      return prompt.confirmation;
+    });
+
+    await expect(submit()).rejects.toThrow(VIEW_AS_WRITE_ERROR);
+    clearViewAs();
+    expect(mocks.sign).not.toHaveBeenCalled();
+    expect(service.posts).toEqual([]);
   });
 
   it("confirms the identical queued batch instead of proposing it twice", async () => {

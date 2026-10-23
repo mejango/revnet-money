@@ -29,6 +29,7 @@ const mocks = vi.hoisted(() => ({
   execute: vi.fn(),
   deps: { adapter: { kind: "wallet", sendTransaction: vi.fn() } },
   connector: { id: "injected" } as unknown,
+  address: "0x2222222222222222222222222222222222222222",
   receipt: vi.fn(),
   review: vi.fn(),
   sign: vi.fn(),
@@ -58,7 +59,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
 }));
 vi.mock("wagmi/actions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi/actions")>()),
-  getAccount: () => ({ connector: mocks.connector }),
+  getAccount: () => ({ connector: mocks.connector, address: mocks.address }),
 }));
 vi.mock("@bananapus/nana-sdk-core/review", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/review")>()),
@@ -261,7 +262,7 @@ describe("Safe queue card", () => {
       expect(await screen.findByText("Executed Safe transaction #5 on Base.")).toBeVisible();
     });
 
-    it("rechecks the queue, the wallet connection and view-as at the wallet, and journals the send", async () => {
+    it("rechecks the queue, the wallet connection, its account and view-as at the wallet, and journals the send", async () => {
       await execute();
       const { adapter } = mocks.execute.mock.calls[0][1] as {
         adapter: { sendTransaction: (tx: unknown) => Promise<Hex> };
@@ -274,6 +275,12 @@ describe("Safe queue card", () => {
         "Wallet connection changed. Review the transaction again.",
       );
       mocks.connector = connected;
+      const reviewed = mocks.address;
+      mocks.address = TARGET;
+      await expect(adapter.sendTransaction(tx)).rejects.toThrow(
+        "Wallet connection changed. Review the transaction again.",
+      );
+      mocks.address = reviewed;
       setViewAs(TARGET);
       await expect(adapter.sendTransaction(tx)).rejects.toThrow(/Exit View as/);
       clearViewAs();

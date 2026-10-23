@@ -916,7 +916,7 @@ export function SafeQueueCard({
       // policy and nonce and simulates it before the wallet opens, and counts it done only on the
       // Safe's own success event for this hash.
       const { executeReviewedSafeTransaction } = await loadEngine();
-      const connector = getAccount(config).connector;
+      const { connector, address: sender } = getAccount(config);
       const wallet = deps.adapter;
       let journaled: string | undefined;
       const result = await executeReviewedSafeTransaction(
@@ -927,29 +927,33 @@ export function SafeQueueCard({
             ...wallet,
             // This queue's own checks run again at the wallet, after the review.
             sendTransaction: async (sent) => {
-              requireNoViewAs();
-              if (getAccount(config).connector !== connector)
-                throw new ReviewRefusal(WALLET_CHANGED);
               await verifyLiveQueuedTransaction(row, tx);
+              requireNoViewAs();
+              const live = getAccount(config);
+              if (
+                !sender ||
+                live.connector !== connector ||
+                live.address?.toLowerCase() !== sender.toLowerCase()
+              )
+                throw new ReviewRefusal(WALLET_CHANGED);
               const hash = await wallet.sendTransaction(sent);
-              if (address)
-                journaled = recordSubmittedWrite(
-                  {
-                    chainId: sent.chainId,
-                    to: sent.to,
-                    data: sent.data,
-                    value: sent.value,
-                    intent: safeExecutionIntent({
-                      chainId: row.chainId,
-                      safe: row.safe,
-                      safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
-                    }),
-                  } as ReviewedCall,
-                  hash,
-                  address,
-                  `Execute Safe transaction #${tx.nonce}`,
-                  false,
-                );
+              journaled = recordSubmittedWrite(
+                {
+                  chainId: sent.chainId,
+                  to: sent.to,
+                  data: sent.data,
+                  value: sent.value,
+                  intent: safeExecutionIntent({
+                    chainId: row.chainId,
+                    safe: row.safe,
+                    safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
+                  }),
+                } as ReviewedCall,
+                hash,
+                sender,
+                `Execute Safe transaction #${tx.nonce}`,
+                false,
+              );
               return hash;
             },
           },

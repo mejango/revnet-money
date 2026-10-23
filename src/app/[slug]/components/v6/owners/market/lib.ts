@@ -4,6 +4,7 @@ import {
   IndexedPoolRangesOperation,
 } from "@/lib/bendystraw/operations";
 import { rolloutChain } from "@/lib/protocol-rollout";
+import { ReviewRefusal } from "@/lib/review-refusal";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
   JBBuybackHookContracts,
@@ -1790,7 +1791,7 @@ export async function reverifyEditLiquidity(
 ): Promise<void> {
   const fresh = await refreshPoolAndPosition(pool, plan.tokenId, account);
   if (fresh.position.liquidity !== plan.liquidityBefore) {
-    throw new Error("This position changed. Review it again before sending.");
+    throw new ReviewRefusal("This position changed. Review it again before sending.");
   }
   if (plan.kind !== "move" && plan.kind !== "increase") return;
   const required = uniswapV4AmountsForLiquidity(
@@ -1800,7 +1801,9 @@ export async function reverifyEditLiquidity(
     plan.kind === "move" ? plan.liquidity : plan.liquidityDelta,
   );
   if (required.amount0 > plan.amount0Max || required.amount1 > plan.amount1Max) {
-    throw new Error("The pool price moved beyond the reviewed range. Review fresh amounts.");
+    throw new ReviewRefusal(
+      "The pool price moved beyond the reviewed range. Review fresh amounts.",
+    );
   }
 }
 
@@ -2212,7 +2215,7 @@ export async function reverifyMarketEdit(
     const fresh = await refreshPoolAndPosition(pool, side.tokenId, account);
     sqrtP = fresh.pool.sqrtP;
     if (fresh.position.liquidity !== side.liquidityBefore) {
-      throw new Error("A position in this market changed. Review it again before sending.");
+      throw new ReviewRefusal("A position in this market changed. Review it again before sending.");
     }
   }
   for (const side of [plan.token, plan.pair]) {
@@ -2225,7 +2228,9 @@ export async function reverifyMarketEdit(
       side.kind === "increase" ? side.liquidityDelta : side.liquidity,
     );
     if (required.amount0 > side.amount0Max || required.amount1 > side.amount1Max) {
-      throw new Error("The pool price moved beyond the reviewed range. Review fresh amounts.");
+      throw new ReviewRefusal(
+        "The pool price moved beyond the reviewed range. Review fresh amounts.",
+      );
     }
   }
 }
@@ -2296,7 +2301,9 @@ export async function reverifyAddLiquidity(
     plan.liquidity,
   );
   if (required.amount0 > plan.amount0Max || required.amount1 > plan.amount1Max) {
-    throw new Error("The pool price moved beyond the reviewed range. Review fresh amounts.");
+    throw new ReviewRefusal(
+      "The pool price moved beyond the reviewed range. Review fresh amounts.",
+    );
   }
 }
 
