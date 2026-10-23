@@ -46,10 +46,8 @@ vi.mock("@/app/[slug]/components/v6/operator/useOperatorWrites", () => ({
   useOperatorWrites: () => ({ runWrites: mocks.write }),
 }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeProposalPendingError: () => false,
-  requireOnchainExecution: vi.fn(),
-  useSafeConnection: () => false,
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
+  followSubmission: vi.fn(),
+  useProposeSafeBatch: () => vi.fn(),
 }));
 vi.mock("@/hooks/useReviewedRelayr", async (importOriginal) => ({
   RelayrRecoveryError: (await importOriginal<typeof import("@/hooks/useReviewedRelayr")>())

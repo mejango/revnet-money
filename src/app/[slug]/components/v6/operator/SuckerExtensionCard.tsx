@@ -14,8 +14,8 @@ import {
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
-import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
+import { isSafeProposalPendingError } from "@/lib/reviewed-call";
 import {
   clearExtensionSalt,
   discardUnreadableSalts,

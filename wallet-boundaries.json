@@ -2,463 +2,106 @@
   "format": "juice-sdk-wallet-boundaries-1",
   "sites": [
     {
-      "file": "src/app/[slug]/about/components/EditMetadataDialog.tsx",
-      "line": 163,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/edit-metadata-dialog.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/about/components/EditMetadataDialog.tsx",
-      "line": 401,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/edit-metadata-dialog.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/Value/BridgeDialog.tsx",
-      "line": 90,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/value-send-hold.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/Value/RedeemDialog.tsx",
-      "line": 174,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/value-send-hold.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/Value/RedeemDialog.tsx",
-      "line": 179,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/value-send-hold.test.tsx"
-    },
-    {
       "file": "src/app/[slug]/components/Value/RepayDialog.tsx",
-      "line": 94,
+      "line": 92,
       "api": "useWalletClient",
       "boundary": "Reads the connected wallet client only to require a connected wallet; it never signs or sends. Writes go through the reviewed write hook.",
       "test": "test/value-send-hold.test.tsx"
     },
     {
-      "file": "src/app/[slug]/components/Value/RepayDialog.tsx",
-      "line": 205,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/value-send-hold.test.tsx"
-    },
-    {
       "file": "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
-      "line": 136,
+      "line": 135,
       "api": "useWalletClient",
       "boundary": "Reads the connected wallet client only to require a connected wallet; it never signs or sends. Writes go through the reviewed write hook.",
       "test": "test/borrow-review-cancel.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
-      "line": 372,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/borrow-review-cancel.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
-      "line": 378,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/borrow-review-cancel.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
-      "line": 379,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/borrow-review-cancel.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
-      "line": 600,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/borrow-review-cancel.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
-      "line": 379,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/project-handle-confirm.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
-      "line": 422,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/project-handle-confirm.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
-      "line": 486,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/project-handle-confirm.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
-      "line": 588,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/project-handle-confirm.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
-      "line": 658,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/project-handle-confirm.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
-      "line": 752,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3. The cited test drives this file; this exact site has no direct test.",
-      "test": "test/project-handle-confirm.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
-      "line": 381,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/safe-queue-confirms.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
-      "line": 382,
-      "api": "reviewedInParent",
-      "boundary": "The calls are already in this flow's own review dialog, so the reviewed write skips its second review; every other check stays. Removed in R4.",
-      "test": "test/safe-queue-confirms.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/operatorLib.ts",
-      "line": 186,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/edit-metadata-dialog.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
-      "line": 78,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/operator-safe-proposal.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
-      "line": 145,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/safe-batch-signer-proposal.test.ts"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
-      "line": 150,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/safe-batch-signer-proposal.test.ts"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
-      "line": 151,
-      "api": "reviewedInParent",
-      "boundary": "The calls are already in this flow's own review dialog, so the reviewed write skips its second review; every other check stays. Removed in R4.",
-      "test": "test/safe-batch-signer-proposal.test.ts"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
-      "line": 300,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/token-panel-routing.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
-      "line": 402,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/token-panel-routing.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
-      "line": 409,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/token-panel-routing.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/accounts/V6BurnTokensDialog.tsx",
-      "line": 74,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/burn-tokens-dialog.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-      "line": 641,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/liquidity-account-binding.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-      "line": 1356,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/liquidity-account-binding.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
-      "line": 158,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/liquidity-edit-safe-batch.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
-      "line": 167,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/liquidity-edit-safe-batch.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
-      "line": 54,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/split-hook-card.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
-      "line": 115,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/split-hook-card.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
-      "line": 76,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/settlement-confirms.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
-      "line": 76,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/settlement-confirms.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
-      "line": 114,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/settlement-confirms.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
-      "line": 181,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/settlement-confirms.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/pay/V6PayCard.tsx",
-      "line": 153,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/pay-account-binding.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/shop/MintItemModal.tsx",
-      "line": 60,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/mint-item-confirm.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/components/v6/shop/MintItemModal.tsx",
-      "line": 153,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/mint-item-confirm.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
-      "line": 58,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/relayr-write-routing.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
-      "line": 113,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/relayr-write-routing.test.tsx"
-    },
-    {
-      "file": "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
-      "line": 140,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/relayr-write-routing.test.tsx"
-    },
-    {
-      "file": "src/app/create/page.tsx",
-      "line": 93,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/create-submit-routing.test.tsx"
     },
     {
       "file": "src/components/TransactionReviewProvider.tsx",
-      "line": 167,
+      "line": 173,
       "api": "registerTransactionReviewHandler",
       "boundary": "Old-review handler: the provider queues every boolean review request (reviewed writes, Relayr, Safe) into the one review dialog. Removed in R5.",
       "test": "test/transaction-review-decoded.test.tsx"
     },
     {
-      "file": "src/hooks/useAllowance.ts",
-      "line": 14,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/allowance-hook.test.tsx"
-    },
-    {
       "file": "src/hooks/useMarkee.ts",
-      "line": 196,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/use-markee.test.tsx"
-    },
-    {
-      "file": "src/hooks/useMarkee.ts",
-      "line": 451,
+      "line": 456,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/use-markee.test.tsx"
     },
     {
       "file": "src/hooks/useMultichainBatch.ts",
-      "line": 393,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/multichain-batch.test.tsx"
-    },
-    {
-      "file": "src/hooks/useMultichainBatch.ts",
-      "line": 395,
-      "api": "useWriteContract",
-      "boundary": "Creates the reviewed write (useWriteContract from @/hooks/useReviewedWriteContract): the app review, account check, simulation and write hold run before any wallet call. Moves to useReviewedAction in R3.",
-      "test": "test/multichain-batch.test.tsx"
-    },
-    {
-      "file": "src/hooks/useMultichainBatch.ts",
-      "line": 397,
-      "api": "reviewedInParent",
-      "boundary": "The calls are already in this flow's own review dialog, so the reviewed write skips its second review; every other check stays. Removed in R4.",
-      "test": "test/multichain-batch.test.tsx"
-    },
-    {
-      "file": "src/hooks/useMultichainBatch.ts",
-      "line": 469,
+      "line": 383,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/multichain-batch.test.tsx"
     },
     {
       "file": "src/hooks/useMultichainBatch.ts",
-      "line": 764,
+      "line": 769,
       "api": "reviewedInParent",
       "boundary": "The calls are already in this flow's own review dialog, so the reviewed write skips its second review; every other check stays. Removed in R4.",
       "test": "test/multichain-batch.test.tsx"
     },
     {
       "file": "src/hooks/useMultichainBatch.ts",
-      "line": 940,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/multichain-batch.test.tsx"
-    },
-    {
-      "file": "src/hooks/useMultichainBatch.ts",
-      "line": 941,
-      "api": "writeContractAsync",
-      "boundary": "Reviewed write from @/hooks/useReviewedWriteContract: the wallet is asked only after the app review. Moves to useReviewedAction in R3.",
-      "test": "test/multichain-batch.test.tsx"
-    },
-    {
-      "file": "src/hooks/useMultichainBatch.ts",
-      "line": 1014,
+      "line": 1008,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/multichain-batch.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 274,
+      "line": 275,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 1742,
+      "line": 1743,
       "api": "useSignTypedData",
       "boundary": "Raw typed-data signer inside the Relayr boundary: signs ERC-2771 forward requests only after the bundle review. Replaced by core Relayr in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 1959,
+      "line": 1960,
       "api": "reviewedInParent",
       "boundary": "Relayr request option that skips the per-call review when the parent dialog already showed the exact call. Removed in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2093,
+      "line": 2094,
       "api": "signTypedDataAsync",
       "boundary": "Raw forward-request signature inside the Relayr boundary, after the bundle review, precondition checks and wallet-context check. Replaced by core Relayr in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2271,
+      "line": 2272,
       "api": "useSendTransaction",
       "boundary": "Raw send hook inside the Relayr boundary, used only for the reviewed network-fee payment. Replaced by core Relayr in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2307,
+      "line": 2308,
       "api": "sendTransactionAsync",
       "boundary": "Raw network-fee payment inside the Relayr boundary: sent only after the quote is reviewed and the payment journal is saved. Replaced by core Relayr in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2439,
+      "line": 2440,
       "api": "sendTransactionAsync",
       "boundary": "Raw network-fee payment inside the Relayr boundary: sent only after the quote is reviewed and the payment journal is saved. Replaced by core Relayr in R5.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2533,
+      "line": 2534,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
@@ -472,59 +115,10 @@
     },
     {
       "file": "src/hooks/useReviewedWriteContract.ts",
-      "line": 502,
+      "line": 301,
       "api": "sendCalls",
-      "boundary": "Raw wallet_sendCalls inside the reviewed-write boundary: a Safe-app batch, sent only after the app review and simulation. Moves to core sendReviewed in R3.",
-      "test": "test/reviewed-write-hook.test.tsx"
-    },
-    {
-      "file": "src/hooks/useReviewedWriteContract.ts",
-      "line": 609,
-      "api": "reviewedInParent",
-      "boundary": "The reviewed-write option that skips the app review when a parent dialog already showed the exact call; every other check stays. Removed in R4.",
-      "test": "test/reviewed-write-hook.test.tsx"
-    },
-    {
-      "file": "src/hooks/useReviewedWriteContract.ts",
-      "line": 620,
-      "api": "useWriteContract",
-      "boundary": "wagmi's raw write hook, wrapped by the reviewed-write boundary; nothing outside this file reaches it. Deleted in R3.",
-      "test": "test/reviewed-write-hook.test.tsx"
-    },
-    {
-      "file": "src/hooks/useReviewedWriteContract.ts",
-      "line": 722,
-      "api": "reviewedInParent",
-      "boundary": "The reviewed-write option that skips the app review when a parent dialog already showed the exact call; every other check stays. Removed in R4.",
-      "test": "test/reviewed-write-hook.test.tsx"
-    },
-    {
-      "file": "src/hooks/useReviewedWriteContract.ts",
-      "line": 854,
-      "api": "writeContractAsync",
-      "boundary": "Raw wallet write inside the reviewed-write boundary: sent only after review, account and chain checks, simulation and the write hold. Moves to core sendReviewed in R3.",
-      "test": "test/reviewed-write-hook.test.tsx"
-    },
-    {
-      "file": "src/hooks/useReviewedWriteContract.ts",
-      "line": 887,
-      "api": "request",
-      "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
-      "test": "test/reviewed-write-hook.test.tsx"
-    },
-    {
-      "file": "src/hooks/useReviewedWriteContract.ts",
-      "line": 900,
-      "api": "reviewedInParent",
-      "boundary": "The reviewed-write option that skips the app review when a parent dialog already showed the exact call; every other check stays. Removed in R4.",
-      "test": "test/reviewed-write-hook.test.tsx"
-    },
-    {
-      "file": "src/hooks/useReviewedWriteContract.ts",
-      "line": 920,
-      "api": "writeContractAsync",
-      "boundary": "The fire-and-forget writeContract wrapper calls the reviewed writeContractAsync above, never the wallet directly. Deleted in R3.",
-      "test": "test/reviewed-write-hook.test.tsx"
+      "boundary": "Raw wallet_sendCalls for a Safe-app batch: one proposal of every reviewed call, sent only after the app review and simulation. Moves to core's ReviewedAction.batch with SDK local.8 in R5.",
+      "test": "test/safe-batch.test.tsx"
     },
     {
       "file": "src/lib/safe-relayr.ts",

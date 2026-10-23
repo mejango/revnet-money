@@ -26,11 +26,12 @@ import { toast } from "@/components/ui/use-toast";
 import { useAllowance } from "@/hooks/useAllowance";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
+  failedLine,
   isSafeProposalPendingError,
-  SAFE_PROPOSAL_UNCONFIRMED_LINE,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+  reviewedCall,
+  ReviewRefusal,
+  useReviewedAction,
+} from "@/hooks/useReviewedAction";
 import { useSuckerPairs } from "@/hooks/useSuckerPairs";
 import type { Project } from "@/lib/bendystraw/types";
 import {
@@ -44,17 +45,16 @@ import { legacyIntents } from "@/lib/legacy-intents";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { useJBTokenContext } from "@/lib/nana/project";
 import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
+import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { getTokenAddress } from "@/lib/token";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
-import { withWriteIntent } from "@/lib/write-hold";
 import { JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
 import { approvalIntent, bridgeIntent } from "@bananapus/nana-sdk-core/review";
-import { suckerBytes32ToAddress } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";
-import { erc20Abi, formatUnits, getAddress, Hex, isAddressEqual, parseUnits } from "viem";
+import { erc20Abi, formatUnits, getAddress, Hex, parseUnits } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 
 interface Props {
@@ -83,42 +83,11 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const router = useRouter();
   const publicClient = usePublicClient({ chainId: sourceChainId });
   const destinationClient = usePublicClient({ chainId: targetChainId });
-  const {
-    writeContractAsync,
-    data: hash,
-    reset,
-  } = useWriteContract({
-    reverify: async (variables) => {
-      if (
-        !publicClient ||
-        !destinationClient ||
-        !targetChainId ||
-        !targetProject ||
-        !suckerPair ||
-        variables.chainId !== sourceChainId ||
-        !isAddressEqual(variables.address, suckerPair.local)
-      ) {
-        throw new Error("The bridge route changed. Review the transfer again.");
-      }
-      const [projectTokenCount, beneficiary] = variables.args as readonly [bigint, Hex];
-      await verifyBridgePrepareDestination(publicClient, {
-        chainId: sourceChainId,
-        projectId: BigInt(project.projectId),
-        sucker: variables.address,
-        projectTokenCount,
-        beneficiary: suckerBytes32ToAddress(beneficiary),
-        destinationClient,
-        destinationChainId: targetChainId,
-        destinationProjectId: BigInt(targetProject.projectId),
-        destinationSucker: suckerPair.remote,
-      });
-    },
-  });
-  const { isSuccess, isLoading, isSafeResultUnconfirmed } = useWaitForTransactionReceipt({
-    hash,
-    chainId: sourceChainId,
-    query: { enabled: !!hash },
-  });
+  const { run, phase, held, reset } = useReviewedAction();
+  const [hash, setHash] = useState<Hex>();
+  const isLoading = phase === "receipt";
+  const isSuccess = phase === "done";
+  const isSafeResultUnconfirmed = phase === "proposed" && !!held?.exit;
   const { data: balances, isLoading: isBalanceLoading } = useSuckersUserTokenBalance();
   const { balance } = balances?.find((b) => b.chainId === sourceChainId) || {
     balance: { value: 0n },
@@ -294,7 +263,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
 
       const projectId = project.projectId;
 
-      if (!publicClient || !projectId || !writeContractAsync || !terminalToken) {
+      if (!publicClient || !projectId || !terminalToken) {
         throw new Error("Please try again");
       }
 
@@ -356,20 +325,53 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         token: terminalToken,
       });
       // Held by the sucker, token and account: the quoted minimum is read again on a retry.
-      await withWriteIntent(
-        writeContractAsync,
-        bridgeIntent({
-          chainId: sourceChainId,
-          sucker: suckerPair.local,
-          token: terminalToken,
-          account: address,
-        }),
-        legacyIntents.bridge({
-          sucker: suckerPair.local,
-          token: terminalToken,
-          amount: amountValue,
-        }),
-      )({ ...request, chainId: sourceChainId, account: address });
+      const sucker = suckerPair.local;
+      const result = await run({
+        account: address,
+        // The route, the destination and the reviewed minimum, right before the wallet.
+        reverify: async () => {
+          if (!destinationClient || !targetChainId || !targetProject) {
+            throw new ReviewRefusal("The bridge route changed. Review the transfer again.");
+          }
+          await verifyBridgePrepareDestination(publicClient, {
+            chainId: sourceChainId,
+            projectId: BigInt(project.projectId),
+            sucker,
+            projectTokenCount: amountValue,
+            beneficiary: address,
+            destinationClient,
+            destinationChainId: targetChainId,
+            destinationProjectId: BigInt(targetProject.projectId),
+            destinationSucker: suckerPair.remote,
+          }).catch((cause: Error) => {
+            throw new ReviewRefusal(cause.message);
+          });
+        },
+        onSubmitted: (_call, _step, sent) => setHash(sent),
+        calls: [
+          reviewedCall(
+            { ...request, chainId: sourceChainId },
+            {
+              intent: bridgeIntent({
+                chainId: sourceChainId,
+                sucker,
+                token: terminalToken,
+                account: address,
+              }),
+              legacyIntents: legacyIntents.bridge({
+                sucker,
+                token: terminalToken,
+                amount: amountValue,
+              }),
+            },
+          ),
+        ],
+      });
+      if (result?.status === "failed") throw new ReviewRefusal(failedLine(result));
+      if (result?.status === "proposed") {
+        setReview(false);
+        toast({ title: "Safe proposal submitted", description: SAFE_PROPOSAL_PENDING_LINE });
+      }
     } catch (error) {
       console.error(error);
       if (isSafeProposalPendingError(error)) {
@@ -392,7 +394,10 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
     sourceChainId,
     ensureAllowance,
     suckerPair,
-    writeContractAsync,
+    run,
+    destinationClient,
+    targetChainId,
+    targetProject,
     address,
     terminalToken,
     gate,

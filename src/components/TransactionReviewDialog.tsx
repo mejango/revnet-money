@@ -506,14 +506,29 @@ function ReviewModal({
   onFinish: (approved: boolean) => void;
 }) {
   const { request } = pending;
-  const model = useMemo(() => buildReviewModel(request), [request]);
-  const feeReview = useFeeBuybackReview(request.calls);
+  const model = useMemo(
+    () => pending.model ?? buildReviewModel(request!),
+    [pending.model, request],
+  );
+  const feeCalls = useMemo(
+    () =>
+      request?.calls ??
+      model.calls.map((call) => ({
+        chainId: call.chainId,
+        to: call.to,
+        data: call.data,
+        value: call.value,
+        functionName: call.functionName ?? undefined,
+      })),
+    [request, model],
+  );
+  const feeReview = useFeeBuybackReview(feeCalls);
   const [agreed, setAgreed] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
   const copyPrompt = async () => {
     try {
-      await navigator.clipboard.writeText(buildTransactionReviewPrompt(request));
+      await navigator.clipboard.writeText(buildTransactionReviewPrompt(request ?? model));
       setCopyState("copied");
     } catch {
       setCopyState("failed");
@@ -529,14 +544,14 @@ function ReviewModal({
 
   const isAuthorization = model.kind !== "transaction";
   /** Some authorizations are signed as a plain message rather than typed data. */
-  const authorizationIsMessage =
-    (request.authorization as { kind?: string } | undefined)?.kind === "message";
+  const authorizationIsMessage = request
+    ? (request.authorization as { kind?: string } | undefined)?.kind === "message"
+    : model.kind === "message";
+  const authorizes = request ? Boolean(request.authorization) : isAuthorization;
   const kinds = model.signatures.map((signature) => signature.kind);
-  const signsMessage =
-    (Boolean(request.authorization) && authorizationIsMessage) || kinds.includes("message");
+  const signsMessage = (authorizes && authorizationIsMessage) || kinds.includes("message");
   const signsTypedData =
-    (Boolean(request.authorization) && !authorizationIsMessage) ||
-    kinds.some((kind) => kind !== "message");
+    (authorizes && !authorizationIsMessage) || kinds.some((kind) => kind !== "message");
   const commitment = signsMessage
     ? signsTypedData
       ? "both"
@@ -664,6 +679,11 @@ function ReviewModal({
               type="button"
               onClick={async () => {
                 if (!(await feeReview.confirm())) return;
+                // Core binds its own model to the confirmation it minted for it.
+                if (!request) {
+                  onFinish(true);
+                  return;
+                }
                 // Approve only what was shown: a request changed since then is declined.
                 const now = buildReviewModel(request);
                 if (

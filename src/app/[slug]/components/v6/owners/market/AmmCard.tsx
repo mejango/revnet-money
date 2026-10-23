@@ -19,23 +19,21 @@ import {
 } from "@/components/ui/table";
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
-import { useAllowance } from "@/hooks/useAllowance";
 import { useHydrated } from "@/hooks/useHydrated";
-import {
-  ACCOUNT_CHANGED,
-  isSafeConnection,
-  SAFE_PROPOSAL_UNCONFIRMED_LINE,
-  submittedViaSafe,
-  useProposeSafeBatch,
-  useSafeConnection,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+import { useReviewedAction } from "@/hooks/useReviewedAction";
+import { useProposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { cachedQuery } from "@/lib/query-persist";
+import {
+  ACCOUNT_CHANGED,
+  requireProposedOrDone,
+  reviewedCall,
+  ReviewRefusal,
+  SAFE_PROPOSAL_UNCONFIRMED_LINE,
+} from "@/lib/reviewed-call";
+import { isSafeConnection, useSafeConnection } from "@/lib/safe-connector";
 import { explorerBaseUrl } from "@/lib/utils";
-import { RECEIPT_WAIT_TIMEOUT_MS, waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
+import { heldLineOf } from "@/lib/write-hold";
 import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import {
   uniswapV4AmountsForLiquidity,
@@ -94,9 +92,8 @@ import {
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
 import {
   approvalStepsFor,
-  heldLiquidityApprovals,
   liquidityBatchCalls,
-  runApprovalStep,
+  liquidityReviewedCalls,
   safeBatchIntro,
   SummaryRow,
   type LiquidityStep,
@@ -637,8 +634,7 @@ export function AddLiquidityForm({
   const viaSafe = useSafeConnection(wagmiConfig);
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });
-  const { ensureAllowance, isApproving } = useAllowance(chainId);
-  const { writeContractAsync, isPending } = useWriteContract();
+  const { run } = useReviewedAction();
   // Revnets have a corridor to make a market in; anything without both edges
   // falls back to the solved single band.
   const [mode, setMode] = useState<LiquidityFormMode>(
@@ -897,54 +893,36 @@ export function AddLiquidityForm({
         setReviewed(null);
         return;
       }
-      for (const [index, step] of steps.entries()) {
-        setStepIndex(index);
-        if (step.approval) {
-          const outcome = await runApprovalStep(step, {
-            chainId: state.chainId,
-            address: account,
-            publicClient: publicClient as PublicClient,
-            ...heldLiquidityApprovals(lpIntent, {
-              chainId,
-              account,
-              ensureAllowance,
-              writeContractAsync: writeContractAsync as never,
-            }),
-          });
-          if (outcome === "safe-proposed") {
-            setStatus(
-              "Permit2 authorization was proposed to Safe. Execute it, then review liquidity again.",
-            );
-            setReviewed(null);
-            return;
-          }
-          continue;
-        }
-        if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
-        else await reverifyAddLiquidity(pool, built.plan);
-        const hash = await withWriteIntent(
-          writeContractAsync,
-          lpIntent,
-        )({
-          chainId,
-          address: POSITION_MANAGER_BY_CHAIN[chainId]!,
-          abi: POSITION_MANAGER_ABI,
-          functionName: "modifyLiquidities",
-          args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
-          value: plan.value,
+      const result = requireProposedOrDone(
+        await run({
           // The position goes to the reviewed account: only it may fund the mint.
           account,
-        });
-        if (submittedViaSafe(hash)) {
-          setStatus("Liquidity mint was proposed to Safe and awaits approvals and execution.");
-          setReviewed(null);
-          return;
-        }
-        const receipt = await waitForReceiptWithRetry(publicClient, hash);
-        if (receipt.status !== "success") throw new Error(`Liquidity mint ${hash} reverted.`);
-        setStepIndex(steps.length);
-        setMinted(hash);
+          title: built.kind === "market" ? "Review the market" : "Review liquidity",
+          confirmLabel:
+            built.kind === "market" ? "Agree & make the market" : "Agree & add liquidity",
+          calls: liquidityReviewedCalls(lpIntent, {
+            chainId: state.chainId,
+            steps,
+            unlockData: plan.unlockData,
+            value: plan.value,
+            safe: isSafeConnection(wagmiConfig),
+          }),
+          scope: steps.length > 1 ? lpIntent : undefined,
+          reverify: async (call) => {
+            if (call.functionName !== "modifyLiquidities") return;
+            if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
+            else await reverifyAddLiquidity(pool, built.plan);
+          },
+          beforeWallet: (_call, step) => setStepIndex(step),
+        }),
+      );
+      if (result.status === "proposed") {
+        setStatus("Liquidity mint was proposed to Safe and awaits approvals and execution.");
+        setReviewed(null);
+        return;
       }
+      setStepIndex(steps.length);
+      setMinted(result.hashes.at(-1) ?? null);
       setReviewed(null);
       setPairText("");
       setTokenText("");
@@ -961,7 +939,7 @@ export function AddLiquidityForm({
     }
   };
 
-  const disabled = busy || isApproving || isPending;
+  const disabled = busy;
   return (
     <div className="mt-3 border-t border-zinc-100 pt-3">
       <div className="flex items-center justify-between gap-3">
@@ -1349,37 +1327,19 @@ function ChainPositionRows({
   const [removing, setRemoving] = useState(false);
   const [claimReview, setClaimReview] = useState<UserLpPosition[] | null>(null);
   const client = usePublicClient({ chainId }) as PublicClient | undefined;
-  const {
-    writeContractAsync,
-    data: hash,
-    isPending,
-  } = useWriteContract({
-    transactionReview: {
-      title: "Review liquidity removal",
-      description:
-        "Burn this Uniswap V4 position and return both currencies to the connected wallet. The reviewed minimum returns are enforced onchain.",
-      confirmLabel: "Agree & remove liquidity",
-    },
-  });
-  const receipt = useWaitForTransactionReceipt({ hash, chainId });
-  // The removal this review sent. Its confirm stays held until the receipt
-  // settles, so its action cannot send the removal again. A Safe proposal has
-  // no receipt here, and a watch that times out has no outcome yet: both end on
-  // Done.
-  const [removalHash, setRemovalHash] = useState<Hex>();
-  const removal = useWaitForTransactionReceipt({
-    hash: removalHash,
-    chainId,
-    timeout: RECEIPT_WAIT_TIMEOUT_MS,
-  });
-  const removalSettling = removal.isLoading && !removal.isSafeProposal;
-  const removalProposed = Boolean(removal.isSafeProposal);
-  const removalSafeUnconfirmed = Boolean(removal.isSafeResultUnconfirmed);
-  const removalUnconfirmed = Boolean(removal.isUnconfirmed);
-  // A removal that may still land keeps every position action locked, after
-  // its confirm closes too, so the same position cannot be sent twice.
-  const removalOutstanding =
-    removalSettling || removalProposed || removalSafeUnconfirmed || removalUnconfirmed;
+  const claim = useReviewedAction();
+  const removal = useReviewedAction();
+  const isPending = claim.busy || removal.busy;
+  // A removal that may still land keeps every position action locked, after its confirm closes
+  // too, so the same position cannot be sent twice.
+  const removalSettling = removal.phase === "receipt";
+  const removalProposed = removal.phase === "proposed";
+  const removalSafeUnconfirmed = removalProposed && !!removal.held?.exit;
+  const removalHeldLine = removal.held && !removalProposed ? heldLineOf(removal.held) : null;
+  // A held removal without its exit may still land; once the hold offers the exit, sending it
+  // again goes through the hold's own dialog.
+  const removalHeld = !!removal.held && !removalProposed && !removal.held.exit;
+  const removalOutstanding = removalSettling || removalProposed || removalHeld;
   const positions = useQuery({
     queryKey: ["revnetWalletLpPositions", state.chainId, pool?.poolId, address?.toLowerCase()],
     enabled: Boolean(pool && positionManager && address),
@@ -1418,21 +1378,11 @@ function ChainPositionRows({
     );
   }, [chainId, onStatus, positions.isLoading, positions.isError, positions.data?.length]);
 
-  useEffect(() => {
-    if (receipt.isSuccess) {
-      setReviewed(null);
-      void positions.refetch();
-      void fees.refetch();
-    }
-    // Refetch only on the receipt transition; the query object changes each render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [receipt.isSuccess]);
-
   if (!pool || !positionManager || !address) return null;
 
   const beginReview = async (position: UserLpPosition) => {
     setError(null);
-    setRemovalHash(undefined);
+    removal.reset();
     setRefreshing(position.tokenId);
     try {
       const fresh = await refreshUserLpPosition(pool, position.tokenId, address);
@@ -1464,21 +1414,34 @@ function ChainPositionRows({
               positions.map((position) => position.tokenId),
               address,
             ).unlockData;
-      await withWriteIntent(
-        writeContractAsync,
-        liquidityIntent({
-          chainId,
-          pool: pool.poolId,
-          positions: positions.map((position) => position.tokenId),
+      const result = requireProposedOrDone(
+        await claim.run({
+          account: address,
+          title: "Review fee claim",
+          description:
+            "Claim this position's unclaimed fees to the connected wallet. The position stays open.",
+          confirmLabel: "Agree & claim fees",
+          calls: [
+            reviewedCall(
+              {
+                chainId,
+                address: positionManager,
+                abi: POSITION_MANAGER_ABI,
+                functionName: "modifyLiquidities",
+                args: [unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
+              },
+              {
+                intent: liquidityIntent({
+                  chainId,
+                  pool: pool.poolId,
+                  positions: positions.map((position) => position.tokenId),
+                }),
+              },
+            ),
+          ],
         }),
-      )({
-        chainId,
-        address: positionManager,
-        abi: POSITION_MANAGER_ABI,
-        functionName: "modifyLiquidities",
-        args: [unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
-        account: address,
-      });
+      );
+      if (result.status === "done") void fees.refetch();
       setClaimReview(null);
     } catch (cause) {
       setError(txMessage(cause, "Could not claim fees."));
@@ -1497,29 +1460,47 @@ function ChainPositionRows({
     setError(null);
     setRemoving(true);
     try {
-      const fresh = await refreshUserLpPosition(pool, reviewed.position.tokenId, reviewed.account);
-      if (fresh.liquidity < reviewed.position.liquidity) {
-        throw new Error("This position changed. Review its current return before removing it.");
-      }
-      const sent = await withWriteIntent(
-        writeContractAsync,
-        liquidityIntent({
-          chainId,
-          pool: pool.poolId,
-          positions: [reviewed.position.tokenId],
+      const { position, plan, account } = reviewed;
+      const result = requireProposedOrDone(
+        await removal.run({
+          account,
+          title: "Review liquidity removal",
+          description:
+            "Burn this Uniswap V4 position and return both currencies to the connected wallet. The reviewed minimum returns are enforced onchain.",
+          confirmLabel: "Agree & remove liquidity",
+          calls: [
+            reviewedCall(
+              {
+                chainId,
+                address: positionManager,
+                abi: POSITION_MANAGER_ABI,
+                functionName: "modifyLiquidities",
+                // The reviewed minimums live in `unlockData`.
+                args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
+              },
+              {
+                intent: liquidityIntent({
+                  chainId,
+                  pool: pool.poolId,
+                  positions: [position.tokenId],
+                }),
+              },
+            ),
+          ],
+          reverify: async () => {
+            const fresh = await refreshUserLpPosition(pool, position.tokenId, account);
+            if (fresh.liquidity < position.liquidity)
+              throw new ReviewRefusal(
+                "This position changed. Review its current return before removing it.",
+              );
+          },
         }),
-      )({
-        chainId,
-        address: positionManager,
-        abi: POSITION_MANAGER_ABI,
-        functionName: "modifyLiquidities",
-        // The reviewed minimums live in `unlockData` and stay frozen; only the
-        // deadline is re-stamped, so a slow review can't ship an already-expired
-        // window.
-        args: [reviewed.plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
-        account: reviewed.account,
-      });
-      setRemovalHash(sent);
+      );
+      if (result.status === "done") {
+        setReviewed(null);
+        void positions.refetch();
+        void fees.refetch();
+      }
     } catch (cause) {
       setError(txMessage(cause, "Could not remove liquidity."));
     } finally {
@@ -1838,7 +1819,7 @@ function ChainPositionRows({
           open
           onClose={() => {
             setReviewed(null);
-            if (!removalOutstanding) setRemovalHash(undefined);
+            if (!removalOutstanding) removal.reset();
           }}
           title="Confirm removal"
           preparing={!reviewed}
@@ -1849,13 +1830,11 @@ function ChainPositionRows({
                 ? SAFE_PROPOSAL_UNCONFIRMED_LINE
                 : removalProposed
                   ? "The removal was proposed to Safe and awaits approvals and execution."
-                  : removal.heldLine
-                    ? removal.heldLine
-                    : removalUnconfirmed
-                      ? "Couldn't confirm the removal yet."
-                      : removalSettling
-                        ? "Waiting for confirmation…"
-                        : null
+                  : removalHeldLine
+                    ? removalHeldLine
+                    : removalSettling
+                      ? "Waiting for confirmation…"
+                      : null
           }
           steps={[
             {
@@ -1867,10 +1846,8 @@ function ChainPositionRows({
           action="Remove the position"
           onConfirm={() => void remove()}
           busy={isPending || removing || removalSettling}
-          complete={removalProposed || removalSafeUnconfirmed || removalUnconfirmed}
-          error={
-            error ?? (removal.isError ? txMessage(removal.error, "The removal failed.") : null)
-          }
+          complete={removalProposed || removalHeld}
+          error={error}
         >
           {reviewed ? (
             <>
@@ -1937,16 +1914,14 @@ function ChainPositionRows({
                   }}
                 />
               ) : null}
-              {receipt.isSuccess ? (
+              {removal.phase === "done" ? (
                 <p className="mt-2 text-xs text-green-700">Liquidity removal confirmed.</p>
               ) : null}
-              {receipt.isSafeResultUnconfirmed ? (
+              {removalSafeUnconfirmed ? (
                 <p className="mt-2 text-xs text-zinc-600">{SAFE_PROPOSAL_UNCONFIRMED_LINE}</p>
               ) : null}
-              {!reviewed && (removal.heldLine || removalUnconfirmed) ? (
-                <p className="mt-2 text-xs text-zinc-600">
-                  {removal.heldLine ?? "Couldn't confirm the removal yet."}
-                </p>
+              {!reviewed && removalHeldLine ? (
+                <p className="mt-2 text-xs text-zinc-600">{removalHeldLine}</p>
               ) : null}
               {!reviewed && removalProposed && !removalSafeUnconfirmed ? (
                 <p className="mt-2 text-xs text-zinc-600">

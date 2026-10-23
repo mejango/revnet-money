@@ -27,7 +27,10 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   useSendRelayrTx: () => ({ sendRelayrTx: mocks.sendRelayrTx, data: mocks.paymentHash }),
   useGetRelayrTxBundle: () => ({ ...mocks.bundle, startPolling: mocks.startPolling }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({ submittedViaSafe: () => mocks.safe }));
+vi.mock("@/lib/held-rows", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/held-rows")>()),
+  submittedViaSafe: () => mocks.safe,
+}));
 vi.mock("@/app/create/form/useCreateForm", () => ({
   useCreateForm: () => ({ values: { name: "Test revnet", chainIds: [1, 8453] } }),
 }));

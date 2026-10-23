@@ -15,14 +15,14 @@ const reviewedHookModules = {
       bindings: { runBatch: "reviewed-multichain-batch" },
     },
   },
-  "@/hooks/useReviewedWriteContract": {
-    useWriteContract: {
-      hookKind: "reviewed-write-hook",
-      bindings: {
-        writeContract: "reviewed-write",
-        writeContractAsync: "reviewed-write",
-      },
+  "@/hooks/useReviewedAction": {
+    useReviewedAction: {
+      hookKind: "reviewed-action-hook",
+      bindings: { run: "reviewed-action" },
     },
+  },
+  "@/hooks/useReviewedWriteContract": {
+    useProposeSafeBatch: { hookKind: "reviewed-safe-batch-hook", bindings: {} },
   },
   "@/hooks/useReviewedRelayr": {
     useGetRelayrTxQuote: {
@@ -162,17 +162,8 @@ for (const path of sourceFiles(sourceRoot).sort()) {
   function collectCalls(node) {
     if (ts.isCallExpression(node)) {
       let site;
-      // withWriteIntent(write, action, params)(variables) is a call of `write`.
-      const intended =
-        ts.isCallExpression(node.expression) &&
-        ts.isIdentifier(node.expression.expression) &&
-        node.expression.expression.text === "withWriteIntent" &&
-        node.expression.arguments[0] &&
-        ts.isIdentifier(node.expression.arguments[0])
-          ? node.expression.arguments[0]
-          : undefined;
-      if (intended || ts.isIdentifier(node.expression)) {
-        const local = (intended ?? node.expression).text;
+      if (ts.isIdentifier(node.expression)) {
+        const local = node.expression.text;
         const hook = hookImports.get(local);
         const binding = callableBindings.get(local);
         if (hook) {

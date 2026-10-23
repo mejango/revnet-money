@@ -35,7 +35,6 @@ const mocks = vi.hoisted(() => ({
   estimateGas: vi.fn(),
   write: vi.fn(),
   submittedViaSafe: vi.fn(),
-  switchChain: vi.fn(),
   setSubmitting: vi.fn(),
   toast: vi.fn(),
 }));
@@ -43,10 +42,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/components/layout/Nav", () => ({ Nav: () => null }));
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
-vi.mock("wagmi", () => ({
-  useAccount: () => mocks.account,
-  useSwitchChain: () => ({ switchChainAsync: mocks.switchChain }),
-}));
+vi.mock("wagmi", () => ({ useAccount: () => mocks.account }));
 vi.mock("wagmi/actions", () => ({
   getPublicClient: (_config: unknown, { chainId }: { chainId: number }) => ({
     chain: { id: chainId },
@@ -57,11 +53,19 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   useGetRelayrTxQuote: () => ({ getRelayrTxQuote: mocks.quote }),
   requireRelayrRecoveryScopeAvailable: (...args: unknown[]) => mocks.recoveryGuard(...args),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
+vi.mock("@/lib/safe-connector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
   isSafeConnector: (connector: { id: string }) => connector.id === "safe",
-  submittedViaSafe: (...args: unknown[]) => mocks.submittedViaSafe(...args),
 }));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionThrough } = await import("./support/reviewed-action");
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: reviewedActionThrough(mocks.write, {
+      proposed: (hash) => mocks.submittedViaSafe(hash),
+    }).hook,
+  };
+});
 vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
   getProjectCreationFee: (...args: unknown[]) => mocks.creationFee(...args),
@@ -99,6 +103,8 @@ vi.mock("@/lib/forms", () => ({
 }));
 
 beforeEach(() => {
+  // A launch an earlier test sent is journaled, as a real send's is.
+  window.localStorage.clear();
   mocks.account = {
     address: TEST_ACCOUNT,
     chainId: 84532,
@@ -165,7 +171,6 @@ describe("creation submit routing", () => {
         }),
       );
     }
-    expect(mocks.switchChain).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
@@ -225,15 +230,14 @@ describe("creation submit routing", () => {
     }
     await submitFixture();
 
-    expect(mocks.switchChain).toHaveBeenCalledExactlyOnceWith({ chainId: 11155111 });
-    expect(mocks.write).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        chainId: 11155111,
-        address: PROTOCOL_DEPLOYMENTS[11155111].revDeployer.address,
-        functionName: "deployFor",
-        value: 11155111n,
-      }),
-    );
+    // The reviewed send switches the wallet to the call's chain.
+    expect(mocks.write).toHaveBeenCalledOnce();
+    expect(mocks.write.mock.calls[0]![0]).toMatchObject({
+      chainId: 11155111,
+      address: PROTOCOL_DEPLOYMENTS[11155111].revDeployer.address,
+      functionName: "deployFor",
+      value: 11155111n,
+    });
     expect(mocks.quote).not.toHaveBeenCalled();
     expect(mocks.toast).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -1,7 +1,6 @@
 "use client";
 
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
-import { safeExecutionIntent, withWriteIntent } from "@/lib/write-hold";
 import {
   sameSafeRelayrIntents,
   type SafeRelayrPhase,
@@ -12,6 +11,12 @@ import {
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
+  loadEngine,
+  ReviewRefusal,
+  useReviewedAction,
+  WALLET_CHANGED,
+} from "@/hooks/useReviewedAction";
+import {
   checkRelayrSession,
   RelayrRecoveryError,
   useGetRelayrTxQuote,
@@ -20,13 +25,9 @@ import {
   type ReviewedRelayrRequest,
 } from "@/hooks/useReviewedRelayr";
 import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
-import {
-  requireOnchainExecution,
-  useSafeConnection,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { readHandleAuthority, unprovenSafeMessage } from "@/lib/handle-authority";
+import { recordSubmittedWrite, settleSubmittedWrite } from "@/lib/held-rows";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { PROJECT_HANDLE_CHAIN_ID } from "@/lib/projectHandles";
 import { protocolQueueLabel } from "@/lib/protocol-queue-label";
@@ -41,20 +42,15 @@ import {
 } from "@/lib/queuedProjectHandle";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { describeQueuedBatch } from "@/lib/safe-batch";
+import { useSafeConnection } from "@/lib/safe-connector";
 import { queuedSafeReviewCall } from "@/lib/safe-queue-review";
-import {
-  confirmSafeExecution,
-  queueUnavailableMessage,
-  REFUND_REFUSAL,
-} from "@/lib/safe-transactions";
+import { queueUnavailableMessage, REFUND_REFUSAL } from "@/lib/safe-transactions";
 import { refreshTransactionActivities } from "@/lib/transaction-activity";
-import {
-  preselectedRelayrPayment,
-  relayrPaymentOptions,
-  requireTransactionReview,
-} from "@/lib/transaction-review";
+import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { etherscanLink, formatWalletError } from "@/lib/utils";
+import { requireNoViewAs } from "@/lib/view-as";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import { safeExecutionIntent, type ReviewedCall } from "@bananapus/nana-sdk-core/review";
 import {
   multiSendCallsOf,
   readAuthorityIdentity,
@@ -77,6 +73,7 @@ import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { encodeFunctionData, isAddressEqual, type Address, type Hex } from "viem";
 import { useAccount, useConfig } from "wagmi";
+import { getAccount } from "wagmi/actions";
 import { authorityIdentityQuery } from "./authorityIdentityQuery";
 import {
   chainName,
@@ -212,13 +209,6 @@ function QueuedCallSummary({ chainId, tx }: { chainId: number; tx: SafeQueuedTra
     </ol>
   );
 }
-
-type ReviewedExecution = {
-  policy: LiveSafePolicy;
-  target: ProjectSafeQueueTarget;
-  transaction: SafeQueuedTransaction;
-  handleBinding: QueuedProjectHandleBinding | null;
-};
 
 async function requireLiveSafeAuthority(
   row: Pick<QueueRow, "chainId" | "safe" | "authorityRows" | "handleOnly">,
@@ -364,7 +354,6 @@ export function SafeQueueCard({
     tx: SafeQueuedTransaction;
     handleBinding: QueuedProjectHandleBinding | null;
   } | null>(null);
-  const reviewedExecution = useRef<ReviewedExecution | null>(null);
   const operators = useLiveRevnetOperators(rows, {
     ...fallbackProject,
     address: fallbackOperator,
@@ -378,49 +367,7 @@ export function SafeQueueCard({
     }),
     fallbackProject,
   );
-  const { writeContractAsync } = useWriteContract({
-    reviewedInParent: true,
-    // A successful outer call is not a successful Safe execution: the card
-    // journals it only after the Safe's own event for the reviewed hash.
-    manualReceiptVerification: () => true,
-    reverify: async (variables) => {
-      const reviewed = reviewedExecution.current;
-      if (!reviewed) {
-        throw new Error("The reviewed Safe execution is no longer available.");
-      }
-      if (
-        Number(variables.chainId) !== reviewed.target.chainId ||
-        !isAddressEqual(reviewed.target.safe, variables.address)
-      ) {
-        throw new Error("The reviewed Safe execution target changed before submission.");
-      }
-      if (
-        variables.functionName !== "execTransaction" ||
-        !variables.args ||
-        (variables.value !== undefined && BigInt(variables.value) !== 0n)
-      ) {
-        throw new Error("The reviewed Safe execution call changed before submission.");
-      }
-      const submittedData = encodeFunctionData({
-        abi: SAFE_EXEC_ABI,
-        functionName: "execTransaction",
-        args: variables.args as ReturnType<typeof safeExecutionArgs>,
-      });
-      const expectedData = encodeFunctionData({
-        abi: SAFE_EXEC_ABI,
-        functionName: "execTransaction",
-        args: safeExecutionArgs(reviewed.transaction, reviewed.policy.owners),
-      });
-      if (submittedData.toLowerCase() !== expectedData.toLowerCase()) {
-        throw new Error("The reviewed queued transaction changed before submission.");
-      }
-      const confirmed = await readLiveSafePolicy(reviewed.target);
-      if (!sameSafePolicy(reviewed.policy, confirmed)) {
-        throw new Error("The Safe policy changed during review. Inspect the transaction again.");
-      }
-      await verifyLiveQueuedTransaction(reviewed.target, reviewed.transaction);
-    },
-  });
+  const { deps } = useReviewedAction();
 
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
@@ -964,87 +911,65 @@ export function SafeQueueCard({
       if (usableSafeConfirmations(tx, policy.owners).length < policy.threshold) {
         throw new Error("The transaction no longer has enough current-owner confirmations.");
       }
-      const expectedSafeTxHash = safeTransactionHash(row.chainId, row.safe, tx);
-      const args = safeExecutionArgs(tx, policy.owners);
-      const data = encodeFunctionData({
-        abi: SAFE_EXEC_ABI,
-        functionName: "execTransaction",
-        args,
-      });
-      await requireTransactionReview({
-        title: "Review Safe execution",
-        description:
-          "The outer call executes the exact queued destination shown below. Same-nonce alternatives remain unexecuted.",
-        confirmLabel: "Agree & execute Safe transaction",
-        authorization: {
-          safe: row.safe,
-          nonce: tx.nonce,
-          safeTxHash: expectedSafeTxHash,
-          destinationCall: {
-            to: tx.to,
-            value: tx.value,
-            data: tx.data ?? "0x",
-            operation: tx.operation,
+      requireNoViewAs();
+      // Core reviews the exact execution, holds it by its Safe transaction, rechecks the Safe's
+      // policy and nonce and simulates it before the wallet opens, and counts it done only on the
+      // Safe's own success event for this hash.
+      const { executeReviewedSafeTransaction } = await loadEngine();
+      const connector = getAccount(config).connector;
+      const wallet = deps.adapter;
+      let journaled: string | undefined;
+      const result = await executeReviewedSafeTransaction(
+        { chainId: row.chainId, safe: row.safe, tx },
+        {
+          ...deps,
+          adapter: {
+            ...wallet,
+            // This queue's own checks run again at the wallet, after the review.
+            sendTransaction: async (sent) => {
+              requireNoViewAs();
+              if (getAccount(config).connector !== connector)
+                throw new ReviewRefusal(WALLET_CHANGED);
+              await verifyLiveQueuedTransaction(row, tx);
+              const hash = await wallet.sendTransaction(sent);
+              if (address)
+                journaled = recordSubmittedWrite(
+                  {
+                    chainId: sent.chainId,
+                    to: sent.to,
+                    data: sent.data,
+                    value: sent.value,
+                    intent: safeExecutionIntent({
+                      chainId: row.chainId,
+                      safe: row.safe,
+                      safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
+                    }),
+                  } as ReviewedCall,
+                  hash,
+                  address,
+                  `Execute Safe transaction #${tx.nonce}`,
+                  false,
+                );
+              return hash;
+            },
           },
         },
-        calls: [
-          {
-            chainId: row.chainId,
-            to: row.safe,
-            value: 0n,
-            data,
-            abi: SAFE_EXEC_ABI,
-            functionName: "execTransaction",
-            args,
-            label: `Execute Safe transaction #${tx.nonce}`,
-            contractName: "Safe",
-            calls: [queuedSafeReviewCall(row.chainId, tx)],
-          },
-        ],
-      });
-      await verifyLiveQueuedTransaction(row, tx);
-      const confirmedPolicy = await readLiveSafePolicy(row);
-      if (!sameSafePolicy(policy, confirmedPolicy)) {
-        throw new Error("The Safe policy changed during review. Inspect the transaction again.");
+      );
+      if (journaled && result.status === "done") settleSubmittedWrite(journaled, "success");
+      if (result.status === "proposed") {
+        setNotice(`Proposed the execution of Safe transaction #${tx.nonce} to your Safe.`);
+        setReview(null);
+        return;
       }
-      reviewedExecution.current = {
-        policy: confirmedPolicy,
-        target: row,
-        transaction: tx,
-        handleBinding,
-      };
-      try {
-        // Held by the Safe transaction it runs, not by the signatures collected so far.
-        const hash = await withWriteIntent(
-          writeContractAsync,
-          safeExecutionIntent(row.chainId, row.safe, expectedSafeTxHash),
-        )({
-          chainId: row.chainId,
-          address: row.safe,
-          abi: SAFE_EXEC_ABI,
-          functionName: "execTransaction",
-          args,
-        });
-        requireOnchainExecution(hash);
-        await confirmSafeExecution({
-          client: publicClientFor(row.chainId),
-          hash,
+      const receipt = result.receipts.at(-1);
+      if (handleBinding && receipt)
+        await verifyQueuedProjectHandlePostcondition({
+          binding: handleBinding,
           safe: row.safe,
-          safeTxHash: expectedSafeTxHash,
-          confirm: handleBinding
-            ? (receipt) =>
-                verifyQueuedProjectHandlePostcondition({
-                  binding: handleBinding,
-                  safe: row.safe,
-                  transaction: tx,
-                  clientFor: publicClientFor,
-                  executionBlockNumber: receipt.blockNumber,
-                })
-            : undefined,
+          transaction: tx,
+          clientFor: publicClientFor,
+          executionBlockNumber: receipt.blockNumber,
         });
-      } finally {
-        reviewedExecution.current = null;
-      }
       setNotice(`Executed Safe transaction #${tx.nonce} on ${chainName(row.chainId)}.`);
       setReview(null);
       await queue.refetch();

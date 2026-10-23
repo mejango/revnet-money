@@ -44,7 +44,8 @@ vi.mock("@/lib/suckerExtensionSalt", () => ({
   clearExtensionSalt: vi.fn(),
   discardUnreadableSalts: () => mocks.discard(),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
+vi.mock("@/lib/reviewed-call", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/reviewed-call")>()),
   isSafeProposalPendingError: (error: unknown) =>
     error instanceof Error && error.name === "SafeProposalPendingError",
 }));

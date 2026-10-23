@@ -1,17 +1,15 @@
 "use client";
 
+import { useReviewedAction } from "@/hooks/useReviewedAction";
 import {
   useGetRelayrTxQuote,
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
 import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
-import {
-  isSafeConnection,
-  submittedViaSafe,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+import { submittedViaSafe } from "@/lib/held-rows";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { isSafeConnection } from "@/lib/safe-connector";
 import { SAFE_PROPOSAL_ORIGIN } from "@/lib/safe-transactions";
 import { chooseRelayrPayment } from "@/lib/transaction-review";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
@@ -75,7 +73,7 @@ const REPEATABLE_OPERATOR_WRITES = new Set(["setHookFor", "setTerminalFor", "set
  *   in the Safe app.
  */
 export function useOperatorWrites() {
-  const { writeContractAsync } = useWriteContract();
+  const { run } = useReviewedAction();
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
   const { signSafeTransactionAsync } = useReviewedSafeSignature();
@@ -234,12 +232,7 @@ export function useOperatorWrites() {
       isSafeConnection(config) ||
       !areRelayrChainsCompatible(direct.map((write) => write.chainId))
     ) {
-      result.chains = await runSequentialWrites({
-        writes: direct,
-        account,
-        writeContractAsync,
-        onProgress,
-      });
+      result.chains = (await runSequentialWrites({ writes: direct, account, label, run })).length;
       return result;
     }
 

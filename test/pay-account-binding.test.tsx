@@ -1,9 +1,7 @@
 import { V6PayCard } from "@/app/[slug]/components/v6/pay/V6PayCard";
-import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
-import { recordTransactionActivity, updateTransactionActivity } from "@/lib/transaction-activity";
 import { PAY_QUOTE_FAILED_MESSAGE } from "@bananapus/nana-sdk-core/v6";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import type { Address, Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,7 +29,12 @@ const mocks = vi.hoisted(() => ({
   shop: undefined as unknown,
   cart: [] as unknown[],
   erc20: false,
-  ensureAllowance: vi.fn(),
+  /** How the run of a sent hash ends, as core's would. */
+  end: (() => undefined) as (hash: `0x${string}`) => unknown,
+  runner: null as null | {
+    reset: () => void;
+    set: (patch: { phase?: string; held?: unknown; error?: string | null }) => void;
+  },
   verifiedPairs: [{ peerChainId: 1, projectId: 7n }] as {
     peerChainId: number;
     projectId: bigint;
@@ -123,24 +126,17 @@ vi.mock("@/components/GetFunds", () => ({
   useOnRamp: () => ({ supported: false, buy: vi.fn() }),
 }));
 vi.mock("@/components/IpfsImage", () => ({ ImageWithFallback: () => null }));
-vi.mock("@/hooks/useAllowance", () => ({
-  useAllowance: () => ({
-    ensureAllowance: mocks.ensureAllowance,
-    getApprovalReceipt: () => undefined,
-  }),
-}));
-vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>();
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { liveReviewedAction } = await import("./support/reviewed-action");
+  const runner = liveReviewedAction(
+    mocks.write,
+    (hash) => mocks.end(hash) as never,
+    mocks.simulate,
+  );
+  mocks.runner = runner as never;
   return {
-    ACCOUNT_CHANGED: "The connected account changed. Review again.",
-    // The write hook's own refusal, its tests and its Safe proposal tracking, as the card reads
-    // them.
-    isSafeProposalPendingError: actual.isSafeProposalPendingError,
-    SafeProposalPendingError: actual.SafeProposalPendingError,
-    requireOnchainExecution: () => undefined,
-    submittedViaSafe: actual.submittedViaSafe,
-    useWaitForTransactionReceipt: actual.useWaitForTransactionReceipt,
-    useWriteContract: () => ({ writeContractAsync: mocks.write }),
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: runner.hook,
   };
 });
 vi.mock("@/hooks/useTokenBalances", () => ({
@@ -151,10 +147,6 @@ vi.mock("@/hooks/useTokenBalances", () => ({
     ]),
     isLoading: false,
   }),
-}));
-vi.mock("@/lib/waitForReceipt", () => ({
-  isTransactionReceiptUnavailableError: () => false,
-  waitForReceiptWithRetry: async () => ({ status: "success" }),
 }));
 vi.mock("@/lib/nana/project", () => ({
   useJBTokenContext: () => ({ token: { data: { symbol: "REV", decimals: 18 } } }),
@@ -241,7 +233,8 @@ beforeEach(() => {
   mocks.erc20 = false;
   mocks.verifiedPairs = [{ peerChainId: 1, projectId: 7n }];
   mocks.suckersVerified = true;
-  mocks.ensureAllowance.mockReset().mockResolvedValue(HASH);
+  mocks.end = () => undefined;
+  mocks.runner?.reset();
   mocks.write.mockReset().mockResolvedValue(HASH);
   mocks.simulate.mockReset().mockResolvedValue({ request: {} });
 });
@@ -657,7 +650,7 @@ describe("a payment bound to the account it was prepared for", () => {
     mocks.shop = SHOP;
     mocks.cart = cartOf(1);
     const approval = deferred<Hex>();
-    mocks.ensureAllowance.mockReturnValueOnce(approval.promise);
+    mocks.write.mockReturnValueOnce(approval.promise);
     const client = queryClient();
     const view = render(
       <QueryClientProvider client={client}>
@@ -670,13 +663,13 @@ describe("a payment bound to the account it was prepared for", () => {
     const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
     await within(confirm).findByText("Approve TKN access");
     fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
-    await waitFor(() => expect(mocks.ensureAllowance).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     // The terminal being paid is the spender, for exactly the payment amount.
-    expect(mocks.ensureAllowance.mock.calls[0]!.slice(0, 3)).toEqual([
-      TKN,
-      mocks.terminal,
-      10n ** 17n,
-    ]);
+    expect(mocks.write.mock.calls[0]![0]).toMatchObject({
+      address: TKN,
+      functionName: "approve",
+      args: [mocks.terminal, 10n ** 17n],
+    });
 
     mocks.cart = cartOf(2);
     view.rerender(
@@ -687,27 +680,56 @@ describe("a payment bound to the account it was prepared for", () => {
     approval.resolve(HASH);
 
     await within(confirm).findByText("The payment changed. Review it again.");
-    expect(mocks.simulate).not.toHaveBeenCalled();
-    expect(mocks.write).not.toHaveBeenCalled();
+    expect(mocks.write).toHaveBeenCalledTimes(1);
     await within(confirm).findByText("2× Hat");
     await within(confirm).findByText("You get at least");
     fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
-    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
-    expect(mocks.ensureAllowance.mock.calls[1]!.slice(0, 3)).toEqual([
-      TKN,
-      mocks.terminal,
-      2n * 10n ** 17n,
-    ]);
-    const payment = mocks.write.mock.calls[0]![0] as { args: readonly unknown[]; value: bigint };
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(3));
+    expect(mocks.write.mock.calls[1]![0]).toMatchObject({
+      functionName: "approve",
+      args: [mocks.terminal, 2n * 10n ** 17n],
+    });
+    const payment = mocks.write.mock.calls[2]![0] as { args: readonly unknown[]; value: bigint };
     expect(payment.args[1]).toBe(TKN);
     expect(payment.args[2]).toBe(2n * 10n ** 17n);
     expect(payment.args[6]).toBe("0x02");
     expect(payment.value).toBe(0n);
   });
 
+  it("returns to the payment, not its success, once the Safe runs the token approval it proposed", async () => {
+    mocks.erc20 = true;
+    mocks.shop = SHOP;
+    mocks.cart = cartOf(1);
+    mocks.end = () => ({ phase: "proposed" });
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText("Approve TKN access");
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
+    expect(mocks.write.mock.calls[0]![0]).toMatchObject({ functionName: "approve" });
+
+    // The Safe runs the approval: the run's step is done, the payment is not.
+    act(() => mocks.runner!.set({ phase: "done", held: null }));
+    await within(confirm).findByText(
+      "Your Safe approved the token. Review the payment again to send it.",
+    );
+    await within(confirm).findByRole("button", { name: "Pay" });
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+  });
+
   it("says to check an identical payment's unconfirmed Safe proposal in Safe instead of reporting it proposed", async () => {
-    // The identical payment's Safe proposal ended where the app can't confirm its result.
-    mocks.write.mockRejectedValue(new SafeProposalPendingError(HASH, true));
+    // The hold refuses the payment: its identical Safe proposal's result can't be confirmed.
+    mocks.end = () => ({
+      phase: "failed",
+      error: "Check this proposal in your Safe before sending it again.",
+    });
     render(
       <QueryClientProvider client={queryClient()}>
         <V6PayCard />
@@ -724,26 +746,13 @@ describe("a payment bound to the account it was prepared for", () => {
 
     await within(confirm).findByText("Check this proposal in your Safe before sending it again.");
     expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
-    // Once its account dismisses the proposal, the payment can be sent again.
     expect(within(confirm).getByRole("button", { name: "Pay" })).toBeEnabled();
   });
 
   it("returns from the payment's own Safe proposal to the payment, with its line, once that proposal's result can't be confirmed", async () => {
-    const proposal = `0x${"cd".repeat(32)}` as Hex;
     const line =
       "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
-    recordTransactionActivity({
-      id: `tx:1:${proposal}`,
-      kind: "safe",
-      title: "pay",
-      status: "safe-proposed",
-      message: line,
-      chainId: 1,
-      hash: proposal,
-      safeProposalHash: proposal,
-      safeResultUnconfirmed: true,
-    });
-    mocks.write.mockResolvedValue(proposal);
+    mocks.end = () => ({ phase: "proposed", held: { line, exit: true } });
     render(
       <QueryClientProvider client={queryClient()}>
         <V6PayCard />
@@ -763,20 +772,9 @@ describe("a payment bound to the account it was prepared for", () => {
     expect(within(confirm).getByRole("button", { name: "Pay" })).toBeEnabled();
   });
 
-  it("holds the payment on its own pending Safe proposal, and returns only once that proposal is flagged", async () => {
-    const proposal = `0x${"ef".repeat(32)}` as Hex;
-    recordTransactionActivity({
-      id: `tx:1:${proposal}`,
-      kind: "safe",
-      title: "pay",
-      status: "safe-proposed",
-      message:
-        "Safe proposal is not executed : 1 of 2. It remains asynchronous; do not submit it again.",
-      chainId: 1,
-      hash: proposal,
-      safeProposalHash: proposal,
-    });
-    mocks.write.mockResolvedValue(proposal);
+  it("holds the payment on its own pending Safe proposal, and returns only once its hold offers the exit", async () => {
+    const awaiting = "Waiting for your Safe's approvals: 1 of 2.";
+    mocks.end = () => ({ phase: "proposed", held: { line: awaiting, exit: false } });
     render(
       <QueryClientProvider client={queryClient()}>
         <V6PayCard />
@@ -791,24 +789,24 @@ describe("a payment bound to the account it was prepared for", () => {
     fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
 
     await within(confirm).findByText(/The payment is proposed in Safe/);
-    // A later update that is not a flag (a new approvals line) leaves the payment held.
-    updateTransactionActivity(`tx:1:${proposal}`, {
-      message:
-        "Safe proposal is not executed | 2/3 approvals. It remains asynchronous; do not submit it again.",
-    });
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    // A new approvals line leaves the payment held.
+    act(() =>
+      mocks.runner!.set({
+        held: {
+          phase: "awaiting",
+          line: "Waiting for your Safe's approvals: 2 of 3.",
+          exit: false,
+        },
+      }),
+    );
     expect(within(confirm).getByText(/The payment is proposed in Safe/)).toBeTruthy();
     expect(within(confirm).queryByRole("button", { name: "Pay" })).toBeNull();
 
-    // The watch ends it unconfirmed while the dialog is open.
-    updateTransactionActivity(`tx:1:${proposal}`, {
-      message:
-        "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
-      safeResultUnconfirmed: true,
-    });
-    await within(confirm).findByText(
-      "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
-    );
+    // Its result can't be confirmed while the dialog is open: the hold offers its exit.
+    const unconfirmed =
+      "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.";
+    act(() => mocks.runner!.set({ held: { phase: "held", line: unconfirmed, exit: true } }));
+    await within(confirm).findByText(unconfirmed);
     expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
   });
 
@@ -843,7 +841,6 @@ describe("a payment bound to the account it was prepared for", () => {
 
 describe("the payment's intent", () => {
   it("is the project and beneficiary alone, so a checkout an emptied cart turned into a pay is the same intent", async () => {
-    const { writeIntentOf } = await import("@/lib/write-hold");
     const { payIntent } = await import("@bananapus/nana-sdk-core/review");
     render(
       <QueryClientProvider client={queryClient()}>
@@ -861,7 +858,7 @@ describe("the payment's intent", () => {
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
 
     // The checkout it was, with a lost reply, had the same intent.
-    expect(writeIntentOf(mocks.write.mock.calls[0]![0])).toBe(
+    expect(mocks.write.mock.calls[0]![0].intent).toBe(
       payIntent({ chainId: 1, project: 7n, beneficiary: A }),
     );
   });

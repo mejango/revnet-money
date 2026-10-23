@@ -19,7 +19,14 @@
           "getRelayrTxQuote",
           1
         ],
-        ["reviewed-write", "src/hooks/useMultichainBatch.ts", "execute", "writeContractAsync", 2],
+        ["reviewed-action", "src/hooks/useMultichainBatch.ts", "sendDirectCalls", "run", 1],
+        [
+          "reviewed-action-hook",
+          "src/hooks/useMultichainBatch.ts",
+          "useMultichainBatch",
+          "useReviewedAction",
+          1
+        ],
         [
           "reviewed-relayr-payment-hook",
           "src/hooks/useMultichainBatch.ts",
@@ -32,20 +39,6 @@
           "src/hooks/useMultichainBatch.ts",
           "useMultichainBatch",
           "useGetRelayrTxQuote",
-          1
-        ],
-        [
-          "reviewed-write-hook",
-          "src/hooks/useMultichainBatch.ts",
-          "useMultichainBatch",
-          "useWriteContract",
-          2
-        ],
-        [
-          "reviewed-write",
-          "src/hooks/useReviewedWriteContract.ts",
-          "writeContract",
-          "writeContractAsync",
           1
         ]
       ]
@@ -68,6 +61,7 @@
           "sendRelayrTx",
           1
         ],
+        ["reviewed-action", "src/app/create/page.tsx", "deployProject", "run", 1],
         [
           "reviewed-relayr-quote",
           "src/app/create/page.tsx",
@@ -75,9 +69,8 @@
           "getRelayrTxQuote",
           1
         ],
-        ["reviewed-write", "src/app/create/page.tsx", "deployProject", "writeContractAsync", 1],
-        ["reviewed-relayr-quote-hook", "src/app/create/page.tsx", "Page", "useGetRelayrTxQuote", 1],
-        ["reviewed-write-hook", "src/app/create/page.tsx", "Page", "useWriteContract", 1]
+        ["reviewed-action-hook", "src/app/create/page.tsx", "Page", "useReviewedAction", 1],
+        ["reviewed-relayr-quote-hook", "src/app/create/page.tsx", "Page", "useGetRelayrTxQuote", 1]
       ]
     },
     {
@@ -85,21 +78,20 @@
       "label": "Pay, add-balance, and token allowance",
       "sites": [
         [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/pay/V6PayCard.tsx",
-          "confirm",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/pay/V6PayCard.tsx",
           "V6PayCard",
-          "useWriteContract",
+          "useReviewedAction",
           1
         ],
-        ["reviewed-write", "src/hooks/useAllowance.ts", "ensureAllowance", "writeContractAsync", 1],
-        ["reviewed-write-hook", "src/hooks/useAllowance.ts", "useAllowance", "useWriteContract", 1]
+        ["reviewed-action", "src/hooks/useAllowance.ts", "ensureAllowance", "run", 1],
+        [
+          "reviewed-action-hook",
+          "src/hooks/useAllowance.ts",
+          "useAllowance",
+          "useReviewedAction",
+          1
+        ]
       ]
     },
     {
@@ -107,73 +99,38 @@
       "label": "Cash out, borrow, repay, collateral, and bridge",
       "sites": [
         [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/Value/BridgeDialog.tsx",
           "BridgeDialog",
-          "useWriteContract",
+          "useReviewedAction",
           1
         ],
         [
-          "reviewed-write",
+          "reviewed-action",
           "src/app/[slug]/components/Value/BridgeDialog.tsx",
           "moveTokens",
-          "writeContractAsync",
+          "run",
           1
         ],
         [
-          "reviewed-write",
-          "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
-          "ensureBurnTokensPermission",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write",
-          "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
-          "handleBorrow",
-          "writeContractAsync",
-          2
-        ],
-        [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
           "useBorrowDialog",
-          "useWriteContract",
+          "useReviewedAction",
           3
         ],
         [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/Value/RedeemDialog.tsx",
           "RedeemDialog",
-          "useWriteContract",
+          "useReviewedAction",
           2
         ],
         [
-          "reviewed-write",
-          "src/app/[slug]/components/Value/RedeemDialog.tsx",
-          "RedeemDialog",
-          "writeContractAsync",
-          4
-        ],
-        [
-          "reviewed-write",
-          "src/app/[slug]/components/Value/RepayDialog.tsx",
-          "handleApproveAllowance",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write",
-          "src/app/[slug]/components/Value/RepayDialog.tsx",
-          "handleRepay",
-          "writeContractAsync",
-          2
-        ],
-        [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/Value/RepayDialog.tsx",
           "RepayDialog",
-          "useWriteContract",
+          "useReviewedAction",
           1
         ]
       ]
@@ -183,101 +140,101 @@
       "label": "Token, issuance, splits, and reserved-token owner actions",
       "sites": [
         [
-          "reviewed-write",
+          "reviewed-action",
           "src/app/[slug]/components/v6/owners/accounts/V6BurnTokensDialog.tsx",
           "burn",
-          "writeContractAsync",
+          "run",
           1
         ],
         [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/owners/accounts/V6BurnTokensDialog.tsx",
           "BurnChainRow",
-          "useWriteContract",
+          "useReviewedAction",
           1
         ],
         [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
           "AddLiquidityForm",
-          "useWriteContract",
+          "useReviewedAction",
           1
         ],
         [
-          "reviewed-write-hook",
+          "reviewed-safe-batch-hook",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "AddLiquidityForm",
+          "useProposeSafeBatch",
+          1
+        ],
+        [
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
           "ChainPositionRows",
-          "useWriteContract",
-          1
+          "useReviewedAction",
+          2
         ],
         [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-          "claimFees",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write",
+          "reviewed-action",
           "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
           "execute",
-          "writeContractAsync",
+          "run",
           1
         ],
         [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
-          "remove",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
           "EditPositionPanel",
-          "useWriteContract",
+          "useReviewedAction",
           1
         ],
         [
-          "reviewed-write",
+          "reviewed-safe-batch-hook",
+          "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
+          "EditPositionPanel",
+          "useProposeSafeBatch",
+          1
+        ],
+        [
+          "reviewed-action",
           "src/app/[slug]/components/v6/owners/market/EditPositionPanel.tsx",
           "execute",
-          "writeContractAsync",
+          "run",
           1
         ],
         [
-          "reviewed-write",
+          "reviewed-action",
           "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
           "execute",
-          "writeContractAsync",
+          "run",
           1
         ],
         [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/owners/market/liquidityWrite.tsx",
-          "approvePermit2",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
           "MarketEditPanel",
-          "useWriteContract",
+          "useReviewedAction",
           1
         ],
         [
-          "reviewed-write-hook",
-          "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
-          "HookActionButton",
-          "useWriteContract",
+          "reviewed-safe-batch-hook",
+          "src/app/[slug]/components/v6/owners/market/MarketEditPanel.tsx",
+          "MarketEditPanel",
+          "useProposeSafeBatch",
           1
         ],
         [
-          "reviewed-write",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
           "HookActionButton",
-          "writeContractAsync",
+          "useReviewedAction",
+          1
+        ],
+        [
+          "reviewed-action",
+          "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
+          "HookActionButton",
+          "run",
           1
         ],
         [
@@ -288,6 +245,13 @@
           1
         ],
         [
+          "reviewed-action",
+          "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
+          "submit",
+          "run",
+          1
+        ],
+        [
           "reviewed-relayr-quote",
           "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
           "submit",
@@ -295,11 +259,11 @@
           1
         ],
         [
-          "reviewed-write",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
-          "submit",
-          "writeContractAsync",
-          2
+          "TokenEditDialog",
+          "useReviewedAction",
+          1
         ],
         [
           "reviewed-relayr-payment-hook",
@@ -313,13 +277,6 @@
           "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
           "TokenEditDialog",
           "useGetRelayrTxQuote",
-          1
-        ],
-        [
-          "reviewed-write-hook",
-          "src/app/[slug]/components/v6/owners/V6TokenPanel.tsx",
-          "TokenEditDialog",
-          "useWriteContract",
           1
         ],
         [
@@ -337,10 +294,10 @@
           1
         ],
         [
-          "reviewed-write",
+          "reviewed-action-hook",
           "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
-          "submitSplits",
-          "writeContractAsync",
+          "useSetSplitGroups",
+          "useReviewedAction",
           1
         ],
         [
@@ -355,20 +312,6 @@
           "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
           "useSetSplitGroups",
           "useGetRelayrTxQuote",
-          1
-        ],
-        [
-          "reviewed-write-hook",
-          "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
-          "useSetSplitGroups",
-          "useWriteContract",
-          1
-        ],
-        [
-          "reviewed-write",
-          "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
-          "writeContractAsync",
-          "writeContractAsync",
           1
         ],
         [
@@ -392,17 +335,10 @@
       "label": "Operator, settlement, shop, payer, and metadata writes",
       "sites": [
         [
-          "reviewed-multichain-hook",
-          "src/app/[slug]/components/ActivityFeed/PendingRoutingPayments.tsx",
-          "PendingRoutingPayments",
-          "useMultichainBatch",
-          1
-        ],
-        [
-          "reviewed-multichain-batch",
-          "src/app/[slug]/components/ActivityFeed/PendingRoutingPayments.tsx",
-          "submit",
-          "runBatch",
+          "reviewed-action-hook",
+          "src/app/[slug]/about/components/EditMetadataDialog.tsx",
+          "EditMetadataDialog",
+          "useReviewedAction",
           1
         ],
         [
@@ -417,13 +353,6 @@
           "src/app/[slug]/about/components/EditMetadataDialog.tsx",
           "EditMetadataDialog",
           "useGetRelayrTxQuote",
-          1
-        ],
-        [
-          "reviewed-write-hook",
-          "src/app/[slug]/about/components/EditMetadataDialog.tsx",
-          "EditMetadataDialog",
-          "useWriteContract",
           1
         ],
         [
@@ -441,10 +370,17 @@
           1
         ],
         [
-          "reviewed-write",
-          "src/app/[slug]/about/components/EditMetadataDialog.tsx",
-          "writeContractAsync",
-          "writeContractAsync",
+          "reviewed-multichain-hook",
+          "src/app/[slug]/components/ActivityFeed/PendingRoutingPayments.tsx",
+          "PendingRoutingPayments",
+          "useMultichainBatch",
+          1
+        ],
+        [
+          "reviewed-multichain-batch",
+          "src/app/[slug]/components/ActivityFeed/PendingRoutingPayments.tsx",
+          "submit",
+          "runBatch",
           1
         ],
         [
@@ -462,66 +398,17 @@
           1
         ],
         [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/operator/operatorLib.ts",
-          "runSequentialWrites",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
-          "deploySafeOnMainnet",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
           "ProjectHandleEditor",
-          "useWriteContract",
-          3
+          "useReviewedAction",
+          1
         ],
         [
-          "reviewed-write",
+          "reviewed-action",
           "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
-          "publish",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx",
-          "setEnsRecord",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
-          "execute",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-safe-signature-hook",
-          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
-          "SafeQueueCard",
-          "useReviewedSafeSignature",
-          1
-        ],
-        [
-          "reviewed-write-hook",
-          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
-          "SafeQueueCard",
-          "useWriteContract",
-          1
-        ],
-        [
-          "reviewed-safe-signature",
-          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
-          "sign",
-          "signSafeTransactionAsync",
+          "sendStep",
+          "run",
           1
         ],
         [
@@ -532,13 +419,6 @@
           1
         ],
         [
-          "reviewed-relayr-payment-hook",
-          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
-          "SafeQueueCard",
-          "useSendRelayrTx",
-          1
-        ],
-        [
           "reviewed-relayr-quote",
           "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
           "prepareAll",
@@ -546,10 +426,38 @@
           1
         ],
         [
+          "reviewed-action-hook",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "SafeQueueCard",
+          "useReviewedAction",
+          1
+        ],
+        [
+          "reviewed-relayr-payment-hook",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "SafeQueueCard",
+          "useSendRelayrTx",
+          1
+        ],
+        [
           "reviewed-relayr-quote-hook",
           "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
           "SafeQueueCard",
           "useGetRelayrTxQuote",
+          1
+        ],
+        [
+          "reviewed-safe-signature-hook",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "SafeQueueCard",
+          "useReviewedSafeSignature",
+          1
+        ],
+        [
+          "reviewed-safe-signature",
+          "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+          "sign",
+          "signSafeTransactionAsync",
           1
         ],
         [
@@ -574,6 +482,13 @@
           2
         ],
         [
+          "reviewed-action-hook",
+          "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
+          "useOperatorWrites",
+          "useReviewedAction",
+          1
+        ],
+        [
           "reviewed-relayr-payment-hook",
           "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
           "useOperatorWrites",
@@ -595,24 +510,38 @@
           1
         ],
         [
-          "reviewed-write-hook",
-          "src/app/[slug]/components/v6/operator/useOperatorWrites.ts",
-          "useOperatorWrites",
-          "useWriteContract",
+          "reviewed-action",
+          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
+          "submit",
+          "run",
+          2
+        ],
+        [
+          "reviewed-action-hook",
+          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
+          "useSafeBatchSubmit",
+          "useReviewedAction",
           1
         ],
         [
-          "reviewed-write-hook",
-          "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
-          "SyncButton",
-          "useWriteContract",
+          "reviewed-safe-batch-hook",
+          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
+          "useSafeBatchSubmit",
+          "useProposeSafeBatch",
           1
         ],
         [
-          "reviewed-write",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
           "SyncButton",
-          "writeContractAsync",
+          "useReviewedAction",
+          1
+        ],
+        [
+          "reviewed-action",
+          "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
+          "SyncButton",
+          "run",
           1
         ],
         [
@@ -630,31 +559,31 @@
           1
         ],
         [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
           "ClaimButton",
-          "useWriteContract",
+          "useReviewedAction",
           1
         ],
         [
-          "reviewed-write",
+          "reviewed-action",
           "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
           "ClaimButton",
-          "writeContractAsync",
+          "run",
           1
         ],
         [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
           "ExecuteButton",
-          "useWriteContract",
+          "useReviewedAction",
           1
         ],
         [
-          "reviewed-write",
+          "reviewed-action",
           "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
           "ExecuteButton",
-          "writeContractAsync",
+          "run",
           1
         ],
         [
@@ -686,46 +615,18 @@
           1
         ],
         [
-          "reviewed-write-hook",
+          "reviewed-action-hook",
           "src/app/[slug]/components/v6/shop/MintItemModal.tsx",
           "MintItemModal",
-          "useWriteContract",
+          "useReviewedAction",
           1
         ],
         [
-          "reviewed-write",
+          "reviewed-action",
           "src/app/[slug]/components/v6/shop/MintItemModal.tsx",
           "submit",
-          "writeContractAsync",
+          "run",
           1
-        ],
-        [
-          "reviewed-safe-signature",
-          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
-          "submit",
-          "signSafeTransactionAsync",
-          2
-        ],
-        [
-          "reviewed-safe-signature-hook",
-          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
-          "useSafeBatchSubmit",
-          "useReviewedSafeSignature",
-          1
-        ],
-        [
-          "reviewed-write",
-          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
-          "submit",
-          "writeContractAsync",
-          1
-        ],
-        [
-          "reviewed-write-hook",
-          "src/app/[slug]/components/v6/operator/useSafeBatchSubmit.ts",
-          "useSafeBatchSubmit",
-          "useWriteContract",
-          2
         ]
       ]
     },
@@ -733,18 +634,13 @@
       "id": "markee-rent",
       "label": "Homepage Markee board setup and streaming writes",
       "sites": [
-        ["reviewed-write", "src/hooks/useMarkee.ts", "send", "writeContractAsync", 1],
-        ["reviewed-write-hook", "src/hooks/useMarkee.ts", "useMarkee", "useWriteContract", 1]
+        ["reviewed-action", "src/hooks/useMarkee.ts", "act", "run", 1],
+        ["reviewed-action", "src/hooks/useMarkee.ts", "send", "run", 1],
+        ["reviewed-action-hook", "src/hooks/useMarkee.ts", "useMarkee", "useReviewedAction", 1]
       ]
     }
   ],
   "actions": [
-    {
-      "id": "reviewed-write-boundary",
-      "risk": "boundary",
-      "files": ["src/hooks/useReviewedWriteContract.ts"],
-      "tests": ["test/reviewed-write-contract.test.ts", "test/reviewed-write-hook.test.tsx"]
-    },
     {
       "id": "create-revnet",
       "risk": "money",

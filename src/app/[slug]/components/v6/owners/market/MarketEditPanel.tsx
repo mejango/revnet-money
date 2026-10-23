@@ -2,21 +2,14 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
-import { useAllowance } from "@/hooks/useAllowance";
-import {
-  ACCOUNT_CHANGED,
-  isSafeConnection,
-  submittedViaSafe,
-  useProposeSafeBatch,
-  useSafeConnection,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+import { useReviewedAction } from "@/hooks/useReviewedAction";
+import { useProposeSafeBatch } from "@/hooks/useReviewedWriteContract";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
+import { ACCOUNT_CHANGED, requireProposedOrDone } from "@/lib/reviewed-call";
+import { isSafeConnection, useSafeConnection } from "@/lib/safe-connector";
 import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   erc20Abi,
   formatUnits,
@@ -30,9 +23,6 @@ import { chainName, fmtUnits } from "../settlement/lib";
 import {
   addsFunds,
   lpBandPrices,
-  lpDeadline,
-  POSITION_MANAGER_ABI,
-  POSITION_MANAGER_BY_CHAIN,
   prepareMarketEdit,
   refreshPoolAndPosition,
   reverifyMarketEdit,
@@ -46,10 +36,9 @@ import {
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
 import {
   approvalStepsFor,
-  heldLiquidityApprovals,
   liquidityBatchCalls,
+  liquidityReviewedCalls,
   parseAmountText,
-  runApprovalStep,
   safeBatchIntro,
   SummaryRow,
   type LiquidityStep,
@@ -124,8 +113,6 @@ export function MarketEditPanel({
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });
   const queryClient = useQueryClient();
-  const { ensureAllowance } = useAllowance(chainId);
-  const positionManager = POSITION_MANAGER_BY_CHAIN[chainId]!;
   const corridor = useMemo<MarketCorridor | null>(
     () =>
       state.reference.cashOut && state.reference.issuance
@@ -158,22 +145,7 @@ export function MarketEditPanel({
   // to a registry-listed pair. Withdrawals of the wallet's own positions stay open.
   const gate = useGroupWriteGate([state]);
 
-  const review = useRef({
-    title: "Review market edit",
-    confirmLabel: "Agree & edit the market",
-    description: "",
-  });
-  const activePlan = useRef<{ pool: PoolSnapshot; plan: MarketEditPlan } | null>(null);
-  const { writeContractAsync } = useWriteContract({
-    transactionReview: review.current,
-    // Runs AFTER the confirm modal, so however long it sat open, a changed
-    // position or drift beyond the reviewed maxima still aborts first.
-    reverify: async () => {
-      if (activePlan.current && address) {
-        await reverifyMarketEdit(activePlan.current.pool, activePlan.current.plan, address);
-      }
-    },
-  });
+  const { run } = useReviewedAction();
 
   const balances = useQuery({
     queryKey: ["v6LpEditBalances", chainId, pool.projectToken, pool.pair.addr, address],
@@ -345,55 +317,38 @@ export function MarketEditPanel({
         onDone(null);
         return;
       }
-      for (const [index, step] of steps.entries()) {
-        setStepIndex(index);
-        if (step.approval) {
-          const outcome = await runApprovalStep(step, {
-            chainId: state.chainId,
-            address: account,
-            publicClient: publicClient as PublicClient,
-            ...heldLiquidityApprovals(lpIntent, {
-              chainId,
-              account,
-              ensureAllowance,
-              writeContractAsync: writeContractAsync as never,
-            }),
-          });
-          if (outcome === "safe-proposed") {
-            setStatus(
-              "Permit2 authorization was proposed to Safe. Execute it, then review the edit again.",
-            );
-            setReviewed(null);
-            return;
-          }
-          continue;
-        }
-        activePlan.current = { pool: current.pool, plan };
-        review.current.description = describeMarketEdit(current.pool, plan, tokenSymbol);
-        const hash = await withWriteIntent(
-          writeContractAsync,
-          lpIntent,
-        )({
-          chainId,
-          address: positionManager,
-          abi: POSITION_MANAGER_ABI,
-          functionName: "modifyLiquidities",
-          args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
-          value: plan.value,
+      const result = requireProposedOrDone(
+        await run({
           account,
-        });
-        if (submittedViaSafe(hash)) {
-          setStatus("The edit was proposed to Safe and awaits approvals and execution.");
-          setReviewed(null);
-          onDone(null);
-          return;
-        }
-        const receipt = await waitForReceiptWithRetry(publicClient, hash);
-        if (receipt.status !== "success") throw new Error(`Market edit ${hash} reverted.`);
-        setStepIndex(steps.length);
-        await queryClient.invalidateQueries({ queryKey: ["revnetPoolLpProviders"] });
-        onDone(hash);
+          title: "Review market edit",
+          confirmLabel: "Agree & edit the market",
+          description: describeMarketEdit(current.pool, plan, tokenSymbol),
+          calls: liquidityReviewedCalls(lpIntent, {
+            chainId: state.chainId,
+            steps,
+            unlockData: plan.unlockData,
+            value: plan.value,
+            safe: isSafeConnection(wagmiConfig),
+          }),
+          scope: steps.length > 1 ? lpIntent : undefined,
+          // After the review, however long it sat open, a changed position or drift beyond the
+          // reviewed maxima still aborts first.
+          reverify: async (call) => {
+            if (call.functionName === "modifyLiquidities")
+              await reverifyMarketEdit(current.pool, plan, account);
+          },
+          beforeWallet: (_call, step) => setStepIndex(step),
+        }),
+      );
+      setReviewed(null);
+      if (result.status === "proposed") {
+        setStatus("The edit was proposed to Safe and awaits approvals and execution.");
+        onDone(null);
+        return;
       }
+      setStepIndex(steps.length);
+      await queryClient.invalidateQueries({ queryKey: ["revnetPoolLpProviders"] });
+      onDone(result.hashes.at(-1) ?? null);
     } catch (cause) {
       setStatus(txMessage(cause, "Could not edit this market."));
     } finally {

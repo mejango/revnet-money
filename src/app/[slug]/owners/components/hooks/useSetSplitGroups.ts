@@ -3,22 +3,17 @@
 import { runSequentialWrites } from "@/app/[slug]/components/v6/operator/operatorLib";
 import { RESERVED_TOKEN_SPLIT_GROUP_ID } from "@/app/constants";
 import { useToast } from "@/components/ui/use-toast";
+import { isSafeProposalPendingError, useReviewedAction } from "@/hooks/useReviewedAction";
 import {
   requireRelayrRecoveryScopeAvailable,
   useGetRelayrTxQuote,
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
-import {
-  isSafeConnection,
-  isSafeProposalPendingError,
-  submittedViaSafe,
-  useSafeConnection,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+import { submittedViaSafe } from "@/lib/held-rows";
 import { useJBContractContext } from "@/lib/nana/project";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { isSafeConnection, useSafeConnection } from "@/lib/safe-connector";
 import {
   isStickyRow,
   requireStickyDistributor,
@@ -29,13 +24,13 @@ import {
 import { chooseRelayrPayment } from "@/lib/transaction-review";
 import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { RECEIPT_WAIT_TIMEOUT_MS } from "@/lib/waitForReceipt";
+import { heldLineOf } from "@/lib/write-hold";
 import { jbControllerAbi, JBCoreContracts, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
 import { fillSplitPercents } from "@bananapus/nana-sdk-core/v6";
-import { useCallback, useEffect, useState } from "react";
-import { Address, encodeFunctionData, zeroAddress, type Hash } from "viem";
-import { useAccount, useConfig, useSwitchChain } from "wagmi";
+import { useCallback, useState } from "react";
+import { Address, encodeFunctionData, zeroAddress } from "viem";
+import { useAccount, useConfig } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import type { ChainFormData, SplitFormData } from "../ChangeSplitRecipientsDialog";
 
@@ -45,41 +40,11 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { contractAddress } = useJBContractContext();
   const { address: userAddress, chainId: connectedChainId } = useAccount();
-  const { switchChainAsync } = useSwitchChain();
   const config = useConfig();
   const viaSafe = useSafeConnection(config);
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
-  const [onSuccessCalled, setOnSuccessCalled] = useState(false);
-  // The single-chain change's transaction, watched on the chain it was sent to.
-  const [singleTx, setSingleTx] = useState<{ hash: Hash; chainId: number }>();
-  const singleTxHash = singleTx?.hash;
-
-  const { writeContractAsync, isPending } = useWriteContract({
-    mutation: {
-      onSuccess() {
-        toast({ title: "Transaction submitted. Awaiting confirmation..." });
-      },
-    },
-  });
-  const {
-    isLoading: isTxLoading,
-    isSuccess,
-    isSafeProposal,
-    isSafeResultUnconfirmed: isTxUnconfirmed,
-    isUnconfirmed: isTxReceiptUnconfirmed,
-    heldLine: txHeldLine,
-  } = useWaitForTransactionReceipt({
-    hash: singleTxHash,
-    chainId: singleTx?.chainId,
-    timeout: RECEIPT_WAIT_TIMEOUT_MS,
-  });
-
-  useEffect(() => {
-    if (!isSuccess || onSuccessCalled || !singleTxHash) return;
-    onSuccess(singleTxHash);
-    setOnSuccessCalled(true);
-  }, [isSuccess, onSuccess, onSuccessCalled, singleTxHash]);
+  const { run, phase, held, busy } = useReviewedAction();
 
   const submitSplits = useCallback(
     async (selectedChains: ChainFormData[]) => {
@@ -99,35 +64,8 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
               userAddress,
               `project-splits:${chain.chainId}:${chain.projectId}:${chain.rulesetId}:${RESERVED_TOKEN_SPLIT_GROUP_ID}`,
             );
-        setSingleTx(undefined);
-
-        // Single chain - use direct writeContract
-        if (selectedChains.length === 1) {
-          setOnSuccessCalled(false);
-          const chain = selectedChains[0];
-
-          if (connectedChainId !== chain.chainId) {
-            await switchChainAsync?.({ chainId: chain.chainId });
-          }
-
-          const hash = await writeContractAsync({
-            abi: jbControllerAbi,
-            functionName: "setSplitGroupsOf",
-            chainId: chain.chainId,
-            address: contractAddress(JBCoreContracts.JBController, chain.chainId),
-            args: prepareArgs(chain),
-          });
-          setSingleTx({ hash, chainId: chain.chainId });
-
-          return { success: true };
-        }
-
-        if (
-          isSafeConnection(config) ||
-          !areRelayrChainsCompatible(selectedChains.map((chain) => chain.chainId))
-        ) {
-          let lastHash: Hash | undefined;
-          await runSequentialWrites({
+        if (direct) {
+          const hashes = await runSequentialWrites({
             writes: selectedChains.map((chain) => ({
               chainId: chain.chainId,
               address: contractAddress(JBCoreContracts.JBController, chain.chainId),
@@ -136,15 +74,12 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
               args: prepareArgs(chain),
             })),
             account: userAddress,
-            writeContractAsync: async (call) => {
-              lastHash = await writeContractAsync(call);
-              return lastHash;
-            },
-            onProgress: () => undefined,
+            label: "Update reserved token recipients",
+            run,
           });
+          const lastHash = hashes.at(-1);
           if (!lastHash) throw new Error("No split update was submitted.");
           onSuccess(lastHash);
-          setOnSuccessCalled(true);
           return { success: true };
         }
 
@@ -207,7 +142,6 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
         }
         await waitForRelayrBundle(quote.bundle_uuid);
         onSuccess(hash);
-        setOnSuccessCalled(true);
         resetRelayr();
         return { success: true };
       } catch (e: any) {
@@ -232,8 +166,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
       connectedChainId,
       config,
       contractAddress,
-      switchChainAsync,
-      writeContractAsync,
+      run,
       getRelayrTxQuote,
       sendRelayrTx,
       toast,
@@ -245,16 +178,16 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
   return {
     submitSplits,
     isSubmitting,
-    isPending,
-    isTxLoading,
-    isTxUnconfirmed,
-    isSuccess,
-    /** The single-chain write went to the Safe as a proposal and has not executed. */
-    isSafeProposal,
-    /** The single-chain write's watch ended with no receipt; it may still land. */
-    isTxReceiptUnconfirmed,
-    /** The hold's line for that write, while its watch has given up. */
-    txHeldLine,
+    isPending: busy && phase !== "receipt",
+    isTxLoading: phase === "receipt",
+    /** A Safe proposal the hold can no longer prove: its account checks it in Safe. */
+    isTxUnconfirmed: phase === "proposed" && Boolean(held?.exit),
+    /** The write went to the Safe as a proposal and has not executed. */
+    isSafeProposal: phase === "proposed",
+    /** The run ended with the write still held: it may still land. */
+    isTxReceiptUnconfirmed: phase === "idle" && Boolean(held),
+    /** The hold's line for that write. */
+    txHeldLine: held ? heldLineOf(held) : undefined,
     relayrAvailable: !viaSafe,
   };
 }

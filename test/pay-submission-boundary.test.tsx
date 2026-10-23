@@ -1,5 +1,5 @@
 import { V6PayCard } from "@/app/[slug]/components/v6/pay/V6PayCard";
-import { registerTransactionReviewHandler } from "@/lib/transaction-review";
+import { registerReviewHandler, type ReviewPrompt } from "@bananapus/nana-sdk-core/review";
 import {
   resetSafeRelayrForTests,
   resetWriteHoldsForTests,
@@ -11,8 +11,8 @@ import type { ReactNode } from "react";
 import type { Address, Hex } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// The pay card through the REAL reviewed write hook: its transaction review and its own final
-// simulation both wait, and a payment whose route moves or whose quote stops verifying during
+// The pay card through the REAL reviewed send (useReviewedAction over core): its transaction review
+// and its final simulation both wait, and a payment whose route moves or whose quote stops verifying during
 // either wait must never reach the wallet.
 
 const ACCOUNT = "0x1111111111111111111111111111111111111111" as Address;
@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
   },
   terminal: "0x3333333333333333333333333333333333333333",
   routeError: null as Error | null,
-  // The write hook's final simulation (wagmi/actions), and the wallet's send.
+  // Core's simulation before the wallet (an eth_call), and the wallet's send.
   hookSimulate: vi.fn(),
   submit: vi.fn(),
 }));
@@ -38,9 +38,15 @@ function client() {
   return {
     chain: { id: 1 },
     getChainId: async () => 1,
-    // The card's own simulation.
-    simulateContract: async () => ({ request: {} }),
     readContract: async () => 0n,
+    request: async ({ method, params }: { method: string; params: unknown[] }) => {
+      if (method === "eth_call") {
+        await mocks.hookSimulate(params[0]);
+        return "0x";
+      }
+      throw new Error(`Unexpected ${method}`);
+    },
+    estimateGas: async () => 50_000n,
     estimateContractGas: async () => 50_000n,
     getBlockNumber: async () => 100n,
     getBlock: async () => ({ number: 100n, hash: `0x${"bb".repeat(32)}` }),
@@ -60,7 +66,11 @@ const CLIENT = client();
 vi.mock("wagmi/actions", () => ({
   getAccount: () => mocks.account,
   getPublicClient: () => CLIENT,
-  simulateContract: mocks.hookSimulate,
+  getWalletClient: async () => ({
+    account: { address: mocks.account.address, type: "json-rpc" },
+    chain: { id: 1 },
+    sendTransaction: mocks.submit,
+  }),
   switchChain: async () => undefined,
   watchAccount: () => () => undefined,
 }));
@@ -69,26 +79,6 @@ vi.mock("wagmi", async (importOriginal) => ({
   useConfig: () => mocks.config,
   useAccount: () => ({ address: mocks.account.address, isConnected: true }),
   usePublicClient: () => CLIENT,
-  useWaitForTransactionReceipt: () => ({
-    data: undefined,
-    error: null,
-    isError: false,
-    isLoading: false,
-    isSuccess: false,
-  }),
-  useWriteContract: () => ({
-    data: undefined,
-    error: null,
-    isError: false,
-    isIdle: true,
-    isPending: false,
-    isSuccess: false,
-    reset: vi.fn(),
-    status: "idle",
-    variables: undefined,
-    writeContract: vi.fn(),
-    writeContractAsync: mocks.submit,
-  }),
 }));
 vi.mock("@/components/ButtonWithWallet", () => ({
   ButtonWithWallet: ({
@@ -108,9 +98,6 @@ vi.mock("@/components/GetFunds", () => ({
   useOnRamp: () => ({ supported: false, buy: vi.fn() }),
 }));
 vi.mock("@/components/IpfsImage", () => ({ ImageWithFallback: () => null }));
-vi.mock("@/hooks/useAllowance", () => ({
-  useAllowance: () => ({ ensureAllowance: vi.fn(), getApprovalReceipt: () => undefined }),
-}));
 vi.mock("@/hooks/useTokenBalances", () => ({
   useTokenBalances: () => ({
     balances: new Map([["0x000000000000000000000000000000000000EEEe", 10n ** 20n]]),
@@ -186,9 +173,9 @@ beforeEach(() => {
   Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
   mocks.terminal = FIRST;
   mocks.routeError = null;
-  mocks.hookSimulate.mockReset().mockImplementation(async (_config, request) => ({ request }));
+  mocks.hookSimulate.mockReset().mockResolvedValue(undefined);
   mocks.submit.mockReset().mockResolvedValue(HASH);
-  registerTransactionReviewHandler(async () => true);
+  registerReviewHandler(async (prompt) => prompt.confirmation);
 });
 
 afterEach(() => {
@@ -224,18 +211,21 @@ async function drift(queryClient: QueryClient, kind: "terminal" | "failed refres
   await new Promise((resolve) => setTimeout(resolve, 50));
 }
 
-describe("the pay card at the real write hook's submission boundary", () => {
+describe("the pay card at the real reviewed send's submission boundary", () => {
   for (const kind of ["terminal", "failed refresh"] as const) {
     it(`sends nothing when the route drifts (${kind}) while the payment is under review`, async () => {
-      const review = deferred<boolean>();
-      const reviewed = vi.fn(() => review.promise);
-      registerTransactionReviewHandler(reviewed);
+      const review = deferred<void>();
+      const reviewed = vi.fn(async (prompt: ReviewPrompt) => {
+        await review.promise;
+        return prompt.confirmation;
+      });
+      registerReviewHandler(reviewed);
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const confirm = await sendFromReadyConfirm(queryClient);
       await waitFor(() => expect(reviewed).toHaveBeenCalledTimes(1));
 
       await drift(queryClient, kind);
-      review.resolve(true);
+      review.resolve();
 
       await within(confirm).findByText(
         kind === "terminal"
@@ -245,15 +235,15 @@ describe("the pay card at the real write hook's submission boundary", () => {
       expect(mocks.submit).not.toHaveBeenCalled();
     });
 
-    it(`sends nothing when the route drifts (${kind}) during the write hook's final simulation`, async () => {
+    it(`sends nothing when the route drifts (${kind}) during the simulation before the wallet`, async () => {
       const simulation = deferred<void>();
-      mocks.hookSimulate.mockImplementationOnce(async (_config, request) => {
+      // The review's own simulation, then the one before the wallet.
+      mocks.hookSimulate.mockResolvedValueOnce(undefined).mockImplementationOnce(async () => {
         await simulation.promise;
-        return { request };
       });
       const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       const confirm = await sendFromReadyConfirm(queryClient);
-      await waitFor(() => expect(mocks.hookSimulate).toHaveBeenCalledTimes(1));
+      await waitFor(() => expect(mocks.hookSimulate).toHaveBeenCalledTimes(2));
 
       await drift(queryClient, kind);
       simulation.resolve();
@@ -271,10 +261,11 @@ describe("the pay card at the real write hook's submission boundary", () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     await sendFromReadyConfirm(queryClient);
     await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));
-    expect(mocks.submit.mock.calls[0]![0]).toMatchObject({
-      address: FIRST,
-      functionName: "pay",
-      account: ACCOUNT,
-    });
+    const sent = mocks.submit.mock.calls[0]![0] as {
+      to: Address;
+      account: Address | { address: Address };
+    };
+    expect(sent.to).toBe(FIRST);
+    expect(typeof sent.account === "string" ? sent.account : sent.account.address).toBe(ACCOUNT);
   });
 });

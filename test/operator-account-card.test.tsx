@@ -39,7 +39,8 @@ vi.mock("@/app/[slug]/components/v6/operator/useLiveRevnetOperators", () => ({
 vi.mock("@/app/[slug]/components/v6/operator/useOperatorWrites", () => ({
   useOperatorWrites: () => ({ runWrites: mocks.runWrites }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
+vi.mock("@/lib/reviewed-call", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/reviewed-call")>()),
   isSafeProposalPendingError: (error: unknown) =>
     error instanceof Error && error.name === "SafeProposalPendingError",
 }));

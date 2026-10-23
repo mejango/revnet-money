@@ -63,9 +63,8 @@ vi.mock("wagmi/actions", () => ({
   waitForTransactionReceipt: vi.fn(),
 }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  useWriteContract: () => ({ writeContractAsync: vi.fn() }),
-  isSafeConnector: () => false,
-  submittedViaSafe: () => false,
+  followSubmission: vi.fn(),
+  useProposeSafeBatch: () => vi.fn(),
 }));
 vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),

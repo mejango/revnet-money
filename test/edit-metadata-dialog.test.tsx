@@ -1,3 +1,4 @@
+import { SAFE_PROPOSAL_PENDING_LINE } from "@/lib/reviewed-call";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +19,8 @@ const mocks = vi.hoisted(() => ({
   waitForRelayrBundle: vi.fn(),
   simulateContract: vi.fn(),
   waitForReceipt: vi.fn(),
-  requireOnchainExecution: vi.fn(),
+  /** A Safe connection's step goes to the Safe as a proposal. */
+  proposed: false,
   safe: false,
   /** The Relayr payment the wallet sent went to a Safe as a proposal. */
   paymentViaSafe: false,
@@ -89,19 +91,31 @@ vi.mock("@/components/ButtonWithWallet", () => ({
   ),
 }));
 
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeProposalPendingError: (error: unknown) =>
-    error instanceof Error && error.name === "SafeProposalPendingError",
-  requireOnchainExecution: mocks.requireOnchainExecution,
-  submittedViaSafe: () => mocks.paymentViaSafe,
+vi.mock("@/lib/held-rows", () => ({ submittedViaSafe: () => mocks.paymentViaSafe }));
+vi.mock("@/lib/safe-connector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
   useSafeConnection: () => mocks.safe,
-  useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false }),
-  useWriteContract: () => ({
-    data: undefined,
-    isPending: false,
-    writeContractAsync: mocks.writeContractAsync,
-  }),
 }));
+/** Core's run, after its review: each step sent, then its receipt (or its Safe proposal). */
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionState } = await import("./support/reviewed-action");
+  const run = vi.fn(async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
+    const hashes: `0x${string}`[] = [];
+    for (const [step, call] of action.calls.entries()) {
+      await action.reverify?.(call, step);
+      await action.beforeWallet?.(call, step);
+      const hash = await mocks.writeContractAsync({ ...call, address: call.to }, action);
+      if (mocks.proposed) return { status: "proposed" as const, step, safeTxHash: hash };
+      await mocks.waitForReceipt(call.chainId, hash);
+      hashes.push(hash);
+    }
+    return { status: "done" as const, hashes, receipts: [] };
+  });
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: () => reviewedActionState(run),
+  };
+});
 
 vi.mock("@/hooks/useReviewedRelayr", () => ({
   requireRelayrRecoveryScopeAvailable: mocks.requireRelayrRecoveryScopeAvailable,
@@ -132,6 +146,7 @@ vi.mock("wagmi/actions", () => ({
 vi.mock("wagmi", () => ({
   useAccount: () => ({ address: `0x${"22".repeat(20)}`, chainId: mocks.connectedChainId }),
   useChainId: () => 11155111,
+  useConfig: () => ({}),
   useSwitchChain: () => ({ switchChainAsync: mocks.switchChainAsync }),
 }));
 
@@ -221,7 +236,7 @@ beforeEach(() => {
   });
   mocks.simulateContract.mockResolvedValue({});
   mocks.waitForReceipt.mockResolvedValue({ status: "success" });
-  mocks.requireOnchainExecution.mockImplementation(() => undefined);
+  mocks.proposed = false;
   mocks.sendRelayrTx.mockResolvedValue(`0x${"cd".repeat(32)}`);
   mocks.waitForRelayrBundle.mockResolvedValue(undefined);
   mocks.refreshDisplay.mockResolvedValue(undefined);
@@ -485,12 +500,7 @@ describe("EditMetadataDialog direct routing", () => {
   it("stops before the next chain when a Safe write is still a proposal, and ends on Done", async () => {
     mocks.safe = true;
     mocks.connectedChainId = 1;
-    mocks.requireOnchainExecution.mockImplementation(() => {
-      throw Object.assign(
-        new Error("This metadata update was proposed to Safe. Execute it before continuing."),
-        { name: "SafeProposalPendingError" },
-      );
-    });
+    mocks.proposed = true;
     await openDialog([1, 8453].map((chainId) => ({ ...PROJECTS[0], chainId })));
     await prefilledAdvancedTextarea();
     await save();
@@ -499,9 +509,7 @@ describe("EditMetadataDialog direct routing", () => {
     await waitFor(() => expect(confirm).not.toBeDisabled());
     fireEvent.click(confirm);
 
-    await screen.findByText(
-      "This metadata update was proposed to Safe. Execute it before continuing.",
-    );
+    await screen.findByText(SAFE_PROPOSAL_PENDING_LINE);
     expect(mocks.writeContractAsync).toHaveBeenCalledTimes(1);
     expect(mocks.waitForReceipt).not.toHaveBeenCalled();
     expect(mocks.getRelayrTxQuote).not.toHaveBeenCalled();

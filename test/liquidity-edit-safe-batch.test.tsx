@@ -63,16 +63,21 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     connectWalletText?: string;
   }) => <button {...props}>{children}</button>,
 }));
-vi.mock("@/hooks/useAllowance", () => ({
-  useAllowance: () => ({ ensureAllowance: vi.fn(), isApproving: false }),
-}));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeConnection: () => true,
-  submittedViaSafe: () => false,
-  useSafeConnection: () => true,
   useProposeSafeBatch: () => mocks.proposeSafeBatch,
-  useWriteContract: () => ({ writeContractAsync: mocks.writeContractAsync, isPending: false }),
 }));
+vi.mock("@/lib/safe-connector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
+  isSafeConnection: () => true,
+  useSafeConnection: () => true,
+}));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionThrough } = await import("./support/reviewed-action");
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: reviewedActionThrough(mocks.writeContractAsync).hook,
+  };
+});
 vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) => {
   const actual =
     await importOriginal<typeof import("@/app/[slug]/components/v6/owners/market/lib")>();

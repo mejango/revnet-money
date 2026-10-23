@@ -83,18 +83,34 @@ vi.mock("@/components/EtherscanLink", () => ({
   default: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  useSafeConnection: () => mocks.safe,
-  submittedViaSafe: () => mocks.safeProposal,
-  isSafeProposalPendingError: (error: unknown) =>
-    error instanceof Error && error.name === "SafeProposalPendingError",
-  requireOnchainExecution: () => {
-    if (mocks.safeProposal)
-      throw Object.assign(new Error("Safe proposal is awaiting Safe approvals and execution."), {
-        name: "SafeProposalPendingError",
-      });
-  },
-  useWriteContract: () => ({ writeContractAsync: mocks.writeContractAsync }),
+vi.mock("@/lib/safe-connector", () => ({ useSafeConnection: () => mocks.safe }));
+vi.mock("@/lib/held-rows", () => ({ submittedViaSafe: () => mocks.safeProposal }));
+/**
+ * Core's run as the panel sees it: each chain in order, the wallet switched to it, its write, then
+ * its receipt before the next. A Safe proposal ends the run; a reverted receipt stops it.
+ */
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useReviewedAction: () => ({
+    run: async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
+      const hashes: Hash[] = [];
+      for (const [step, call] of action.calls.entries()) {
+        await action.beforeWallet?.(call, step);
+        await mocks.switchChainAsync({ chainId: call.chainId });
+        const hash = (await mocks.writeContractAsync({ ...call, address: call.to })) as Hash;
+        if (mocks.safeProposal) return { status: "proposed", step, safeTxHash: hash };
+        const receipt = await mocks.waitForReceiptWithRetry({ chain: { id: call.chainId } }, hash);
+        if (receipt.status !== "success")
+          return {
+            status: "failed",
+            error: `Step ${step + 1} reverted on chain ${call.chainId}. Nothing after it was sent.`,
+            failure: new Error("reverted"),
+          };
+        hashes.push(hash);
+      }
+      return { status: "done", hashes, receipts: [] };
+    },
+  }),
 }));
 vi.mock("@/hooks/useReviewedRelayr", () => ({
   useGetRelayrTxQuote: () => ({
@@ -449,7 +465,7 @@ describe("token panel direct routing", () => {
     await waitFor(() => expect(mocks.writeContractAsync).toHaveBeenCalledOnce());
     await waitFor(() =>
       expect(`${document.body.textContent} ${JSON.stringify(mocks.toast.mock.calls)}`).toMatch(
-        /awaiting Safe|Safe proposal|Safe approvals/i,
+        /awaiting Safe|Safe proposal|Safe approvals|waiting in your Safe/i,
       ),
     );
     expect(mocks.waitForReceiptWithRetry).not.toHaveBeenCalled();
@@ -460,7 +476,7 @@ describe("token panel direct routing", () => {
     );
     // Nothing is left to send from here: Done, not Save token again.
     const done = await within(confirmPanel()).findByRole("button", { name: "Done" });
-    expect(confirmPanel()).toHaveTextContent("Safe proposal is awaiting Safe approvals");
+    expect(confirmPanel()).toHaveTextContent("This proposal is waiting in your Safe");
     expect(within(confirmPanel()).queryByRole("button", { name: "Save token" })).toBeNull();
     fireEvent.click(done);
     await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());

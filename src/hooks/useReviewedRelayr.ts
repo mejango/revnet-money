@@ -1,6 +1,7 @@
 "use client";
 
 import { relayrPaymentReview } from "@/lib/relayr-payment-review";
+import { ReviewRefusal } from "@/lib/review-refusal";
 
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { formatShortDateTime } from "@/lib/date";
@@ -694,7 +695,7 @@ export async function requireRelayrRecoveryScopeAvailable(
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
   for (const activity of reserving) {
     if ((await reservationOf(wagmiConfig, activity)) === "reserved")
-      throw new Error(
+      throw new ReviewRefusal(
         scope === "revnet-launch"
           ? "A previous launch still requires reconciliation. Check its existing bundle in account activity before requesting another launch; do not sign or pay again."
           : "A previous update for this destination still requires reconciliation. Check its existing bundle in account activity before submitting another update; do not sign or pay again.",

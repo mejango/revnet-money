@@ -1,6 +1,6 @@
 "use client";
 
-import { followedRow, showSafeView } from "@/hooks/useReviewedWriteContract";
+import { followedRow, showSafeView } from "@/lib/held-rows";
 import {
   updateTransactionActivity,
   useTransactionActivities,

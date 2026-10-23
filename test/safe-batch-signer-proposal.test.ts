@@ -3,13 +3,10 @@ import {
   useSafeBatchSubmit,
 } from "@/app/[slug]/components/v6/operator/useSafeBatchSubmit";
 import { buildStep, composeBatch } from "@/lib/safe-batch";
+import { registerReviewHandler } from "@bananapus/nana-sdk-core/review";
+import { MULTI_SEND_CALL_ONLY, type AuthorityIdentity } from "@bananapus/nana-sdk-core/safe";
 import {
-  encodeMultiSend,
-  MULTI_SEND_CALL_ONLY,
-  type AuthorityIdentity,
-} from "@bananapus/nana-sdk-core/safe";
-import {
-  safeBatchProposalFor,
+  safeProposalFor,
   safeTransactionHash,
   type SafeQueuedTransaction,
 } from "@bananapus/nana-sdk-core/safe-service";
@@ -38,14 +35,32 @@ vi.mock("@tanstack/react-query", () => ({
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
 vi.mock("@/hooks/useReviewedWriteContract", () => ({
   followSubmission: vi.fn(),
-  isSafeConnection: () => false,
   useProposeSafeBatch: () => vi.fn(),
-  requireOnchainExecution: vi.fn(),
-  useWriteContract: () => ({ writeContractAsync: vi.fn() }),
 }));
-vi.mock("@/hooks/useReviewedSafeSignature", () => ({
-  useReviewedSafeSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
-}));
+vi.mock("@/lib/safe-connector", () => ({ isSafeConnection: () => false }));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { writeHolds } = await import("@/lib/write-hold");
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: () => ({
+      run: vi.fn(),
+      deps: {
+        adapter: {
+          kind: "wallet",
+          account: () => mocks.account,
+          chainId: () => 8453,
+          isSafe: () => false,
+          switchChain: vi.fn(),
+          sendTransaction: vi.fn(),
+          signTypedData: mocks.sign,
+          signMessage: vi.fn(),
+        },
+        clientFor: () => mocks.client,
+        hold: writeHolds,
+      },
+    }),
+  };
+});
 vi.mock("@/app/[slug]/components/v6/operator/operatorLib", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/[slug]/components/v6/operator/operatorLib")>()),
   publicClientFor: () => mocks.client,
@@ -73,7 +88,7 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
   const steps = [
     buildStep({ kind: "setHookFor", chainId: 8453, projectId: 2, values: { hook: HOOK } }),
   ];
-  const batch = (nonce: number) => safeBatchProposalFor(composeBatch(steps).calls, nonce);
+  const batch = (nonce: number) => safeProposalFor(composeBatch(steps).calls[0]!, nonce);
 
   function queue(pending: SafeQueuedTransaction[] = []) {
     const service = safeTransactionService("base", OPERATOR_SAFE.address, pending);
@@ -102,6 +117,7 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
   }
 
   beforeEach(() => {
+    registerReviewHandler(async (prompt) => prompt.confirmation);
     mocks.account = SIGNING_OWNER;
     mocks.sign.mockResolvedValue(SIGNATURE);
     const chain = safeChain(OPERATOR_SAFE.address, { nonce: 5n });
@@ -117,7 +133,7 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
     };
   });
 
-  it("wallet-action:safe-batch proposes one MultiSend delegatecall with this app's origin", async () => {
+  it("wallet-action:safe-batch proposes a one-step batch as its call, with this app's origin", async () => {
     const service = queue();
 
     const outcome = await submit();
@@ -127,9 +143,9 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
       {
         url: `https://api.safe.global/tx-service/base/api/v1/safes/${OPERATOR_SAFE.address}/multisig-transactions/`,
         body: expect.objectContaining({
-          to: MULTI_SEND_CALL_ONLY,
-          data: encodeMultiSend(composeBatch(steps).calls),
-          operation: 1,
+          to: steps[0]!.to,
+          data: steps[0]!.data,
+          operation: 0,
           nonce: "5",
           contractTransactionHash: hash,
           sender: SIGNING_OWNER,

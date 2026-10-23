@@ -1,7 +1,7 @@
 import { ProjectHandleEditor } from "@/app/[slug]/components/v6/operator/ProjectHandleEditor";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
-import type { Hex } from "viem";
+import { parseAbi, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expectEveryWayOutRefused } from "./support/confirm";
 
@@ -58,16 +58,31 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 vi.mock("@/hooks/useCompleteBendystrawLists", () => ({
   useCompleteProjectPermissions: () => ({ data: [], isLoading: false }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
-  requireOnchainExecution: mocks.requireOnchain,
-  isSafeProposalPendingError: (error: unknown) =>
-    error instanceof Error && error.name === "SafeProposalPendingError",
+/**
+ * Core's run as the editor sees it: the step's live checks, then `write` as the wallet. A step
+ * `requireOnchain` refuses went to the Safe as a proposal.
+ */
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useReviewedAction: () => ({
+    run: async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
+      const call = action.calls[0]!;
+      await action.reverify?.(call, 0);
+      const hash = await mocks.write({ ...call, address: call.to });
+      try {
+        mocks.requireOnchain(hash);
+      } catch {
+        return { status: "proposed", step: 0, safeTxHash: hash };
+      }
+      return { status: "done", hashes: [hash], receipts: [{ status: "success", blockNumber: 1n }] };
+    },
+  }),
 }));
 vi.mock("@/lib/projectHandles", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/projectHandles")>()),
   readExactEnsText: async () => null,
   readExactProjectHandle: async () => null,
+  simulateExactEnsTextWrite: async () => 500_000n,
 }));
 // Ethereum's client: the name's resolver and its registry controller.
 vi.mock("@/app/[slug]/components/v6/operator/operatorLib", async (importOriginal) => ({
@@ -156,23 +171,30 @@ beforeEach(() => {
   mocks.liveOperator.mockReset().mockResolvedValue(true);
   mocks.liveAuthority
     .mockReset()
+    // Before the review, then again right before the wallet; deployed after.
+    .mockResolvedValueOnce(MISSING_ON_ETHEREUM)
     .mockResolvedValueOnce(MISSING_ON_ETHEREUM)
     .mockResolvedValue(READY_ON_ETHEREUM);
   mocks.prepareDeployment.mockReset().mockResolvedValue({
     valid: true,
     call: {
       target: FACTORY,
-      abi: [],
+      abi: parseAbi([
+        "function createProxyWithNonce(address singleton, bytes initializer, uint256 saltNonce) returns (address)",
+      ]),
       functionName: "createProxyWithNonce",
-      args: ["0x", "0x", 7n],
+      args: [FACTORY, "0x", 7n],
     },
   });
   mocks.blockNumber.mockResolvedValue(24_000_000n);
   mocks.write.mockResolvedValue(HASH);
   mocks.requireOnchain.mockImplementation(() => {
-    throw Object.assign(new Error("Set ENS project record was proposed to Safe."), {
-      name: "SafeProposalPendingError",
-    });
+    throw Object.assign(
+      new Error("This proposal is waiting in your Safe. Finish it there first."),
+      {
+        name: "SafeProposalPendingError",
+      },
+    );
   });
 });
 
@@ -226,7 +248,9 @@ describe("project handle confirm", () => {
     fireEvent.click(within(confirm).getByRole("button", { name: "Set art.eth record" }));
 
     const done = await within(confirm).findByRole("button", { name: "Done" });
-    expect(confirm).toHaveTextContent("Set ENS project record was proposed to Safe.");
+    expect(confirm).toHaveTextContent(
+      "This proposal is waiting in your Safe. Finish it there first.",
+    );
     expect(within(confirm).queryByRole("button", { name: "Set art.eth record" })).toBeNull();
     fireEvent.click(done);
 
@@ -234,7 +258,9 @@ describe("project handle confirm", () => {
       expect(screen.queryByRole("dialog", { name: "Confirm ENS record" })).toBeNull(),
     );
     const editor = screen.getByRole("dialog", { name: "Set project handle" });
-    expect(editor).toHaveTextContent("Set ENS project record was proposed to Safe.");
+    expect(editor).toHaveTextContent(
+      "This proposal is waiting in your Safe. Finish it there first.",
+    );
     expect(within(editor).queryByRole("alert")).toBeNull();
     expect(mocks.write).toHaveBeenCalledOnce();
   });
@@ -286,9 +312,12 @@ describe("operator Safe deployment confirm", () => {
 
   it("ends on Done when the deployment went to the Safe as a proposal", async () => {
     mocks.requireOnchain.mockImplementation(() => {
-      throw Object.assign(new Error("Deploy operator Safe on Ethereum was proposed to Safe."), {
-        name: "SafeProposalPendingError",
-      });
+      throw Object.assign(
+        new Error("This proposal is waiting in your Safe. Finish it there first."),
+        {
+          name: "SafeProposalPendingError",
+        },
+      );
     });
     const confirm = await openDeployConfirm();
     fireEvent.click(
@@ -296,14 +325,18 @@ describe("operator Safe deployment confirm", () => {
     );
 
     const done = await within(confirm).findByRole("button", { name: "Done" });
-    expect(confirm).toHaveTextContent("Deploy operator Safe on Ethereum was proposed to Safe.");
+    expect(confirm).toHaveTextContent(
+      "This proposal is waiting in your Safe. Finish it there first.",
+    );
     fireEvent.click(done);
 
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Confirm Safe deployment" })).toBeNull(),
     );
     const editor = screen.getByRole("dialog", { name: "Set project handle" });
-    expect(editor).toHaveTextContent("Deploy operator Safe on Ethereum was proposed to Safe.");
+    expect(editor).toHaveTextContent(
+      "This proposal is waiting in your Safe. Finish it there first.",
+    );
     expect(within(editor).queryByRole("alert")).toBeNull();
     expect(mocks.write).toHaveBeenCalledOnce();
   });

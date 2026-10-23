@@ -36,18 +36,15 @@ vi.mock("@/components/ButtonWithWallet", () => ({
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
-vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => ({
-  SAFE_PROPOSAL_UNCONFIRMED_LINE: (
-    await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>()
-  ).SAFE_PROPOSAL_UNCONFIRMED_LINE,
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionThrough } = await import("./support/reviewed-action");
   // A burn's own Safe proposal ends where the app can't confirm its result.
-  useWaitForTransactionReceipt: ({ hash }: { hash?: Hex }) => ({
-    isLoading: false,
-    isSuccess: false,
-    isSafeResultUnconfirmed: hash === PROPOSAL,
-  }),
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
-}));
+  const { hook } = reviewedActionThrough(mocks.write, { proposed: (hash) => hash === PROPOSAL });
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: hook,
+  };
+});
 
 const confirmPanel = () => document.querySelector<HTMLElement>("[data-tx-confirm]");
 const burnDialog = () => screen.getByRole("dialog", { name: "Burn tokens" }) as HTMLDialogElement;

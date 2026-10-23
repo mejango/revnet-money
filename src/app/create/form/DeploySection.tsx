@@ -2,10 +2,10 @@ import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { StickyRecipient } from "@/components/sticky/StickyRecipient";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
-import { useSafeConnection } from "@/hooks/useReviewedWriteContract";
 import { hasErrors } from "@/lib/forms";
 import type { JBChainId } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { useSafeConnection } from "@/lib/safe-connector";
 import {
   isStickyRow,
   stickyDraftGroupId,

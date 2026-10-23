@@ -1,10 +1,4 @@
 import { V6PayCard } from "@/app/[slug]/components/v6/pay/V6PayCard";
-import { registerTransactionReviewHandler } from "@/lib/transaction-review";
-import {
-  resetSafeRelayrForTests,
-  resetWriteHoldsForTests,
-  resetWriteRecoveryForTests,
-} from "@bananapus/nana-sdk-core/testing";
 import {
   PAY_SWAP_QUOTE_FAILED_MESSAGE,
   PaySwapQuoteFailedError,
@@ -31,72 +25,47 @@ const mocks = vi.hoisted(() => ({
   },
   terminal: "0x3333333333333333333333333333333333333333",
   routeError: null as Error | null,
-  // The card's own simulation, and every route resolution's arguments.
+  // Core's simulation of the payment before the wallet, and every route resolution's arguments.
   cardSimulate: vi.fn(),
-  receipt: vi.fn(),
+  /** Whether the sent payment's receipt says it reverted. */
+  reverted: false,
   routeCalls: [] as { slippageBps?: bigint }[],
   quoteFailed: false,
-  // The write hook's final simulation (wagmi/actions), and the wallet's send.
-  hookSimulate: vi.fn(),
+  // The wallet's send.
   submit: vi.fn(),
+  resetRunner: () => undefined as void,
 }));
 
-function client() {
-  return {
-    chain: { id: 1 },
-    getChainId: async () => 1,
-    // The card's own simulation.
-    simulateContract: (...args: unknown[]) => mocks.cardSimulate(...args),
-    readContract: async () => 0n,
-    estimateContractGas: async () => 50_000n,
-    getBlockNumber: async () => 100n,
-    getBlock: async () => ({ number: 100n, hash: `0x${"bb".repeat(32)}` }),
-    getTransactionCount: async () => 3,
-    getCode: async () => undefined,
-    getTransaction: async () => {
-      throw new Error("Transaction not found");
-    },
-    getTransactionReceipt: async () => {
-      throw new Error("Receipt not found");
-    },
-    waitForTransactionReceipt: (...args: unknown[]) => mocks.receipt(...args),
-  };
-}
-const CLIENT = client();
-
-vi.mock("wagmi/actions", () => ({
-  getAccount: () => mocks.account,
-  getPublicClient: () => CLIENT,
-  simulateContract: mocks.hookSimulate,
-  switchChain: async () => undefined,
-  watchAccount: () => () => undefined,
-}));
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
   useConfig: () => mocks.config,
   useAccount: () => ({ address: mocks.account.address, isConnected: true }),
-  usePublicClient: () => CLIENT,
-  useWaitForTransactionReceipt: () => ({
-    data: undefined,
-    error: null,
-    isError: false,
-    isLoading: false,
-    isSuccess: false,
-  }),
-  useWriteContract: () => ({
-    data: undefined,
-    error: null,
-    isError: false,
-    isIdle: true,
-    isPending: false,
-    isSuccess: false,
-    reset: vi.fn(),
-    status: "idle",
-    variables: undefined,
-    writeContract: vi.fn(),
-    writeContractAsync: mocks.submit,
-  }),
+  usePublicClient: () => ({ readContract: async () => 0n }),
 }));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { liveReviewedAction } = await import("./support/reviewed-action");
+  const runner = liveReviewedAction(
+    mocks.submit,
+    (hash) =>
+      mocks.reverted
+        ? {
+            phase: "failed",
+            error: "The transaction reverted onchain.",
+            failure: Object.assign(new Error("reverted"), {
+              name: "ReviewedCallRevertedError",
+              step: 0,
+              hash,
+            }),
+          }
+        : undefined,
+    mocks.cardSimulate,
+  );
+  mocks.resetRunner = runner.reset;
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: runner.hook,
+  };
+});
 vi.mock("@/components/ButtonWithWallet", () => ({
   ButtonWithWallet: ({
     children,
@@ -115,9 +84,6 @@ vi.mock("@/components/GetFunds", () => ({
   useOnRamp: () => ({ supported: false, buy: vi.fn() }),
 }));
 vi.mock("@/components/IpfsImage", () => ({ ImageWithFallback: () => null }));
-vi.mock("@/hooks/useAllowance", () => ({
-  useAllowance: () => ({ ensureAllowance: vi.fn(), getApprovalReceipt: () => undefined }),
-}));
 vi.mock("@/hooks/useTokenBalances", () => ({
   useTokenBalances: () => ({
     balances: new Map([["0x000000000000000000000000000000000000EEEe", 10n ** 20n]]),
@@ -205,18 +171,12 @@ beforeEach(() => {
   mocks.routeCalls = [];
   mocks.quoteFailed = false;
   mocks.cardSimulate.mockReset().mockResolvedValue({ request: {} });
-  mocks.receipt.mockReset().mockImplementation(() => new Promise(() => undefined));
-  mocks.hookSimulate.mockReset().mockImplementation(async (_config, request) => ({ request }));
+  mocks.reverted = false;
   mocks.submit.mockReset().mockResolvedValue(HASH);
-  registerTransactionReviewHandler(async () => true);
+  mocks.resetRunner();
 });
 
-afterEach(() => {
-  cleanup();
-  resetWriteHoldsForTests();
-  resetWriteRecoveryForTests();
-  resetSafeRelayrForTests();
-});
+afterEach(() => cleanup());
 
 /** Open the card's confirm on a ready 1 ETH payment, then press its Pay. */
 async function payFromConfirm() {
@@ -314,7 +274,7 @@ describe("a failed payment's reason and a looser minimum", () => {
   });
 
   it("says a mined payment reverted, then quotes and simulates it again for a reason", async () => {
-    mocks.receipt.mockResolvedValue({ status: "reverted", blockNumber: 101n });
+    mocks.reverted = true;
     const confirm = await payFromConfirm();
     await within(confirm).findByText("The payment reverted.");
     // No replay at the receipt's block: only the send's own simulation ran.
@@ -327,6 +287,7 @@ describe("a failed payment's reason and a looser minimum", () => {
     await within(confirm).findByText(/^990 /);
 
     // The fresh simulation, at the latest block, is what names the reason.
+    mocks.reverted = false;
     mocks.cardSimulate.mockRejectedValueOnce(underMin(980n * TOKEN, 990n * TOKEN));
     fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await within(confirm).findByText(

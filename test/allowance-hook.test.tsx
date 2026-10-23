@@ -1,31 +1,24 @@
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { act, renderHook } from "@testing-library/react";
-import { type Address, type Hex } from "viem";
+import { encodeFunctionData, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   address: "0x000000000000000000000000000000000000dEaD" as Address | undefined,
   publicClientAvailable: true,
   readContract: vi.fn(),
-  waitForTransactionReceipt: vi.fn(),
-  writeContractAsync: vi.fn(),
-  requireOnchainExecution: vi.fn(),
+  run: vi.fn(),
 }));
 
 vi.mock("wagmi", () => ({
   useAccount: () => ({ address: mocks.address }),
   usePublicClient: () =>
-    mocks.publicClientAvailable
-      ? {
-          readContract: mocks.readContract,
-          waitForTransactionReceipt: mocks.waitForTransactionReceipt,
-        }
-      : undefined,
+    mocks.publicClientAvailable ? { readContract: mocks.readContract } : undefined,
 }));
 
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  requireOnchainExecution: mocks.requireOnchainExecution,
-  useWriteContract: () => ({ writeContractAsync: mocks.writeContractAsync }),
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useReviewedAction: () => ({ run: mocks.run }),
 }));
 
 const TOKEN = "0x0000000000000000000000000000000000001000" as Address;
@@ -43,8 +36,12 @@ beforeEach(() => {
   mocks.address = "0x000000000000000000000000000000000000dEaD";
   mocks.publicClientAvailable = true;
   mocks.readContract.mockResolvedValue(0n);
-  mocks.writeContractAsync.mockResolvedValue(HASH);
-  mocks.waitForTransactionReceipt.mockResolvedValue({ status: "success" });
+  mocks.run.mockReset();
+  mocks.run.mockResolvedValue({
+    status: "done",
+    hashes: [HASH],
+    receipts: [{ status: "success" }],
+  });
 });
 
 describe("allowance hook", () => {
@@ -66,21 +63,12 @@ describe("allowance hook", () => {
         args: [mocks.address, SPENDER],
       }),
     );
-    expect(mocks.writeContractAsync).not.toHaveBeenCalled();
+    expect(mocks.run).not.toHaveBeenCalled();
   });
 
-  it("wallet-action:allowance approves through the reviewed hook, enforces direct execution, and verifies the receipt", async () => {
-    const order: string[] = [];
+  it("wallet-action:allowance approves the exact reviewed call, held by its intent, and keeps the receipt", async () => {
     const receipt = { status: "success", blockNumber: 12_345n } as const;
-    mocks.writeContractAsync.mockImplementation(async () => {
-      order.push("write");
-      return HASH;
-    });
-    mocks.requireOnchainExecution.mockImplementation(() => order.push("execution-boundary"));
-    mocks.waitForTransactionReceipt.mockImplementation(async () => {
-      order.push("receipt");
-      return receipt;
-    });
+    mocks.run.mockResolvedValue({ status: "done", hashes: [HASH], receipts: [receipt] });
     const hooks = await freshHook();
     const { result } = renderHook(() => hooks.useAllowance(11155111));
     let hash: Hex | null | undefined;
@@ -90,20 +78,28 @@ describe("allowance hook", () => {
     });
 
     expect(hash).toBe(HASH);
-    expect(mocks.writeContractAsync).toHaveBeenCalledWith(
+    expect(mocks.run).toHaveBeenCalledWith(
       expect.objectContaining({
-        chainId: 11155111,
-        address: TOKEN,
-        // No declared return: a token whose approve returns nothing (USDT) still simulates.
-        abi: erc20ApproveAbi,
-        functionName: "approve",
-        args: [SPENDER, 75n],
+        account: mocks.address,
+        calls: [
+          expect.objectContaining({
+            chainId: 11155111,
+            to: TOKEN,
+            // No declared return: a token whose approve returns nothing (USDT) still simulates.
+            abi: erc20ApproveAbi,
+            functionName: "approve",
+            args: [SPENDER, 75n],
+            data: encodeFunctionData({
+              abi: erc20ApproveAbi,
+              functionName: "approve",
+              args: [SPENDER, 75n],
+            }),
+            // Held by the approval's intent, whatever amount the plan calculated.
+            intent: APPROVAL,
+          }),
+        ],
       }),
     );
-    // Held by the approval's intent, whatever amount the plan calculated.
-    const { writeIntentOf } = await import("@/lib/write-hold");
-    expect(writeIntentOf(mocks.writeContractAsync.mock.calls[0][0])).toBe(APPROVAL);
-    expect(order).toEqual(["write", "execution-boundary", "receipt"]);
     expect(result.current.getApprovalReceipt(hash)).toEqual(receipt);
     expect(result.current.getApprovalReceipt(null)).toBeUndefined();
     expect(result.current.getApprovalReceipt(undefined)).toBeUndefined();
@@ -111,30 +107,31 @@ describe("allowance hook", () => {
     expect(result.current.isApproving).toBe(false);
   });
 
-  it("stops at the Safe execution boundary and never waits on a proposal hash as a receipt", async () => {
-    mocks.requireOnchainExecution.mockImplementation(() => {
-      throw new Error("Safe proposal has not executed");
-    });
+  it("stops at a Safe proposal: the spend waits for the Safe", async () => {
+    mocks.run.mockResolvedValue({ status: "proposed", step: 0, safeTxHash: HASH });
     const hooks = await freshHook();
     const { result } = renderHook(() => hooks.useAllowance(11155111));
 
     await act(async () => {
       await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n, APPROVAL)).rejects.toThrow(
-        /has not executed/i,
+        /waiting in your Safe/i,
       );
     });
-    expect(mocks.waitForTransactionReceipt).not.toHaveBeenCalled();
     expect(result.current.isApproving).toBe(false);
   });
 
-  it("rejects a mined approval that reverted onchain", async () => {
-    mocks.waitForTransactionReceipt.mockResolvedValue({ status: "reverted" });
+  it("rejects with the run's line when the approval failed", async () => {
+    mocks.run.mockResolvedValue({
+      status: "failed",
+      error: "The transaction reverted. Nothing changed; try again.",
+      failure: new Error("reverted"),
+    });
     const hooks = await freshHook();
     const { result } = renderHook(() => hooks.useAllowance(11155111));
 
     await act(async () => {
       await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n, APPROVAL)).rejects.toThrow(
-        `Token approval ${HASH} reverted onchain`,
+        "The transaction reverted. Nothing changed; try again.",
       );
     });
     expect(result.current.isApproving).toBe(false);
@@ -160,18 +157,5 @@ describe("allowance hook", () => {
       "Please try again",
     );
     expect(mocks.readContract).not.toHaveBeenCalled();
-  });
-
-  it("fails closed when approval confirmation is unavailable", async () => {
-    mocks.waitForTransactionReceipt.mockResolvedValue(undefined);
-    const hooks = await freshHook();
-    const { result } = renderHook(() => hooks.useAllowance(11155111));
-
-    await act(async () => {
-      await expect(result.current.ensureAllowance(TOKEN, SPENDER, 1n, APPROVAL)).rejects.toThrow(
-        `Token approval ${HASH} was submitted, but confirmation is unavailable`,
-      );
-    });
-    expect(result.current.isApproving).toBe(false);
   });
 });

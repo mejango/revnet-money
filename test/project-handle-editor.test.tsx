@@ -33,10 +33,9 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 vi.mock("@/hooks/useCompleteBendystrawLists", () => ({
   useCompleteProjectPermissions: () => ({ data: [], isLoading: false }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeProposalPendingError: () => false,
-  requireOnchainExecution: vi.fn(),
-  useWriteContract: () => ({ writeContractAsync: vi.fn() }),
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useReviewedAction: () => ({ run: vi.fn() }),
 }));
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));

@@ -15,6 +15,7 @@ import {
   type FundingChainOption,
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
+import { registerReviewHandler, type ReviewModel } from "@bananapus/nana-sdk-core/review";
 import {
   useCallback,
   useEffect,
@@ -30,9 +31,14 @@ export type PendingReview = {
   scope?: TransactionReviewScope | null;
   kind: "review";
   id: number;
-  request: TransactionReviewRequest;
   resolve: (approved: boolean) => void;
-};
+} &
+  /** A boolean review (the Safe, Relayr and authority paths) of the request itself. */
+  (
+    | { request: TransactionReviewRequest; model?: undefined }
+    /** Core's prompt: the model it bound, confirmed only by the confirmation it minted. */
+    | { model: ReviewModel; request?: undefined }
+  );
 
 export type PendingFundingChainSelection = {
   scope?: TransactionReviewScope | null;
@@ -165,6 +171,22 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
   );
 
   useEffect(() => registerTransactionReviewHandler(enqueue), [enqueue]);
+  useEffect(
+    () =>
+      registerReviewHandler(async (prompt) => {
+        const approved = await new Promise<boolean>((resolve) =>
+          enqueueDialog({
+            kind: "review",
+            scope: scopeRef.current,
+            id: nextId.current++,
+            model: prompt.model,
+            resolve,
+          }),
+        );
+        return approved ? prompt.confirmation : null;
+      }),
+    [enqueueDialog],
+  );
   useEffect(() => registerFlowChoiceHandler(enqueueFlowChoice), [enqueueFlowChoice]);
   useEffect(
     () => registerFundingChainSelectionHandler(enqueueFundingChainSelection),
@@ -221,8 +243,16 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     else current.resolve(result === true);
   }, []);
 
+  // The review UI loads once the page is idle, so the first click opens it with no wait.
+  useEffect(() => {
+    const load = () => void import("./TransactionReviewDialog").catch(() => undefined);
+    if (typeof requestIdleCallback !== "function") return void setTimeout(load, 1_000);
+    const id = requestIdleCallback(load, { timeout: 3_000 });
+    return () => cancelIdleCallback(id);
+  }, []);
+
   // Keep the global queue ready immediately, but fetch the full decoder and
-  // review UI only when a request arrives. Loading never authorizes a call;
+  // review UI when a request arrives if the idle load hasn't. Loading never authorizes a call;
   // cancellation, unmount, or a failed download resolves it as declined.
   useEffect(() => {
     if (!active || active.kind === "choice" || Dialog) return;

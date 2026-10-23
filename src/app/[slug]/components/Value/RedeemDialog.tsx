@@ -25,12 +25,12 @@ import { useToast } from "@/components/ui/use-toast";
 import { useCashOutRoute } from "@/hooks/useCashOutRoute";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
-  isSafeProposalUnconfirmedError,
-  SAFE_PROPOSAL_UNCONFIRMED_LINE,
-  SAFE_PROPOSAL_UNCONFIRMED_TITLE,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+  failedLine,
+  reviewedCall,
+  ReviewRefusal,
+  useReviewedAction,
+  type ReviewedActionInput,
+} from "@/hooks/useReviewedAction";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import {
   cashOutExecutionErrorMessage,
@@ -55,10 +55,10 @@ import {
 } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
+import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
-import { RECEIPT_WAIT_TIMEOUT_MS } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
+import { heldLineOf } from "@/lib/write-hold";
 import {
   formatUnits,
   getJBContractAddress,
@@ -87,7 +87,6 @@ interface Props {
 }
 
 const APPROVAL_PROPOSED = "The approval was proposed to Safe. Continue the sale once it executes.";
-const APPROVAL_UNCONFIRMED = "Couldn't confirm the approval yet.";
 
 export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { projectId, tokenSymbol, disabled, children } = props;
@@ -114,8 +113,6 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const [submitting, setSubmitting] = useState(false);
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // A step refused by its own Safe proposal whose result can't be confirmed, which is not a failure.
-  const [refusedUnconfirmed, setRefusedUnconfirmed] = useState(false);
   const { toast } = useToast();
   const suckerQuery = useSuckers();
   const { data: suckers, verifiedPairs } = suckerQuery;
@@ -171,45 +168,34 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     ? JBProjectToken.parse(redeemAmount, projectTokenDecimals).value
     : 0n;
 
-  const { writeContractAsync, isPending: isWriteLoading, data: hash, reset } = useWriteContract();
-  const {
-    writeContractAsync: writeApprovalAsync,
-    isPending: approvalSigning,
-    data: approvalHash,
-  } = useWriteContract();
-
-  const {
-    isLoading: isTxLoading,
-    isSuccess,
-    isSafeResultUnconfirmed: isTxUnconfirmed,
-  } = useWaitForTransactionReceipt({ hash, chainId: selectedChainId });
-  const {
-    isLoading: approvalConfirming,
-    isSuccess: approvalConfirmed,
-    isError: approvalReverted,
-    error: approvalRevertError,
-    isSafeProposal: approvalProposed,
-    isSafeResultUnconfirmed: approvalSafeUnconfirmed,
-    isUnconfirmed: approvalUnconfirmed,
-    heldLine: approvalHeldLine,
-  } = useWaitForTransactionReceipt({
-    hash: approvalHash,
-    chainId: selectedChainId,
-    timeout: RECEIPT_WAIT_TIMEOUT_MS,
-  });
-  const approvalFailure = approvalReverted
-    ? formatWalletError(approvalRevertError) || "The approval failed."
-    : null;
-  // An approval proposed to the Safe, one whose Safe result can't be confirmed,
-  // or one whose watch ended without a receipt may still land: the sale stays
-  // locked, settled rather than spinning, and says why.
-  const approvalOutstanding =
-    Boolean(approvalProposed) || Boolean(approvalSafeUnconfirmed) || approvalUnconfirmed;
+  const sale = useReviewedAction();
+  const approval = useReviewedAction();
+  const [hash, setHash] = useState<`0x${string}`>();
+  const isWriteLoading =
+    sale.phase === "review" || sale.phase === "simulating" || sale.phase === "signing";
+  const isTxLoading = sale.phase === "receipt";
+  const isSuccess = sale.phase === "done";
+  const isTxUnconfirmed = sale.phase === "proposed" && !!sale.held?.exit;
+  const approvalSigning =
+    approval.phase === "review" || approval.phase === "simulating" || approval.phase === "signing";
+  const approvalConfirming = approval.phase === "receipt";
+  const approvalProposed = approval.phase === "proposed";
+  const approvalSafeUnconfirmed = approvalProposed && !!approval.held?.exit;
+  const approvalHeldLine = approval.held ? heldLineOf(approval.held) : undefined;
+  // An approval proposed to the Safe, or one whose Safe result can't be confirmed, may still
+  // land: the sale stays locked, settled rather than spinning, and says why.
+  const approvalOutstanding = approvalProposed;
   const approvalStatus = approvalSafeUnconfirmed
     ? SAFE_PROPOSAL_UNCONFIRMED_LINE
     : approvalProposed
       ? APPROVAL_PROPOSED
-      : (approvalHeldLine ?? (approvalUnconfirmed ? APPROVAL_UNCONFIRMED : null));
+      : (approvalHeldLine ?? null);
+  /** One reviewed step of the cash out, sent exactly; its run's end. */
+  const send = async (runner: typeof sale, action: ReviewedActionInput) => {
+    const result = await runner.run(action);
+    if (result?.status === "failed") throw new ReviewRefusal(failedLine(result));
+    return result;
+  };
   // const { data: redeemQuote } = useTokenCashOutQuoteEth(redeemAmountBN, {
   //   chainId: selectedSucker?.peerChainId as JBChainId,
   // });
@@ -364,6 +350,15 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
       routerAllowance[0] < redeemAmountBN ||
       Number(routerAllowance[1]) <= Math.floor(Date.now() / 1000) + 1_800);
 
+  // Approved, at once or by its Safe later: the sale is its own step, from the refreshed allowances.
+  useEffect(() => {
+    if (approval.phase !== "done") return;
+    setIsApproving(false);
+    void refetchErc20Allowance();
+    void refetchRouterAllowance();
+    void refetchClaimedBalance();
+  }, [approval.phase, refetchErc20Allowance, refetchRouterAllowance, refetchClaimedBalance]);
+
   // A cleared approval stops being "needed", so the queue is built from the
   // approvals this sale ever required — otherwise a finished step disappears
   // instead of ticking over to done.
@@ -411,29 +406,14 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     if (hash) setReview(false);
   }, [hash]);
 
-  // A reverted approval ends the approving step: the confirm shows why and can
-  // be retried or closed.
-  useEffect(() => {
-    if (!approvalFailure) return;
-    setIsApproving(false);
-    setError(approvalFailure);
-  }, [approvalFailure]);
-
-  useEffect(() => {
-    if (!approvalConfirmed) return;
-    setIsApproving(false);
-    void refetchErc20Allowance();
-    void refetchRouterAllowance();
-    void refetchClaimedBalance();
-  }, [approvalConfirmed, refetchErc20Allowance, refetchRouterAllowance, refetchClaimedBalance]);
-
   return (
     <Dialog
       open={disabled === true ? false : undefined}
       onOpenChange={(open) => {
         // The dialog stays mounted: a finished cash out must not greet the next one.
         if (!open) {
-          reset();
+          sale.reset();
+          setHash(undefined);
           setRedeemAmount(undefined);
           setReview(false);
           setError(null);
@@ -620,7 +600,6 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 disabled={(valid && (!cashOutRoute || !pairVerified)) || approvalOutstanding}
                 onClick={() => {
                   setError(null);
-                  setRefusedUnconfirmed(false);
                   // Pin the reviewed chain: a peer balance arriving later must not unselect it.
                   if (activeCashOutChainId) setCashOutChainId(activeCashOutChainId);
                   setReview(true);
@@ -652,11 +631,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
             }
             busy={loading || (isApproving && !approvalOutstanding) || submitting}
             complete={approvalOutstanding}
-            status={refusedUnconfirmed ? SAFE_PROPOSAL_UNCONFIRMED_LINE : approvalStatus}
+            status={approvalStatus}
             error={error}
             onConfirm={async () => {
               setSubmitting(true);
-              setRefusedUnconfirmed(false);
               try {
                 if (!pairVerified) {
                   throw new Error("Couldn't confirm this chain belongs to this project.");
@@ -666,8 +644,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   !address ||
                   !redeemAmountBN ||
                   !cashOutRoute ||
-                  !tokenToReceive ||
-                  !writeContractAsync
+                  !tokenToReceive
                 ) {
                   console.error("Missing required data for cashout");
                   throw new Error("Please try again");
@@ -675,55 +652,58 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
                 if (directSell && projectTokenAddress && selectedChainId && deployment) {
                   setIsApproving(needsErc20Approval || needsRouterApproval);
-                  if (needsErc20Approval) {
-                    await withWriteIntent(
-                      writeApprovalAsync,
-                      approvalIntent(
-                        cashOutIntent({
-                          chainId: selectedChainId,
-                          project: effectiveProjectId,
-                          holder: address,
-                          beneficiary: address,
-                        }),
-                        { step: "erc20", token: projectTokenAddress, spender: PERMIT2_ADDRESS },
-                      ),
-                    )({
-                      abi: erc20ApproveAbi,
-                      functionName: "approve",
-                      chainId: selectedChainId,
-                      address: projectTokenAddress,
-                      args: [PERMIT2_ADDRESS, redeemAmountBN],
-                    });
-                    return;
-                  }
-                  if (needsRouterApproval) {
-                    await withWriteIntent(
-                      writeApprovalAsync,
-                      approvalIntent(
-                        cashOutIntent({
-                          chainId: selectedChainId,
-                          project: effectiveProjectId,
-                          holder: address,
-                          beneficiary: address,
-                        }),
-                        {
-                          step: "permit2",
-                          token: projectTokenAddress,
-                          spender: deployment.universalRouter!,
-                        },
-                      ),
-                    )({
-                      abi: permit2Abi,
-                      functionName: "approve",
-                      chainId: selectedChainId,
-                      address: PERMIT2_ADDRESS,
-                      args: [
-                        projectTokenAddress,
-                        deployment.universalRouter!,
-                        redeemAmountBN,
-                        Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+                  const cashOut = cashOutIntent({
+                    chainId: selectedChainId,
+                    project: effectiveProjectId,
+                    holder: address,
+                    beneficiary: address,
+                  });
+                  if (needsErc20Approval || needsRouterApproval) {
+                    const approved = await send(approval, {
+                      account: address,
+                      calls: [
+                        needsErc20Approval
+                          ? reviewedCall(
+                              {
+                                abi: erc20ApproveAbi,
+                                functionName: "approve",
+                                chainId: selectedChainId,
+                                address: projectTokenAddress,
+                                args: [PERMIT2_ADDRESS, redeemAmountBN],
+                              },
+                              {
+                                intent: approvalIntent(cashOut, {
+                                  step: "erc20",
+                                  token: projectTokenAddress,
+                                  spender: PERMIT2_ADDRESS,
+                                }),
+                              },
+                            )
+                          : reviewedCall(
+                              {
+                                abi: permit2Abi,
+                                functionName: "approve",
+                                chainId: selectedChainId,
+                                address: PERMIT2_ADDRESS,
+                                args: [
+                                  projectTokenAddress,
+                                  deployment.universalRouter!,
+                                  redeemAmountBN,
+                                  Math.floor(Date.now() / 1000) + 30 * 24 * 60 * 60,
+                                ],
+                              },
+                              {
+                                intent: approvalIntent(cashOut, {
+                                  step: "permit2",
+                                  token: projectTokenAddress,
+                                  spender: deployment.universalRouter!,
+                                }),
+                              },
+                            ),
                       ],
                     });
+                    // A Safe proposal stays approving until its Safe runs it (the effect below).
+                    if (approved?.status !== "proposed") setIsApproving(false);
                     return;
                   }
                   const refreshedCashOut = await refetchCashOutRoute();
@@ -755,29 +735,29 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   // The sale pays `address`: only `address` may send it.
                   // Held by what the user asked for: the quote and deadline are stamped again.
                   // One cash-out intent, whichever venue the app picks.
-                  await withWriteIntent(
-                    writeContractAsync,
-                    cashOutIntent({
-                      chainId: selectedChainId,
-                      project: effectiveProjectId,
-                      holder: address,
-                      beneficiary: address,
-                    }),
-                    legacyIntents.cashOut({
-                      projectId: effectiveProjectId,
-                      token: tokenToReceive,
-                      amount: redeemAmountBN,
-                      beneficiary: address,
-                    }),
-                  )({
-                    ...buildDirectSellSwapTx({
-                      chainId: selectedChainId,
-                      quote: fresh,
-                      amount: redeemAmountBN,
-                      recipient: address,
-                      deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
-                    }),
+                  await send(sale, {
                     account: address,
+                    onSubmitted: (_call, _step, sent) => setHash(sent),
+                    calls: [
+                      reviewedCall(
+                        buildDirectSellSwapTx({
+                          chainId: selectedChainId,
+                          quote: fresh,
+                          amount: redeemAmountBN,
+                          recipient: address,
+                          deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
+                        }),
+                        {
+                          intent: cashOut,
+                          legacyIntents: legacyIntents.cashOut({
+                            projectId: effectiveProjectId,
+                            token: tokenToReceive,
+                            amount: redeemAmountBN,
+                            beneficiary: address,
+                          }),
+                        },
+                      ),
+                    ],
                   });
                   return;
                 }
@@ -799,29 +779,28 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 }
 
                 // Held by what the user asked for: the quoted minimum is read again on a retry.
-                await withWriteIntent(
-                  writeContractAsync,
-                  cashOutIntent({
-                    chainId: selectedChainId!,
-                    project: effectiveProjectId,
-                    holder: address,
-                    beneficiary: address,
-                  }),
-                  legacyIntents.cashOut({
-                    projectId: effectiveProjectId,
-                    token: tokenToReceive,
-                    amount: redeemAmountBN,
-                    beneficiary: address,
-                  }),
-                )({ ...prepared.transaction, account: address });
+                await send(sale, {
+                  account: address,
+                  onSubmitted: (_call, _step, sent) => setHash(sent),
+                  calls: [
+                    reviewedCall(prepared.transaction, {
+                      intent: cashOutIntent({
+                        chainId: selectedChainId!,
+                        project: effectiveProjectId,
+                        holder: address,
+                        beneficiary: address,
+                      }),
+                      legacyIntents: legacyIntents.cashOut({
+                        projectId: effectiveProjectId,
+                        token: tokenToReceive,
+                        amount: redeemAmountBN,
+                        beneficiary: address,
+                      }),
+                    }),
+                  ],
+                });
               } catch (err) {
                 setIsApproving(false);
-                if (isSafeProposalUnconfirmedError(err)) {
-                  setError(null);
-                  setRefusedUnconfirmed(true);
-                  toast({ title: SAFE_PROPOSAL_UNCONFIRMED_TITLE, description: err.message });
-                  return;
-                }
                 console.error("Cashout failed:", err);
                 setError(cashOutExecutionErrorMessage(err) ?? formatWalletError(err));
                 toast({

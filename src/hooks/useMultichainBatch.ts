@@ -1,5 +1,6 @@
 "use client";
 
+import { useReviewedAction } from "@/hooks/useReviewedAction";
 import {
   hasRelayrRecoveryScopeSession,
   isReleasedUnpaidRelayrBundle,
@@ -8,11 +9,6 @@ import {
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
-import {
-  isSafeConnection,
-  submittedViaSafe,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import {
   batchCallKey,
@@ -27,7 +23,6 @@ import {
   removeUnsubmittedBatch,
   replaceRoutingDraft,
   resetUnpaidRoutingDraft,
-  resetUnsubmittedBatchCall,
   routingBatchRecoveryReason,
   saveMultichainBatch,
   type FrozenBatchCall,
@@ -43,10 +38,11 @@ import type { JBChainId } from "@/lib/nana/types";
 import {
   describeSavedRoutingCall,
   findPendingRoutingBatch,
-  simulatePendingRouterCall,
   type PendingProject,
 } from "@/lib/pending-router-calls";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
+import { requireDone, reviewedCall, ReviewRefusal } from "@/lib/reviewed-call";
+import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls } from "@/lib/safe-transactions";
 import {
   contractTransactionKey,
@@ -59,18 +55,18 @@ import { chooseRelayrPayment, requireTransactionReview } from "@/lib/transaction
 import { requireNoViewAs } from "@/lib/view-as";
 import {
   browserLocks,
+  discardReviewedSequence,
+  findReviewedSequence,
   gasWithHeadroom,
-  isDefiniteWalletRejection,
 } from "@bananapus/nana-sdk-core/review";
 import { relayrDestinationHash } from "@bananapus/nana-sdk-core/review/relayr";
 import {
   readSafeTransaction,
   SAFE_EXEC_ABI,
-  SAFE_NONCE_GUIDANCE,
   safeExecutionResult,
   safeTransactionMessage,
 } from "@bananapus/nana-sdk-core/safe-service";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   decodeFunctionData,
   isAddressEqual,
@@ -311,91 +307,9 @@ async function verifyDirectResult(
 export function useMultichainBatch() {
   const config = useConfig();
   const [isPending, setIsPending] = useState(false);
-  const direct = useRef<{
-    batch: MultichainBatch;
-    index: number;
-    submission?: MultichainBatch;
-  } | null>(null);
   const { getRelayrTxQuote } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
-  const writeOptions: NonNullable<Parameters<typeof useWriteContract>[0]> = {
-    // The batch's own journal holds each call's unknown result.
-    recovery: "caller",
-    manualReceiptVerification: () => true,
-    allowSafeManualReceiptVerification: true,
-    preflightSimulation: async (_variables, account) => {
-      const active = direct.current;
-      if (!active) throw new Error("The saved batch call is unavailable.");
-      const call = active.batch.calls[active.index];
-      const client = getPublicClient(config, { chainId: call.chainId });
-      if (!client) throw new Error("Destination RPC unavailable.");
-      if (call.expectedRouterPending) {
-        if (!call.gas || (call.value && call.value !== 0n))
-          throw new Error("The saved routing attempt has no valid bounded gas envelope.");
-        await simulatePendingRouterCall(client, {
-          from: account,
-          to: call.address,
-          data: call.data,
-          gas: call.gas,
-        });
-        return { gas: call.gas };
-      }
-      const request = {
-        account,
-        address: call.address,
-        abi: call.abi,
-        functionName: call.functionName,
-        args: call.args,
-        value: call.value,
-        gas: call.gas,
-      };
-      await client.simulateContract(request);
-      return {
-        gas: call.gas ?? gasWithHeadroom(await client.estimateContractGas(request)),
-      };
-    },
-    reverify: async () => {
-      const active = direct.current;
-      if (!active) throw new Error("The saved batch call is unavailable.");
-      const call = active.batch.calls[active.index];
-      const client = getPublicClient(config, { chainId: call.chainId });
-      if (!client) throw new Error("Destination RPC unavailable.");
-      await verifyCallPreconditions(client, call.preconditions);
-    },
-    beforeSubmission: async () => {
-      const active = direct.current;
-      if (!active) throw new Error("The saved batch call is unavailable.");
-      const call = active.batch.calls[active.index];
-      const client = getPublicClient(config, { chainId: call.chainId });
-      if (!client) throw new Error("Destination RPC unavailable.");
-      await verifyCallPreconditions(client, call.preconditions);
-      const live = getAccount(config);
-      if (
-        live.address?.toLowerCase() !== active.batch.account.toLowerCase() ||
-        live.chainId !== active.batch.calls[active.index].chainId
-      )
-        throw new Error(
-          "The account or chain changed before submission. Resume with the reviewed account.",
-        );
-      active.batch.calls[active.index].state = "submitting";
-      saveMultichainBatch(active.batch);
-      active.submission = structuredClone(active.batch);
-    },
-    onBeforeSubmissionAborted: async () => {
-      const active = direct.current;
-      if (!active?.submission) throw new Error("The saved submission is unavailable.");
-      resetUnsubmittedBatchCall(active.submission, active.index);
-      active.batch.calls[active.index].state = "ready";
-      delete active.submission;
-    },
-  };
-  // A resumed batch was reviewed in an earlier run, so each call is reviewed as it is sent.
-  const { writeContractAsync } = useWriteContract(writeOptions);
-  // The batch review in this run already showed these exact calls.
-  const { writeContractAsync: writeReviewedAsync } = useWriteContract({
-    ...writeOptions,
-    reviewedInParent: true,
-  });
+  const { run } = useReviewedAction();
   const getPendingBatch = useCallback(
     (scope: string, routingDestinations?: readonly PendingProject[]) => {
       const account = getAccount(config).address;
@@ -478,6 +392,103 @@ export function useMultichainBatch() {
     [config, getPendingBatch],
   );
 
+  /**
+   * Send a direct batch's `indices` as one reviewed action, held as the batch, each step's result
+   * saved to the batch journal as it goes. The journal decides what a resume sends, so a run that
+   * did not finish drops its own saved sequence once its steps' holds allow.
+   */
+  const sendDirectCalls = useCallback(
+    async (
+      batch: MultichainBatch,
+      indices: readonly number[],
+      {
+        title,
+        progress,
+        beforeFirstSend,
+        onCall,
+      }: {
+        title: string;
+        progress: (message: string) => void;
+        beforeFirstSend?: () => Promise<void>;
+        onCall: (index: number) => void;
+      },
+    ): Promise<"done" | "proposed"> => {
+      if (!indices.length) {
+        await beforeFirstSend?.();
+        return "done";
+      }
+      const save = (index: number, patch: Partial<FrozenBatchCall>) => {
+        Object.assign(batch.calls[index], patch);
+        saveMultichainBatch(batch);
+        onCall(index);
+      };
+      const result = await run({
+        account: batch.account,
+        title,
+        description:
+          "Calls are submitted in order on their selected chains. A Safe proposal must execute before the next call. Confirmed calls are skipped when resuming.",
+        confirmLabel: "Agree & send",
+        scope: batch.id,
+        calls: indices.map((index) => {
+          const call = batch.calls[index]!;
+          return reviewedCall(
+            {
+              chainId: call.chainId,
+              address: call.address,
+              abi: call.abi,
+              functionName: call.functionName,
+              args: call.args,
+              value: call.value,
+            },
+            { contractName: call.contractName, label: batch.label, gas: call.gas },
+          );
+        }),
+        reverify: async (_call, step) => {
+          const call = batch.calls[indices[step]!]!;
+          const client = getPublicClient(config, { chainId: call.chainId });
+          if (!client) throw new ReviewRefusal("Destination RPC unavailable.");
+          await verifyCallPreconditions(client, call.preconditions);
+        },
+        beforeWallet: async (_call, step) => {
+          if (step === 0) await beforeFirstSend?.();
+          // The call before this one is verified, from its receipt, before this one is sent.
+          const previous = step > 0 ? indices[step - 1]! : undefined;
+          if (previous !== undefined && batch.calls[previous]!.state === "submitted") {
+            const sent = batch.calls[previous]!;
+            const client = getPublicClient(config, { chainId: sent.chainId }) as PublicClient;
+            try {
+              save(previous, await verifyDirectResult(client, batch, sent));
+            } catch (cause) {
+              throw new ReviewRefusal(
+                cause instanceof Error ? cause.message : "The previous call could not be verified.",
+              );
+            }
+          }
+          const index = indices[step]!;
+          const call = batch.calls[index]!;
+          const client = getPublicClient(config, { chainId: call.chainId });
+          if (!client) throw new ReviewRefusal("Destination RPC unavailable.");
+          // The last read before the wallet: the call's sources still hold what it was built on.
+          await verifyCallPreconditions(client, call.preconditions);
+          progress(
+            `Call ${index + 1} of ${batch.calls.length} on chain ${batch.calls[index]!.chainId}.`,
+          );
+          save(index, { state: "submitting" });
+        },
+        onUnsent: (_call, step) => save(indices[step]!, { state: "ready" }),
+        onSubmitted: (_call, step, hash, sent) =>
+          save(indices[step]!, { hash, state: sent.safe ? "safe" : "submitted" }),
+      });
+      if (result?.status === "proposed") return "proposed";
+      if (result?.status === "done") return "done";
+      const record = findReviewedSequence(batch.id, batch.account);
+      if (record) await discardReviewedSequence(record).catch(() => undefined);
+      requireDone(result);
+      return "done";
+    },
+    [config, run],
+  );
+
   const runBatch = useCallback(
     async (input: BatchInput): Promise<BatchResult> => {
       input.signal?.throwIfAborted();
@@ -500,6 +511,8 @@ export function useMultichainBatch() {
         let replacementCommitted = false;
         // True once this run showed the batch review of every exact call.
         let reviewedHere = false;
+        // A fresh direct batch's save, run once its review is confirmed.
+        let commitFresh: (() => Promise<void>) | undefined;
         const progress = (message: string) => {
           input.onProgress?.(message);
           if (batch) updateTransactionActivity(batch.id, { message });
@@ -637,72 +650,77 @@ export function useMultichainBatch() {
             );
             for (const call of input.calls) await call.validate?.();
             requireAccount();
-            // A Safe proposes each call with gas 0, so its reviewed envelope is
-            // safeTxGas 0 rather than the EOA gas limit.
-            const safe = isSafeConnection(config);
-            progress("Review the selected transactions.");
-            await requireTransactionReview({
-              title: input.calls.every((call) => call.expectedRouterPending)
-                ? "Retry payments"
-                : `Review ${input.label}`,
-              description: relayr
-                ? `Pay network fees ${batch.rounds.length === 1 ? "once for this batch" : `in ${batch.rounds.length} separate payments`}. Each ${input.calls.every((call) => call.expectedRouterPending) ? "payment" : "transaction"} has its own result.`
-                : `Calls are submitted in order on their selected chains. A Safe proposal must execute before the next call. Confirmed calls are skipped when resuming.${safe ? `\n\n${SAFE_NONCE_GUIDANCE}` : ""}`,
-              confirmLabel: safe ? "Agree & propose to Safe" : "Agree & prepare batch",
-              calls: batch.calls.map((call) => ({
-                chainId: call.chainId,
-                from: account,
-                to: call.address,
-                value: call.value,
-                ...(safe ? { safeTxGas: 0n } : { gas: call.gas }),
-                data: call.data,
-                abi: call.abi,
-                functionName: call.functionName,
-                args: call.args,
-                contractName: call.contractName,
-              })),
-            });
-            reviewedHere = true;
-            requireAccount();
-            progress("Checking the selected transactions…");
-            await mapConcurrentChecks(batch.calls, async (call) => {
-              if (input.refreshBatchId) describeSavedRoutingCall(call);
-              const client = getPublicClient(config, { chainId: call.chainId });
-              if (!client) throw new Error("Destination RPC unavailable.");
-              await verifyCallPreconditions(client, call.preconditions);
-            });
-            requireAccount();
-            if (replacingDraft) {
-              for (const [index, call] of replacingDraft.calls.entries()) {
-                const scope = batchCallScope(replacingDraft, call, index);
-                if (hasRelayrRecoveryScopeSession(account, scope))
-                  throw new Error(
-                    "A saved session must be reconciled before replacing this batch.",
-                  );
-                await requireRelayrRecoveryScopeAvailable(account, scope);
-              }
+            const fresh = batch;
+            // After the review: the exact calls are checked, then saved (replacing the draft
+            // they supersede) before anything is sent.
+            const commit = async () => {
               requireAccount();
-              if (input.refreshBatchId && !canRefreshRoutingBatch(replacingDraft))
-                throw new Error("Saved submission or recovery evidence must be resumed.");
-              replaceRoutingDraft(replacingDraft, batch, Boolean(input.refreshBatchId));
-              replacementCommitted = true;
-              updateTransactionActivity(replacingDraft.id, {
-                status: input.refreshBatchId ? "pending" : "failed",
-                manualVerificationRequired: Boolean(input.refreshBatchId),
-                message: input.refreshBatchId
-                  ? "A fresh routing review superseded this selection. The previous wallet result remains unknown."
-                  : "The unsubmitted selection was replaced after a fresh review.",
+              progress("Checking the selected transactions…");
+              await mapConcurrentChecks(fresh.calls, async (call) => {
+                if (input.refreshBatchId) describeSavedRoutingCall(call);
+                const client = getPublicClient(config, { chainId: call.chainId });
+                if (!client) throw new Error("Destination RPC unavailable.");
+                await verifyCallPreconditions(client, call.preconditions);
               });
-            } else saveMultichainBatch(batch);
-            recordTransactionActivity({
-              id: batch.id,
-              kind: "direct",
-              title: input.label,
-              status: "pending",
-              manualVerificationRequired: true,
-              account,
-              message: "The exact selected calls are saved. Resume this batch to continue safely.",
-            });
+              requireAccount();
+              if (replacingDraft) {
+                for (const [index, call] of replacingDraft.calls.entries()) {
+                  const scope = batchCallScope(replacingDraft, call, index);
+                  if (hasRelayrRecoveryScopeSession(account, scope))
+                    throw new Error(
+                      "A saved session must be reconciled before replacing this batch.",
+                    );
+                  await requireRelayrRecoveryScopeAvailable(account, scope);
+                }
+                requireAccount();
+                if (input.refreshBatchId && !canRefreshRoutingBatch(replacingDraft))
+                  throw new Error("Saved submission or recovery evidence must be resumed.");
+                replaceRoutingDraft(replacingDraft, fresh, Boolean(input.refreshBatchId));
+                replacementCommitted = true;
+                updateTransactionActivity(replacingDraft.id, {
+                  status: input.refreshBatchId ? "pending" : "failed",
+                  manualVerificationRequired: Boolean(input.refreshBatchId),
+                  message: input.refreshBatchId
+                    ? "A fresh routing review superseded this selection. The previous wallet result remains unknown."
+                    : "The unsubmitted selection was replaced after a fresh review.",
+                });
+              } else saveMultichainBatch(fresh);
+              recordTransactionActivity({
+                id: fresh.id,
+                kind: "direct",
+                title: input.label,
+                status: "pending",
+                manualVerificationRequired: true,
+                account,
+                message:
+                  "The exact selected calls are saved. Resume this batch to continue safely.",
+              });
+            };
+            if (relayr) {
+              progress("Review the selected transactions.");
+              await requireTransactionReview({
+                title: input.calls.every((call) => call.expectedRouterPending)
+                  ? "Retry payments"
+                  : `Review ${input.label}`,
+                description: `Pay network fees ${batch.rounds.length === 1 ? "once for this batch" : `in ${batch.rounds.length} separate payments`}. Each ${input.calls.every((call) => call.expectedRouterPending) ? "payment" : "transaction"} has its own result.`,
+                confirmLabel: "Agree & prepare batch",
+                calls: batch.calls.map((call) => ({
+                  chainId: call.chainId,
+                  from: account,
+                  to: call.address,
+                  value: call.value,
+                  gas: call.gas,
+                  data: call.data,
+                  abi: call.abi,
+                  functionName: call.functionName,
+                  args: call.args,
+                  contractName: call.contractName,
+                })),
+              });
+              reviewedHere = true;
+              await commit();
+              // A direct batch is reviewed once by the reviewed send that sends it.
+            } else commitFresh = commit;
           }
           const displayedCalls = batch.calls.map(callProgress);
           const reportCalls = () => {
@@ -897,10 +915,10 @@ export function useMultichainBatch() {
           } else {
             requireAccount();
             input.onBeforePayment?.();
+            const sending: number[] = [];
             for (const [index, call] of batch.calls.entries()) {
               if (isBatchCallHandled(call)) continue;
               requireAccount();
-              progress(`Call ${index + 1} of ${batch.calls.length} on chain ${call.chainId}.`);
               const client = getPublicClient(config, { chainId: call.chainId }) as
                 PublicClient | undefined;
               if (!client) throw new Error("Destination RPC unavailable.");
@@ -924,39 +942,29 @@ export function useMultichainBatch() {
                 reportCalls();
                 continue;
               }
-              await verifyCallPreconditions(client, call.preconditions);
-              direct.current = { batch, index };
-              const variables = {
-                chainId: call.chainId,
-                address: call.address,
-                abi: call.abi,
-                functionName: call.functionName,
-                args: call.args,
-                value: call.value,
-                gas: call.gas,
-              };
-              try {
-                call.hash = reviewedHere
-                  ? await writeReviewedAsync(variables)
-                  : await writeContractAsync(variables);
-              } catch (cause) {
-                if (isDefiniteWalletRejection(cause)) {
-                  call.state = "ready";
-                  saveMultichainBatch(batch);
-                }
-                throw cause;
-              }
-              call.state = submittedViaSafe(call.hash) ? "safe" : "submitted";
-              saveMultichainBatch(batch);
-              displayedCalls[index] = callProgress(call);
-              reportCalls();
-              if (call.state === "safe") {
-                progress(
-                  "Safe proposal saved. Execute it, then resume this batch; no other call will be proposed yet.",
-                );
-                return result("pending");
-              }
-              await client.waitForTransactionReceipt({ hash: call.hash });
+              sending.push(index);
+            }
+            const sent = await sendDirectCalls(batch, sending, {
+              title: input.calls.every((call) => call.expectedRouterPending)
+                ? "Retry payments"
+                : `Review ${input.label}`,
+              progress,
+              beforeFirstSend: commitFresh,
+              onCall: (index) => {
+                displayedCalls[index] = callProgress(batch!.calls[index]);
+                reportCalls();
+              },
+            });
+            if (sent === "proposed") {
+              progress(
+                "Safe proposal saved. Execute it, then resume this batch; no other call will be proposed yet.",
+              );
+              return result("pending");
+            }
+            for (const index of sending) {
+              const call = batch.calls[index];
+              if (call.state !== "submitted") continue;
+              const client = getPublicClient(config, { chainId: call.chainId }) as PublicClient;
               Object.assign(call, await verifyDirectResult(client, batch, call));
               saveMultichainBatch(batch);
               displayedCalls[index] = callProgress(call);
@@ -1005,7 +1013,6 @@ export function useMultichainBatch() {
           }
           throw cause;
         } finally {
-          direct.current = null;
           setIsPending(false);
         }
       };
@@ -1020,7 +1027,7 @@ export function useMultichainBatch() {
         running.delete(lock);
       }
     },
-    [config, getRelayrTxQuote, sendRelayrTx, writeContractAsync, writeReviewedAsync],
+    [config, getRelayrTxQuote, sendRelayrTx, sendDirectCalls],
   );
   return { runBatch, getPendingBatch, recheckPendingRoutingBatch, isPending };
 }

@@ -11,7 +11,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("wagmi", () => ({ useAccount: () => mocks.account }));
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
+vi.mock("@/lib/safe-connector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
   useSafeConnection: () => mocks.account.connector.id === "safe",
 }));
 // The form's submit is in flight from the press until its promise settles, as

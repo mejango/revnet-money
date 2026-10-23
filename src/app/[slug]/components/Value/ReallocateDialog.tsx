@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/hooks/useReviewedWriteContract";
+import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
 import { formatUnits } from "viem";

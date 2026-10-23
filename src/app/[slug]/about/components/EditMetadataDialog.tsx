@@ -22,20 +22,20 @@ import {
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import {
+  isSafeProposalPendingError,
+  ReviewRefusal,
+  useReviewedAction,
+} from "@/hooks/useReviewedAction";
+import {
   requireRelayrRecoveryScopeAvailable,
   useGetRelayrTxQuote,
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
-import {
-  isSafeProposalPendingError,
-  submittedViaSafe,
-  useSafeConnection,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
 import type { Project } from "@/lib/bendystraw/types";
 import { FormProvider, type FormHelpers } from "@/lib/forms";
 import { isRecord, issue, schema, ValidationIssue, withSchema } from "@/lib/formValidation";
+import { submittedViaSafe } from "@/lib/held-rows";
 import { ipfsUri } from "@/lib/ipfs";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import {
@@ -50,14 +50,15 @@ import {
   type MetadataDestination,
 } from "@/lib/project-metadata-write";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { useSafeConnection } from "@/lib/safe-connector";
 import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk-core";
-import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { gasWithHeadroom, type ReviewedCall } from "@bananapus/nana-sdk-core/review";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { encodeFunctionData, type PublicClient } from "viem";
+import { encodeFunctionData, type Address, type PublicClient } from "viem";
 import { useAccount } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import {
@@ -160,26 +161,27 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
     destinations: Array<MetadataDestination & { metadataUri: string }>;
     name: string;
   } | null>(null);
-  const { writeContractAsync, isPending } = useWriteContract({
-    reverify: async (call, signer) => {
-      const destination = reviewed?.destinations.find(
-        (item) =>
-          item.source.chainId === call.chainId &&
-          item.source.controller.toLowerCase() === call.address.toLowerCase(),
+  const { run, busy: isPending } = useReviewedAction();
+  const reverifyDestination = async (call: ReviewedCall, signer: Address) => {
+    const destination = reviewed?.destinations.find(
+      (item) =>
+        item.source.chainId === call.chainId &&
+        item.source.controller.toLowerCase() === call.to.toLowerCase(),
+    );
+    if (!destination)
+      throw new ReviewRefusal(
+        "The reviewed metadata destination is unavailable. Reopen the editor.",
       );
-      if (!destination)
-        throw new Error("The reviewed metadata destination is unavailable. Reopen the editor.");
-      const client = getPublicClient(wagmiConfig, {
-        chainId: destination.source.chainId as JBChainId,
-      });
-      if (!client) throw new Error("The metadata network is unavailable.");
-      await verifyMetadataSource(client as PublicClient, destination.source, signer);
-      await requireRelayrRecoveryScopeAvailable(
-        signer,
-        `project-metadata:${destination.source.chainId}:${destination.source.projectId}`,
-      );
-    },
-  });
+    const client = getPublicClient(wagmiConfig, {
+      chainId: destination.source.chainId as JBChainId,
+    });
+    if (!client) throw new ReviewRefusal("The metadata network is unavailable. Try again.");
+    await verifyMetadataSource(client as PublicClient, destination.source, signer);
+    await requireRelayrRecoveryScopeAvailable(
+      signer,
+      `project-metadata:${destination.source.chainId}:${destination.source.projectId}`,
+    );
+  };
   // The confirm's line while the metadata pins and, on several chains, the relay quote loads.
   const [preparing, setPreparing] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -396,11 +398,11 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
             args: [BigInt(source.projectId), metadataUri],
           })),
           account: address,
-          writeContractAsync: async (call) => {
-            setDirectChainIndex(projects.findIndex((project) => project.chainId === call.chainId));
-            return writeContractAsync(call);
-          },
-          onProgress: setSubmissionStatus,
+          label: "Update project details",
+          run,
+          reverify: (call) => reverifyDestination(call, address),
+          beforeWallet: (call) =>
+            setDirectChainIndex(projects.findIndex((project) => project.chainId === call.chainId)),
         });
         onSuccess();
         return true;

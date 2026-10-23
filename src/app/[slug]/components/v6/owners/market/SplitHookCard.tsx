@@ -6,11 +6,10 @@ import { CardSkeleton } from "@/components/loading/CardSkeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
-import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { failedLine, reviewedCall, useReviewedAction } from "@/hooks/useReviewedAction";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAccount, usePublicClient } from "wagmi";
@@ -51,7 +50,7 @@ function HookActionButton({
 }) {
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: state.chainId });
-  const { writeContractAsync } = useWriteContract();
+  const { run } = useReviewedAction();
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,27 +102,30 @@ function HookActionButton({
                 callArgs = [args[0]] as unknown as typeof args;
               }
             }
-            const sim = await publicClient?.simulateContract({
+            const result = await run({
               account: address,
-              address: state.hook,
-              abi: callAbi as never,
-              functionName,
-              args: callArgs as never,
+              calls: [
+                reviewedCall({
+                  chainId: state.chainId,
+                  address: state.hook,
+                  abi: callAbi,
+                  functionName,
+                  args: callArgs,
+                }),
+              ],
             });
-            if (!sim) throw new Error("Could not simulate the transaction.");
-            // Viem's simulated request carries no chain, and the write is sent on the one it names.
-            const hash = await writeContractAsync({ ...sim.request, chainId: state.chainId });
-            if (submittedViaSafe(hash)) {
+            if (!result) return;
+            if (result.status === "failed") {
+              setError(failedLine(result));
+              return;
+            }
+            if (result.status === "proposed") {
               toast({
                 title: "Safe proposal submitted",
                 description: `${label} is awaiting Safe approvals and execution on ${chainName(state.chainId)}.`,
               });
               setReview(false);
               return;
-            }
-            const receipt = await waitForReceiptWithRetry(publicClient, hash);
-            if (receipt.status !== "success") {
-              throw new Error(`${label} ${hash} reverted onchain.`);
             }
             toast({
               title: `${label} confirmed`,

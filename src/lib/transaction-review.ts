@@ -9,6 +9,7 @@ import {
   fundingChainLabel,
   requireFundingChainSelection,
   type FundingChainOption,
+  type ReviewModel,
   type TransactionReviewRequest,
 } from "@bananapus/nana-sdk-core/review";
 
@@ -37,7 +38,9 @@ export function buildTransactionDebugPrompt(calls: { chainId: number; txHash: st
   return buildDebugPrompt(calls, display);
 }
 
-export function buildTransactionReviewPrompt(request: TransactionReviewRequest): string {
+export function buildTransactionReviewPrompt(
+  request: TransactionReviewRequest | ReviewModel,
+): string {
   return buildReviewPrompt(request, display);
 }
 

@@ -2,13 +2,6 @@
 
 import { chainDisplayName } from "@/app/constants";
 import {
-  failTransactionActivityVerification,
-  holdTransactionActivityForVerification,
-  releaseTransactionActivityVerification,
-  settleTransactionActivityFailure,
-} from "@/lib/transaction-activity";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import {
   requireSafeExecutionSuccess,
   safeTransactionRunsCalls as runsCalls,
   safeBatchProposalFor,
@@ -17,7 +10,7 @@ import {
   safeTransactionHash,
   type SafeQueuedTransaction,
 } from "@bananapus/nana-sdk-core/safe-service";
-import { type Address, type Hex, type PublicClient, type TransactionReceipt } from "viem";
+import { type Address, type Hex } from "viem";
 
 /** The origin every Safe proposal from this app names. */
 export const SAFE_PROPOSAL_ORIGIN = "revnet.money";
@@ -106,50 +99,5 @@ export function requireRefundFreeSafeExecution(
   const result = safeExecutionResult(receipt, safe, safeTxHash);
   if (result.status === "success" && result.payment !== 0n) {
     throw new Error("The Safe paid a gas refund for this transaction.");
-  }
-}
-
-/**
- * Settles the journal entry of an `execTransaction` sent as `hash`, whose write left its receipt
- * to the caller: success only when the receipt proves `safeTxHash` succeeded with no refund and
- * `confirm` (the action's own postcondition) passes. A reverted transaction or an ExecutionFailure
- * settles failed and may be sent again; anything else marks it unverified. Both throw.
- */
-export async function confirmSafeExecution({
-  client,
-  hash,
-  safe,
-  safeTxHash,
-  confirm,
-}: {
-  client: PublicClient;
-  hash: Hex;
-  safe: Address;
-  safeTxHash: Hex;
-  confirm?: (receipt: TransactionReceipt) => Promise<void>;
-}): Promise<TransactionReceipt> {
-  holdTransactionActivityForVerification(hash, "Confirming the Safe's execution event.");
-  // What the receipt proves failed, when it does. A reverted execution says nothing of the Safe
-  // transaction itself: another owner may have executed it first.
-  let failure: string | undefined;
-  try {
-    const receipt = await waitForReceiptWithRetry(client, hash);
-    const { status } = safeExecutionResult(receipt, safe, safeTxHash);
-    if (status === "reverted") failure = "This execution reverted, so the Safe ran nothing in it.";
-    if (status === "failed") failure = "The Safe ran this transaction, but its call failed.";
-    requireRefundFreeSafeExecution(receipt, safe, safeTxHash);
-    await confirm?.(receipt);
-    releaseTransactionActivityVerification(hash, "The Safe's execution was confirmed onchain.");
-    return receipt;
-  } catch (cause) {
-    if (failure) {
-      settleTransactionActivityFailure(hash, failure);
-    } else {
-      failTransactionActivityVerification(
-        hash,
-        "The Safe transaction was submitted, but its result failed verification. Inspect it and do not submit it again yet.",
-      );
-    }
-    throw cause;
   }
 }

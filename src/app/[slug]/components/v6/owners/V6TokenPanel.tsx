@@ -22,18 +22,18 @@ import { ErrorNote } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import {
+  isSafeProposalPendingError,
+  requireDone,
+  reviewedCall,
+  useReviewedAction,
+} from "@/hooks/useReviewedAction";
+import {
   useGetRelayrTxQuote,
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
-import {
-  isSafeProposalPendingError,
-  requireOnchainExecution,
-  submittedViaSafe,
-  useSafeConnection,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
+import { submittedViaSafe } from "@/lib/held-rows";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import {
   useJBContractContext,
@@ -43,10 +43,10 @@ import {
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { PERSIST } from "@/lib/query-persist";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { useSafeConnection } from "@/lib/safe-connector";
 import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { formatEthAddress, formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
   JB_CHAINS,
   jbControllerAbi,
@@ -54,7 +54,7 @@ import {
   jbDirectoryAbi,
   jbProjectsAbi,
 } from "@bananapus/nana-sdk-core";
-import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { gasWithHeadroom, intent, writeIntentKey } from "@bananapus/nana-sdk-core/review";
 import { getTokenAddress, hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -67,8 +67,8 @@ import {
   PublicClient,
   zeroAddress,
 } from "viem";
-import { useAccount, useSwitchChain } from "wagmi";
-import { getAccount, getPublicClient } from "wagmi/actions";
+import { useAccount } from "wagmi";
+import { getPublicClient } from "wagmi/actions";
 import { ProjectItem } from "../shared";
 
 type TokenChainState = {
@@ -296,8 +296,7 @@ function TokenEditDialog({
   // The chains come from the server sucker-group list: write only to pairs the registry lists.
   const gate = useGroupWriteGate(states);
   const { address, chainId: connectedChainId } = useAccount();
-  const { switchChainAsync } = useSwitchChain();
-  const { writeContractAsync } = useWriteContract();
+  const { run } = useReviewedAction();
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
   const { toast } = useToast();
@@ -392,42 +391,42 @@ function TokenEditDialog({
     setError(null);
     try {
       if (!relayed) {
-        for (const [index, state] of states.entries()) {
-          setDirectWriteIndex(index);
-          if (getAccount(wagmiConfig).chainId !== state.chainId) {
-            await switchChainAsync({ chainId: state.chainId });
-          }
-          const call = callFor(state, nextName, nextSymbol);
-          const hash = state.token
-            ? await writeContractAsync({
-                address: state.controller,
-                chainId: state.chainId,
-                abi: jbControllerAbi,
-                functionName: "setTokenMetadataOf",
-                args: call.args as readonly [bigint, string, string],
-              })
-            : await writeContractAsync({
-                address: state.controller,
-                chainId: state.chainId,
-                abi: jbControllerAbi,
-                functionName: "deployERC20For",
-                args: call.args as readonly [bigint, string, string, `0x${string}`],
-              });
-          if (states.length === 1 && submittedViaSafe(hash)) {
-            toast({
-              title: "Safe proposal submitted",
-              description: `The ${deployed ? "token update" : "token deployment"} is awaiting Safe approvals and execution.`,
-            });
-            return true;
-          }
-          requireOnchainExecution(hash);
-          const receipt = await waitForReceiptWithRetry(clientFor(state.chainId), hash);
-          if (receipt.status !== "success") {
-            throw new Error(
-              `Token transaction ${hash} reverted on ${chainDisplayName(state.chainId)}.`,
-            );
-          }
+        // One review for every chain, sent in order; a later chain resumes without resending.
+        const result = await run({
+          account: address,
+          beforeWallet: (_call, index) => setDirectWriteIndex(index),
+          ...(states.length > 1
+            ? {
+                title: deployed ? "Update token metadata" : "Deploy project ERC-20",
+                scope: writeIntentKey("token-panel", {
+                  account: intent.address(address),
+                  calls: states.map((state) => [
+                    state.chainId,
+                    intent.address(state.controller),
+                    callFor(state, nextName, nextSymbol).data,
+                  ]),
+                }),
+              }
+            : {}),
+          calls: states.map((state) =>
+            reviewedCall({
+              chainId: state.chainId,
+              address: state.controller,
+              abi: jbControllerAbi,
+              functionName: callFor(state, nextName, nextSymbol).functionName,
+              args: callFor(state, nextName, nextSymbol).args,
+            }),
+          ),
+        });
+        // One chain's Safe proposal is the whole action; a batch's waits for its Safe.
+        if (states.length === 1 && result?.status === "proposed") {
+          toast({
+            title: "Safe proposal submitted",
+            description: `The ${deployed ? "token update" : "token deployment"} is awaiting Safe approvals and execution.`,
+          });
+          return true;
         }
+        requireDone(result);
         finish(deployed ? "The name and symbol are now updated." : "The ERC-20 is now deployed.");
         return true;
       }

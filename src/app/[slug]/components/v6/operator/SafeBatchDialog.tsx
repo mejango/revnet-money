@@ -3,8 +3,8 @@
 import { CallRow } from "@/components/ExactCallCard";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
-import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
+import { isSafeProposalPendingError } from "@/lib/reviewed-call";
 import {
   checkBatchOrder,
   describeStep,

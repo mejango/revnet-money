@@ -1,17 +1,15 @@
 "use client";
 
-import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { requireDone, reviewedCall, useReviewedAction } from "@/hooks/useReviewedAction";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
 import { useCallback, useRef, useState } from "react";
 import { erc20Abi, type Hex, type TransactionReceipt } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 
-export function useAllowance(chainId: number, options?: { reviewedInParent?: boolean }) {
+export function useAllowance(chainId: number) {
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId });
-  const { writeContractAsync } = useWriteContract(options);
+  const { run } = useReviewedAction();
   const [isApproving, setIsApproving] = useState(false);
   const approvalReceipts = useRef(new Map<Hex, TransactionReceipt>());
 
@@ -37,31 +35,32 @@ export function useAllowance(chainId: number, options?: { reviewedInParent?: boo
 
       setIsApproving(true);
       try {
-        const hash = await withWriteIntent(
-          writeContractAsync,
-          namespace,
-        )({
-          chainId,
-          address: tokenAddress,
-          abi: erc20ApproveAbi,
-          functionName: "approve",
-          args: [spender, value],
-        });
-        requireOnchainExecution(hash);
-        const receipt = await waitForReceiptWithRetry(publicClient, hash);
-        if (!receipt) {
-          throw new Error(`Token approval ${hash} was submitted, but confirmation is unavailable.`);
-        }
-        if (receipt.status !== "success") {
-          throw new Error(`Token approval ${hash} reverted onchain.`);
-        }
+        const { hashes, receipts } = requireDone(
+          await run({
+            account: address,
+            calls: [
+              reviewedCall(
+                {
+                  chainId,
+                  address: tokenAddress,
+                  abi: erc20ApproveAbi,
+                  functionName: "approve",
+                  args: [spender, value],
+                },
+                { intent: namespace },
+              ),
+            ],
+          }),
+        );
+        const hash = hashes.at(-1)!;
+        const receipt = receipts.at(-1)!;
         approvalReceipts.current.set(hash, receipt);
         return hash;
       } finally {
         setIsApproving(false);
       }
     },
-    [address, chainId, publicClient, writeContractAsync],
+    [address, chainId, publicClient, run],
   );
 
   const getApprovalReceipt = useCallback(

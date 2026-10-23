@@ -106,9 +106,7 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
   React.useEffect(() => {
     if (transactionActivitySnapshot().length === 0) return;
     void import("@/hooks/useReviewedRelayr").then((module) => module.resumePendingRelayrBundles());
-    void import("@/hooks/useReviewedWriteContract").then((module) =>
-      module.resumeSafeProposalTracking(wagmiConfig),
-    );
+    void import("@/lib/held-rows").then((module) => module.resumeSafeProposalTracking(wagmiConfig));
   }, []);
   const journaled = useTransactionActivities().length > 0;
 

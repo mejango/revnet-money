@@ -19,7 +19,6 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { zeroAddress, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  executionLog,
   provenSafe,
   queuedRow,
   SAFE_OWNER_A,
@@ -73,10 +72,18 @@ vi.mock("@/app/[slug]/components/v6/operator/operatorLib", async (importOriginal
 vi.mock("@/hooks/useReviewedSafeSignature", () => ({
   useReviewedSafeSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  requireOnchainExecution: vi.fn(),
-  useSafeConnection: () => false,
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
+vi.mock("@/lib/safe-connector", () => ({ useSafeConnection: () => false }));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useReviewedAction: () => ({ deps: {} }),
+}));
+vi.mock("wagmi/actions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("wagmi/actions")>()),
+  getAccount: () => ({ connector: undefined }),
+}));
+vi.mock("@bananapus/nana-sdk-core/review", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/review")>()),
+  executeReviewedSafeTransaction: mocks.write,
 }));
 vi.mock("@/hooks/useReviewedRelayr", async (importOriginal) => ({
   RelayrRecoveryError: (await importOriginal<typeof import("@/hooks/useReviewedRelayr")>())
@@ -147,19 +154,10 @@ beforeEach(() => {
   mocks.live.mockReset().mockResolvedValue(true);
   mocks.sign.mockReset().mockResolvedValue(`0x${"9".repeat(130)}`);
   mocks.review.mockReset().mockResolvedValue(undefined);
-  mocks.write.mockReset().mockImplementation(async () => {
-    // As the reviewed write does when the caller keeps the receipt.
-    recordTransactionActivity({
-      id: `tx:8453:${EXECUTION}`,
-      kind: "direct",
-      title: "execTransaction",
-      status: "pending",
-      message: "Pending action-specific receipt verification.",
-      chainId: 8453,
-      hash: EXECUTION,
-      manualVerificationRequired: true,
-    });
-    return EXECUTION;
+  mocks.write.mockReset().mockResolvedValue({
+    status: "done",
+    hashes: [EXECUTION],
+    receipts: [{ status: "success", transactionHash: EXECUTION, blockNumber: 1n, logs: [] }],
   });
   mocks.receipt.mockReset();
   mocks.quote.mockReset().mockResolvedValue({
@@ -212,12 +210,6 @@ describe("the Safe queue's execution confirm", () => {
   async function openExecute() {
     const row = queued(8453, SAFE.owners);
     serveQueues(row);
-    mocks.receipt.mockResolvedValue({
-      status: "success",
-      transactionHash: EXECUTION,
-      blockNumber: 1n,
-      logs: [executionLog(SAFE.address, row.safeTxHash!)],
-    });
     renderCard(8453);
     fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
     return screen.findByRole("dialog", { name: "Confirm execution" });
@@ -275,11 +267,7 @@ describe("the Safe queue's execution confirm", () => {
     await release();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(mocks.write).toHaveBeenCalledOnce();
-    expect(mocks.write.mock.calls[0][0]).toMatchObject({
-      chainId: 8453,
-      address: SAFE.address,
-      functionName: "execTransaction",
-    });
+    expect(mocks.write.mock.calls[0][0]).toMatchObject({ chainId: 8453, safe: SAFE.address });
     expect(screen.getByText("Executed Safe transaction #5 on Base.")).toBeInTheDocument();
   });
 });

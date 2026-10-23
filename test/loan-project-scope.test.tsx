@@ -63,12 +63,13 @@ vi.mock("wagmi", () => ({
   },
 }));
 
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeProposalPendingError: () => false,
-  requireOnchainExecution: () => undefined,
-  useWaitForTransactionReceipt: () => ({ isLoading: false, isSuccess: false }),
-  useWriteContract: () => ({ writeContractAsync: vi.fn(), isPending: false, data: undefined }),
-}));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionState } = await import("./support/reviewed-action");
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: () => reviewedActionState(vi.fn()),
+  };
+});
 
 vi.mock("@/lib/bendystraw", () => ({
   LoansByAccountOperation: { id: "LoansByAccount" },

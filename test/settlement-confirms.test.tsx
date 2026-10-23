@@ -27,7 +27,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
   useAccount: () => ({ address: "0x1111111111111111111111111111111111111111", isConnected: true }),
-  usePublicClient: () => ({ simulateContract: mocks.simulate }),
 }));
 vi.mock("@/components/ButtonWithWallet", () => ({
   ButtonWithWallet: ({
@@ -47,13 +46,14 @@ vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
 vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
 vi.mock("@/components/EthereumAddress", () => ({ EthereumAddress: () => null }));
 vi.mock("@/components/ui/use-toast", () => ({ toast: vi.fn() }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  submittedViaSafe: () => false,
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
-}));
-vi.mock("@/lib/waitForReceipt", () => ({
-  waitForReceiptWithRetry: async () => ({ status: "success" }),
-}));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionState, reviewedRunMock } = await import("./support/reviewed-action");
+  const run = reviewedRunMock(mocks.simulate, mocks.write);
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: () => reviewedActionState(run),
+  };
+});
 // Base's view of Optimism is stale, and Optimism's sucker can re-push it.
 vi.mock("@/app/[slug]/components/v6/owners/settlement/lib", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/[slug]/components/v6/owners/settlement/lib")>()),
@@ -82,7 +82,9 @@ vi.mock("@/lib/v6/suckerProofs", () => ({
   buildV6ClaimTxFromRow: () => ({
     chainId: 10,
     address: PEER_SUCKER,
-    abi: [],
+    abi: [
+      { type: "function", name: "claim", inputs: [], outputs: [], stateMutability: "nonpayable" },
+    ],
     functionName: "claim",
     args: [],
   }),
@@ -258,9 +260,9 @@ describe("a queued movement's Execute", () => {
     await waitFor(() => expect(execute).toBeEnabled());
     fireEvent.click(execute);
     await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
-    expect(mocks.simulate.mock.calls[0]![0]).toMatchObject({ address: REGISTERED_SUCKER });
+    expect(mocks.simulate.mock.calls[0]![0]).toMatchObject({ to: REGISTERED_SUCKER });
     expect(mocks.write.mock.calls[0]![0]).toMatchObject({
-      address: REGISTERED_SUCKER,
+      to: REGISTERED_SUCKER,
       functionName: "toRemote",
       value: 10n ** 15n,
     });

@@ -2,6 +2,7 @@
 
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import type { MetadataSourceGuard } from "@/lib/project-metadata-write";
+import { ReviewRefusal } from "@/lib/review-refusal";
 import type { RelayrDiscardReason } from "@bananapus/nana-sdk-core/review/relayr";
 import type { SafeRelayrSession } from "@bananapus/nana-sdk-core/review/safe-relayr";
 import type { ExpectedPayoutReceipt, ExpectedReservedReceipt } from "@bananapus/nana-sdk-core/v6";
@@ -244,7 +245,7 @@ export function refreshTransactionActivities(): TransactionActivity[] {
 export function requireTransactionActivityPersistence(): void {
   refreshTransactionActivities();
   if (typeof window === "undefined" || storageWriteFailed || storageReadFailed) {
-    throw new Error(
+    throw new ReviewRefusal(
       "Transaction recovery storage is unavailable. Restore browser storage before publishing signatures or sending a payment.",
     );
   }

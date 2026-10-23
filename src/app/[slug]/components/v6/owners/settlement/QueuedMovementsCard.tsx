@@ -7,7 +7,7 @@ import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
-import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { failedLine, reviewedCall, useReviewedAction } from "@/hooks/useReviewedAction";
 import { legacyIntents } from "@/lib/legacy-intents";
 import { type GroupWriteTarget, useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { PERSIST } from "@/lib/query-persist";
@@ -18,14 +18,12 @@ import {
   prepareQueuedExecute,
   V6BridgeRow,
 } from "@/lib/v6/suckerProofs";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
 import { bridgeIntent } from "@bananapus/nana-sdk-core/review";
 import { jbSuckerV6Abi } from "@bananapus/nana-sdk-core/v6";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Address } from "viem";
-import { useAccount, usePublicClient } from "wagmi";
+import { useAccount } from "wagmi";
 import {
   bridgeEtaHint,
   bridgeTrackUrl,
@@ -72,8 +70,7 @@ function ClaimButton({
 }) {
   const gate = useGroupWriteGate(targets);
   const { address } = useAccount();
-  const publicClient = usePublicClient({ chainId: row.peerChainId });
-  const { writeContractAsync } = useWriteContract();
+  const { run } = useReviewedAction();
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,21 +106,22 @@ function ClaimButton({
             gate.assertVerified(targets);
             setBusy(true);
             setError(null);
-            const tx = buildV6ClaimTxFromRow(row);
-            await publicClient?.simulateContract({ account: address, ...tx });
-            const hash = await writeContractAsync(tx);
-            if (submittedViaSafe(hash)) {
+            const result = await run({
+              account: address,
+              calls: [reviewedCall(buildV6ClaimTxFromRow(row))],
+            });
+            if (!result) return;
+            if (result.status === "failed") {
+              setError(failedLine(result));
+              return;
+            }
+            if (result.status === "proposed") {
               setReview(false);
               toast({
                 title: "Safe proposal submitted",
                 description: `The claim is awaiting Safe approvals and execution on ${chainName(row.peerChainId)}.`,
               });
               return;
-            }
-            if (!publicClient) throw new Error("Public client unavailable.");
-            const receipt = await waitForReceiptWithRetry(publicClient, hash);
-            if (receipt.status !== "success") {
-              throw new Error(`Claim ${hash} reverted onchain.`);
             }
             setReview(false);
             toast({
@@ -177,8 +175,7 @@ function ExecuteButton({
 }) {
   const gate = useGroupWriteGate(targets);
   const { address } = useAccount();
-  const publicClient = usePublicClient({ chainId: row.chainId });
-  const { writeContractAsync } = useWriteContract();
+  const { run } = useReviewedAction();
   const [busy, setBusy] = useState(false);
   const [review, setReview] = useState<{ sucker: Address; value: bigint } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -255,44 +252,43 @@ function ExecuteButton({
               setBusy(true);
               setError(null);
               const { sucker, value } = review;
-              await publicClient?.simulateContract({
-                account: address,
-                address: sucker,
-                abi: jbSuckerV6Abi,
-                functionName: "toRemote",
-                args: [row.token],
-                value,
-              });
               // Held by the sucker, token and account: its fee is quoted again on a retry.
-              const hash = await withWriteIntent(
-                writeContractAsync,
-                bridgeIntent({
-                  chainId: row.chainId,
-                  sucker,
-                  token: row.token,
-                  account: address!,
-                }),
-                legacyIntents.toRemote(sucker, row.token),
-              )({
-                chainId: row.chainId,
-                address: sucker,
-                abi: jbSuckerV6Abi,
-                functionName: "toRemote",
-                args: [row.token],
-                value,
+              const result = await run({
+                account: address,
+                calls: [
+                  reviewedCall(
+                    {
+                      chainId: row.chainId,
+                      address: sucker,
+                      abi: jbSuckerV6Abi,
+                      functionName: "toRemote",
+                      args: [row.token],
+                      value,
+                    },
+                    {
+                      intent: bridgeIntent({
+                        chainId: row.chainId,
+                        sucker,
+                        token: row.token,
+                        account: address!,
+                      }),
+                      legacyIntents: legacyIntents.toRemote(sucker, row.token),
+                    },
+                  ),
+                ],
               });
-              if (submittedViaSafe(hash)) {
+              if (!result) return;
+              if (result.status === "failed") {
+                setError(failedLine(result));
+                return;
+              }
+              if (result.status === "proposed") {
                 setReview(null);
                 toast({
                   title: "Safe proposal submitted",
                   description: `The bridge message is awaiting Safe approvals and execution on ${chainName(row.chainId)}.`,
                 });
                 return;
-              }
-              if (!publicClient) throw new Error("Public client unavailable.");
-              const receipt = await waitForReceiptWithRetry(publicClient, hash);
-              if (receipt.status !== "success") {
-                throw new Error(`Bridge transaction ${hash} reverted onchain.`);
               }
               setReview(null);
               toast({

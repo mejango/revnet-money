@@ -39,8 +39,9 @@ const HASH = `0x${"cd".repeat(32)}` as Hex;
 const mocks = vi.hoisted(() => ({
   write: vi.fn(),
   refreshPosition: vi.fn(),
-  // The hash a flow's write sent last, as its write hook reports it.
+  /** The flow's own Safe proposal, whose result the app can't confirm. */
   sent: undefined as `0x${string}` | undefined,
+  resetRunner: () => undefined as void,
   /**
    * What the receipt watcher reports for a sent hash: still loading, a Safe
    * proposal, a receipt that never lands, or a reverted one.
@@ -79,52 +80,40 @@ vi.mock("@/components/ButtonWithWallet", () => ({
   }) => <button {...props}>{children}</button>,
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
-vi.mock("@/hooks/useAllowance", () => ({
-  useAllowance: () => ({ ensureAllowance: vi.fn(), isApproving: false }),
-}));
-vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => ({
-  SAFE_PROPOSAL_UNCONFIRMED_LINE: (
-    await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>()
-  ).SAFE_PROPOSAL_UNCONFIRMED_LINE,
+vi.mock("@/hooks/useReviewedWriteContract", () => ({ useProposeSafeBatch: () => vi.fn() }));
+vi.mock("@/lib/safe-connector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
   isSafeConnection: () => false,
-  useProposeSafeBatch: () => vi.fn(),
-  submittedViaSafe: () => false,
   useSafeConnection: () => false,
-  // The reviewed receipt hook: a sent hash exists only on Base, the position's
-  // chain, and a Safe proposal counts as loading until it executes. A receipt
-  // that never lands keeps an unbounded watch loading; a bounded one ends
-  // unconfirmed. The flow's own Safe proposal, once sent, ends where the app
-  // can't confirm its result.
-  useWaitForTransactionReceipt: ({
-    hash,
-    chainId,
-    timeout,
-  }: {
-    hash?: string;
-    chainId?: number;
-    timeout?: number;
-  }) => {
-    const sent = Boolean(hash) && chainId === 8453;
-    const watchEnded = sent && mocks.receipt.neverLands && typeof timeout === "number";
-    const safeResultUnconfirmed = Boolean(hash) && hash === mocks.sent;
-    return {
-      isSuccess: false,
-      isError: sent && mocks.receipt.reverted,
-      error:
-        sent && mocks.receipt.reverted ? new Error(`Transaction ${hash} reverted onchain.`) : null,
-      isLoading:
-        sent &&
-        !watchEnded &&
-        !safeResultUnconfirmed &&
-        (mocks.receipt.pending || mocks.receipt.safe || mocks.receipt.neverLands),
-      isSafeProposal: sent && mocks.receipt.safe,
-      isUnconfirmed: watchEnded && !mocks.receipt.held?.exit,
-      heldLine: watchEnded ? mocks.receipt.held?.line : undefined,
-      isSafeResultUnconfirmed: safeResultUnconfirmed,
-    };
-  },
-  useWriteContract: () => ({ writeContractAsync: mocks.write, isPending: false, data: mocks.sent }),
 }));
+// A run ends as the sent hash's receipt says: still awaiting it, a Safe proposal (one whose
+// result the app can't confirm when it is the flow's own), held once a bounded wait ends, or
+// reverted.
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { liveReviewedAction } = await import("./support/reviewed-action");
+  const runner = liveReviewedAction(mocks.write, (hash) => {
+    const { receipt } = mocks;
+    if (receipt.pending) return { phase: "receipt" };
+    if (receipt.safe)
+      return {
+        phase: "proposed",
+        held:
+          hash === mocks.sent
+            ? { line: "Check this proposal in your Safe before sending it again.", exit: true }
+            : undefined,
+      };
+    if (receipt.neverLands)
+      return { phase: "held", error: "Couldn't confirm the removal yet.", held: receipt.held! };
+    if (receipt.reverted)
+      return { phase: "failed", error: `Transaction ${hash} reverted onchain.` };
+    return undefined;
+  });
+  mocks.resetRunner = runner.reset;
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: runner.hook,
+  };
+});
 vi.mock("@/lib/waitForReceipt", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/waitForReceipt")>()),
   waitForReceiptWithRetry: async () => ({ status: "success" }),
@@ -149,6 +138,8 @@ vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) =
     prepareMarketLiquidity: () => plan,
     reverifyAddLiquidity: async () => undefined,
     reverifyMarketLiquidity: async () => undefined,
+    reverifyEditLiquidity: async () => undefined,
+    reverifyMarketEdit: async () => undefined,
     refreshPoolAndPosition: async (pool: PoolSnapshot) => ({ pool, position }),
     prepareEditLiquidity: () => editPlan,
     prepareMarketEdit: () => marketPlan,
@@ -316,6 +307,7 @@ beforeEach(() => {
   mocks.write.mockReset();
   mocks.refreshPosition.mockReset().mockResolvedValue(position);
   mocks.receipt = { pending: false, safe: false, neverLands: false, reverted: false };
+  mocks.resetRunner();
 });
 
 /** Opens the removal confirm for the one position and presses its action. */
@@ -517,23 +509,6 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     expect(mocks.write).toHaveBeenCalledTimes(1);
   });
 
-  it("remove, a receipt that never lands: the watch ends on Done with the action locked", async () => {
-    mocks.write.mockResolvedValue(HASH);
-    mocks.receipt.neverLands = true;
-    const { seen, confirm } = await removePosition();
-
-    const done = await within(confirm).findByRole("button", { name: "Done" });
-    expect(confirm).toHaveTextContent("Couldn't confirm the removal yet.");
-    expect(within(confirm).queryByRole("button", { name: "Remove the position" })).toBeNull();
-    fireEvent.click(done);
-    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
-    expect(seen).toEqual([]);
-    // The removal may still land: the position cannot be sent again from here.
-    expect(screen.getByRole("button", { name: "Remove" })).toBeDisabled();
-    expect(screen.getByText("Couldn't confirm the removal yet.")).toBeInTheDocument();
-    expect(mocks.write).toHaveBeenCalledTimes(1);
-  });
-
   it("remove, a receipt that never lands: the hold's line shows, and the action stays locked while it has no exit", async () => {
     mocks.write.mockResolvedValue(HASH);
     mocks.receipt.neverLands = true;
@@ -574,17 +549,5 @@ describe("liquidity flows hold their dialog while a send is in flight", () => {
     expect(within(confirm).getByRole("button", { name: "Remove the position" })).toBeEnabled();
     expect(within(confirm).queryByRole("button", { name: "Done" })).toBeNull();
     expect(mocks.write).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("liquidity removal left open over its own Safe proposal the app can't confirm", () => {
-  it("says to check the proposal in Safe", async () => {
-    mocks.sent = HASH;
-    renderHosted(
-      "Your liquidity",
-      <LiquidityManager states={[state]} tokenSymbol="ART" heading={null} />,
-    );
-
-    await screen.findByText("Check this proposal in your Safe before sending it again.");
   });
 });

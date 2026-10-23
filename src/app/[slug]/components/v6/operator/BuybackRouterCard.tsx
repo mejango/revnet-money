@@ -11,10 +11,10 @@ import { SkeletonLines } from "@/components/ui/skeleton";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
 import { useToast } from "@/components/ui/use-toast";
-import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
+import { isSafeProposalPendingError } from "@/lib/reviewed-call";
 import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
 import { formatWalletError } from "@/lib/utils";
 import {

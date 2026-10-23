@@ -26,23 +26,26 @@ const account = `0x${"1".repeat(40)}`;
 // Next 16.4.2 (the image optimizer advisory GHSA-2464-fhr4-w9xw) adds 0.2-1.7 KiB to most routes;
 // each changed ceiling is its new measure rounded up.
 // SDK 4.0.0-local.7 (provenance-based error lines, the wallet-ready wait) adds 0.1-0.4 KiB to eight routes.
+// Every write on core's useReviewedRun (revnet R3): the hook loads core's write hold and its lines
+// with the page (the send engine stays lazy), +1-2 KiB on most routes, +10-13 KiB on /create and
+// the project routes that write. Each changed ceiling is its new measure rounded up.
 const routes = [
-  { route: "/", path: "/", kib: 390 },
-  { route: "/learn", path: "/learn", kib: 354 },
-  { route: "/build", path: "/build", kib: 356 },
-  { route: "/audit", path: "/audit", kib: 357 },
+  { route: "/", path: "/", kib: 392 },
+  { route: "/learn", path: "/learn", kib: 356 },
+  { route: "/build", path: "/build", kib: 358 },
+  { route: "/audit", path: "/audit", kib: 359 },
   { route: "/discover", path: "/discover", kib: 339 },
-  { route: "/create", path: "/create", kib: 544 },
-  { route: "/[slug]", path: "/eth:1", kib: 572 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 571 },
+  { route: "/create", path: "/create", kib: 555 },
+  { route: "/[slug]", path: "/eth:1", kib: 585 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 584 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 632 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 578 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 572 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 421 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 410 },
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 636 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 590 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 582 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 423 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 412 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 431 },
-  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 386 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 388 },
   { route: "/_not-found", path: "/no-such-page/x/y", kib: 300, status: 404 },
 ];
 // Next renders its global error page only when the root layout itself throws; no URL reaches it.
@@ -196,7 +199,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 924);
 // Next 16.4.2 measures 2729.5 KiB; the aggregate ceiling moves to 2730.
 // The lazy review dialog renders SDK 4.0.0's review model (buildReviewModel and its decoders):
 // 2733.2 KiB, routes unchanged; builds vary by 0.1 KiB. The aggregate ceiling moves to 2734.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2734);
+// Every write on core's useReviewedRun measures 2766.3 KiB: core's hold and lines load with each
+// writing page, and the app's own send engine is gone. The aggregate ceiling moves to 2767.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2767);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");

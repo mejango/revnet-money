@@ -34,7 +34,8 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
+vi.mock("@/lib/reviewed-call", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/reviewed-call")>()),
   isSafeProposalPendingError: (error: unknown) =>
     error instanceof Error && error.name === "SafeProposalPendingError",
 }));

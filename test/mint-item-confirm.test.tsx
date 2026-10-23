@@ -31,11 +31,13 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     connectWalletText?: string;
   }) => <button {...props}>{children}</button>,
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  requireOnchainExecution: () => undefined,
-  submittedViaSafe: () => false,
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
-}));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionThrough } = await import("./support/reviewed-action");
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: reviewedActionThrough(mocks.write).hook,
+  };
+});
 // The live shop and permission check the modal runs before its confirm opens.
 vi.mock("@/app/[slug]/components/v6/shop/shopPermissions", () => ({
   assertCanMint721Tier: mocks.canMint,

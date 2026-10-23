@@ -45,13 +45,14 @@ vi.mock("@/components/ButtonWithWallet", () => ({
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
 vi.mock("@/components/ui/use-toast", () => ({ toast: vi.fn() }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  submittedViaSafe: () => false,
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
-}));
-vi.mock("@/lib/waitForReceipt", () => ({
-  waitForReceiptWithRetry: async () => ({ status: "success" }),
-}));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionState, reviewedRunMock } = await import("./support/reviewed-action");
+  const run = reviewedRunMock(mocks.simulate, mocks.write);
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: () => reviewedActionState(run),
+  };
+});
 vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/[slug]/components/v6/owners/market/lib")>()),
   fetchSplitHookStates: async () => mocks.states,
@@ -91,7 +92,6 @@ async function openConfirm() {
 beforeEach(() => {
   groupGateState.reset();
   mocks.states = [STATE];
-  // Viem's simulated request echoes the call's fields; it names no chain.
   mocks.simulate.mockImplementation(async (call: Record<string, unknown>) => ({ request: call }));
   mocks.write.mockResolvedValue(HASH);
 });
@@ -111,14 +111,13 @@ describe("SplitHookCard", () => {
     fireEvent.click(within(confirm).getByRole("button", { name: "Collect fees" }));
 
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
-    expect(mocks.simulate.mock.calls[0][0]).not.toHaveProperty("chainId");
     expect(mocks.write.mock.calls[0][0]).toMatchObject({
       chainId: 8453,
-      address: HOOK,
+      to: HOOK,
       functionName: "collectAndRouteLPFees",
       args: [4n, NATIVE],
-      account: ACCOUNT,
     });
+    expect(mocks.write.mock.calls[0][1]).toMatchObject({ account: ACCOUNT });
   });
 
   it("goes back to the card with Cancel, and sends nothing", async () => {

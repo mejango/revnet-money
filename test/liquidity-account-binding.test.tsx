@@ -61,18 +61,19 @@ vi.mock("@/components/ButtonWithWallet", () => ({
   }) => <button {...props}>{children}</button>,
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
-vi.mock("@/hooks/useAllowance", () => ({
-  useAllowance: () => ({ ensureAllowance: vi.fn(), isApproving: false }),
-}));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  ACCOUNT_CHANGED: "The connected account changed. Review again.",
+vi.mock("@/hooks/useReviewedWriteContract", () => ({ useProposeSafeBatch: () => vi.fn() }));
+vi.mock("@/lib/safe-connector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
   isSafeConnection: () => false,
-  useProposeSafeBatch: () => vi.fn(),
-  submittedViaSafe: () => false,
   useSafeConnection: () => false,
-  useWaitForTransactionReceipt: () => ({ isSuccess: false }),
-  useWriteContract: () => ({ writeContractAsync: mocks.write, isPending: false }),
 }));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionThrough } = await import("./support/reviewed-action");
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: reviewedActionThrough(mocks.write).hook,
+  };
+});
 vi.mock("@/lib/waitForReceipt", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/waitForReceipt")>()),
   waitForReceiptWithRetry: async () => ({ status: "success" }),
@@ -236,9 +237,10 @@ describe("a plan sent only from the account that reviewed it", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Make the market" }).at(-1)!);
     fireEvent.click(await confirmAction("Make the market"));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
-    expect(mocks.write).toHaveBeenCalledWith(
-      expect.objectContaining({ functionName: "modifyLiquidities", account: B }),
-    );
+    expect(mocks.write.mock.calls[0][0]).toMatchObject({
+      functionName: "modifyLiquidities",
+      account: B,
+    });
   });
 
   it("wallet-action:liquidity-management remove refuses to burn the reviewed position from another account", async () => {

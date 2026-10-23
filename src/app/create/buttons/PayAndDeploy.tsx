@@ -14,7 +14,7 @@ import {
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { useToast } from "@/components/ui/use-toast";
 import { useGetRelayrTxBundle, useSendRelayrTx } from "@/hooks/useReviewedRelayr";
-import { submittedViaSafe } from "@/hooks/useReviewedWriteContract";
+import { submittedViaSafe } from "@/lib/held-rows";
 import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { formatHexEther, formatWalletError } from "@/lib/utils";

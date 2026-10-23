@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
-import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/hooks/useReviewedWriteContract";
+import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";

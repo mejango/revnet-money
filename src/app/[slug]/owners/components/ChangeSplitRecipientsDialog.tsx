@@ -19,12 +19,12 @@ import { Trash2 as TrashIcon } from "@/components/ui/icons";
 import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { toast } from "@/components/ui/use-toast";
 import { WalletConnectButton } from "@/components/WalletButton";
-import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/hooks/useReviewedWriteContract";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
 import { hasSuckerPair, isPairCheckPending, unverifiedPairLine } from "@/lib/nana/suckers";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import {
   isStickyHook,
   isStickyRow,

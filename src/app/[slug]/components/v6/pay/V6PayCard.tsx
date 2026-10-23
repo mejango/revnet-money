@@ -8,16 +8,8 @@ import { ImageWithFallback } from "@/components/IpfsImage";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAllowance } from "@/hooks/useAllowance";
 import { useOpenedOnce } from "@/hooks/useOpenedOnce";
-import {
-  ACCOUNT_CHANGED,
-  isSafeProposalPendingError,
-  requireOnchainExecution,
-  submittedViaSafe,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+import { useReviewedAction } from "@/hooks/useReviewedAction";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { legacyIntents } from "@/lib/legacy-intents";
@@ -29,6 +21,7 @@ import {
   useSuckers,
 } from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
+import { ACCOUNT_CHANGED, failedLine, revertedStep, reviewedCall } from "@/lib/reviewed-call";
 import { Token } from "@/lib/token";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import {
@@ -38,11 +31,7 @@ import {
   payTokenKey,
   V6PayMode,
 } from "@/lib/v6/pay";
-import {
-  isTransactionReceiptUnavailableError,
-  waitForReceiptWithRetry,
-} from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
+import { heldLineOf } from "@/lib/write-hold";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
   JB_CHAINS,
@@ -123,6 +112,8 @@ function payChainName(chainId: JBChainId): string {
 /** Sentinel for the token menu's buy entry; never a token index. */
 const BUY_OPTION = "buy";
 
+const SAFE_APPROVAL_DONE = "Your Safe approved the token. Review the payment again to send it.";
+
 export function V6PayCard() {
   const { selectedSucker, setSelectedSucker } = useSelectedSucker();
   const chainId = selectedSucker.peerChainId;
@@ -149,17 +140,9 @@ export function V6PayCard() {
   // send (the write hook's review and final simulation included): a
   // preparation is sent only while it still matches both.
   const currentPayRef = useRef<CurrentPay>({ identity: "", quoteTerminal: null });
-  const sendingRef = useRef<PreparedV6Pay | null>(null);
-  const { writeContractAsync } = useWriteContract({
-    transactionReview: {
-      title: "Review the payment",
-      confirmLabel: "Agree & send",
-    },
-    beforeSubmission: async () => {
-      if (sendingRef.current) requireCurrent(sendingRef.current, currentPayRef.current);
-    },
-  });
-  const { ensureAllowance, getApprovalReceipt } = useAllowance(chainId);
+  /** The Safe proposal awaited is the token approval, not the payment itself. */
+  const approvalProposedRef = useRef(false);
+  const pay = useReviewedAction();
 
   const projectToken = useJBTokenContext().token.data;
   const projectTokenLabel = projectToken?.symbol
@@ -547,10 +530,6 @@ export function V6PayCard() {
   const [phase, setPhase] = useState<V6PayPhase>("preparing");
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
   const [txError, setTxError] = useState<string | null>(null);
-  const safeReceipt = useWaitForTransactionReceipt({
-    hash: txHash,
-    chainId: prepared?.chainId,
-  });
 
   const busy =
     phase === "safe-proposed" ||
@@ -841,110 +820,101 @@ export function V6PayCard() {
       return;
     }
     setTxError(null);
-    sendingRef.current = prepared;
+    // Held by the project and beneficiary alone: one payment to a project at a time, whatever
+    // the cart, token, route, amount or memo.
+    const intent = payIntent({
+      chainId: prepared.chainId,
+      project: projectId,
+      beneficiary: prepared.account,
+    });
+    const approval =
+      prepared.tokenApproval && !prepared.tokenApprovalComplete ? prepared.tokenApproval : null;
     try {
       requireCurrent(prepared, currentPayRef.current);
-      // Simulate at the approval's block. Base RPC providers are load
-      // balanced: a receipt can be visible on one backend while `latest` on a
-      // sibling still predates that approval.
-      let approvalBlock: bigint | undefined;
-      const paymentRequest = prepared.request;
-      if (prepared.tokenApproval && !prepared.tokenApprovalComplete) {
-        setPhase("approving-token");
-        await nextUiPaint();
-        const spender = prepared.request.address;
-        const approvalHash = await ensureAllowance(
-          prepared.token.token,
-          spender,
-          prepared.amount,
-          approvalIntent(
-            payIntent({
+      // In flight from here: the confirm holds, and a changed payment is caught by the write gate.
+      setPhase(approval ? "approving-token" : "simulating");
+      const result = await pay.run({
+        account: prepared.account,
+        title: "Review the payment",
+        confirmLabel: "Agree & send",
+        calls: [
+          ...(approval
+            ? [
+                reviewedCall(
+                  { chainId: prepared.chainId, ...approval.request },
+                  {
+                    intent: approvalIntent(intent, {
+                      step: "erc20",
+                      token: prepared.token.token,
+                      spender: prepared.request.address,
+                    }),
+                  },
+                ),
+              ]
+            : []),
+          reviewedCall(
+            {
               chainId: prepared.chainId,
-              project: projectId,
-              beneficiary: prepared.account,
-            }),
-            { step: "erc20", token: prepared.token.token, spender },
+              ...prepared.request,
+              args: prepared.request.args as readonly unknown[],
+            },
+            {
+              intent,
+              legacyIntents: legacyIntents.pay(projectId, prepared.account),
+              dependsOnPrior: !!approval,
+            },
           ),
-        );
-        const approvalReceipt = getApprovalReceipt(approvalHash);
-        if (approvalReceipt?.blockNumber !== undefined) {
-          approvalBlock = approvalReceipt.blockNumber;
-        }
-        setPrepared((current) => (current ? { ...current, tokenApprovalComplete: true } : current));
-        await nextUiPaint();
-        requireCurrent(prepared, currentPayRef.current);
+        ],
+        scope: approval ? intent : undefined,
+        // Sent only while it is still the payment on screen.
+        assertWriteState: () => requireCurrent(prepared, currentPayRef.current),
+        beforeWallet: async (_call, step) => {
+          setPhase(approval && step === 0 ? "approving-token" : "signing");
+          await nextUiPaint();
+        },
+        onSubmitted: (_call, step, hash) => {
+          if (approval && step === 0)
+            setPrepared((current) =>
+              current ? { ...current, tokenApprovalComplete: true } : current,
+            );
+          else {
+            setTxHash(hash);
+            setPhase("pending");
+          }
+        },
+      });
+      if (!result) {
+        setPhase("ready");
+        return;
       }
-      setPhase("simulating");
-      await nextUiPaint();
-      await publicClient.simulateContract({
-        address: paymentRequest.address,
-        abi: paymentRequest.abi,
-        functionName: paymentRequest.functionName,
-        args: paymentRequest.args as unknown[],
-        value: paymentRequest.value,
-        account: prepared.account,
-        blockNumber: approvalBlock,
-      } as unknown as Parameters<typeof publicClient.simulateContract>[0]);
-      await nextUiPaint();
-      requireCurrent(prepared, currentPayRef.current);
-      setPhase("signing");
-      // Held by the project and beneficiary alone: one payment to a project at a time, whatever
-      // the cart, token, route, amount or memo.
-      const hash = await withWriteIntent(
-        writeContractAsync,
-        payIntent({ chainId: prepared.chainId, project: projectId, beneficiary: prepared.account }),
-        legacyIntents.pay(projectId, prepared.account),
-      )({
-        chainId: prepared.chainId,
-        address: paymentRequest.address,
-        abi: paymentRequest.abi,
-        functionName: paymentRequest.functionName,
-        args: paymentRequest.args as unknown[],
-        value: paymentRequest.value,
-        account: prepared.account,
-      } as unknown as Parameters<typeof writeContractAsync>[0]);
-      setTxHash(hash);
-      setPhase("pending");
-      if (submittedViaSafe(hash)) {
+      if (result.status === "proposed") {
+        approvalProposedRef.current = !!approval && result.step === 0;
+        setTxHash(result.safeTxHash);
         setPhase("safe-proposed");
         return;
       }
-      requireOnchainExecution(hash);
-      const receipt = await waitForReceiptWithRetry(publicClient as PublicClient, hash);
-      if (receipt.status !== "success") {
-        throw new PaymentRevertedError();
-      }
-      setPhase("success");
-    } catch (err) {
-      if (err instanceof PaymentChangedError) {
-        // Stop before the wallet and rebuild what is on screen for review.
-        setPrepared(null);
-        setTxError(PAYMENT_CHANGED);
-        setPhase("preparing");
+      if (result.status === "done") {
+        setPhase("success");
         return;
       }
-      if (isSafeProposalPendingError(err)) {
-        setPhase("safe-proposed");
-        setTxHash(err.hash);
-        return;
-      }
-      if (err instanceof PaymentRevertedError) {
+      const { failure } = result;
+      if (failure instanceof PaymentChangedError) throw failure;
+      if (revertedStep(failure) === (approval ? 1 : 0)) {
         // A receipt carries no reason, and replaying it can't establish one.
         setPhase("ready");
-        setTxError(err.message);
+        setTxError(PAYMENT_REVERTED);
         setRevertedOnchain(true);
         return;
       }
-      if (isTransactionReceiptUnavailableError(err)) {
+      if ((failure as { name?: string } | null)?.name === "TransactionReceiptUnavailableError") {
         setPhase("pending");
-        setTxHash(err.hash);
-        setTxError(err.message);
+        setTxError(result.error);
         return;
       }
       setPhase("ready");
       // The revert's own reason, when known, and a looser minimum when that is the fix.
-      const decoded = decodePayFailure(err);
-      setTxError(decoded?.message ?? formatWalletError(err));
+      const decoded = decodePayFailure(failure);
+      setTxError(decoded?.message ?? failedLine(result));
       // A failed quote's minimum is the mint rate, not a market price a looser tolerance widens.
       if (prepared.mode === "pay" && !prepared.quoteFailed) {
         // The tolerance of the attempt that failed, never a loosened one not yet sent.
@@ -954,8 +924,12 @@ export function V6PayCard() {
         );
         setRetrySlippageBps(retry === null ? null : Number(retry));
       }
-    } finally {
-      sendingRef.current = null;
+    } catch (err) {
+      if (!(err instanceof PaymentChangedError)) throw err;
+      // Stop before the wallet and rebuild what is on screen for review.
+      setPrepared(null);
+      setTxError(PAYMENT_CHANGED);
+      setPhase("preparing");
     }
   };
 
@@ -976,7 +950,13 @@ export function V6PayCard() {
 
   useEffect(() => {
     if (phase !== "safe-proposed") return;
-    if (safeReceipt.isSuccess) {
+    if (pay.phase === "done" && approvalProposedRef.current) {
+      // The Safe ran the approval: the payment is still to send, from a fresh review.
+      approvalProposedRef.current = false;
+      setPrepared(null);
+      setPhase("preparing");
+      setTxError(SAFE_APPROVAL_DONE);
+    } else if (pay.phase === "done") {
       setPhase("success");
       setTxError(null);
       setPayerSlippage(null);
@@ -986,29 +966,15 @@ export function V6PayCard() {
       setDebouncedAmount("");
       setMemo("");
       for (const item of chainCartItems) cart.remove(item.tierId, item.chainId);
-    } else if (safeReceipt.isError) {
+    } else if (pay.error) {
       setPhase("ready");
-      setTxError(
-        safeReceipt.error instanceof Error
-          ? safeReceipt.error.message
-          : "The Safe proposal executed but failed onchain.",
-      );
-    } else if (safeReceipt.isSafeResultUnconfirmed) {
+      setTxError(pay.error);
+    } else if (pay.held?.exit) {
       // Its result can't be confirmed: the payment is no longer awaiting the Safe here.
       setPhase("ready");
-      setTxError(safeReceipt.statusMessage ?? null);
+      setTxError(heldLineOf(pay.held) ?? null);
     }
-  }, [
-    cart,
-    chainCartItems,
-    phase,
-    prepared?.mode,
-    safeReceipt.error,
-    safeReceipt.isError,
-    safeReceipt.isSafeResultUnconfirmed,
-    safeReceipt.isSuccess,
-    safeReceipt.statusMessage,
-  ]);
+  }, [cart, chainCartItems, phase, prepared?.mode, pay.error, pay.held, pay.phase]);
 
   // The card's chain picker. The token selection re-maps to the same token on
   // the new chain via the key-remap effect; an open confirm re-prepares from a
@@ -1599,11 +1565,7 @@ async function needsApproval(
 
 const PAYMENT_CHANGED = "The payment changed. Review it again.";
 
-class PaymentRevertedError extends Error {
-  constructor() {
-    super("The payment reverted.");
-  }
-}
+const PAYMENT_REVERTED = "The payment reverted.";
 
 class PaymentChangedError extends Error {
   constructor() {

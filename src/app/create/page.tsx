@@ -3,23 +3,20 @@
 import { Nav } from "@/components/layout/Nav";
 import { pinDraftItems } from "@/components/shop/itemDraft";
 import { useToast } from "@/components/ui/use-toast";
+import { useReviewedAction } from "@/hooks/useReviewedAction";
 import {
   requireRelayrRecoveryScopeAvailable,
   useGetRelayrTxQuote,
 } from "@/hooks/useReviewedRelayr";
-import {
-  isSafeConnector,
-  submittedViaSafe,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
 import { FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
 import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { requireProposedOrDone, reviewedCall } from "@/lib/reviewed-call";
+import { isSafeConnector } from "@/lib/safe-connector";
 import { formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { savedAttempts, withWriteIntent } from "@/lib/write-hold";
+import { savedAttempts } from "@/lib/write-hold";
 import { createSalt, parseSuckerDeployerConfig } from "@bananapus/nana-sdk-core";
 import {
   gasWithHeadroom,
@@ -30,7 +27,7 @@ import { useSavedAttempt } from "@bananapus/nana-sdk-core/review/react";
 import { getProjectCreationFee } from "@bananapus/nana-sdk-core/v6";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { encodeFunctionData, PublicClient, type Hex } from "viem";
-import { useAccount, useSwitchChain } from "wagmi";
+import { useAccount } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { DEFAULT_FORM_DATA } from "./constants";
 import { DeployRevnetForm, type DirectDeployment } from "./form/DeployRevnetForm";
@@ -85,17 +82,11 @@ function attemptAt(
 export default function Page() {
   const { toast } = useToast();
   const { address, chainId: connectedChainId, isConnected, connector } = useAccount();
-  const { switchChainAsync } = useSwitchChain();
   /** The launch the hold is about to hand the wallet: journaled only once it is reserved. */
   const reserving = useRef<{ key: string; salt: Hex; save: () => void; namespaces: string[] }>(
     undefined,
   );
-  const { writeContractAsync } = useWriteContract({
-    beforeSubmission: async () => reserving.current?.save(),
-    // Nothing reached the wallet: the SDK drops its reservation, and the journal goes with it.
-    onBeforeSubmissionAborted: async () => unreserve(),
-    onSubmissionRejected: async () => unreserve(),
-  });
+  const { run } = useReviewedAction();
   const unreserve = () => {
     const current = reserving.current;
     if (!current || !address) return;
@@ -341,7 +332,6 @@ export default function Page() {
       const client = getPublicClient(wagmiConfig, { chainId }) as PublicClient | undefined;
       const namespaces = launchNamespacesOf(chainId, address, launchInput);
       const key = launchKey!;
-      if (connectedChainId !== chainId) await switchChainAsync({ chainId });
       // The first block its DeployRevnet event can be in; a read that fails only skips the note.
       const fromBlock = await Promise.resolve()
         .then(() => client?.getBlockNumber())
@@ -354,20 +344,36 @@ export default function Page() {
         save: () => saveLaunchAttempt(key, { salt, fromBlock, namespaces, before }),
       };
       // Held by the user's launch config: the salt, stage start and pin are the page's own.
-      let hash: Awaited<ReturnType<typeof writeContractAsync>>;
+      let result;
       try {
-        hash = await withWriteIntent(
-          writeContractAsync,
-          namespaces[0]!,
-          namespaces.slice(1),
-        )({
-          chainId,
-          address: directRequest.address,
-          abi: directRequest.abi,
-          functionName: directRequest.functionName,
-          args: directRequest.args,
-          value: directRequest.value,
-        } as unknown as Parameters<typeof writeContractAsync>[0]);
+        result = requireProposedOrDone(
+          await run({
+            account: address,
+            calls: [
+              reviewedCall(
+                { ...directRequest, chainId, args: directRequest.args as readonly unknown[] },
+                {
+                  intent: namespaces[0]!,
+                  legacyIntents: namespaces.slice(1),
+                  label: `Deploy ${deploymentFormData.name}`,
+                  contractName: "REVDeployer",
+                },
+              ),
+            ],
+            beforeWallet: () => reserving.current?.save(),
+            // Nothing reached the wallet: the SDK drops its reservation, and the journal goes too.
+            onUnsent: () => unreserve(),
+            onSubmitted: (_call, _step, hash, sent) => {
+              if (sent.safe) return;
+              setDirectDeployment({ chainId, hash });
+              toast({
+                title: "Revnet deployment submitted",
+                description:
+                  "Once the transaction confirms, use the button at the bottom of this page to open your revnet.",
+              });
+            },
+          }),
+        );
       } catch (error) {
         // A launch that may have reached the wallet is the SDK's recovery to show.
         if (launchJournaled(key)) {
@@ -378,7 +384,7 @@ export default function Page() {
       } finally {
         reserving.current = undefined;
       }
-      if (submittedViaSafe(hash)) {
+      if (result.status === "proposed") {
         toast({
           title: "Safe proposal submitted",
           description:
@@ -386,25 +392,11 @@ export default function Page() {
         });
         return;
       }
-      setDirectDeployment({ chainId, hash });
       // Launched: the SDK's recovery follows it and retires the journal, so the next launch of
       // this config is a new revnet, with a new salt. Nothing is shown here for it.
-      if (client)
-        void waitForReceiptWithRetry(client as PublicClient, hash)
-          .then((receipt) =>
-            receipt.status === "success"
-              ? recoverLaunchAt(key, address, client as PublicClient, namespaces)
-              : undefined,
-          )
-          .catch(() => undefined);
-      toast({
-        title: "Revnet deployment submitted",
-        description:
-          "Once the transaction confirms, use the button at the bottom of this page to open your revnet.",
-      });
+      if (client) void recoverLaunchAt(key, address, client as PublicClient, namespaces);
       return;
     }
-
     if (firstRequest) {
       quotedFormData.current = deploymentFormData;
       setQuotedStageStart(quotedStageStartOf(firstRequest, deploymentFormData));
