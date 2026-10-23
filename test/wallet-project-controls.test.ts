@@ -13,11 +13,7 @@ const actionExpectations: Array<{
     sources: [
       {
         file: "src/app/[slug]/components/Value/RepayDialog.tsx",
-        contains: [
-          'functionName: "approve"',
-          'functionName: "repayLoan"',
-          "requireOnchainExecution",
-        ],
+        contains: ['functionName: "approve"', 'functionName: "repayLoan"', "reviewedCall"],
       },
     ],
   },
@@ -35,7 +31,7 @@ const actionExpectations: Array<{
     sources: [
       {
         file: "src/app/[slug]/components/v6/owners/market/SplitHookCard.tsx",
-        contains: ['"deployPool"', '"collectAndRouteLPFees"', "simulateContract"],
+        contains: ['"deployPool"', '"collectAndRouteLPFees"', "reviewedCall", "useReviewedAction"],
       },
     ],
   },
@@ -71,7 +67,7 @@ const actionExpectations: Array<{
     sources: [
       {
         file: "src/app/[slug]/owners/components/hooks/useSetSplitGroups.ts",
-        contains: ['functionName: "setSplitGroupsOf"', "getRelayrTxQuote", "writeContractAsync"],
+        contains: ['functionName: "setSplitGroupsOf"', "getRelayrTxQuote", "runSequentialWrites"],
       },
     ],
   },
@@ -80,7 +76,7 @@ const actionExpectations: Array<{
     sources: [
       {
         file: "src/app/[slug]/about/components/EditMetadataDialog.tsx",
-        contains: ['functionName: "setUriOf"', "getRelayrTxQuote", "writeContractAsync"],
+        contains: ['functionName: "setUriOf"', "getRelayrTxQuote", "runSequentialWrites"],
       },
     ],
   },
@@ -104,7 +100,7 @@ const actionExpectations: Array<{
           'functionName: "createProxyWithNonce"',
           "isLiveRevnetOperator",
           "prepareSafeSameAddressDeployment",
-          "requireOnchainExecution",
+          "requireDone",
         ],
       },
     ],
@@ -128,7 +124,7 @@ const actionExpectations: Array<{
       },
       {
         file: "src/app/[slug]/components/v6/operator/operatorLib.ts",
-        contains: ["simulateContract", "writeContractAsync", "operatorWriteRoute"],
+        contains: ["reviewedCall", "requireDone", "operatorWriteRoute"],
       },
       {
         // A signer of an operator Safe proposes the exact call to that chain's
@@ -149,7 +145,7 @@ const actionExpectations: Array<{
     sources: [
       {
         file: "src/app/[slug]/components/v6/owners/settlement/GossipCard.tsx",
-        contains: ["buildSyncAccountingDataTx", "simulateContract", "writeContractAsync"],
+        contains: ["buildSyncAccountingDataTx", "reviewedCall", "useReviewedAction"],
       },
     ],
   },
@@ -158,7 +154,7 @@ const actionExpectations: Array<{
     sources: [
       {
         file: "src/app/[slug]/components/v6/owners/settlement/QueuedMovementsCard.tsx",
-        contains: ["buildV6ClaimTxFromRow", 'functionName: "toRemote"', "simulateContract"],
+        contains: ["buildV6ClaimTxFromRow", 'functionName: "toRemote"', "reviewedCall"],
       },
     ],
   },
@@ -240,8 +236,8 @@ describe("project handle ENS authorization", () => {
       resolve(process.cwd(), "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx"),
       "utf8",
     );
-    expect(source).toContain("The exact resolver itself remains pinned");
-    expect(source).toContain("approved delegates can also submit");
+    expect(source).toContain("The exact resolver stays pinned");
+    expect(source).toContain("ENS owners can approve delegates");
     expect(source).not.toContain("connectedIsEnsController");
     expect(source).not.toContain("fresh.ensController.toLowerCase()");
   });
@@ -251,7 +247,7 @@ describe("project handle ENS authorization", () => {
       resolve(process.cwd(), "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx"),
       "utf8",
     );
-    expect(source).toContain("gas: PROJECT_HANDLE_TEXT_WRITE_SIMULATION_GAS,");
+    expect(source).toContain("gas: PROJECT_HANDLE_TEXT_WRITE_SIMULATION_GAS }");
   });
 
   it("live-checks the server fallback across every Operator authority surface", () => {
@@ -308,9 +304,7 @@ describe("project handle ENS authorization", () => {
       "utf8",
     );
     expect(source).toContain("const handleBinding = await verifyLiveQueuedTransaction(row, tx)");
-    expect(source).toContain("manualReceiptVerification: () => true");
-    expect(source).toContain("await confirmSafeExecution({");
-    expect(source).toContain("safeTxHash: expectedSafeTxHash");
+    expect(source).toContain("await executeReviewedSafeTransaction(");
     expect(source).toContain("verifyQueuedProjectHandlePostcondition");
     expect(source).toContain("executionBlockNumber: receipt.blockNumber");
     expect(source).toContain("if (safeTransactionHasRefund(tx)) throw new Error(REFUND_REFUSAL)");
@@ -329,10 +323,10 @@ describe("project handle ENS authorization", () => {
       resolve(process.cwd(), "src/app/[slug]/components/v6/operator/ProjectHandleEditor.tsx"),
       "utf8",
     );
-    expect(source).toContain('variables.functionName !== "setEnsNamePartsFor"');
-    expect(source).toContain("encodedChainId !== BigInt(project.chainId)");
-    expect(source).toContain("encodedProjectId !== BigInt(project.projectId)");
-    expect(source).toContain("canonicalProjectHandleParts");
+    expect(source).toContain(
+      "args: [BigInt(project.chainId), BigInt(project.projectId), handle.parts]",
+    );
+    expect(source).toContain("() => reverifyPublish(handle, address)");
     expect(source).toContain("const record = await readExactEnsText");
     expect(source).toContain("record !== expectedRecord");
   });
@@ -342,7 +336,7 @@ describe("project handle ENS authorization", () => {
       resolve(process.cwd(), "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx"),
       "utf8",
     );
-    expect(source.match(/verifyLiveQueuedTransaction/g)?.length ?? 0).toBeGreaterThanOrEqual(7);
+    expect(source.match(/verifyLiveQueuedTransaction/g)?.length ?? 0).toBeGreaterThanOrEqual(6);
     expect(source).toContain("target.handleOnly");
     expect(source).toContain("bindingMatchesProject(binding, target.handleSource)");
     expect(source).toContain("verifyQueuedProjectHandleBinding");

@@ -1,7 +1,7 @@
 import { MintItemModal } from "@/app/[slug]/components/v6/shop/MintItemModal";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import type { Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -31,11 +31,13 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     connectWalletText?: string;
   }) => <button {...props}>{children}</button>,
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  requireOnchainExecution: () => undefined,
-  submittedViaSafe: () => false,
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
-}));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionThrough } = await import("./support/reviewed-action");
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: reviewedActionThrough(mocks.write).hook,
+  };
+});
 // The live shop and permission check the modal runs before its confirm opens.
 vi.mock("@/app/[slug]/components/v6/shop/shopPermissions", () => ({
   assertCanMint721Tier: mocks.canMint,
@@ -44,7 +46,7 @@ vi.mock("@/lib/waitForReceipt", () => ({
   waitForReceiptWithRetry: async () => ({ status: "success" }),
 }));
 
-/** Opens the mint modal and its confirm, once the live check passes. */
+/** Opens the mint modal and its progress, which starts the mint once the live check passes. */
 async function openConfirm() {
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -61,7 +63,6 @@ async function openConfirm() {
   );
   fireEvent.click(screen.getByRole("button", { name: "Mint" }));
   const confirm = await findConfirm();
-  await waitFor(() => expect(within(confirm).getByRole("button", { name: "Mint" })).toBeEnabled());
   return confirm;
 }
 
@@ -71,16 +72,6 @@ beforeEach(() => {
 });
 
 describe("mint without payment confirm", () => {
-  it("goes back to the form with Cancel, and mints nothing", async () => {
-    const confirm = await openConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
-    expect(screen.getByLabelText("Beneficiary address")).toBeVisible();
-    expect(mocks.write).not.toHaveBeenCalled();
-  });
-
   it("wallet-action:shop-items refuses every way out from Confirm through the send, then shows the mint", async () => {
     let answer!: () => void;
     mocks.write.mockReturnValue(
@@ -89,11 +80,9 @@ describe("mint without payment confirm", () => {
       }),
     );
     const confirm = await openConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Mint" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
 
     expectEveryWayOutRefused(confirm);
-    expect(within(confirm).getByRole("button", { name: "Mint" })).toBeDisabled();
 
     await act(async () => answer());
     expect(await screen.findByText("Items minted")).toBeInTheDocument();

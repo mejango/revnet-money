@@ -92,6 +92,12 @@ jobs:
           PROTOCOL_DEPLOYMENTS_DIR: ${{ github.workspace }}/.contract-source/deploy-all-v6
         run: npm run protocol:check
 
+      - name: Check source invariants
+        run: npm run source:check
+
+      - name: Check for unused files, exports and dependencies
+        run: npm run dead-code:check
+
       - name: Verify wallet-write inventory and run invariant tests with coverage
         run: npm run test:ci
 

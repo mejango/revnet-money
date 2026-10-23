@@ -1,6 +1,4 @@
-import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
-import { recordTransactionActivity } from "@/lib/transaction-activity";
-import { TransactionReviewCancelledError } from "@/lib/transaction-review";
+import { SAFE_PROPOSAL_PENDING_LINE } from "@/lib/reviewed-call";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
@@ -25,8 +23,10 @@ const mocks = vi.hoisted(() => ({
   write: vi.fn(),
   toast: vi.fn(),
   hasPermissions: vi.fn(),
-  // The hash the loan writes last sent.
-  sent: undefined as `0x${string}` | undefined,
+  // How a sent loan step ends.
+  end: vi.fn(),
+  run: undefined as unknown as import("vitest").Mock,
+  reset: (() => undefined) as () => void,
 }));
 
 vi.mock("wagmi", () => ({
@@ -40,6 +40,7 @@ vi.mock("wagmi", () => ({
         accountingContextForTokenOf: ETH_CONTEXT,
         revnetIdOfLoanWith: LOAN_REVNET_ID,
         loanOf: { amount: 1n, collateral: 1n, sourceToken: ETH_CONTEXT.token },
+        borrowableAmountFrom: [10n ** 18n, 0n],
       })[functionName],
   }),
   useWalletClient: () => ({ data: {} }),
@@ -56,17 +57,14 @@ vi.mock("wagmi", () => ({
   }),
 }));
 
-vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>();
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { liveReviewedAction } = await import("./support/reviewed-action");
+  const runner = liveReviewedAction(mocks.write, (hash) => mocks.end(hash));
+  mocks.run = runner.run;
+  mocks.reset = runner.reset;
   return {
-    // The write hook's own refusals, their tests and their lines, as the dialog reads them.
-    ...actual,
-    requireOnchainExecution: () => undefined,
-    useWriteContract: () => ({
-      writeContractAsync: mocks.write,
-      isPending: false,
-      data: mocks.sent,
-    }),
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: runner.hook,
   };
 });
 
@@ -116,67 +114,46 @@ import { useBorrowDialog } from "@/app/[slug]/components/Value/hooks/useBorrowDi
 beforeEach(() => {
   queryClient = new QueryClient();
   window.localStorage.clear();
-  mocks.sent = undefined;
+  mocks.reset();
+  mocks.end.mockReset();
+  mocks.write.mockReset();
   mocks.hasPermissions.mockResolvedValue(false);
 });
 
 describe("a closed permission review", () => {
   it("wallet-action:loans returns the borrow flow to its start without reporting a denied permission", async () => {
-    mocks.write.mockRejectedValue(new TransactionReviewCancelledError());
+    mocks.run.mockResolvedValueOnce(null);
     const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }), { wrapper });
 
     act(() => result.current.handleChainSelection(1));
+    act(() => result.current.setCollateralAmount("1"));
     await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
     await act(() => result.current.handleBorrow());
 
-    expect(mocks.write).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ functionName: "setPermissionsFor" }),
-    );
+    expect(mocks.run).toHaveBeenCalledOnce();
+    expect(mocks.run.mock.calls[0][0].calls[0].functionName).toBe("setPermissionsFor");
     expect(result.current.borrowStatus).toBe("idle");
     expect(mocks.toast).not.toHaveBeenCalled();
   });
 });
 
-describe("a permission step refused by a Safe proposal the app can't confirm", () => {
-  it("wallet-action:loans says to check the proposal in Safe, and neither that permission was denied nor that it failed", async () => {
+describe("a permission step that went to the Safe as a proposal", () => {
+  it("wallet-action:loans says it waits in the Safe, and neither that permission was denied nor that it failed", async () => {
     const proposal = `0x${"ab".repeat(32)}` as Hex;
-    mocks.write.mockRejectedValue(new SafeProposalPendingError(proposal, true));
+    mocks.write.mockResolvedValue(proposal);
+    mocks.end.mockReturnValue({ phase: "proposed" });
     const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }), { wrapper });
 
     act(() => result.current.handleChainSelection(1));
+    act(() => result.current.setCollateralAmount("1"));
     await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
     await act(() => result.current.handleBorrow());
 
-    expect(result.current.borrowStatus).toBe("safe-unconfirmed");
+    expect(result.current.borrowStatus).toBe("pending");
     expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
-      title: "Safe proposal unconfirmed",
-      description: "Check this proposal in your Safe before sending it again.",
+      title: "Safe permission proposal submitted",
+      description: SAFE_PROPOSAL_PENDING_LINE,
     });
-  });
-});
-
-describe("a loan left open over its own Safe proposal the app can't confirm", () => {
-  it("stops reading as loading and says to check the proposal in Safe", async () => {
-    const proposal = `0x${"cd".repeat(32)}` as Hex;
-    recordTransactionActivity({
-      id: `tx:1:${proposal}`,
-      kind: "safe",
-      title: "borrowFrom",
-      status: "safe-proposed",
-      message:
-        "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
-      chainId: 1,
-      hash: proposal,
-      safeProposalHash: proposal,
-      safeResultUnconfirmed: true,
-    });
-    mocks.sent = proposal;
-
-    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }), { wrapper });
-    await waitFor(() => expect(result.current.loanSourcePending).toBe(false));
-
-    await waitFor(() => expect(result.current.borrowStatus).toBe("safe-unconfirmed"));
-    expect(result.current.loading).toBe(false);
   });
 });
 

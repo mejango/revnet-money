@@ -17,23 +17,24 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
+import {
+  isSafeProposalPendingError,
+  requireDone,
+  reviewClosed,
+  reviewedCall,
+  useReviewedAction,
+} from "@/hooks/useReviewedAction";
 import {
   useGetRelayrTxQuote,
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
-import {
-  isSafeProposalPendingError,
-  requireOnchainExecution,
-  submittedViaSafe,
-  useSafeConnection,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
+import { submittedViaSafe } from "@/lib/held-rows";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import {
   useJBContractContext,
@@ -43,10 +44,10 @@ import {
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { PERSIST } from "@/lib/query-persist";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { useSafeConnection } from "@/lib/safe-connector";
 import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { formatEthAddress, formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
 import {
   JB_CHAINS,
   jbControllerAbi,
@@ -54,7 +55,7 @@ import {
   jbDirectoryAbi,
   jbProjectsAbi,
 } from "@bananapus/nana-sdk-core";
-import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { gasWithHeadroom, intent, writeIntentKey } from "@bananapus/nana-sdk-core/review";
 import { getTokenAddress, hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -67,8 +68,8 @@ import {
   PublicClient,
   zeroAddress,
 } from "viem";
-import { useAccount, useSwitchChain } from "wagmi";
-import { getAccount, getPublicClient } from "wagmi/actions";
+import { useAccount } from "wagmi";
+import { getPublicClient } from "wagmi/actions";
 import { ProjectItem } from "../shared";
 
 type TokenChainState = {
@@ -296,8 +297,7 @@ function TokenEditDialog({
   // The chains come from the server sucker-group list: write only to pairs the registry lists.
   const gate = useGroupWriteGate(states);
   const { address, chainId: connectedChainId } = useAccount();
-  const { switchChainAsync } = useSwitchChain();
-  const { writeContractAsync } = useWriteContract();
+  const { run } = useReviewedAction();
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
   const { toast } = useToast();
@@ -392,42 +392,43 @@ function TokenEditDialog({
     setError(null);
     try {
       if (!relayed) {
-        for (const [index, state] of states.entries()) {
-          setDirectWriteIndex(index);
-          if (getAccount(wagmiConfig).chainId !== state.chainId) {
-            await switchChainAsync({ chainId: state.chainId });
-          }
-          const call = callFor(state, nextName, nextSymbol);
-          const hash = state.token
-            ? await writeContractAsync({
-                address: state.controller,
-                chainId: state.chainId,
-                abi: jbControllerAbi,
-                functionName: "setTokenMetadataOf",
-                args: call.args as readonly [bigint, string, string],
-              })
-            : await writeContractAsync({
-                address: state.controller,
-                chainId: state.chainId,
-                abi: jbControllerAbi,
-                functionName: "deployERC20For",
-                args: call.args as readonly [bigint, string, string, `0x${string}`],
-              });
-          if (states.length === 1 && submittedViaSafe(hash)) {
-            toast({
-              title: "Safe proposal submitted",
-              description: `The ${deployed ? "token update" : "token deployment"} is awaiting Safe approvals and execution.`,
-            });
-            return true;
-          }
-          requireOnchainExecution(hash);
-          const receipt = await waitForReceiptWithRetry(clientFor(state.chainId), hash);
-          if (receipt.status !== "success") {
-            throw new Error(
-              `Token transaction ${hash} reverted on ${chainDisplayName(state.chainId)}.`,
-            );
-          }
+        // One review for every chain, sent in order; a later chain resumes without resending.
+        const result = await run({
+          account: address,
+          context: tokenContext,
+          beforeWallet: (_call, index) => setDirectWriteIndex(index),
+          ...(states.length > 1
+            ? {
+                title: deployed ? "Update token metadata" : "Deploy project ERC-20",
+                scope: writeIntentKey("token-panel", {
+                  account: intent.address(address),
+                  calls: states.map((state) => [
+                    state.chainId,
+                    intent.address(state.controller),
+                    callFor(state, nextName, nextSymbol).data,
+                  ]),
+                }),
+              }
+            : {}),
+          calls: states.map((state) =>
+            reviewedCall({
+              chainId: state.chainId,
+              address: state.controller,
+              abi: jbControllerAbi,
+              functionName: callFor(state, nextName, nextSymbol).functionName,
+              args: callFor(state, nextName, nextSymbol).args,
+            }),
+          ),
+        });
+        // One chain's Safe proposal is the whole action; a batch's waits for its Safe.
+        if (states.length === 1 && result?.status === "proposed") {
+          toast({
+            title: "Safe proposal submitted",
+            description: `The ${deployed ? "token update" : "token deployment"} is awaiting Safe approvals and execution.`,
+          });
+          return true;
         }
+        requireDone(result);
         finish(deployed ? "The name and symbol are now updated." : "The ERC-20 is now deployed.");
         return true;
       }
@@ -478,6 +479,10 @@ function TokenEditDialog({
       setSelectedPayment(preselectedRelayrPayment(relayrQuote.payment_info, connectedChainId));
       return true;
     } catch (cause) {
+      if (reviewClosed(cause)) {
+        setConfirming(null);
+        return false;
+      }
       if (isSafeProposalPendingError(cause)) {
         setProposed(formatWalletError(cause));
         return false;
@@ -538,7 +543,23 @@ function TokenEditDialog({
   const permissionName = deployed ? "SET_TOKEN_METADATA" : "DEPLOY_ERC20";
   const chainNames = states.map((state) => chainDisplayName(state.chainId)).join(", ");
   const formAction = deployed ? "Save token" : "Deploy token";
-  const actionLabel = relayed ? "Pay and submit" : formAction;
+  const tokenContext = [
+    { label: "Name", value: name.trim(), strong: true },
+    { label: "Symbol", value: symbol.trim() },
+    { label: "On", value: chainNames },
+    {
+      label: "Address",
+      value: deployed ? "Unchanged" : "Same deterministic address on every chain",
+    },
+    ...(confirming === "pay" && selectedPayment
+      ? [
+          {
+            label: "Relay fee",
+            value: `${formatHexEther(selectedPayment.amount)} ETH on ${JB_CHAINS[selectedPayment.chain as JBChainId]?.name ?? selectedPayment.chain}`,
+          },
+        ]
+      : []),
+  ];
   const confirmSteps = relayed
     ? [
         {
@@ -578,7 +599,7 @@ function TokenEditDialog({
         </button>
       </DialogTrigger>
       {confirming ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => {
             setConfirming(null);
@@ -588,10 +609,8 @@ function TokenEditDialog({
           preparing={relayed && confirming === "submit"}
           steps={confirmSteps}
           activeIndex={confirming === "pay" ? 1 : relayed && busy ? 0 : directWriteIndex}
-          action={actionLabel}
-          onConfirm={() => void confirm()}
+          start={confirming === "submit" && !relayed ? () => void confirm() : undefined}
           busy={busy}
-          actionDisabled={confirming === "pay" && !selectedPayment}
           complete={proposed !== null}
           status={
             proposed ??
@@ -600,34 +619,31 @@ function TokenEditDialog({
               : null)
           }
           error={error}
-        >
-          <SummaryRow label="Name">{name.trim()}</SummaryRow>
-          <SummaryRow label="Symbol">{symbol.trim()}</SummaryRow>
-          <SummaryRow label="On">{chainNames}</SummaryRow>
-          {deployed ? (
-            <SummaryRow label="Address">Unchanged</SummaryRow>
-          ) : (
-            <SummaryRow label="Address">Same deterministic address on every chain</SummaryRow>
-          )}
-          {confirming === "pay" && selectedPayment ? (
-            <SummaryRow label="Relay fee">
-              {formatHexEther(selectedPayment.amount)} ETH on{" "}
-              {JB_CHAINS[selectedPayment.chain as JBChainId]?.name ?? selectedPayment.chain}
-            </SummaryRow>
-          ) : null}
-          {quote ? (
-            <RelayrPaymentSelect
-              options={relayrPaymentOptions(quote.payment_info)}
-              value={selectedPayment?.chain ?? null}
-              onValueChange={(chainId) =>
-                setSelectedPayment(
-                  quote.payment_info.find((payment) => payment.chain === chainId) ?? null,
-                )
-              }
-              disabled={busy}
-            />
-          ) : null}
-        </TxConfirmDialog>
+          rows={tokenContext}
+          footerContent={
+            quote ? (
+              <>
+                <RelayrPaymentSelect
+                  options={relayrPaymentOptions(quote.payment_info)}
+                  value={selectedPayment?.chain ?? null}
+                  onValueChange={(chainId) =>
+                    setSelectedPayment(
+                      quote.payment_info.find((payment) => payment.chain === chainId) ?? null,
+                    )
+                  }
+                  disabled={busy}
+                />
+                <Button
+                  className="mt-3 w-full"
+                  disabled={busy || confirming !== "pay" || !selectedPayment}
+                  onClick={() => void confirm()}
+                >
+                  Pay and submit
+                </Button>
+              </>
+            ) : undefined
+          }
+        />
       ) : null}
       <DialogContent className="max-w-xl">
         <DialogHeader>

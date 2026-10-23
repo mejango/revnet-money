@@ -1,20 +1,17 @@
 "use client";
 
+import { useReviewedAction, useSafeTransactionSignature } from "@/hooks/useReviewedAction";
 import {
   useGetRelayrTxQuote,
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
-import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
-import {
-  isSafeConnection,
-  submittedViaSafe,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+import { submittedViaSafe } from "@/lib/held-rows";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { isSafeConnection } from "@/lib/safe-connector";
 import { SAFE_PROPOSAL_ORIGIN } from "@/lib/safe-transactions";
 import { chooseRelayrPayment } from "@/lib/transaction-review";
-import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { gasWithHeadroom, type ReviewContextRow } from "@bananapus/nana-sdk-core/review";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
   listPendingSafeTransactions,
@@ -75,10 +72,10 @@ const REPEATABLE_OPERATOR_WRITES = new Set(["setHookFor", "setTerminalFor", "set
  *   in the Safe app.
  */
 export function useOperatorWrites() {
-  const { writeContractAsync } = useWriteContract();
+  const { run } = useReviewedAction();
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
-  const { signSafeTransactionAsync } = useReviewedSafeSignature();
+  const { signSafeTransactionAsync } = useSafeTransactionSignature();
   const config = useConfig();
   const queryClient = useQueryClient();
 
@@ -86,11 +83,14 @@ export function useOperatorWrites() {
     writes,
     account,
     label,
+    context,
     onProgress,
   }: {
     writes: ChainWrite[];
     account: Address;
     label: string;
+    /** What the writes do, shown first in their review. */
+    context?: readonly ReviewContextRow[];
     onProgress: (message: string) => void;
   }): Promise<OperatorWritesResult> => {
     if (!writes.length) throw new Error("Choose at least one chain.");
@@ -234,12 +234,9 @@ export function useOperatorWrites() {
       isSafeConnection(config) ||
       !areRelayrChainsCompatible(direct.map((write) => write.chainId))
     ) {
-      result.chains = await runSequentialWrites({
-        writes: direct,
-        account,
-        writeContractAsync,
-        onProgress,
-      });
+      result.chains = (
+        await runSequentialWrites({ writes: direct, account, label, run, context })
+      ).length;
       return result;
     }
 

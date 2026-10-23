@@ -8,13 +8,13 @@ import { ConceptTerm } from "@/components/ui/ConceptTerm";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
-import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
+import { isSafeProposalPendingError, reviewClosed } from "@/lib/reviewed-call";
 import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
 import { formatWalletError } from "@/lib/utils";
 import {
@@ -818,6 +818,38 @@ function BuybackActionForm({
     }
   };
 
+  const context = review
+    ? [
+        { label: "On", value: review.map((write) => chainName(write.chainId)).join(", ") },
+        new Set(review.map((write) => (addresses[write.chainId] ?? "").trim())).size === 1
+          ? {
+              label: action.fieldLabel,
+              value: (addresses[review[0].chainId] ?? "").trim(),
+              mono: true,
+            }
+          : {
+              label: action.fieldLabel,
+              value: `${review.length} chains`,
+              lines: review.map(
+                (write) =>
+                  `${chainName(write.chainId)}: ${(addresses[write.chainId] ?? "").trim()}`,
+              ),
+            },
+        ...(kind === "pool" || kind === "setPool"
+          ? [
+              { label: "Fee", value: `${fee} hundredths of a bip` },
+              { label: "Tick spacing", value: String(tickSpacing) },
+            ]
+          : []),
+        ...(kind === "pool"
+          ? [{ label: "Initial price", value: String(sqrtPriceX96), mono: true }]
+          : []),
+        ...(kind === "pool" || kind === "setPool" || kind === "twap"
+          ? [{ label: "TWAP window", value: `${twapWindow}s` }]
+          : []),
+      ]
+    : [];
+
   const submit = async () => {
     if (busy || !address || !review) return;
     setError(null);
@@ -828,6 +860,7 @@ function BuybackActionForm({
         writes: review,
         account: address,
         label: action.title,
+        context,
         onProgress: setStatus,
       });
       if (result.safeProposal) {
@@ -850,7 +883,8 @@ function BuybackActionForm({
       onDone();
     } catch (e) {
       const message = formatWalletError(e) || "Could not complete this action.";
-      if (isSafeProposalPendingError(e)) {
+      if (reviewClosed(e)) setReview(null);
+      else if (isSafeProposalPendingError(e)) {
         setStatus(message);
         setProposed(true);
         toast({ title: "Safe proposal submitted", description: message });
@@ -1017,7 +1051,7 @@ function BuybackActionForm({
       {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
       {error && !review ? <ErrorNote message={error} /> : null}
       {review ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => {
             setReview(null);
@@ -1036,44 +1070,13 @@ function BuybackActionForm({
             },
           ]}
           activeIndex={busy ? 0 : -1}
-          action={action.title}
-          onConfirm={() => void submit()}
+          start={() => void submit()}
           busy={busy}
           status={status}
           complete={proposed}
           error={error}
-        >
-          <SummaryRow label="On">
-            {review.map((write) => chainName(write.chainId)).join(", ")}
-          </SummaryRow>
-          <SummaryRow label={action.fieldLabel}>
-            {new Set(review.map((write) => (addresses[write.chainId] ?? "").trim())).size === 1 ? (
-              <span className="break-all font-mono text-xs">
-                {(addresses[review[0].chainId] ?? "").trim()}
-              </span>
-            ) : (
-              review.map((write) => (
-                <span key={write.chainId} className="block break-all font-mono text-xs">
-                  {chainName(write.chainId)}: {(addresses[write.chainId] ?? "").trim()}
-                </span>
-              ))
-            )}
-          </SummaryRow>
-          {kind === "pool" || kind === "setPool" ? (
-            <>
-              <SummaryRow label="Fee">{fee} hundredths of a bip</SummaryRow>
-              <SummaryRow label="Tick spacing">{tickSpacing}</SummaryRow>
-            </>
-          ) : null}
-          {kind === "pool" ? (
-            <SummaryRow label="Initial price">
-              <span className="break-all font-mono text-xs">{sqrtPriceX96}</span>
-            </SummaryRow>
-          ) : null}
-          {kind === "pool" || kind === "setPool" || kind === "twap" ? (
-            <SummaryRow label="TWAP window">{twapWindow}s</SummaryRow>
-          ) : null}
-        </TxConfirmDialog>
+          rows={context}
+        />
       ) : null}
     </div>
   );

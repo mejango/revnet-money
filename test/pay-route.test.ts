@@ -17,7 +17,7 @@ import {
   NATIVE_TOKEN,
   USDC_ADDRESSES,
 } from "@bananapus/nana-sdk-core";
-import type { PayPreview } from "@bananapus/nana-sdk-core/v6";
+import { PaySwapQuoteFailedError, type PayPreview } from "@bananapus/nana-sdk-core/v6";
 import type { Address, PublicClient } from "viem";
 import { sepolia } from "viem/chains";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -122,6 +122,26 @@ describe("v6 payment route selection", () => {
 
     previewPayMock.mockRejectedValue(new Error("no accounting context"));
     expect(await resolveBestV6PayRoute(routeArgs)).toBeNull();
+  });
+
+  it("passes on a failed swap quote when no other route can be previewed", async () => {
+    previewPayMock.mockImplementation(
+      async (_client: PublicClient, args: { terminal: Address }) => {
+        if (args.terminal.toLowerCase() === ROUTER.toLowerCase())
+          throw new PaySwapQuoteFailedError();
+        throw new Error("no accounting context");
+      },
+    );
+    await expect(resolveBestV6PayRoute(routeArgs)).rejects.toBeInstanceOf(PaySwapQuoteFailedError);
+
+    previewPayMock.mockImplementation(
+      async (_client: PublicClient, args: { terminal: Address }) => {
+        if (args.terminal.toLowerCase() === ROUTER.toLowerCase())
+          throw new PaySwapQuoteFailedError();
+        return preview(50n);
+      },
+    );
+    expect(await resolveBestV6PayRoute(routeArgs)).toMatchObject({ address: MULTI, type: "multi" });
   });
 });
 

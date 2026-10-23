@@ -2,8 +2,8 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { LoadingText } from "@/components/ui/LoadingText";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
+import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import { useHydrated } from "@/hooks/useHydrated";
 import {
   useMultichainBatch,
@@ -38,6 +38,8 @@ const routingCallSteps = {
   reverted: { status: "Reverted", state: "failed" },
   skipped: { status: "Already handled", state: "complete" },
 } as const;
+
+const PENDING_LINE = "Some payments are still pending. Try again to check them and continue.";
 
 export function PendingRoutingPayments({ projects }: { projects: PendingProject[] }) {
   const hydrated = useHydrated();
@@ -244,6 +246,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       return;
     }
     if (!address) return;
+    setReviewed(null);
     setBusy(true);
     setProgress("Preparing routing…");
     try {
@@ -329,6 +332,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       setObsoleteProposals(result.obsoleteSafeProposals ?? []);
       if (result.status === "pending") {
         recoverSavedSubmission();
+        setError(PENDING_LINE);
         return;
       }
       setProgress(
@@ -512,7 +516,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         </div>
       </details>
       <TxError error={open ? null : error} />
-      <TxConfirmDialog
+      <TxProgress
         open={open}
         onClose={closeReview}
         title="Retry payments"
@@ -531,8 +535,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         }))}
         activeIndex={busy ? 0 : -1}
         stepsIntro="Pay network fees only. Each payment has its own result."
-        onConfirm={() => (needsReview ? void review(ready) : void submit())}
-        action={busy ? null : needsReview ? "Review again" : savedSelection ? "Continue" : "Retry"}
+        start={needsReview ? undefined : () => void submit()}
+        preparing={!savedSelection && !reviewed}
         busy={busy && !cancellable}
         footerContent={
           busy && cancellable ? (
@@ -543,15 +547,19 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
             >
               Cancel
             </button>
+          ) : needsReview && !busy ? (
+            <button
+              type="button"
+              className="ml-auto block min-h-[44px] border border-melon-600 px-5 text-sm"
+              disabled={!resume && (checking || unavailable || !ready.length)}
+              onClick={() => void review(ready)}
+            >
+              Review again
+            </button>
           ) : undefined
         }
         error={error}
         status={progress}
-        actionDisabled={
-          needsReview
-            ? !resume && (checking || unavailable || !ready.length)
-            : !savedSelection && !reviewed
-        }
         complete={routed}
       >
         <div className="max-h-80 space-y-4 overflow-y-auto">
@@ -638,7 +646,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
             </div>
           ))}
         </div>
-      </TxConfirmDialog>
+      </TxProgress>
     </section>
   );
 }

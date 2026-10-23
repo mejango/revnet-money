@@ -60,14 +60,34 @@ const client = {
     hash: `0x${"bb".repeat(32)}`,
   }),
 };
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  useWriteContract: (options: typeof mocks.options) => {
-    mocks.options = options;
-    return { writeContractAsync: mocks.write };
-  },
-  requireOnchainExecution: () => {
-    throw new Error("Safe proposal pending");
-  },
+/**
+ * Core's run as Markee sees it: its gates, then `write` as the wallet, then the hash handed back
+ * before the receipt. A throw from `write` is a failure with its own line.
+ */
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useReviewedAction: () => ({
+    run: async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
+      const call = action.calls[0]!;
+      mocks.options = {
+        reverify: () => action.reverify!(call, 0, undefined),
+        beforeSubmission: async () => {
+          await action.beforeWallet!(call, 0);
+        },
+        onSubmissionRejected: async () => {
+          await action.onUnsent!(call, 0);
+        },
+      };
+      let sent: Hex;
+      try {
+        sent = await mocks.write({ ...call, address: call.to, account: action.account });
+      } catch (cause) {
+        return { status: "failed", error: (cause as Error).message, failure: cause };
+      }
+      await action.onSubmitted!(call, 0, sent, { safe: false, adopted: false });
+      return { status: "done", hashes: [sent], receipts: [] };
+    },
+  }),
 }));
 vi.mock("@/lib/markee", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/markee")>();
@@ -261,7 +281,7 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
     const { result } = renderHook(() => useMarkee());
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(() => result.current.createBoard());
-    expect(result.current.error).toContain("Safe proposal pending");
+    expect(result.current.error).toContain("waiting in your Safe");
     expect(result.current.boardAddress).toBeUndefined();
     expect(mocks.receipt).not.toHaveBeenCalled();
   });

@@ -175,7 +175,6 @@ describe("selected-chain shop dialogs", () => {
     fireEvent.change(screen.getByLabelText("Item 1 price on Ethereum"), { target: { value: "2" } });
     fireEvent.change(screen.getByLabelText("Item 1 price on Base"), { target: { value: "3.25" } });
     fireEvent.click(screen.getByRole("button", { name: "Add items" }));
-    fireEvent.click(await confirmAction("Add items"));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledOnce());
     const input = mocks.runBatch.mock.calls[0][0];
     expect(input.scope).toBe("shop-add:1:7");
@@ -229,11 +228,10 @@ describe("selected-chain shop dialogs", () => {
     const view = mount("add");
     fireEvent.change(screen.getByLabelText("Item 1 price on Ethereum"), { target: { value: "1" } });
     fireEvent.click(screen.getByRole("button", { name: "Add items" }));
-    fireEvent.click(await confirmAction("Add items"));
     await screen.findByText("Network result unknown");
     expect(screen.getByRole("checkbox", { name: "Add on Base" })).toBeDisabled();
     // The failed send leaves the frozen batch in the confirm to send again.
-    fireEvent.click(await confirmAction("Add items"));
+    fireEvent.click(await confirmAction("Try again"));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(2));
     expect(mocks.pinDraftItems).toHaveBeenCalledOnce();
     expect(mocks.runBatch.mock.calls[1][0].calls).toEqual(mocks.runBatch.mock.calls[0][0].calls);
@@ -261,7 +259,6 @@ describe("selected-chain shop dialogs", () => {
     expect(mocks.pinMediaEdits).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Item on Base"), { target: { value: "12" } });
     fireEvent.click(screen.getByRole("button", { name: "Review media update" }));
-    fireEvent.click(await confirmAction("Replace media"));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledOnce());
     const calls = mocks.runBatch.mock.calls[0][0].calls;
     expect(calls).toHaveLength(2);
@@ -298,19 +295,6 @@ describe("selected-chain shop dialogs", () => {
     expect(mocks.pinMediaEdits).not.toHaveBeenCalled();
   });
 
-  it("goes back to the items with Cancel, and adds nothing", async () => {
-    mount("add");
-    fireEvent.change(screen.getByLabelText("Item 1 price on Ethereum"), { target: { value: "1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add items" }));
-    const confirm = await findConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(confirmIsOpen()).toBe(false));
-    expect(mocks.pinDraftItems).not.toHaveBeenCalled();
-    expect(mocks.runBatch).not.toHaveBeenCalled();
-  });
-
   it("refuses every way out while the items are added, then closes once they land", async () => {
     let finish!: (outcome: unknown) => void;
     mocks.runBatch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
@@ -318,10 +302,8 @@ describe("selected-chain shop dialogs", () => {
     fireEvent.change(screen.getByLabelText("Item 1 price on Ethereum"), { target: { value: "1" } });
     fireEvent.click(screen.getByRole("button", { name: "Add items" }));
     const confirm = await findConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Add items" }));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledOnce());
 
-    expect(within(confirm).getByRole("button", { name: "Add items" })).toBeDisabled();
     expectEveryWayOutRefused(confirm);
 
     finish({ status: "success", hashes: [] });
@@ -338,7 +320,6 @@ describe("selected-chain shop dialogs", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Review media update" }));
     const confirm = await findConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Replace media" }));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledOnce());
 
     expectEveryWayOutRefused(confirm);

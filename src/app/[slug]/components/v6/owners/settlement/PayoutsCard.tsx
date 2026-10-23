@@ -4,10 +4,11 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
+import { reviewClosed } from "@/lib/review-refusal";
 import { formatWalletError } from "@/lib/utils";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import { useQuery } from "@tanstack/react-query";
@@ -30,6 +31,21 @@ type ReviewedPayout = {
   account: Address;
   destinations: { option: PayoutOption; call: ReturnType<typeof buildPayoutCall> }[];
 };
+
+/** Each payout's amount, floor, ruleset, terminal, token and recipients, as its review shows them. */
+function payoutContext(review: ReviewedPayout) {
+  return review.destinations.map(({ option, call }) => ({
+    label: `Project #${option.projectId} on ${chainName(option.chainId)}`,
+    value: `${formatUnits(call.args[2], option.decimals)} ${payoutCurrencyLabel(option)}`,
+    lines: [
+      `Minimum ${formatUnits(call.args[4], option.decimals)} ${option.symbol} before fees`,
+      `Ruleset ${option.rulesetId}, cycle ${option.cycleNumber}`,
+      `Terminal ${option.terminal}`,
+      `Token ${option.token}`,
+      ...payoutRecipients(option, review.account),
+    ],
+  }));
+}
 
 function defaultMinimum(option: PayoutOption, amount: string): string {
   try {
@@ -128,6 +144,7 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
       if (!resume) gate.assertVerified(review!.destinations.map(({ option }) => option));
       const outcome = await runBatch({
         label: "Send project payouts",
+        context: resume ? undefined : payoutContext(review!),
         scope,
         calls: resume ? [] : review!.destinations.map(({ call }) => call),
         onProgress: setStatus,
@@ -140,7 +157,8 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
       setReview(null);
       if (outcome.status === "success") await refetch();
     } catch (failure) {
-      setError(formatWalletError(failure) || "Could not send payouts.");
+      if (reviewClosed(failure)) setReview(null);
+      else setError(formatWalletError(failure) || "Could not send payouts.");
     } finally {
       setBusy(false);
     }
@@ -303,49 +321,23 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
       ) : null}
       <TxError error={review ? null : error} />
       {review ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => {
             if (!busy) setReview(null);
           }}
           title="Review project payouts"
-          action="Send payouts"
           steps={review.destinations.map(({ option }) => ({
             key: option.key,
             title: `Send payouts on ${chainName(option.chainId)}`,
           }))}
           activeIndex={busy ? 0 : -1}
-          onConfirm={() => void submit()}
+          start={() => void submit()}
           busy={busy}
           status={status}
           error={error}
-        >
-          {review.destinations.map(({ option, call }) => (
-            <SummaryRow
-              key={option.key}
-              label={`Project #${option.projectId} on ${chainName(option.chainId)}`}
-            >
-              <span>
-                {formatUnits(call.args[2], option.decimals)} {payoutCurrencyLabel(option)}
-              </span>
-              <span className="block text-xs text-zinc-500">
-                Minimum {formatUnits(call.args[4], option.decimals)} {option.symbol} before fees
-              </span>
-              <span className="block text-xs text-zinc-500">
-                Ruleset {option.rulesetId}, cycle {option.cycleNumber}
-              </span>
-              <span className="block break-all text-xs text-zinc-500">
-                Terminal {option.terminal}
-              </span>
-              <span className="block break-all text-xs text-zinc-500">Token {option.token}</span>
-              {payoutRecipients(option, review.account).map((recipient, index) => (
-                <span key={index} className="block break-all text-xs">
-                  {recipient}
-                </span>
-              ))}
-            </SummaryRow>
-          ))}
-        </TxConfirmDialog>
+          rows={payoutContext(review)}
+        />
       ) : null}
     </section>
   );

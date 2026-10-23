@@ -5,17 +5,17 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import {
-  isSafeProposalPendingError,
-  isSafeProposalUnconfirmedError,
-  requireOnchainExecution,
+  failedLine,
+  reviewedCall,
+  ReviewRefusal,
+  SAFE_PROPOSAL_PENDING_LINE,
   SAFE_PROPOSAL_UNCONFIRMED_LINE,
-  SAFE_PROPOSAL_UNCONFIRMED_TITLE,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+  useReviewedAction,
+  type ReviewedCall,
+} from "@/hooks/useReviewedAction";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { legacyIntents } from "@/lib/legacy-intents";
@@ -30,10 +30,8 @@ import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
 import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
 import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
-import { approvalIntent, loanIntent } from "@bananapus/nana-sdk-core/review";
+import { approvalIntent, loanIntent, writeIntentKey } from "@bananapus/nana-sdk-core/review";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Address, erc20Abi, formatUnits, isAddressEqual, parseUnits } from "viem";
@@ -202,17 +200,14 @@ export function RepayDialog({
     : undefined;
 
   // Repay loan hook
-  const { writeContractAsync: repayLoanAsync, isPending: isRepaying } = useWriteContract();
+  const repay = useReviewedAction();
+  const isRepaying =
+    repay.phase === "review" || repay.phase === "simulating" || repay.phase === "signing";
 
-  // Transaction status tracking
-  const {
-    isLoading: isRepayTxLoading,
-    isSuccess: isRepaySuccess,
-    isSafeResultUnconfirmed: isRepayUnconfirmed,
-  } = useWaitForTransactionReceipt({
-    hash: repayTxHash,
-    chainId,
-  });
+  // Transaction status tracking: the repayment's own transaction, once sent.
+  const isRepayTxLoading = !!repayTxHash && repay.phase === "receipt";
+  const isRepaySuccess = !!repayTxHash && repay.phase === "done";
+  const isRepayUnconfirmed = repay.phase === "proposed" && !!repay.held?.exit;
 
   // ===== HELPER FUNCTIONS =====
   const formatCollateralAmount = useCallback(
@@ -495,16 +490,99 @@ export function RepayDialog({
     if (repayStatus === "pending" || repayStatus === "success") setReview(null);
   }, [repayStatus]);
 
+  // What the review shows first; read when the repayment runs, after every value is set.
+  const repayContext = () =>
+    finalRepayAmount === undefined || !loanData
+      ? []
+      : [
+          ...(review === "repay"
+            ? [
+                { label: "Returns", value: `${collateralToReturn} ${tokenSymbol}`, strong: true },
+                { label: "On", value: chainDisplayName(chainId) },
+                {
+                  label: "Pays now",
+                  value:
+                    amountToPayNow !== undefined
+                      ? `${formatUnits(amountToPayNow, baseTokenDecimals)} ${baseTokenSymbol}`
+                      : "Calculated by the contract",
+                  ...(feeForThisRepay !== undefined && feeForThisRepay > 0n
+                    ? {
+                        note: `Includes ${formatUnits(feeForThisRepay, baseTokenDecimals)} ${baseTokenSymbol} source fee`,
+                      }
+                    : {}),
+                },
+                ...(repayPrincipal !== undefined && loanData.amount - repayPrincipal > 0n
+                  ? [
+                      {
+                        label: "Debt left in a new loan",
+                        value: `${formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)} ${baseTokenSymbol}`,
+                      },
+                    ]
+                  : []),
+              ]
+            : [{ label: "On", value: chainDisplayName(chainId) }]),
+          {
+            label: "Authorizes up to",
+            value: `${formatUnits(finalRepayAmount, baseTokenDecimals)} ${baseTokenSymbol}`,
+            note: "The unused part is refunded",
+          },
+        ];
+
   // ===== EVENT HANDLERS =====
   /**
-   * Shows a step refused by its Safe proposal whose result can't be confirmed, which is not a
-   * failure: true when `error` is that refusal.
+   * Runs the reviewed steps of a repayment; a step that went to the Safe ends it there. A failed
+   * run throws its line.
    */
-  const showUnconfirmedProposal = (error: unknown) => {
-    if (!isSafeProposalUnconfirmedError(error)) return false;
-    setRepayStatus("safe-unconfirmed");
-    toast({ title: SAFE_PROPOSAL_UNCONFIRMED_TITLE, description: error.message });
-    return true;
+  const runRepay = async (calls: ReviewedCall[]) => {
+    const result = await repay.run({
+      account: userAddress as Address,
+      context: repayContext(),
+      ...(calls.length > 1
+        ? {
+            title: "Repay loan",
+            scope: writeIntentKey("repay", {
+              loan: loanIntent({ chainId, loanId: BigInt(loanId) }),
+            }),
+          }
+        : {}),
+      beforeWallet: (call) =>
+        setRepayStatus(call.functionName === "approve" ? "approving" : "waiting-signature"),
+      onSubmitted: (call, _step, hash) => {
+        if (call.functionName === "repayLoan") setRepayTxHash(hash);
+      },
+      calls,
+    });
+    if (!result) {
+      setRepayStatus("idle");
+      setReview(null);
+    }
+    if (result?.status === "failed") throw new ReviewRefusal(failedLine(result));
+    if (result?.status === "proposed") {
+      setRepayStatus("pending");
+      toast({ title: "Safe proposal submitted", description: SAFE_PROPOSAL_PENDING_LINE });
+    }
+    return result;
+  };
+
+  /** The approval of exactly what this repayment can pull, held by the loan it repays. */
+  const approvalCall = (token: Address, amount: bigint) => {
+    const spender = getRevnetLoanContract(6, chainId) as Address;
+    return reviewedCall(
+      {
+        chainId,
+        address: token,
+        abi: erc20ApproveAbi,
+        functionName: "approve",
+        args: [spender, amount],
+      },
+      {
+        intent: approvalIntent(loanIntent({ chainId, loanId: BigInt(loanId) }), {
+          step: "repay",
+          token,
+          spender,
+        }),
+      },
+    );
   };
 
   /**
@@ -548,30 +626,11 @@ export function RepayDialog({
       setRepayStatus("approving");
       if (!(await confirmLoanSource())) return;
       const baseTokenAddress = chainTokenConfig.token;
-      const revLoansContractAddress = getRevnetLoanContract(6, chainId);
 
       // Held by the loan it repays: the accrued amount grows between attempts.
-      const approveHash = await withWriteIntent(
-        repayLoanAsync,
-        approvalIntent(loanIntent({ chainId, loanId: BigInt(loanId) }), {
-          step: "repay",
-          token: baseTokenAddress,
-          spender: revLoansContractAddress,
-        }),
-      )({
-        chainId,
-        address: baseTokenAddress,
-        abi: erc20ApproveAbi,
-        functionName: "approve",
-        // Approve exactly what this repayment can pull, not the whole loan.
-        args: [revLoansContractAddress as Address, finalRepayAmount],
-      });
-
-      requireOnchainExecution(approveHash);
-      const approvalReceipt = await waitForReceiptWithRetry(publicClient, approveHash);
-      if (approvalReceipt.status !== "success") {
-        throw new Error(`Token approval ${approveHash} reverted onchain.`);
-      }
+      // Approve exactly what this repayment can pull, not the whole loan.
+      const approved = await runRepay([approvalCall(baseTokenAddress, finalRepayAmount)]);
+      if (approved?.status !== "done") return;
 
       // Reset allowance check to trigger re-check
       setAllowanceChecked(false);
@@ -583,12 +642,6 @@ export function RepayDialog({
         description: "Token use approved. You can now repay.",
       });
     } catch (error: any) {
-      if (isSafeProposalPendingError(error)) {
-        setRepayStatus("pending");
-        toast({ title: "Safe approval proposal submitted", description: error.message });
-        return;
-      }
-      if (showUnconfirmedProposal(error)) return;
       setRepayStatus("error");
       toast({
         variant: "destructive",
@@ -602,7 +655,6 @@ export function RepayDialog({
     if (
       !loanData ||
       !userAddress ||
-      !repayLoanAsync ||
       !publicClient ||
       !walletClient ||
       !chainTokenConfig ||
@@ -629,90 +681,58 @@ export function RepayDialog({
         loanData.collateral,
       );
 
-      // Check allowance for ERC-20-based projects
+      // An ERC-20 repayment approves exactly what it can pull first, in the same review.
+      const calls: ReviewedCall[] = [];
       if (!isNativeToken(chainTokenConfig.token)) {
-        const baseTokenAddress = chainTokenConfig.token;
-        const revLoansContractAddress = getRevnetLoanContract(6, chainId);
-
+        const baseTokenAddress = chainTokenConfig.token as Address;
         const allowance = await publicClient.readContract({
           address: baseTokenAddress,
           abi: erc20Abi,
           functionName: "allowance",
-          args: [userAddress as Address, revLoansContractAddress as Address],
+          args: [userAddress as Address, getRevnetLoanContract(6, chainId) as Address],
         });
-
-        if (BigInt(allowance) < maxRepayBorrowAmount) {
-          setRepayStatus("approving");
-
-          if (!walletClient) {
-            throw new Error("Wallet client not available");
-          }
-
-          const approveHash = await withWriteIntent(
-            repayLoanAsync,
-            approvalIntent(loanIntent({ chainId, loanId: BigInt(loanId) }), {
-              step: "repay",
-              token: baseTokenAddress,
-              spender: revLoansContractAddress,
-            }),
-          )({
-            chainId,
-            address: baseTokenAddress,
-            abi: erc20ApproveAbi,
-            functionName: "approve",
-            args: [revLoansContractAddress as Address, maxRepayBorrowAmount],
-          });
-
-          requireOnchainExecution(approveHash);
-          const approvalReceipt = await waitForReceiptWithRetry(publicClient, approveHash);
-          if (approvalReceipt.status !== "success") {
-            throw new Error(`Token approval ${approveHash} reverted onchain.`);
-          }
-          setRepayStatus("waiting-signature");
-        }
+        if (BigInt(allowance) < maxRepayBorrowAmount)
+          calls.push(approvalCall(baseTokenAddress, maxRepayBorrowAmount));
       }
 
       // Held by the loan and the collateral the user returns: the repay ceiling accrues.
       // Held by the loan alone: the collateral returned and the ceiling paid change between
       // attempts (accrual, a reopen's fresh default).
-      const txHash = await withWriteIntent(
-        repayLoanAsync,
-        loanIntent({ chainId, loanId: BigInt(loanId) }),
-        legacyIntents.repay(loanId),
-      )({
-        abi: revLoansAbi,
-        functionName: "repayLoan",
-        address: getRevnetLoanContract(6, chainId),
-        chainId,
-        args: [
-          loanIdBigInt,
-          maxRepayBorrowAmount,
-          collateralCountToReturn,
-          userAddress as Address,
+      calls.push(
+        reviewedCall(
           {
-            sigDeadline: 0n,
-            amount: 0n,
-            expiration: 0,
-            nonce: 0,
-            signature:
-              "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
+            abi: revLoansAbi,
+            functionName: "repayLoan",
+            address: getRevnetLoanContract(6, chainId),
+            chainId,
+            args: [
+              loanIdBigInt,
+              maxRepayBorrowAmount,
+              collateralCountToReturn,
+              userAddress as Address,
+              {
+                sigDeadline: 0n,
+                amount: 0n,
+                expiration: 0,
+                nonce: 0,
+                signature:
+                  "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`,
+              },
+            ],
+            // Repay cost accrues continuously, so a quoted exact value can be stale by send time
+            // and underfund the repay. Send the ceiling (principal + accrued source fee + buffer);
+            // the contract refunds the excess.
+            value: isNativeToken(chainTokenConfig.token) ? maxRepayBorrowAmount : 0n,
           },
-        ],
-        // Repay cost accrues continuously, so a quoted exact value can be stale by send time and
-        // underfund the repay. Send the ceiling (principal + accrued source fee + buffer); the
-        // contract refunds the excess.
-        value: isNativeToken(chainTokenConfig.token) ? maxRepayBorrowAmount : 0n,
-        account: userAddress as Address,
-      });
-
-      setRepayTxHash(txHash);
+          {
+            intent: loanIntent({ chainId, loanId: BigInt(loanId) }),
+            legacyIntents: legacyIntents.repay(loanId),
+            dependsOnPrior: calls.length > 0,
+          },
+        ),
+      );
+      await runRepay(calls);
     } catch (error: any) {
-      if (isSafeProposalPendingError(error)) {
-        setRepayStatus("pending");
-        toast({ title: "Safe approval proposal submitted", description: error.message });
-        return;
-      }
-      if (showUnconfirmedProposal(error)) return;
       setRepayStatus("error");
       toast({
         variant: "destructive",
@@ -1021,7 +1041,7 @@ export function RepayDialog({
           </div>
         </div>
         {review && finalRepayAmount !== undefined ? (
-          <TxConfirmDialog
+          <TxProgress
             open
             onClose={() => setReview(null)}
             title={review === "approve" ? "Confirm approval" : "Confirm repayment"}
@@ -1043,8 +1063,7 @@ export function RepayDialog({
                   ]
             }
             activeIndex={signing ? 0 : -1}
-            action={review === "approve" ? `Approve ${baseTokenSymbol}` : "Repay loan"}
-            onConfirm={() => {
+            start={() => {
               if (review === "approve")
                 void handleApproveAllowance().finally(() => setReview(null));
               else void handleRepay();
@@ -1052,39 +1071,8 @@ export function RepayDialog({
             busy={signing}
             status={signing || repayStatus === "safe-unconfirmed" ? statusText : null}
             error={loanSourceLine ?? (repayStatus === "error" ? statusText : null)}
-          >
-            {review === "repay" ? (
-              <>
-                <SummaryRow label="Returns">
-                  {collateralToReturn} {tokenSymbol}
-                </SummaryRow>
-                <SummaryRow label="On">{chainDisplayName(chainId)}</SummaryRow>
-                <SummaryRow label="Pays now">
-                  {amountToPayNow !== undefined
-                    ? `${formatUnits(amountToPayNow, baseTokenDecimals)} ${baseTokenSymbol}`
-                    : "Calculated by the contract"}
-                  {feeForThisRepay !== undefined && feeForThisRepay > 0n ? (
-                    <span className="block text-xs text-zinc-500">
-                      Includes {formatUnits(feeForThisRepay, baseTokenDecimals)} {baseTokenSymbol}{" "}
-                      source fee
-                    </span>
-                  ) : null}
-                </SummaryRow>
-                {repayPrincipal !== undefined && loanData.amount - repayPrincipal > 0n ? (
-                  <SummaryRow label="Debt left in a new loan">
-                    {formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)}{" "}
-                    {baseTokenSymbol}
-                  </SummaryRow>
-                ) : null}
-              </>
-            ) : (
-              <SummaryRow label="On">{chainDisplayName(chainId)}</SummaryRow>
-            )}
-            <SummaryRow label="Authorizes up to">
-              {formatUnits(finalRepayAmount, baseTokenDecimals)} {baseTokenSymbol}
-              <span className="block text-xs text-zinc-500">The unused part is refunded</span>
-            </SummaryRow>
-          </TxConfirmDialog>
+            rows={repayContext()}
+          />
         ) : null}
       </DialogContent>
     </Dialog>

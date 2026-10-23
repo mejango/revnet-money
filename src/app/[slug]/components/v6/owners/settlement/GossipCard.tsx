@@ -3,23 +3,21 @@
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
-import { submittedViaSafe, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import { failedLine, reviewedCall, useReviewedAction } from "@/hooks/useReviewedAction";
 import { legacyIntents } from "@/lib/legacy-intents";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { PERSIST } from "@/lib/query-persist";
 import { formatWalletError } from "@/lib/utils";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { bridgeIntent } from "@bananapus/nana-sdk-core/review";
 import { buildSyncAccountingDataTx } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Address, zeroAddress } from "viem";
-import { useAccount, usePublicClient } from "wagmi";
+import { useAccount } from "wagmi";
 import {
   chainName,
   ChainProject,
@@ -72,12 +70,24 @@ function SyncButton({
   // The peer's project comes from the server sucker-group list: sync only a registry-listed pair.
   const gate = useGroupWriteGate([peerProject]);
   const { address } = useAccount();
-  const publicClient = usePublicClient({ chainId: peerChainId });
-  const { writeContractAsync } = useWriteContract();
+  const { run } = useReviewedAction();
   const [state, setState] = useState<"idle" | "finding" | "working" | "sent">("idle");
   const [review, setReview] = useState<{ value: bigint } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const nativeSymbol = viemChainOf(peerChainId)?.nativeCurrency.symbol ?? "ETH";
+  const context = [
+    { label: "On", value: chainName(peerChainId) },
+    { label: "Pushes to", value: chainName(toChainId) },
+    ...(review
+      ? [
+          {
+            label: "Bridge fee",
+            value: `${fmtUnits(review.value, 18)} ${nativeSymbol}`,
+            note: "Found by simulation",
+          },
+        ]
+      : []),
+  ];
 
   return (
     <>
@@ -114,7 +124,7 @@ function SyncButton({
       </ButtonWithWallet>
       {gate.line ? <p className="mt-1 text-xs text-zinc-600">{gate.line}</p> : null}
       {review || state === "finding" ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReview(null)}
           title="Confirm sync"
@@ -127,10 +137,10 @@ function SyncButton({
             },
           ]}
           activeIndex={state === "working" ? 0 : -1}
-          action="Sync"
           busy={state !== "idle"}
           error={error}
-          onConfirm={async () => {
+          rows={context}
+          start={async () => {
             if (!review) return;
             try {
               gate.assertVerified([peerProject]);
@@ -141,24 +151,30 @@ function SyncButton({
                 sucker: syncSucker,
                 value: review.value,
               });
-              // Simulate the exact tx (account + value) before prompting the wallet.
-              await publicClient?.simulateContract({
-                account: address,
-                ...request,
-              });
               // Held by the sucker and account (a sync moves no one token: the zero address
               // names the whole sucker); the bridge fee is simulated again on a reopen.
-              const hash = await withWriteIntent(
-                writeContractAsync,
-                bridgeIntent({
-                  chainId: peerChainId,
-                  sucker: syncSucker,
-                  token: zeroAddress,
-                  account: address!,
-                }),
-                legacyIntents.sync(syncSucker),
-              )(request);
-              if (submittedViaSafe(hash)) {
+              const result = await run({
+                account: address,
+                context,
+                calls: [
+                  reviewedCall(request, {
+                    intent: bridgeIntent({
+                      chainId: peerChainId,
+                      sucker: syncSucker,
+                      token: zeroAddress,
+                      account: address!,
+                    }),
+                    legacyIntents: legacyIntents.sync(syncSucker),
+                  }),
+                ],
+              });
+              if (!result || result.status === "failed") {
+                setState("idle");
+                if (result) setError(failedLine(result));
+                else setReview(null);
+                return;
+              }
+              if (result.status === "proposed") {
                 setState("sent");
                 setReview(null);
                 toast({
@@ -166,11 +182,6 @@ function SyncButton({
                   description: `The sync is awaiting Safe approvals and execution on ${chainName(peerChainId)}.`,
                 });
                 return;
-              }
-              if (!publicClient) throw new Error("Public client unavailable.");
-              const receipt = await waitForReceiptWithRetry(publicClient, hash);
-              if (receipt.status !== "success") {
-                throw new Error(`Accounting sync ${hash} reverted onchain.`);
               }
               setState("sent");
               setReview(null);
@@ -185,16 +196,7 @@ function SyncButton({
               setError(formatWalletError(cause));
             }
           }}
-        >
-          <SummaryRow label="On">{chainName(peerChainId)}</SummaryRow>
-          <SummaryRow label="Pushes to">{chainName(toChainId)}</SummaryRow>
-          {review ? (
-            <SummaryRow label="Bridge fee">
-              {fmtUnits(review.value, 18)} {nativeSymbol}
-              <span className="block text-xs text-zinc-500">Found by simulation</span>
-            </SummaryRow>
-          ) : null}
-        </TxConfirmDialog>
+        />
       ) : null}
     </>
   );

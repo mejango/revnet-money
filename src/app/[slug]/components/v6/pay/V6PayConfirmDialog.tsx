@@ -9,15 +9,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { SummaryRow } from "@/components/ui/TxConfirmDialog";
+import { SummaryRow } from "@/components/ui/TxProgress";
 import { TxSteps } from "@/components/ui/TxSteps";
 import { etherscanLink } from "@/lib/utils";
-import { formatPayAmount, V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
-import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import { PAY_MAX_SLIPPAGE_BPS, PAY_QUOTE_FAILED_MESSAGE } from "@bananapus/nana-sdk-core/v6";
+import { useEffect, useRef } from "react";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
+import { payContext } from "./payContext";
+
+export { payContext };
 
 export type V6PayPhase =
   | "preparing"
@@ -84,9 +88,10 @@ const PHASE_LABELS: Record<Exclude<V6PayPhase, "ready" | "safe-proposed" | "succ
 };
 
 /**
- * The confirm-before-send dialog: a human summary of exactly what will be
- * sent and the wallet-aware action button. The payment card owns route and
- * chain selection; this dialog only confirms the resolved transaction.
+ * The payment's progress: a human summary of what is sent, its wallet steps,
+ * and a recovery button after a failure. It never confirms: the payment's one
+ * review opens as soon as it is prepared. The payment card owns route and chain
+ * selection.
  */
 export function V6PayConfirmDialog({
   open,
@@ -97,6 +102,7 @@ export function V6PayConfirmDialog({
   error,
   reviewAgain,
   retrySlippage,
+  quoteSettled = true,
   projectTokenSymbol,
   txHash,
   onConfirm,
@@ -112,6 +118,8 @@ export function V6PayConfirmDialog({
   reviewAgain?: boolean;
   /** After a minimum shortfall: the looser tolerance the payment is reviewed again with. */
   retrySlippage?: { bps: number; onChange: (bps: number) => void } | null;
+  /** The route quote the payment is checked against has settled; its review waits for it. */
+  quoteSettled?: boolean;
   projectTokenSymbol: string;
   txHash: `0x${string}` | undefined;
   onConfirm: () => void;
@@ -127,7 +135,16 @@ export function V6PayConfirmDialog({
   const { address } = useAccount();
   const { selectedSucker } = useSelectedSucker();
   const chainId = prepared?.chainId ?? selectedSucker.peerChainId;
-  const chainMeta = JB_CHAINS[chainId];
+  // The payment's one review opens as soon as it is prepared; the button is only for recovery.
+  const recovering = !!error || !!retrySlippage || !!reviewAgain;
+  const started = useRef<PreparedV6Pay | null>(null);
+  useEffect(() => {
+    if (!open) started.current = null;
+    if (!open || phase !== "ready" || !prepared || recovering || !address || !quoteSettled) return;
+    if (started.current === prepared) return;
+    started.current = prepared;
+    onConfirm();
+  }, [open, phase, prepared, recovering, address, quoteSettled, onConfirm]);
 
   return (
     <Dialog
@@ -205,35 +222,14 @@ export function V6PayConfirmDialog({
                     </div>
                   ) : prepared ? (
                     <div className="flex flex-col gap-3 py-2">
-                      <SummaryRow label="Send">
-                        {formatPayAmount(prepared.amount, prepared.token.decimals)}{" "}
-                        {prepared.token.symbol}
-                      </SummaryRow>
-                      <SummaryRow label="On">
-                        {chainMeta?.name ?? String(prepared.chainId)}
-                      </SummaryRow>
-                      {prepared.mode === "pay" ? (
-                        <>
-                          <SummaryRow label="You get at least">
-                            {formatPayAmount(prepared.minReturned, 18)} {projectTokenSymbol}
-                          </SummaryRow>
-                          {prepared.quoteFailed && !busy && !error ? (
-                            <p className="text-xs text-zinc-600">{PAY_QUOTE_FAILED_MESSAGE}</p>
-                          ) : null}
-                        </>
-                      ) : (
-                        <SummaryRow label="Effect">
-                          Adds money to the project without giving you tokens.
+                      {payContext(prepared, projectTokenSymbol).map((row) => (
+                        <SummaryRow key={row.label} label={row.label}>
+                          {row.value}
                         </SummaryRow>
-                      )}
-                      {prepared.cartRows.length > 0 ? (
-                        <SummaryRow label="Items">
-                          {prepared.cartRows
-                            .map((row) => `${row.quantity}× ${row.name}`)
-                            .join(", ")}
-                        </SummaryRow>
+                      ))}
+                      {prepared.mode === "pay" && prepared.quoteFailed && !busy && !error ? (
+                        <p className="text-xs text-zinc-600">{PAY_QUOTE_FAILED_MESSAGE}</p>
                       ) : null}
-                      {prepared.memo ? <SummaryRow label="Note">{prepared.memo}</SummaryRow> : null}
                       {/* Each action's exact payload is reviewed in the one
                           transaction safety check, the same shell every
                           multi-step flow uses. */}
@@ -261,22 +257,26 @@ export function V6PayConfirmDialog({
                     <p className="py-4 text-sm text-red-600">{error}</p>
                   ) : null}
 
-                  <div className="flex justify-end">
-                    {/* The pay card asks for a wallet before this opens, and the payment's own
+                  {recovering || (!prepared && phase !== "preparing") ? (
+                    <div className="flex justify-end">
+                      {/* The pay card asks for a wallet before this opens, and the payment's own
                         writes switch the wallet to its chain after review. */}
-                    <Button
-                      loading={busy || (phase === "preparing" && !!address)}
-                      disabled={!address}
-                      onClick={onConfirm}
-                      className="bg-teal-500 text-melon-950 hover:bg-teal-600"
-                    >
-                      {retrySlippage || reviewAgain
-                        ? "Review again"
-                        : mode === "pay"
-                          ? "Pay"
-                          : "Add to balance"}
-                    </Button>
-                  </div>
+                      <Button
+                        loading={busy || (phase === "preparing" && !!address)}
+                        disabled={!address}
+                        onClick={onConfirm}
+                        className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+                      >
+                        {retrySlippage || reviewAgain
+                          ? "Review again"
+                          : !prepared
+                            ? "Try again"
+                            : mode === "pay"
+                              ? "Pay"
+                              : "Add to balance"}
+                      </Button>
+                    </div>
+                  ) : null}
                 </>
               )}
             </div>

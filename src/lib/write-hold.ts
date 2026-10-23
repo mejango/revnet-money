@@ -18,11 +18,10 @@ import {
   writeIntentKey,
   type WriteHeldState,
   type WriteHoldClient,
-  type WriteHoldGate,
   type WriteHoldHandle,
   type WriteHoldState,
 } from "@bananapus/nana-sdk-core/review";
-import type { HeldSendInput, UseHeldSendResult } from "@bananapus/nana-sdk-core/review/react";
+import type { HeldSendInput } from "@bananapus/nana-sdk-core/review/react";
 import { encodeMultiSend, MULTI_SEND_CALL_ONLY } from "@bananapus/nana-sdk-core/safe";
 import { type Address, type Hex } from "viem";
 
@@ -41,7 +40,7 @@ export type HoldInput = HeldSendInput;
  * intent also answers for the exact-call holds an earlier build left: its call, and any call of
  * the same function on the same target.
  */
-export function safeHoldInputOf(chainId: number, proposal: ReviewedSafeProposal): HoldInput {
+function safeHoldInputOf(chainId: number, proposal: ReviewedSafeProposal): HoldInput {
   const [first] = proposal.calls;
   if (!first) throw new Error("A Safe proposal runs at least one call.");
   const call = proposal.batch
@@ -119,11 +118,6 @@ export function holdOf(input: HoldInput): WriteHoldHandle {
   );
 }
 
-/** The hold handle of a Safe proposal. */
-export function safeHoldOf(chainId: number, proposal: ReviewedSafeProposal): WriteHoldHandle {
-  return holdOf(safeHoldInputOf(chainId, proposal));
-}
-
 /**
  * The exact-call holds an earlier build left for a write now held by intent: its own call, and,
  * for an earlier attempt whose calldata a retry regenerates, any call of the same function on the
@@ -194,78 +188,45 @@ function endedLine(state: WriteHoldState): string | undefined {
 }
 
 /**
- * One send through the SDK's held send (`send`, from useHeldSend), with the flow's dialogs on its
- * refusals: a held write offers the hold's exit (the review reopens after the hold releases it); a
- * success that settled while the user was away asks before sending it again; anything else ends
- * the send with the hold's line.
+ * The answer to a send the hold refused, with the flow's dialogs: a held write offers the hold's
+ * exit, and a success that settled while the user was away asks before sending it again. True
+ * once the user's answer lets the action be reviewed again; anything else throws the line it ends
+ * with (the hold's own, or how the chain ended it meanwhile).
  */
-export async function sendHeld(
-  send: UseHeldSendResult["send"],
-  input: HoldInput,
+export async function answerHeldRefusal(
+  error: unknown,
+  handle: WriteHoldHandle,
   client: WriteHoldClient,
-  run: (gate: WriteHoldGate) => Promise<Hex>,
-): Promise<Hex> {
-  for (;;) {
-    try {
-      return await send(input, run);
-    } catch (error) {
-      const handle = holdOf(input);
-      if (error instanceof Error && error.message === HELD_AWAY_SUCCESS_LINE) {
-        const success = handle.unacknowledgedSuccess();
-        if (!success || !(await confirmSendAgain())) throw error;
-        await handle.acknowledge(success);
-        continue;
-      }
-      // Another window sent this write while its review was open: review it again.
-      if (error instanceof WriteHoldStaleReviewError)
-        throw new Error(error.settled ? settledLine(error.settled) : WRITE_HOLD_STALE_REVIEW_LINE);
-      // Busy with this tab's own read of the same write: the hold's line says why.
-      if (error instanceof WriteHoldBusyError) {
-        const now = handle.peek();
-        if (now.status !== "clear") throw new Error(heldLineOf(now));
-      }
-      if (!(error instanceof WriteHeldError)) throw error;
-      if (!error.state.exit) throw new Error(heldLineOf(error.state));
-      const ended = await takeExit(handle, client, error.state);
-      if (ended.released) continue;
-      throw new Error((ended.state && endedLine(ended.state)) ?? heldLineOf(error.state));
-    }
+): Promise<true> {
+  if (error instanceof Error && error.message === HELD_AWAY_SUCCESS_LINE) {
+    const success = handle.unacknowledgedSuccess();
+    if (!success || !(await confirmSendAgain())) throw error;
+    await handle.acknowledge(success);
+    return true;
   }
+  // Another window sent this write while its review was open: review it again.
+  if (error instanceof WriteHoldStaleReviewError)
+    throw new Error(error.settled ? settledLine(error.settled) : WRITE_HOLD_STALE_REVIEW_LINE);
+  // Busy with this tab's own read of the same write: the hold's line says why.
+  if (error instanceof WriteHoldBusyError) {
+    const now = handle.peek();
+    if (now.status !== "clear") throw new Error(heldLineOf(now));
+  }
+  if (!(error instanceof WriteHeldError)) throw error;
+  if (!error.state.exit) throw new Error(heldLineOf(error.state));
+  const ended = await takeExit(handle, client, error.state);
+  if (ended.released) return true;
+  throw new Error((ended.state && endedLine(ended.state)) ?? heldLineOf(error.state));
 }
 
-const INTENT = Symbol.for("revnet:write-intent");
-const LEGACY = Symbol.for("revnet:write-intent-legacy");
-
-/**
- * `write`, sending its variables held by `namespace`: the user action's intent, from one of the
- * SDK's builders (payIntent, cashOutIntent, loanIntent, borrowIntent, bridgeIntent,
- * approvalIntent, launchIntent, liquidityIntent), or writeIntentKey for an action they don't
- * cover. A retry of the action is held by its first attempt; the exact sent call stays in the
- * hold's record.
- */
-export function withWriteIntent<F extends (variables: never, ...rest: never[]) => unknown>(
-  write: F,
-  namespace: string,
-  /** The namespaces the build before SDK 2.38's builders held it by (legacy-intents.ts). */
-  legacy: readonly string[] = [],
-): F {
-  return ((variables: object, ...rest: never[]) =>
-    write(
-      { ...variables, [INTENT]: namespace, [LEGACY]: legacy } as never,
-      ...rest,
-    )) as unknown as F;
-}
-
-/** The previous build's namespaces a write's caller named. REMOVE with legacy-intents.ts. */
-export function legacyIntentsOf(write: object): readonly string[] {
-  const named = (write as Record<symbol, unknown>)[LEGACY];
-  return Array.isArray(named) ? named : [];
-}
-
-/** The intent a write's caller held it by, if any; a write without one is held by its call. */
-export function writeIntentOf(write: object): string | undefined {
-  const named = (write as Record<symbol, unknown>)[INTENT];
-  return typeof named === "string" ? named : undefined;
+/** Whether `error` is a refusal by the hold that `answerHeldRefusal` answers. */
+export function isHeldRefusal(error: unknown): boolean {
+  return (
+    (error instanceof Error && error.message === HELD_AWAY_SUCCESS_LINE) ||
+    error instanceof WriteHoldStaleReviewError ||
+    error instanceof WriteHoldBusyError ||
+    error instanceof WriteHeldError
+  );
 }
 
 /**

@@ -2,7 +2,7 @@ import { SplitHookCard } from "@/app/[slug]/components/v6/owners/market/SplitHoo
 import type { SplitHookChainState } from "@/app/[slug]/components/v6/owners/market/lib";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import type { Address, Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -45,13 +45,14 @@ vi.mock("@/components/ButtonWithWallet", () => ({
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
 vi.mock("@/components/ui/use-toast", () => ({ toast: vi.fn() }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  submittedViaSafe: () => false,
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
-}));
-vi.mock("@/lib/waitForReceipt", () => ({
-  waitForReceiptWithRetry: async () => ({ status: "success" }),
-}));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionState, reviewedRunMock } = await import("./support/reviewed-action");
+  const run = reviewedRunMock(mocks.simulate, mocks.write);
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: () => reviewedActionState(run),
+  };
+});
 vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/[slug]/components/v6/owners/market/lib")>()),
   fetchSplitHookStates: async () => mocks.states,
@@ -91,7 +92,6 @@ async function openConfirm() {
 beforeEach(() => {
   groupGateState.reset();
   mocks.states = [STATE];
-  // Viem's simulated request echoes the call's fields; it names no chain.
   mocks.simulate.mockImplementation(async (call: Record<string, unknown>) => ({ request: call }));
   mocks.write.mockResolvedValue(HASH);
 });
@@ -106,32 +106,16 @@ describe("SplitHookCard", () => {
   });
 
   it("wallet-action:split-hook sends the simulated fee collection on the hook's chain", async () => {
-    const confirm = await openConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Collect fees" }));
+    await openConfirm();
 
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
-    expect(mocks.simulate.mock.calls[0][0]).not.toHaveProperty("chainId");
     expect(mocks.write.mock.calls[0][0]).toMatchObject({
       chainId: 8453,
-      address: HOOK,
+      to: HOOK,
       functionName: "collectAndRouteLPFees",
       args: [4n, NATIVE],
-      account: ACCOUNT,
     });
-  });
-
-  it("goes back to the card with Cancel, and sends nothing", async () => {
-    const confirm = await openConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Confirm fee collection" })).toBeNull(),
-    );
-    expect(screen.getByRole("button", { name: "Collect fees" })).toBeEnabled();
-    expect(mocks.simulate).not.toHaveBeenCalled();
-    expect(mocks.write).not.toHaveBeenCalled();
+    expect(mocks.write.mock.calls[0][1]).toMatchObject({ account: ACCOUNT });
   });
 
   it("refuses every way out from Confirm through the simulation before the wallet prompt", async () => {
@@ -142,7 +126,6 @@ describe("SplitHookCard", () => {
       return { request: call };
     });
     const confirm = await openConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Collect fees" }));
     await waitFor(() => expect(mocks.simulate).toHaveBeenCalledOnce());
 
     expectEveryWayOutRefused(confirm);

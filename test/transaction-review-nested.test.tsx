@@ -13,7 +13,8 @@ vi.mock("next/image", () => ({
 }));
 
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
-import { requireTransactionReview, type TransactionReviewCall } from "@/lib/transaction-review";
+import { type TransactionReviewCall } from "@/lib/transaction-review";
+import { requireReview as requireTransactionReview } from "./support/core-review";
 
 const SAFE = "0x1111111111111111111111111111111111111111";
 const TOKEN = "0x2222222222222222222222222222222222222222";

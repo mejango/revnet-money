@@ -23,11 +23,11 @@ import {
 } from "@/lib/transaction-activity";
 import {
   SAFE_EXEC_ABI,
-  SAFE_NONCE_GUIDANCE,
   safeProposalFor,
   safeTransactionHash,
 } from "@bananapus/nana-sdk-core/safe-service";
 import { act, renderHook } from "@testing-library/react";
+import type { Hex } from "viem";
 import {
   encodeAbiParameters,
   encodeEventTopics,
@@ -107,10 +107,15 @@ const mocks = vi.hoisted(() => ({
   receipt: vi.fn(),
   block: vi.fn(),
   finalGuard: vi.fn(),
+  connector: { id: "injected" } as { id: string },
 }));
 vi.mock("wagmi", () => ({ useConfig: () => ({}) }));
 vi.mock("wagmi/actions", () => ({
-  getAccount: () => ({ address: mocks.account, chainId: mocks.chainId }),
+  getAccount: () => ({
+    address: mocks.account,
+    chainId: mocks.chainId,
+    connector: mocks.connector,
+  }),
   getPublicClient: () => ({
     estimateContractGas: mocks.estimate,
     simulateContract: mocks.simulate,
@@ -129,40 +134,95 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   requireRelayrRecoveryScopeAvailable: mocks.scopeAvailable,
   hasRelayrRecoveryScopeSession: mocks.scopeSession,
   isReleasedUnpaidRelayrBundle: mocks.releasedUnpaid,
+  forwardedRequestGas: async (
+    _client: unknown,
+    _forwarder: unknown,
+    _account: unknown,
+    request: { data: { gas: bigint } },
+  ) => request.data.gas,
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeConnection: () => mocks.safe,
-  submittedViaSafe: () => mocks.safe,
-  useWriteContract: (options: {
-    reviewedInParent?: boolean;
-    reverify?: () => Promise<void>;
-    beforeSubmission?: () => Promise<void>;
-    onBeforeSubmissionAborted?: () => Promise<void>;
-    preflightSimulation?: (variables: unknown, account: Address) => Promise<{ gas: bigint } | void>;
-  }) => {
-    return {
-      writeContractAsync: async (variables: { chainId: number }) => {
-        // The reviewed wrapper reviews each call unless a parent review showed it.
-        if (!options.reviewedInParent) await mocks.callReview(variables);
-        // The reviewed direct wrapper switches to each destination before its
-        // final source/account checks and wallet submission.
-        mocks.chainId = variables.chainId;
-        await options.reverify?.();
-        await options.preflightSimulation?.(variables, mocks.account as Address);
-        await options.beforeSubmission?.();
-        try {
-          mocks.finalGuard();
-        } catch (error) {
-          await options.onBeforeSubmissionAborted?.();
-          throw error;
-        }
-        return mocks.write(variables);
-      },
-    };
+// Core's one plan review of every call the batch's Relayr rounds run.
+vi.mock("@bananapus/nana-sdk-core/review", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/review")>()),
+  reviewPlan: async (action: unknown) => {
+    await mocks.review(action);
+    return { reviewed: action };
   },
 }));
+vi.mock("@/lib/safe-connector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
+  isSafeConnection: () => mocks.safe,
+}));
+// Core's reviewed send, as the batch drives it: one review of every call it sends, then per call
+// its reverify, simulation, beforeWallet, write gate and wallet, in order; a Safe proposes the
+// first and stops.
+vi.mock("@/hooks/useReviewedAction", async () => {
+  const { isDefiniteWalletRejection } = await import("@bananapus/nana-sdk-core/review");
+  const run = async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
+    try {
+      await mocks.callReview(action.calls);
+    } catch {
+      return null;
+    }
+    const hashes: Hex[] = [];
+    for (const [step, call] of action.calls.entries()) {
+      const failed = (failure: unknown) => ({
+        status: "failed" as const,
+        error: failure instanceof Error ? failure.message : String(failure),
+        failure,
+      });
+      try {
+        mocks.chainId = call.chainId;
+        await action.reverify?.(call, step, undefined);
+        // Core's eth_call at the call's exact gas, when it has one.
+        if (call.gas !== undefined)
+          await mocks.rawCall({
+            method: "eth_call",
+            params: [
+              {
+                from: action.account,
+                to: call.to,
+                data: call.data,
+                value: "0x0",
+                gas: `0x${call.gas.toString(16)}`,
+              },
+              "latest",
+            ],
+          });
+        else
+          await mocks.simulate({
+            address: call.to,
+            abi: call.abi,
+            functionName: call.functionName,
+            args: call.args,
+            value: call.value,
+          });
+        await action.beforeWallet?.(call, step);
+      } catch (failure) {
+        return failed(failure);
+      }
+      try {
+        mocks.finalGuard();
+      } catch (failure) {
+        await action.onUnsent?.(call, step);
+        return failed(failure);
+      }
+      let hash: Hex;
+      try {
+        hash = await mocks.write({ ...call, address: call.to, chainId: call.chainId });
+      } catch (failure) {
+        if (isDefiniteWalletRejection(failure)) await action.onUnsent?.(call, step);
+        return failed(failure);
+      }
+      await action.onSubmitted?.(call, step, hash, { safe: mocks.safe, adopted: false });
+      if (mocks.safe) return { status: "proposed" as const, step, safeTxHash: hash };
+      hashes.push(hash);
+    }
+    return { status: "done" as const, hashes, receipts: [] };
+  };
+  return { useReviewedAction: () => ({ run }) };
+});
 vi.mock("@/lib/transaction-review", () => ({
-  requireTransactionReview: mocks.review,
   chooseRelayrPayment: mocks.choose,
 }));
 afterEach(() => vi.unstubAllGlobals());
@@ -453,7 +513,7 @@ describe("routing draft replacement", () => {
   it("keeps an unsubmitted draft if fresh review is cancelled", async () => {
     const draft = createMultichainBatch(ACCOUNT, "source", "Routing", [retryCall(1)], "direct");
     saveMultichainBatch(draft);
-    mocks.review.mockRejectedValue(new Error("Cancelled"));
+    mocks.callReview.mockRejectedValue(new Error("Cancelled"));
     const { result } = renderHook(() => useMultichainBatch());
     await expect(
       result.current.runBatch({
@@ -462,11 +522,11 @@ describe("routing draft replacement", () => {
         calls: [retryCall(1), retryCall(10)],
         replaceDraftId: draft.id,
       }),
-    ).rejects.toThrow("Cancelled");
+    ).rejects.toThrow("Review closed");
     expect(readMultichainBatches()).toEqual([draft]);
     expect(mocks.write).not.toHaveBeenCalled();
   });
-  it("replaces the full selection and resumes that exact replacement after a preflight failure", async () => {
+  it("keeps the draft when the replacement's simulation fails before the wallet", async () => {
     const draft = createMultichainBatch(ACCOUNT, "source", "Routing", [retryCall(1)], "direct");
     saveMultichainBatch(draft);
     mocks.rawCall.mockRejectedValue(new Error("RPC unavailable"));
@@ -477,14 +537,12 @@ describe("routing draft replacement", () => {
       calls: [retryCall(1), retryCall(10)],
       replaceDraftId: draft.id,
     };
+    // The replacement is saved only on its way to the wallet.
     await expect(result.current.runBatch(input)).rejects.toThrow("RPC unavailable");
-    const saved = readMultichainBatches();
-    expect(saved).toHaveLength(1);
-    expect(saved[0].scope).toBe("destination");
-    expect(saved[0].calls).toHaveLength(2);
-    expect(saved[0].id).not.toBe(draft.id);
+    expect(readMultichainBatches()).toEqual([draft]);
     await expect(result.current.runBatch(input)).rejects.toThrow("RPC unavailable");
-    expect(readMultichainBatches()).toEqual(saved);
+    expect(readMultichainBatches()).toEqual([draft]);
+    expect(mocks.write).not.toHaveBeenCalled();
   });
   it.each([{ hash: HASH }, { safeNonce: 0 }])(
     "retains ambiguous ready-call evidence when replacement is rejected: %j",
@@ -508,7 +566,7 @@ describe("routing draft replacement", () => {
   it("retains a draft when another tab adds submission evidence during review", async () => {
     const draft = createMultichainBatch(ACCOUNT, "source", "Routing", [retryCall(1)], "direct");
     saveMultichainBatch(draft);
-    mocks.review.mockImplementation(async () => {
+    mocks.callReview.mockImplementation(async () => {
       draft.calls[0].state = "submitting";
       saveMultichainBatch(draft);
     });
@@ -741,6 +799,27 @@ describe("fresh review of hashless routing selections", () => {
       expect(findPendingBatch(ACCOUNT, savedScope)).toBeUndefined();
     },
   );
+
+  it("pays no round when another connector takes the same address during the review", async () => {
+    const original = saveUnknownSelection(scope);
+    const connector = mocks.connector;
+    mocks.review.mockImplementation(async () => {
+      mocks.connector = { id: "walletconnect" };
+    });
+    const { result } = renderHook(() => useMultichainBatch());
+    try {
+      await act(async () => {
+        await expect(result.current.runBatch(inputFor(original))).rejects.toThrow(
+          /Wallet connection changed/,
+        );
+      });
+    } finally {
+      mocks.connector = connector;
+    }
+    expect(mocks.review).toHaveBeenCalledOnce();
+    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.pay).not.toHaveBeenCalled();
+  });
 
   it.each([false, true])(
     "keeps the original locked without selecting its exact ID for fresh review (fresh calls: %s)",
@@ -1039,11 +1118,7 @@ describe("reviewed selected-call orchestration", () => {
         result.current.runBatch({ scope: "retry", label: "Route fee", calls: [retry] }),
       ).resolves.toMatchObject({ status: "success" });
     });
-    expect(mocks.review).toHaveBeenCalledWith(
-      expect.objectContaining({
-        calls: [expect.objectContaining({ gas })],
-      }),
-    );
+    expect(mocks.callReview).toHaveBeenCalledWith([expect.objectContaining({ gas })]);
     expect(mocks.rawCall).toHaveBeenCalledWith({
       method: "eth_call",
       params: [expect.objectContaining({ from: ACCOUNT, to: TARGET, gas: "0x64b540" }), "latest"],
@@ -2234,11 +2309,7 @@ describe("reviewed selected-call orchestration", () => {
     });
     expect(mocks.write).toHaveBeenCalledOnce();
   });
-  it.each([
-    { code: 4001 },
-    { name: "UserRejectedRequestError" },
-    { cause: { name: "UserRejectedRequestError" } },
-  ])(
+  it.each([{ code: 4001 }, { name: "UserRejectedRequestError", cause: { code: 4001 } }])(
     "releases a definitely rejected wallet attempt using the SDK classifier: %j",
     async (rejection) => {
       mocks.write.mockRejectedValue(rejection);
@@ -2246,23 +2317,26 @@ describe("reviewed selected-call orchestration", () => {
       await act(async () => {
         await expect(
           result.current.runBatch({ scope: "one", label: "Distribute", calls: [call(1)] }),
-        ).rejects.toBe(rejection);
+        ).rejects.toMatchObject({ failure: rejection });
         expect(readMultichainBatches()).toEqual([]);
         expect(mocks.write).toHaveBeenCalledOnce();
       });
     },
   );
+  // Only EIP-1193 4001 says nothing was sent; a rejection by name alone stays held.
   it.each([
     { name: "TransactionExecutionError" },
     { code: -32000 },
     { name: "UserRejectedRequestErrorExtra", code: "4001" },
+    { name: "UserRejectedRequestError" },
+    { cause: { name: "UserRejectedRequestError" } },
   ])("keeps an ambiguous wallet attempt using the SDK classifier: %j", async (failure) => {
     mocks.write.mockRejectedValue(failure);
     const { result } = renderHook(() => useMultichainBatch());
     await act(async () => {
       await expect(
         result.current.runBatch({ scope: "one", label: "Distribute", calls: [call(1)] }),
-      ).rejects.toBe(failure);
+      ).rejects.toMatchObject({ failure });
       expect(readMultichainBatches()[0].calls[0]).toMatchObject({ state: "submitting" });
       expect(mocks.write).toHaveBeenCalledOnce();
     });
@@ -2336,16 +2410,13 @@ describe("reviewed selected-call orchestration", () => {
         calls: [1, 10].map((chainId) => retryCall(chainId)),
       });
     });
-    expect(mocks.review).toHaveBeenCalledOnce();
-    const request = mocks.review.mock.calls[0][0];
-    expect(request.confirmLabel).toBe("Agree & prepare batch");
-    expect(request.description).not.toContain(SAFE_NONCE_GUIDANCE);
-    expect(request.calls).toEqual([
+    // The reviewed send's one review shows every call, with the gas each is sent with.
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.callReview).toHaveBeenCalledOnce();
+    expect(mocks.callReview.mock.calls[0][0]).toEqual([
       expect.objectContaining({ chainId: 1, to: TARGET, gas: 6_600_000n }),
       expect.objectContaining({ chainId: 10, to: TARGET, gas: 6_600_000n }),
     ]);
-    expect(request.calls.some((row: { safeTxGas?: bigint }) => "safeTxGas" in row)).toBe(false);
-    expect(mocks.callReview).not.toHaveBeenCalled();
     expect(mocks.write.mock.calls.map(([variables]) => [variables.chainId, variables.gas])).toEqual(
       [
         [1, 6_600_000n],
@@ -2367,8 +2438,8 @@ describe("reviewed selected-call orchestration", () => {
         }),
       ).resolves.toMatchObject({ status: "success" });
     });
-    // Post-review, preparation, wallet reverify and final submission stay fresh.
-    expect(mocks.verify).toHaveBeenCalledTimes(4);
+    // Post-review, reverify and the last read before the wallet stay fresh.
+    expect(mocks.verify).toHaveBeenCalledTimes(3);
     expect(mocks.verify).toHaveBeenCalledWith({ to: TARGET, data: source.data });
     expect(mocks.write).toHaveBeenCalledOnce();
     expect(readMultichainBatches()[0].calls[0].preconditions).toEqual([source, source]);
@@ -2386,15 +2457,10 @@ describe("reviewed selected-call orchestration", () => {
         }),
       ).resolves.toMatchObject({ status: "pending" });
     });
-    expect(mocks.review).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        confirmLabel: "Agree & propose to Safe",
-        description: expect.stringMatching(new RegExp(`\n\n${SAFE_NONCE_GUIDANCE}$`)),
-        calls: [expect.objectContaining({ chainId: 1, to: TARGET, safeTxGas: 0n })],
-      }),
-    );
-    expect(mocks.review.mock.calls[0][0].calls[0]).not.toHaveProperty("gas");
-    expect(mocks.callReview).not.toHaveBeenCalled();
+    expect(mocks.review).not.toHaveBeenCalled();
+    expect(mocks.callReview).toHaveBeenCalledExactlyOnceWith([
+      expect.objectContaining({ chainId: 1, to: TARGET }),
+    ]);
     expect(mocks.write).toHaveBeenCalledOnce();
     expect(readMultichainBatches()[0].calls[0].state).toBe("safe");
   });
@@ -2407,13 +2473,27 @@ describe("reviewed selected-call orchestration", () => {
       await result.current.runBatch({ scope: "resumed", label: "Claim", calls: [] });
     });
     expect(mocks.review).not.toHaveBeenCalled();
-    expect(mocks.callReview).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ chainId: 1, address: TARGET, args: [1n] }),
-    );
+    expect(mocks.callReview).toHaveBeenCalledExactlyOnceWith([
+      expect.objectContaining({ chainId: 1, to: TARGET, args: [1n] }),
+    ]);
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("tells Relayr the batch review showed its calls only in the run that showed it", async () => {
+  it("leaves the fee's payment chain open when the wallet starts in another network family", async () => {
+    mocks.chainId = 11155111;
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await result.current.runBatch({
+        scope: "relayr-family",
+        label: "Deploy payers",
+        calls: [call(1), call(10)].map((row) => ({ ...row, relayrMode: "raw" as const })),
+      });
+    });
+    expect(mocks.review).toHaveBeenCalledOnce();
+    expect(mocks.review.mock.calls[0][0].relayrRounds).toBeUndefined();
+  });
+
+  it("spends the batch's plan review only in the run that showed it", async () => {
     const { result } = renderHook(() => useMultichainBatch());
     await act(async () => {
       await result.current.runBatch({
@@ -2423,10 +2503,18 @@ describe("reviewed selected-call orchestration", () => {
       });
     });
     expect(mocks.review).toHaveBeenCalledOnce();
-    expect(mocks.quote.mock.calls[0][0]).toEqual([
-      expect.objectContaining({ chainId: 1, relayrMode: "raw", reviewedInParent: true }),
-      expect.objectContaining({ chainId: 10, relayrMode: "raw", reviewedInParent: true }),
-    ]);
+    // The round's quote spends the batch's one plan review.
+    // It names its round, whose fee bound the review showed once.
+    expect(mocks.quote.mock.calls[0][1]).toMatchObject({
+      planned: { plan: expect.anything(), relayrRound: "round:0" },
+    });
+    expect(
+      mocks.review.mock.calls[0][0].calls.map((call: { relayrRound?: string }) => call.relayrRound),
+    ).toEqual(expect.arrayContaining(["round:0"]));
+    // The bound is quoted on the start chain, where the round's fee is paid.
+    expect(mocks.review.mock.calls[0][0].relayrRounds).toEqual({
+      "round:0": { paymentChainId: mocks.chainId },
+    });
 
     const saved = createMultichainBatch(
       ACCOUNT,
@@ -2440,10 +2528,8 @@ describe("reviewed selected-call orchestration", () => {
       await result.current.runBatch({ scope: "relayr-resume", label: "Deploy payers", calls: [] });
     });
     expect(mocks.review).toHaveBeenCalledOnce();
-    expect(mocks.quote.mock.calls[1][0]).toEqual([
-      expect.objectContaining({ chainId: 1, reviewedInParent: false }),
-      expect.objectContaining({ chainId: 10, reviewedInParent: false }),
-    ]);
+    // A resumed run showed no review, so its quote reviews its own calls.
+    expect(mocks.quote.mock.calls[1][1]?.planned).toBeUndefined();
   });
 
   it("never sends when the recovery journal cannot be persisted", async () => {

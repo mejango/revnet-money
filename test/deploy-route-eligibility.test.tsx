@@ -1,5 +1,5 @@
 import { DeploySection } from "@/app/create/form/DeploySection";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { validRevnetForm } from "./fixtures/revnet";
 import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
@@ -11,7 +11,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("wagmi", () => ({ useAccount: () => mocks.account }));
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
+vi.mock("@/lib/safe-connector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
   useSafeConnection: () => mocks.account.connector.id === "safe",
 }));
 // The form's submit is in flight from the press until its promise settles, as
@@ -144,27 +145,14 @@ describe("creation route eligibility", () => {
 });
 
 describe("deployment confirm", () => {
-  it("goes back to the form with Cancel, and submits nothing", async () => {
-    render(<DeploySection />);
-    fireEvent.click(screen.getByRole("button", { name: "Sign and get quote" }));
-    const confirm = await findConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(confirmIsOpen()).toBe(false));
-    expect(mocks.submitForm).not.toHaveBeenCalled();
-  });
-
   it("wallet-action:create-revnet refuses every way out while the request is signed, then closes", async () => {
     let finish!: () => void;
     mocks.submitForm.mockReturnValue(new Promise<void>((resolve) => (finish = resolve)));
     render(<DeploySection />);
     fireEvent.click(screen.getByRole("button", { name: "Sign and get quote" }));
     const confirm = await findConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Sign and get quote" }));
     await waitFor(() => expect(mocks.submitForm).toHaveBeenCalledTimes(1));
 
-    expect(within(confirm).getByRole("button", { name: "Sign and get quote" })).toBeDisabled();
     expectEveryWayOutRefused(confirm);
 
     finish();

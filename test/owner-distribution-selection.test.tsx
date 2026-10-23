@@ -3,7 +3,8 @@ import { V6ClaimCreditsDialog } from "@/app/[slug]/components/v6/owners/accounts
 import type { ProjectItem } from "@/app/[slug]/components/v6/shared";
 import { DistributeReservedTokensButton } from "@/app/[slug]/owners/components/DistributeReservedTokensButton";
 import { OwnerDistributionBatchButton } from "@/app/[slug]/owners/components/OwnerDistributionBatchButton";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { TransactionReviewCancelledError } from "@bananapus/nana-sdk-core/review";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { confirmIsOpen, expectEveryWayOutRefused, findConfirm } from "./support/confirm";
@@ -167,9 +168,6 @@ describe("owner distribution batch", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Distribute" }));
-    await screen.findByRole("button", { name: "Confirm selected" });
-    expect(state.runBatch).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm selected" }));
     await waitFor(() =>
       expect(state.runBatch).toHaveBeenCalledWith(
         expect.objectContaining({ calls: [first.call, second.call] }),
@@ -212,7 +210,6 @@ describe("owner distribution batch", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Resume saved batch (2/3 confirmed)" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
     await waitFor(() =>
       expect(state.runBatch).toHaveBeenCalledWith(
         expect.objectContaining({ calls: [], scope: "test" }),
@@ -273,14 +270,14 @@ describe("owner distribution batch", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Distribute" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm selected" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Continue" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
     await waitFor(() => expect(state.runBatch).toHaveBeenCalledTimes(2));
     expect(prepare).toHaveBeenCalledTimes(1);
     expect(state.runBatch.mock.calls[1][0].calls).toEqual(state.runBatch.mock.calls[0][0].calls);
   });
 
   it("requires the original account after review", async () => {
+    state.runBatch.mockResolvedValueOnce({ status: "pending", hashes: [] });
     const props = {
       label: "Distribute",
       scope: "test",
@@ -291,12 +288,14 @@ describe("owner distribution batch", () => {
     };
     const view = render(<OwnerDistributionBatchButton {...props} />);
     fireEvent.click(screen.getByRole("button", { name: "Distribute" }));
-    await screen.findByRole("button", { name: "Confirm selected" });
+    const retry = await screen.findByRole("button", { name: "Try again" });
     state.account = beneficiary;
     view.rerender(<OwnerDistributionBatchButton {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "Confirm selected" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("connected account changed");
-    expect(state.runBatch).not.toHaveBeenCalled();
+    fireEvent.click(retry);
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent("connected account changed"),
+    );
+    expect(state.runBatch).toHaveBeenCalledTimes(1);
   });
 
   it("reprepares changed state after an untouched draft is safely discarded", async () => {
@@ -313,12 +312,10 @@ describe("owner distribution batch", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Distribute" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm selected" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("reviewed balance changed");
-    expect(screen.queryByRole("button", { name: "Continue" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Distribute" }));
-    await screen.findByRole("button", { name: "Confirm selected" });
-    expect(prepare).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(prepare).toHaveBeenCalledTimes(2));
   });
 });
 
@@ -338,24 +335,23 @@ describe("owner distribution confirm", () => {
     return findConfirm();
   }
 
-  it("goes back with Cancel, and sends nothing", async () => {
-    const confirm = await renderButton();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+  it("closes when its review is closed, and says nothing failed", async () => {
+    let close!: (cause: unknown) => void;
+    state.runBatch.mockReturnValue(new Promise((_, reject) => (close = reject)));
+    await renderButton();
+    close(new TransactionReviewCancelledError());
 
     await waitFor(() => expect(confirmIsOpen()).toBe(false));
-    expect(state.runBatch).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(state.runBatch).toHaveBeenCalledTimes(1);
   });
 
   it("refuses every way out while the batch runs, then closes once it is confirmed", async () => {
     let finish!: (result: unknown) => void;
     state.runBatch.mockReturnValue(new Promise((resolve) => (finish = resolve)));
     const confirm = await renderButton();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Confirm selected" }));
     await waitFor(() => expect(state.runBatch).toHaveBeenCalledTimes(1));
 
-    // The frozen calls are pending from the first press, so the action reads Continue.
-    expect(within(confirm).getByRole("button", { name: "Continue" })).toBeDisabled();
     expectEveryWayOutRefused(confirm);
 
     finish({ status: "success", hashes: [] });
@@ -397,7 +393,7 @@ describe("selected owner action destinations", () => {
     );
     fireEvent.click(screen.getAllByRole("checkbox")[0]);
     fireEvent.click(screen.getByRole("button", { name: "Distribute selected pending splits" }));
-    await screen.findByRole("button", { name: "Confirm selected" });
+    await waitFor(() => expect(state.runBatch).toHaveBeenCalled());
     expect(state.prepareReserved).toHaveBeenCalledTimes(1);
     expect(state.prepareReserved).toHaveBeenCalledWith(
       {},
@@ -421,7 +417,7 @@ describe("selected owner action destinations", () => {
     );
     fireEvent.click(screen.getAllByRole("checkbox")[1]);
     fireEvent.click(screen.getByRole("button", { name: "Claim selected credits" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm selected" }));
+    await waitFor(() => expect(state.runBatch).toHaveBeenCalled());
     expect(state.prepareCredit).toHaveBeenCalledWith(
       {},
       expect.objectContaining({ chainId: 10, projectId: 91n }),
@@ -479,7 +475,7 @@ describe("selected owner action destinations", () => {
     render(<V6AutoIssuanceSubtab projects={[{ chainId: 10, projectId: 91 }] as ProjectItem[]} />);
     expect(screen.getAllByRole("checkbox")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Distribute selected auto issuances" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Confirm selected" }));
+    await waitFor(() => expect(state.runBatch).toHaveBeenCalled());
     expect(state.prepareAuto).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(state.runBatch.mock.calls[0][0].calls).toHaveLength(2));
   });

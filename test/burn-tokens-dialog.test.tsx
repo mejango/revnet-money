@@ -36,18 +36,15 @@ vi.mock("@/components/ButtonWithWallet", () => ({
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
-vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => ({
-  SAFE_PROPOSAL_UNCONFIRMED_LINE: (
-    await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>()
-  ).SAFE_PROPOSAL_UNCONFIRMED_LINE,
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionThrough } = await import("./support/reviewed-action");
   // A burn's own Safe proposal ends where the app can't confirm its result.
-  useWaitForTransactionReceipt: ({ hash }: { hash?: Hex }) => ({
-    isLoading: false,
-    isSuccess: false,
-    isSafeResultUnconfirmed: hash === PROPOSAL,
-  }),
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
-}));
+  const { hook } = reviewedActionThrough(mocks.write, { proposed: (hash) => hash === PROPOSAL });
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: hook,
+  };
+});
 
 const confirmPanel = () => document.querySelector<HTMLElement>("[data-tx-confirm]");
 const burnDialog = () => screen.getByRole("dialog", { name: "Burn tokens" }) as HTMLDialogElement;
@@ -100,17 +97,6 @@ beforeEach(() => {
 });
 
 describe("burn tokens confirm", () => {
-  it("goes back to the amount with Cancel, and sends nothing", async () => {
-    const confirm = await openConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    expect(confirmPanel()).toBeNull();
-    expect(screen.getByPlaceholderText("Amount of ART")).toBeVisible();
-    expect(mocks.read).not.toHaveBeenCalled();
-    expect(mocks.write).not.toHaveBeenCalled();
-  });
-
   it("wallet-action:burn-tokens refuses every way out from Confirm through the reads before the wallet prompt", async () => {
     const answerRead = heldRead();
     // Every send happens with the confirm on screen, never after a close.
@@ -120,13 +106,9 @@ describe("burn tokens confirm", () => {
     });
     const confirm = await openConfirm();
 
-    fireEvent.click(within(confirm).getByRole("button", { name: "Burn permanently" }));
     await waitFor(() => expect(mocks.read).toHaveBeenCalled());
-    const cancel = within(confirm).getByRole("button", { name: "Cancel" });
     const close = within(confirm).getByRole("button", { name: "Close" });
-    expect(cancel).toBeDisabled();
     expect(close).toBeDisabled();
-    fireEvent.click(cancel);
     fireEvent.click(close);
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.pointerDown(burnDialog());
@@ -161,9 +143,7 @@ describe("a burn left open over its own Safe proposal the app can't confirm", ()
     });
     fireEvent.click(screen.getByRole("button", { name: "Burn permanently" }));
     await waitFor(() => expect(confirmPanel()).not.toBeNull());
-    const confirm = confirmPanel()!;
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Burn permanently" }));
+    confirmPanel()!;
 
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     await screen.findByText("Check this proposal in your Safe before sending it again.");

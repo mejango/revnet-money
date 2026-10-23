@@ -22,11 +22,6 @@ vi.mock("wagmi", () => ({
 }));
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
 vi.mock("@/hooks/useReviewedRelayr", () => ({ resumePendingRelayrBundles: () => undefined }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  resumeSafeProposalTracking: () => undefined,
-  followedRow: () => false,
-  showSafeView: () => undefined,
-}));
 vi.mock("@/components/ui/tooltip", () => ({
   TooltipProvider: ({ children }: { children: ReactNode }) => children,
 }));

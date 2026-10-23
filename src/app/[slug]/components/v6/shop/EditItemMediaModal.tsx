@@ -13,10 +13,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { TxError } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
+import { reviewClosed } from "@/lib/review-refusal";
 import { jb721TiersHookAbi, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -98,6 +99,12 @@ export function EditItemMediaModal({
     }
   };
 
+  const context = (prepared ?? []).map(({ destination, tierId, uri }) => ({
+    label: `Item #${tierId} of project #${destination.projectId} on ${chainDisplayName(destination.chainId)}`,
+    value: uri,
+    mono: true,
+  }));
+
   const submit = async (resume = false) => {
     if (!address || busy || (!prepared && !resume) || (resume && gate.blocked)) return;
     setError(null);
@@ -107,6 +114,7 @@ export function EditItemMediaModal({
       if (prepared) gate.assertVerified(prepared.map(({ destination }) => destination));
       const result = await runBatch({
         label: "Replace shop item media",
+        context: resume ? undefined : context,
         scope,
         onProgress: setProgress,
         calls: resume
@@ -132,7 +140,8 @@ export function EditItemMediaModal({
       ]);
     } catch (err) {
       setPhase("form");
-      setError(errorMessage(err));
+      if (reviewClosed(err)) setReviewing(false);
+      else setError(errorMessage(err));
     }
   };
 
@@ -273,32 +282,23 @@ export function EditItemMediaModal({
         </Button>
       </DialogContent>
       {reviewing && prepared ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReviewing(false)}
           title="Confirm media replacement"
           activeIndex={busy ? 0 : -1}
-          action="Replace media"
-          onConfirm={() => void submit()}
+          start={() => void submit()}
           busy={busy}
           error={error}
           status={progress}
+          rows={context}
           steps={[
             {
               title: "Replace selected item media",
               detail: "One reviewed call per selected collection.",
             },
           ]}
-        >
-          {prepared.map(({ destination, tierId, uri: metadataUri }) => (
-            <SummaryRow
-              key={`${destination.chainId}:${destination.projectId}`}
-              label={`Item #${tierId} of project #${destination.projectId} on ${chainDisplayName(destination.chainId)}`}
-            >
-              <span className="break-all">{metadataUri}</span>
-            </SummaryRow>
-          ))}
-        </TxConfirmDialog>
+        />
       ) : null}
     </Dialog>
   );

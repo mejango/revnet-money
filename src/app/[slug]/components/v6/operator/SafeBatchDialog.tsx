@@ -1,10 +1,10 @@
 "use client";
 
 import { CallRow } from "@/components/ExactCallCard";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
-import { isSafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
+import { isSafeProposalPendingError, reviewClosed } from "@/lib/reviewed-call";
 import {
   checkBatchOrder,
   describeStep,
@@ -77,10 +77,10 @@ function actionLabel(route: SafeBatchRoute | undefined, count: number, chainId: 
 }
 
 /**
- * The batch confirm for one chain: who sends it and how, then the queued
+ * The batch editor for one chain: who sends it and how, then the queued
  * steps in order with reorder/remove controls and their decoded calls. A
- * dependency problem is shown on the offending step and blocks the action;
- * nothing is ever reordered silently.
+ * dependency problem is shown on the offending step and blocks the send;
+ * nothing is ever reordered silently. Sending opens the batch's one review.
  */
 export function SafeBatchDialog({
   row,
@@ -164,7 +164,8 @@ export function SafeBatchDialog({
     } catch (cause) {
       if (sent.current > 0) update(submitted.slice(sent.current));
       const message = formatWalletError(cause) || "Could not submit the batch.";
-      if (isSafeProposalPendingError(cause)) {
+      if (reviewClosed(cause)) setStatus(null);
+      else if (isSafeProposalPendingError(cause)) {
         setStatus(message);
         setProposed(true);
         toast({ title: "Safe proposal submitted", description: message });
@@ -211,7 +212,7 @@ export function SafeBatchDialog({
         : null;
 
   return (
-    <TxConfirmDialog
+    <TxProgress
       open={open}
       onClose={() => onOpenChange(false)}
       title={`Batch on ${name}`}
@@ -224,13 +225,28 @@ export function SafeBatchDialog({
             ? "Your wallet will ask for one transaction."
             : "Your wallet will ask for one signature."
       }
-      action={actionLabel(route, steps.length, row.chainId)}
-      onConfirm={() => void confirm()}
       busy={busy}
-      actionDisabled={
-        !route || route.kind === "refused" || !steps.length || problems.length > 0 || gate.blocked
-      }
       complete={proposed}
+      footerContent={
+        // The batch is edited here; its one confirmation is the review this opens.
+        <div className="flex justify-end">
+          <button
+            type="button"
+            className="min-h-[44px] border border-melon-700 bg-melon-500 px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
+            disabled={
+              busy ||
+              !route ||
+              route.kind === "refused" ||
+              !steps.length ||
+              problems.length > 0 ||
+              gate.blocked
+            }
+            onClick={() => void confirm()}
+          >
+            {actionLabel(route, steps.length, row.chainId)}
+          </button>
+        </div>
+      }
       status={status ?? (gate.pending ? "Confirming this project's chains onchain…" : null)}
       error={error ?? gate.line ?? (route?.kind === "refused" ? route.message : null)}
     >
@@ -311,6 +327,6 @@ export function SafeBatchDialog({
       ) : (
         <p className="text-sm text-zinc-500">Nothing is queued on {name}.</p>
       )}
-    </TxConfirmDialog>
+    </TxProgress>
   );
 }

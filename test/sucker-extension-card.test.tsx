@@ -44,7 +44,8 @@ vi.mock("@/lib/suckerExtensionSalt", () => ({
   clearExtensionSalt: vi.fn(),
   discardUnreadableSalts: () => mocks.discard(),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
+vi.mock("@/lib/reviewed-call", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/reviewed-call")>()),
   isSafeProposalPendingError: (error: unknown) =>
     error instanceof Error && error.name === "SafeProposalPendingError",
 }));
@@ -118,19 +119,6 @@ describe("extend to another chain over sucker-group rows", () => {
 });
 
 describe("extend to another chain confirm", () => {
-  it("goes back to the form with Cancel, and sends nothing", async () => {
-    const confirm = await openConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByRole("textbox", { name: "Project ID on the target chain" })).toHaveValue(
-      "9",
-    );
-    expect(mocks.read).not.toHaveBeenCalled();
-    expect(mocks.runWrites).not.toHaveBeenCalled();
-  });
-
   it("wallet-action:operator-writes refuses every way out from Confirm through the configuration check and the sends", async () => {
     let answer!: () => void;
     const held = new Promise<void>((resolve) => (answer = resolve));
@@ -139,14 +127,10 @@ describe("extend to another chain confirm", () => {
       return functionName === "hashedEncodedConfigurationOf" ? CONFIG_HASH : [];
     });
     const confirm = await openConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Deploy suckers" }));
     await waitFor(() => expect(mocks.read).toHaveBeenCalled());
 
-    const cancel = within(confirm).getByRole("button", { name: "Cancel" });
     const close = within(confirm).getByRole("button", { name: "Close" });
-    expect(cancel).toBeDisabled();
     expect(close).toBeDisabled();
-    fireEvent.click(cancel);
     fireEvent.click(close);
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.pointerDown(confirm);
@@ -167,11 +151,6 @@ describe("extend to another chain confirm", () => {
       );
     });
     const confirm = await openConfirm();
-    expect(
-      within(confirm).queryByRole("button", { name: "I checked my wallet. Continue anyway" }),
-    ).toBeNull();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Deploy suckers" }));
-
     expect(
       await within(confirm).findByText(
         "This browser can't read its saved transactions. Check your wallet before sending again.",
@@ -194,7 +173,6 @@ describe("extend to another chain confirm", () => {
       }),
     );
     const confirm = await openConfirm();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Deploy suckers" }));
 
     const done = await within(confirm).findByRole("button", { name: "Done" });
     expect(confirm).toHaveTextContent("Deploy suckers was proposed to Safe.");

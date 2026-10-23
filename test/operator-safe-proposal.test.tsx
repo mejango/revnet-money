@@ -38,14 +38,18 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   useSendRelayrTx: () => ({ sendRelayrTx: vi.fn() }),
   waitForRelayrBundle: vi.fn(),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
+vi.mock("@/lib/safe-connector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
   isSafeConnection: () => false,
-  submittedViaSafe: () => false,
-  useWriteContract: () => ({ writeContractAsync: vi.fn() }),
 }));
-vi.mock("@/hooks/useReviewedSafeSignature", () => ({
-  useReviewedSafeSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
-}));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
+  const { reviewedActionState } = await import("./support/reviewed-action");
+  return {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useSafeTransactionSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
+    useReviewedAction: () => reviewedActionState(vi.fn()),
+  };
+});
 vi.mock("@/app/[slug]/components/v6/operator/operatorLib", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/[slug]/components/v6/operator/operatorLib")>()),
   publicClientFor: () => mocks.client,

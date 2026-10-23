@@ -34,18 +34,6 @@ vi.mock("@/components/ButtonWithWallet", () => ({
   }) => <button {...props}>{children}</button>,
 }));
 
-vi.mock("@/hooks/useAllowance", () => ({
-  useAllowance: () => ({ ensureAllowance: vi.fn(), isApproving: false }),
-}));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  isSafeConnection: () => false,
-  submittedViaSafe: () => false,
-  useSafeConnection: () => false,
-  useWaitForTransactionReceipt: () => ({}),
-  useWriteContract: () => ({ writeContractAsync: vi.fn(), isPending: false }),
-  useProposeSafeBatch: () => vi.fn(),
-}));
-
 const pool = {
   chainId: 8453 as JBChainId,
   price: 0.00001,

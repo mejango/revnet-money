@@ -11,10 +11,9 @@ import { ModalDialog } from "@/components/ui/ModalShell";
 import { registerFlowChoiceHandler, type FlowChoice } from "@/lib/flow-choice";
 import {
   registerFundingChainSelectionHandler,
-  registerTransactionReviewHandler,
   type FundingChainOption,
-  type TransactionReviewRequest,
 } from "@/lib/transaction-review";
+import { registerReviewHandler, type ReviewModel } from "@bananapus/nana-sdk-core/review";
 import {
   useCallback,
   useEffect,
@@ -23,15 +22,14 @@ import {
   type ComponentType,
   type PropsWithChildren,
 } from "react";
-import type { Address } from "viem";
-import { useAccount } from "wagmi";
 
 export type PendingReview = {
   scope?: TransactionReviewScope | null;
   kind: "review";
   id: number;
-  request: TransactionReviewRequest;
   resolve: (approved: boolean) => void;
+  /** Core's prompt: the model it bound, confirmed only by the confirmation it minted. */
+  model: ReviewModel;
 };
 
 export type PendingFundingChainSelection = {
@@ -74,9 +72,6 @@ function cancelPendingDialog(pending: PendingDialog) {
  * sequentially and each approval applies to one immutable call snapshot.
  */
 export function TransactionReviewProvider({ children }: PropsWithChildren) {
-  const { address } = useAccount();
-  const accountRef = useRef<Address | undefined>(address);
-  accountRef.current = address;
   const nextId = useRef(1);
   const scopeRef = useRef<TransactionReviewScope | null>(null);
   const [checkingScopeId, setCheckingScopeId] = useState<number | null>(null);
@@ -93,32 +88,6 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     activeRef.current = pending;
     setActive(pending);
   }, []);
-
-  const enqueue = useCallback(
-    (request: TransactionReviewRequest) =>
-      new Promise<boolean>((resolve) => {
-        const snapshot: TransactionReviewRequest = {
-          ...request,
-          calls: request.calls.map((call) => ({
-            ...call,
-            // The connected wallet sends a transaction. An authorization is sent
-            // by a relayer, a Safe or a sponsor, so only a call that names its
-            // own sender shows one.
-            from: call.from ?? (request.kind === "authorization" ? undefined : accountRef.current),
-            args: call.args ? [...call.args] : undefined,
-          })),
-        };
-        const pending: PendingReview = {
-          kind: "review",
-          scope: scopeRef.current,
-          id: nextId.current++,
-          request: snapshot,
-          resolve,
-        };
-        enqueueDialog(pending);
-      }),
-    [enqueueDialog],
-  );
 
   const enqueueFundingChainSelection = useCallback(
     (options: readonly FundingChainOption[], initialChainId: number | null) =>
@@ -164,7 +133,22 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     [enqueueDialog],
   );
 
-  useEffect(() => registerTransactionReviewHandler(enqueue), [enqueue]);
+  useEffect(
+    () =>
+      registerReviewHandler(async (prompt) => {
+        const approved = await new Promise<boolean>((resolve) =>
+          enqueueDialog({
+            kind: "review",
+            scope: scopeRef.current,
+            id: nextId.current++,
+            model: prompt.model,
+            resolve,
+          }),
+        );
+        return approved ? prompt.confirmation : null;
+      }),
+    [enqueueDialog],
+  );
   useEffect(() => registerFlowChoiceHandler(enqueueFlowChoice), [enqueueFlowChoice]);
   useEffect(
     () => registerFundingChainSelectionHandler(enqueueFundingChainSelection),
@@ -221,8 +205,16 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
     else current.resolve(result === true);
   }, []);
 
+  // The review UI loads once the page is idle, so the first click opens it with no wait.
+  useEffect(() => {
+    const load = () => void import("./TransactionReviewDialog").catch(() => undefined);
+    if (typeof requestIdleCallback !== "function") return void setTimeout(load, 1_000);
+    const id = requestIdleCallback(load, { timeout: 3_000 });
+    return () => cancelIdleCallback(id);
+  }, []);
+
   // Keep the global queue ready immediately, but fetch the full decoder and
-  // review UI only when a request arrives. Loading never authorizes a call;
+  // review UI when a request arrives if the idle load hasn't. Loading never authorizes a call;
   // cancellation, unmount, or a failed download resolves it as declined.
   useEffect(() => {
     if (!active || active.kind === "choice" || Dialog) return;

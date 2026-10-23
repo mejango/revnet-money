@@ -17,25 +17,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote } from "@/components/ui/TxError";
-import { useAllowance } from "@/hooks/useAllowance";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useHydrated } from "@/hooks/useHydrated";
-import {
-  ACCOUNT_CHANGED,
-  isSafeConnection,
-  SAFE_PROPOSAL_UNCONFIRMED_LINE,
-  submittedViaSafe,
-  useProposeSafeBatch,
-  useSafeConnection,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+import { useReviewedAction } from "@/hooks/useReviewedAction";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { cachedQuery } from "@/lib/query-persist";
+import {
+  ACCOUNT_CHANGED,
+  requireProposedOrDone,
+  reviewClosed,
+  reviewedCall,
+  ReviewRefusal,
+  SAFE_PROPOSAL_UNCONFIRMED_LINE,
+} from "@/lib/reviewed-call";
+import { isSafeConnection, useSafeConnection } from "@/lib/safe-connector";
 import { explorerBaseUrl } from "@/lib/utils";
-import { RECEIPT_WAIT_TIMEOUT_MS, waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
+import { heldLineOf } from "@/lib/write-hold";
 import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import {
   uniswapV4AmountsForLiquidity,
@@ -94,11 +92,8 @@ import {
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
 import {
   approvalStepsFor,
-  heldLiquidityApprovals,
-  liquidityBatchCalls,
-  runApprovalStep,
+  liquidityReviewedCalls,
   safeBatchIntro,
-  SummaryRow,
   type LiquidityStep,
 } from "./liquidityWrite";
 
@@ -633,12 +628,10 @@ export function AddLiquidityForm({
 }) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
-  const proposeSafeBatch = useProposeSafeBatch();
   const viaSafe = useSafeConnection(wagmiConfig);
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });
-  const { ensureAllowance, isApproving } = useAllowance(chainId);
-  const { writeContractAsync, isPending } = useWriteContract();
+  const { run } = useReviewedAction();
   // Revnets have a corridor to make a market in; anything without both edges
   // falls back to the solved single band.
   const [mode, setMode] = useState<LiquidityFormMode>(
@@ -657,6 +650,7 @@ export function AddLiquidityForm({
     account: Address;
   } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [minted, setMinted] = useState<Hex | null>(null);
   const [busy, setBusy] = useState(false);
@@ -747,6 +741,7 @@ export function AddLiquidityForm({
   };
 
   const prepare = async () => {
+    setFailure(null);
     if (!address || !publicClient) {
       setStatus("Connect a wallet first.");
       return;
@@ -859,6 +854,50 @@ export function AddLiquidityForm({
     }
   };
 
+  const reviewContext = !review
+    ? []
+    : [
+        ...(review.kind === "market"
+          ? [
+              ...(review.plan.tokenSide
+                ? [
+                    {
+                      label: "Sells above the price",
+                      value: amountsText(sideUnits("token"), 0n),
+                      note: bandLabel(pool, tokenSymbol, review.plan.tokenSide),
+                      strong: true,
+                    },
+                  ]
+                : []),
+              ...(review.plan.pairSide
+                ? [
+                    {
+                      label: "Buys below the price",
+                      value: amountsText(0n, sideUnits("pair")),
+                      note: bandLabel(pool, tokenSymbol, review.plan.pairSide),
+                      strong: true,
+                    },
+                  ]
+                : []),
+            ]
+          : [
+              {
+                label: "Adds",
+                value: amountsText(sideUnits("token"), sideUnits("pair")),
+                note: bandLabel(pool, tokenSymbol, review.plan),
+                strong: true,
+              },
+            ]),
+        { label: "On", value: chainName(state.chainId) },
+        {
+          label: "Authorizes up to",
+          value: amountsText(review.plan.tokenMaximum, review.plan.pairMaximum),
+          note: `1% price headroom, spent only if the price moves before the mint lands${
+            pool.pair.addr === zeroAddress ? `. Unused ${pool.pair.symbol} is refunded` : ""
+          }`,
+        },
+      ];
+
   const execute = async () => {
     if (!address || !publicClient || !reviewed || reviewed.snapshot !== snapshot) return;
     if (gate.blocked) return;
@@ -873,78 +912,45 @@ export function AddLiquidityForm({
     const lpIntent = liquidityIntent({ chainId, pool: pool.poolId, positions: [] });
     setBusy(true);
     setStatus(null);
+    setFailure(null);
     try {
-      // ponytail: Safe app only; other EIP-5792 wallets keep the sequential path.
-      if (isSafeConnection(wagmiConfig) && steps.length > 1) {
-        if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
-        else await reverifyAddLiquidity(pool, built.plan);
-        await proposeSafeBatch(
-          wagmiConfig,
-          chainId,
-          built.kind === "market" ? "Make the market" : "Add liquidity",
-          liquidityBatchCalls({
+      const result = requireProposedOrDone(
+        await run({
+          // The position goes to the reviewed account: only it may fund the mint.
+          account,
+          title: built.kind === "market" ? "Review the market" : "Review liquidity",
+          confirmLabel:
+            built.kind === "market" ? "Agree & make the market" : "Agree & add liquidity",
+          context: reviewContext,
+          calls: liquidityReviewedCalls(lpIntent, {
             chainId: state.chainId,
             steps,
             unlockData: plan.unlockData,
             value: plan.value,
+            safe: isSafeConnection(wagmiConfig),
           }),
-          account,
-          lpIntent,
-        );
+          scope: steps.length > 1 ? lpIntent : undefined,
+          // A Safe proposes the approvals and the write as one transaction.
+          batch: true,
+          reverify: async (call) => {
+            if (call.functionName !== "modifyLiquidities") return;
+            if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
+            else await reverifyAddLiquidity(pool, built.plan);
+          },
+          beforeWallet: (_call, step) => setStepIndex(step),
+        }),
+      );
+      if (result.status === "proposed") {
         setStatus(
-          "Proposed to Safe as one batch. Once its signers approve and it executes, the position shows under Your liquidity.",
+          steps.length > 1
+            ? "Proposed to Safe as one batch. Once its signers approve and it executes, the position shows under Your liquidity."
+            : "Liquidity mint was proposed to Safe and awaits approvals and execution.",
         );
         setReviewed(null);
         return;
       }
-      for (const [index, step] of steps.entries()) {
-        setStepIndex(index);
-        if (step.approval) {
-          const outcome = await runApprovalStep(step, {
-            chainId: state.chainId,
-            address: account,
-            publicClient: publicClient as PublicClient,
-            ...heldLiquidityApprovals(lpIntent, {
-              chainId,
-              account,
-              ensureAllowance,
-              writeContractAsync: writeContractAsync as never,
-            }),
-          });
-          if (outcome === "safe-proposed") {
-            setStatus(
-              "Permit2 authorization was proposed to Safe. Execute it, then review liquidity again.",
-            );
-            setReviewed(null);
-            return;
-          }
-          continue;
-        }
-        if (built.kind === "market") await reverifyMarketLiquidity(pool, built.plan);
-        else await reverifyAddLiquidity(pool, built.plan);
-        const hash = await withWriteIntent(
-          writeContractAsync,
-          lpIntent,
-        )({
-          chainId,
-          address: POSITION_MANAGER_BY_CHAIN[chainId]!,
-          abi: POSITION_MANAGER_ABI,
-          functionName: "modifyLiquidities",
-          args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
-          value: plan.value,
-          // The position goes to the reviewed account: only it may fund the mint.
-          account,
-        });
-        if (submittedViaSafe(hash)) {
-          setStatus("Liquidity mint was proposed to Safe and awaits approvals and execution.");
-          setReviewed(null);
-          return;
-        }
-        const receipt = await waitForReceiptWithRetry(publicClient, hash);
-        if (receipt.status !== "success") throw new Error(`Liquidity mint ${hash} reverted.`);
-        setStepIndex(steps.length);
-        setMinted(hash);
-      }
+      setStepIndex(steps.length);
+      setMinted(result.hashes.at(-1) ?? null);
       setReviewed(null);
       setPairText("");
       setTokenText("");
@@ -955,13 +961,14 @@ export function AddLiquidityForm({
         queryClient.invalidateQueries({ queryKey: ["revnetPoolLpProviders"] }),
       ]);
     } catch (cause) {
-      setStatus(txMessage(cause, "Could not add liquidity."));
+      if (reviewClosed(cause)) setReviewed(null);
+      else setFailure(txMessage(cause, "Could not add liquidity."));
     } finally {
       setBusy(false);
     }
   };
 
-  const disabled = busy || isApproving || isPending;
+  const disabled = busy;
   return (
     <div className="mt-3 border-t border-zinc-100 pt-3">
       <div className="flex items-center justify-between gap-3">
@@ -1140,7 +1147,7 @@ export function AddLiquidityForm({
         </ButtonWithWallet>
       </div>
       {review || (busy && !review) ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReviewed(null)}
           title={mode === "market" ? "Confirm market" : "Confirm liquidity"}
@@ -1148,51 +1155,12 @@ export function AddLiquidityForm({
           steps={reviewSteps}
           activeIndex={busy ? stepIndex : -1}
           stepsIntro={viaSafe && reviewSteps.length > 1 ? safeBatchIntro(reviewSteps) : undefined}
-          action={mode === "market" ? "Make the market" : "Add liquidity"}
-          onConfirm={() => void execute()}
+          start={() => void execute()}
           busy={disabled}
           status={status}
-        >
-          {!review ? null : review.kind === "market" ? (
-            <>
-              {review.plan.tokenSide ? (
-                <SummaryRow label="Sells above the price">
-                  {amountsText(sideUnits("token"), 0n)}
-                  <span className="block text-xs text-zinc-500">
-                    {bandLabel(pool, tokenSymbol, review.plan.tokenSide)}
-                  </span>
-                </SummaryRow>
-              ) : null}
-              {review.plan.pairSide ? (
-                <SummaryRow label="Buys below the price">
-                  {amountsText(0n, sideUnits("pair"))}
-                  <span className="block text-xs text-zinc-500">
-                    {bandLabel(pool, tokenSymbol, review.plan.pairSide)}
-                  </span>
-                </SummaryRow>
-              ) : null}
-            </>
-          ) : (
-            <SummaryRow label="Adds">
-              {amountsText(sideUnits("token"), sideUnits("pair"))}
-              <span className="block text-xs text-zinc-500">
-                {bandLabel(pool, tokenSymbol, review.plan)}
-              </span>
-            </SummaryRow>
-          )}
-          {review ? (
-            <>
-              <SummaryRow label="On">{chainName(state.chainId)}</SummaryRow>
-              <SummaryRow label="Authorizes up to">
-                {amountsText(review.plan.tokenMaximum, review.plan.pairMaximum)}
-                <span className="block text-xs text-zinc-500">
-                  1% price headroom, spent only if the price moves before the mint lands
-                  {pool.pair.addr === zeroAddress ? `. Unused ${pool.pair.symbol} is refunded` : ""}
-                </span>
-              </SummaryRow>
-            </>
-          ) : null}
-        </TxConfirmDialog>
+          error={failure}
+          rows={reviewContext}
+        />
       ) : null}
       {minted ? (
         <div className="mt-2 border border-teal-300 bg-teal-50 p-2 text-xs" role="status">
@@ -1349,37 +1317,19 @@ function ChainPositionRows({
   const [removing, setRemoving] = useState(false);
   const [claimReview, setClaimReview] = useState<UserLpPosition[] | null>(null);
   const client = usePublicClient({ chainId }) as PublicClient | undefined;
-  const {
-    writeContractAsync,
-    data: hash,
-    isPending,
-  } = useWriteContract({
-    transactionReview: {
-      title: "Review liquidity removal",
-      description:
-        "Burn this Uniswap V4 position and return both currencies to the connected wallet. The reviewed minimum returns are enforced onchain.",
-      confirmLabel: "Agree & remove liquidity",
-    },
-  });
-  const receipt = useWaitForTransactionReceipt({ hash, chainId });
-  // The removal this review sent. Its confirm stays held until the receipt
-  // settles, so its action cannot send the removal again. A Safe proposal has
-  // no receipt here, and a watch that times out has no outcome yet: both end on
-  // Done.
-  const [removalHash, setRemovalHash] = useState<Hex>();
-  const removal = useWaitForTransactionReceipt({
-    hash: removalHash,
-    chainId,
-    timeout: RECEIPT_WAIT_TIMEOUT_MS,
-  });
-  const removalSettling = removal.isLoading && !removal.isSafeProposal;
-  const removalProposed = Boolean(removal.isSafeProposal);
-  const removalSafeUnconfirmed = Boolean(removal.isSafeResultUnconfirmed);
-  const removalUnconfirmed = Boolean(removal.isUnconfirmed);
-  // A removal that may still land keeps every position action locked, after
-  // its confirm closes too, so the same position cannot be sent twice.
-  const removalOutstanding =
-    removalSettling || removalProposed || removalSafeUnconfirmed || removalUnconfirmed;
+  const claim = useReviewedAction();
+  const removal = useReviewedAction();
+  const isPending = claim.busy || removal.busy;
+  // A removal that may still land keeps every position action locked, after its confirm closes
+  // too, so the same position cannot be sent twice.
+  const removalSettling = removal.phase === "receipt";
+  const removalProposed = removal.phase === "proposed";
+  const removalSafeUnconfirmed = removalProposed && !!removal.held?.exit;
+  const removalHeldLine = removal.held && !removalProposed ? heldLineOf(removal.held) : null;
+  // A held removal without its exit may still land; once the hold offers the exit, sending it
+  // again goes through the hold's own dialog.
+  const removalHeld = !!removal.held && !removalProposed && !removal.held.exit;
+  const removalOutstanding = removalSettling || removalProposed || removalHeld;
   const positions = useQuery({
     queryKey: ["revnetWalletLpPositions", state.chainId, pool?.poolId, address?.toLowerCase()],
     enabled: Boolean(pool && positionManager && address),
@@ -1418,21 +1368,11 @@ function ChainPositionRows({
     );
   }, [chainId, onStatus, positions.isLoading, positions.isError, positions.data?.length]);
 
-  useEffect(() => {
-    if (receipt.isSuccess) {
-      setReviewed(null);
-      void positions.refetch();
-      void fees.refetch();
-    }
-    // Refetch only on the receipt transition; the query object changes each render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [receipt.isSuccess]);
-
   if (!pool || !positionManager || !address) return null;
 
   const beginReview = async (position: UserLpPosition) => {
     setError(null);
-    setRemovalHash(undefined);
+    removal.reset();
     setRefreshing(position.tokenId);
     try {
       const fresh = await refreshUserLpPosition(pool, position.tokenId, address);
@@ -1447,6 +1387,44 @@ function ChainPositionRows({
       setRefreshing(null);
     }
   };
+
+  const claimContext = (positions: UserLpPosition[]) => {
+    const total = (key: "tokenFees" | "pairFees") =>
+      positions.reduce(
+        (sum, position) => sum + (fees.data?.[position.tokenId.toString()]?.[key] ?? 0n),
+        0n,
+      );
+    return [
+      {
+        label: positions.length === 1 ? "Position" : "Positions",
+        value: positions.map((position) => `#${position.tokenId.toString()}`).join(", "),
+      },
+      { label: "On", value: chainName(state.chainId) },
+      {
+        label: "To your wallet",
+        value: `${fmtUnits(total("tokenFees"), 18)} ${tokenSymbol}`,
+        lines: [`${fmtUnits(total("pairFees"), pool.pair.decimals)} ${pool.pair.symbol}`],
+        strong: true,
+      },
+    ];
+  };
+  const removalContext = reviewed
+    ? [
+        {
+          label: "Position",
+          value: `#${reviewed.position.tokenId.toString()} on ${chainName(state.chainId)}`,
+        },
+        {
+          label: "Back to your wallet",
+          value: `~${fmtUnits(reviewed.position.tokenAmount, 18)} ${tokenSymbol} + ${fmtUnits(reviewed.position.pairAmount, pool.pair.decimals)} ${pool.pair.symbol} + unclaimed fees`,
+          strong: true,
+        },
+        {
+          label: "Enforced onchain",
+          value: `At least ${fmtUnits(reviewed.plan.tokenMinimum, 18)} ${tokenSymbol} + ${fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} ${pool.pair.symbol} back (95% floors)`,
+        },
+      ]
+    : [];
 
   // Claim fees only. Nothing is swapped and the position is untouched, so
   // there is no reviewed amount to re-verify — only the wallet's ownership,
@@ -1464,24 +1442,39 @@ function ChainPositionRows({
               positions.map((position) => position.tokenId),
               address,
             ).unlockData;
-      await withWriteIntent(
-        writeContractAsync,
-        liquidityIntent({
-          chainId,
-          pool: pool.poolId,
-          positions: positions.map((position) => position.tokenId),
+      const result = requireProposedOrDone(
+        await claim.run({
+          account: address,
+          title: "Review fee claim",
+          description:
+            "Claim this position's unclaimed fees to the connected wallet. The position stays open.",
+          confirmLabel: "Agree & claim fees",
+          context: claimContext(positions),
+          calls: [
+            reviewedCall(
+              {
+                chainId,
+                address: positionManager,
+                abi: POSITION_MANAGER_ABI,
+                functionName: "modifyLiquidities",
+                args: [unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
+              },
+              {
+                intent: liquidityIntent({
+                  chainId,
+                  pool: pool.poolId,
+                  positions: positions.map((position) => position.tokenId),
+                }),
+              },
+            ),
+          ],
         }),
-      )({
-        chainId,
-        address: positionManager,
-        abi: POSITION_MANAGER_ABI,
-        functionName: "modifyLiquidities",
-        args: [unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
-        account: address,
-      });
+      );
+      if (result.status === "done") void fees.refetch();
       setClaimReview(null);
     } catch (cause) {
-      setError(txMessage(cause, "Could not claim fees."));
+      if (reviewClosed(cause)) setClaimReview(null);
+      else setError(txMessage(cause, "Could not claim fees."));
     } finally {
       setClaiming(null);
     }
@@ -1497,31 +1490,51 @@ function ChainPositionRows({
     setError(null);
     setRemoving(true);
     try {
-      const fresh = await refreshUserLpPosition(pool, reviewed.position.tokenId, reviewed.account);
-      if (fresh.liquidity < reviewed.position.liquidity) {
-        throw new Error("This position changed. Review its current return before removing it.");
-      }
-      const sent = await withWriteIntent(
-        writeContractAsync,
-        liquidityIntent({
-          chainId,
-          pool: pool.poolId,
-          positions: [reviewed.position.tokenId],
+      const { position, plan, account } = reviewed;
+      const result = requireProposedOrDone(
+        await removal.run({
+          account,
+          title: "Review liquidity removal",
+          description:
+            "Burn this Uniswap V4 position and return both currencies to the connected wallet. The reviewed minimum returns are enforced onchain.",
+          confirmLabel: "Agree & remove liquidity",
+          context: removalContext,
+          calls: [
+            reviewedCall(
+              {
+                chainId,
+                address: positionManager,
+                abi: POSITION_MANAGER_ABI,
+                functionName: "modifyLiquidities",
+                // The reviewed minimums live in `unlockData`.
+                args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
+              },
+              {
+                intent: liquidityIntent({
+                  chainId,
+                  pool: pool.poolId,
+                  positions: [position.tokenId],
+                }),
+              },
+            ),
+          ],
+          reverify: async () => {
+            const fresh = await refreshUserLpPosition(pool, position.tokenId, account);
+            if (fresh.liquidity < position.liquidity)
+              throw new ReviewRefusal(
+                "This position changed. Review its current return before removing it.",
+              );
+          },
         }),
-      )({
-        chainId,
-        address: positionManager,
-        abi: POSITION_MANAGER_ABI,
-        functionName: "modifyLiquidities",
-        // The reviewed minimums live in `unlockData` and stay frozen; only the
-        // deadline is re-stamped, so a slow review can't ship an already-expired
-        // window.
-        args: [reviewed.plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
-        account: reviewed.account,
-      });
-      setRemovalHash(sent);
+      );
+      if (result.status === "done") {
+        setReviewed(null);
+        void positions.refetch();
+        void fees.refetch();
+      }
     } catch (cause) {
-      setError(txMessage(cause, "Could not remove liquidity."));
+      if (reviewClosed(cause)) setReviewed(null);
+      else setError(txMessage(cause, "Could not remove liquidity."));
     } finally {
       setRemoving(false);
     }
@@ -1789,7 +1802,7 @@ function ChainPositionRows({
         group.kind === "single" ? renderSingle(group.position) : renderMarket(group),
       )}
       {claimReview ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setClaimReview(null)}
           title="Confirm fee claim"
@@ -1800,45 +1813,18 @@ function ChainPositionRows({
             },
           ]}
           activeIndex={isPending ? 0 : -1}
-          action="Claim fees"
-          onConfirm={() => void claimFees(claimReview)}
+          start={() => void claimFees(claimReview)}
           busy={isPending || claiming !== null}
           error={error}
-        >
-          <SummaryRow label={claimReview.length === 1 ? "Position" : "Positions"}>
-            {claimReview.map((position) => `#${position.tokenId.toString()}`).join(", ")}
-          </SummaryRow>
-          <SummaryRow label="On">{chainName(state.chainId)}</SummaryRow>
-          <SummaryRow label="To your wallet">
-            {fmtUnits(
-              claimReview.reduce(
-                (sum, position) =>
-                  sum + (fees.data?.[position.tokenId.toString()]?.tokenFees ?? 0n),
-                0n,
-              ),
-              18,
-            )}{" "}
-            {tokenSymbol}
-            <span className="block text-xs text-zinc-500">
-              {fmtUnits(
-                claimReview.reduce(
-                  (sum, position) =>
-                    sum + (fees.data?.[position.tokenId.toString()]?.pairFees ?? 0n),
-                  0n,
-                ),
-                pool.pair.decimals,
-              )}{" "}
-              {pool.pair.symbol}
-            </span>
-          </SummaryRow>
-        </TxConfirmDialog>
+          rows={claimContext(claimReview)}
+        />
       ) : null}
       {reviewed || refreshing !== null ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => {
             setReviewed(null);
-            if (!removalOutstanding) setRemovalHash(undefined);
+            if (!removalOutstanding) removal.reset();
           }}
           title="Confirm removal"
           preparing={!reviewed}
@@ -1849,13 +1835,11 @@ function ChainPositionRows({
                 ? SAFE_PROPOSAL_UNCONFIRMED_LINE
                 : removalProposed
                   ? "The removal was proposed to Safe and awaits approvals and execution."
-                  : removal.heldLine
-                    ? removal.heldLine
-                    : removalUnconfirmed
-                      ? "Couldn't confirm the removal yet."
-                      : removalSettling
-                        ? "Waiting for confirmation…"
-                        : null
+                  : removalHeldLine
+                    ? removalHeldLine
+                    : removalSettling
+                      ? "Waiting for confirmation…"
+                      : null
           }
           steps={[
             {
@@ -1864,32 +1848,12 @@ function ChainPositionRows({
             },
           ]}
           activeIndex={isPending || removing || removalSettling ? 0 : -1}
-          action="Remove the position"
-          onConfirm={() => void remove()}
+          start={() => void remove()}
           busy={isPending || removing || removalSettling}
-          complete={removalProposed || removalSafeUnconfirmed || removalUnconfirmed}
-          error={
-            error ?? (removal.isError ? txMessage(removal.error, "The removal failed.") : null)
-          }
-        >
-          {reviewed ? (
-            <>
-              <SummaryRow label="Position">
-                #{reviewed.position.tokenId.toString()} on {chainName(state.chainId)}
-              </SummaryRow>
-              <SummaryRow label="Back to your wallet">
-                ~{fmtUnits(reviewed.position.tokenAmount, 18)} {tokenSymbol} +{" "}
-                {fmtUnits(reviewed.position.pairAmount, pool.pair.decimals)} {pool.pair.symbol} +
-                unclaimed fees
-              </SummaryRow>
-              <SummaryRow label="Enforced onchain">
-                At least {fmtUnits(reviewed.plan.tokenMinimum, 18)} {tokenSymbol} +{" "}
-                {fmtUnits(reviewed.plan.pairMinimum, pool.pair.decimals)} {pool.pair.symbol} back
-                (95% floors)
-              </SummaryRow>
-            </>
-          ) : null}
-        </TxConfirmDialog>
+          complete={removalProposed || removalHeld}
+          error={error}
+          rows={removalContext}
+        />
       ) : null}
       {/* The panels live OUTSIDE the scroll wrapper — as table rows they would
           inherit the table's full scrollable width and get cut off. */}
@@ -1937,16 +1901,14 @@ function ChainPositionRows({
                   }}
                 />
               ) : null}
-              {receipt.isSuccess ? (
+              {removal.phase === "done" ? (
                 <p className="mt-2 text-xs text-green-700">Liquidity removal confirmed.</p>
               ) : null}
-              {receipt.isSafeResultUnconfirmed ? (
+              {removalSafeUnconfirmed ? (
                 <p className="mt-2 text-xs text-zinc-600">{SAFE_PROPOSAL_UNCONFIRMED_LINE}</p>
               ) : null}
-              {!reviewed && (removal.heldLine || removalUnconfirmed) ? (
-                <p className="mt-2 text-xs text-zinc-600">
-                  {removal.heldLine ?? "Couldn't confirm the removal yet."}
-                </p>
+              {!reviewed && removalHeldLine ? (
+                <p className="mt-2 text-xs text-zinc-600">{removalHeldLine}</p>
               ) : null}
               {!reviewed && removalProposed && !removalSafeUnconfirmed ? (
                 <p className="mt-2 text-xs text-zinc-600">

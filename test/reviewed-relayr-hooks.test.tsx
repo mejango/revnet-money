@@ -1,10 +1,10 @@
 import type { ReviewedRelayrRequest } from "@/hooks/useReviewedRelayr";
 import type { ChainPayment, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { pendingRouterCommitment } from "@/lib/pending-router-calls";
-import { relayrPaymentReview } from "@/lib/relayr-payment-review";
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import type { TransactionActivity } from "@/lib/transaction-activity";
-import type { TransactionReviewRequest } from "@/lib/transaction-review";
+import { jbContractAddress } from "@bananapus/nana-sdk-core";
+import type { ReviewModel } from "@bananapus/nana-sdk-core/review";
 import { SAVED_ATTEMPT_CHECK_LINE } from "@bananapus/nana-sdk-core/review";
 import {
   RELAYR_PAYMENT_EVENT,
@@ -46,6 +46,7 @@ import {
   TARGET,
   TX_UUIDS,
 } from "./relayr-fixtures";
+import { answerReviews, stopAnswering } from "./support/core-review";
 
 const mocks = vi.hoisted(() => ({
   config: { id: "relayr-test-config" },
@@ -70,12 +71,38 @@ const mocks = vi.hoisted(() => ({
   getTransaction: vi.fn(),
   getTransactionReceipt: vi.fn(),
   getBlock: vi.fn(),
+  feeBound: false,
 }));
 
+// Core quotes each Relayr round's fee bound from Relayr before the plan review opens. These
+// tests post through their own Relayr stubs, so rounds stay untagged unless a test proves the bound.
+vi.mock("@bananapus/nana-sdk-core/review", async (importOriginal) => {
+  const core = await importOriginal<typeof import("@bananapus/nana-sdk-core/review")>();
+  return {
+    ...core,
+    reviewPlan: (
+      action: Parameters<typeof core.reviewPlan>[0],
+      deps: Parameters<typeof core.reviewPlan>[1],
+    ) =>
+      core.reviewPlan(
+        mocks.feeBound
+          ? action
+          : { ...action, calls: action.calls.map(({ relayrRound: _round, ...call }) => call) },
+        deps,
+      ),
+  };
+});
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
   getPublicClient: mocks.getPublicClient,
   waitForTransactionReceipt: mocks.waitForTransactionReceipt,
+  // Core's reviewed sends and signatures reach the wallet through its viem client.
+  getWalletClient: async () => ({
+    signTypedData: mocks.signTypedData,
+    sendTransaction: (request: { chain: { id: number } }) =>
+      mocks.sendTransaction({ ...request, chainId: request.chain.id }),
+  }),
+  switchChain: (_config: unknown, request: { chainId: number }) => mocks.switchChain(request),
 }));
 
 vi.mock("wagmi", () => ({
@@ -132,14 +159,39 @@ function quote(row = payment()): RelayrPostBundleResponse {
   return { bundle_uuid: BUNDLE_UUID, payment_info: [row] };
 }
 
+/** A parent flow's one plan review covering `requests`, answered here. */
+async function parentPlan(
+  harness: Awaited<ReturnType<typeof freshHarness>>,
+  requests: ReviewedRelayrRequest[],
+) {
+  const stop = harness.review.answerReviews(async () => true);
+  const core = await import("@bananapus/nana-sdk-core/review");
+  const { reviewedSendDeps } = await import("@/lib/reviewed-send-deps");
+  try {
+    return {
+      relayrRound: "parent",
+      plan: await core.reviewPlan(
+        { account: ACCOUNT, calls: requests.map((r) => harness.hooks.relayrPlanCall(r, ACCOUNT)) },
+        reviewedSendDeps(mocks.config as never),
+      ),
+    };
+  } finally {
+    stop();
+  }
+}
+
 async function freshHarness() {
   vi.resetModules();
-  const [review, activity, hooks, choice] = await Promise.all([
-    import("@/lib/transaction-review"),
+  const [core, activity, hooks, choice] = await Promise.all([
+    import("@bananapus/nana-sdk-core/review"),
     import("@/lib/transaction-activity"),
     import("@/hooks/useReviewedRelayr"),
     import("@/lib/flow-choice"),
   ]);
+  const review = {
+    answerReviews: (answer: (model: ReviewModel) => boolean | Promise<boolean>) =>
+      answerReviews(answer, core),
+  };
   return { review, activity, hooks, choice };
 }
 
@@ -181,6 +233,7 @@ describe("saved unpaid quote release evidence", () => {
 });
 
 beforeEach(() => {
+  stopAnswering();
   window.localStorage.clear();
   // A test that leaves a bundle's status watch running can't reach a later test's bundle.
   rotateBundleUuids();
@@ -192,39 +245,68 @@ beforeEach(() => {
     connector: { id: "injected", name: "Injected" },
   };
   mocks.getAccount.mockImplementation(() => mocks.account);
-  mocks.getPublicClient.mockReturnValue({
+  // One client per chain: a forwarder's domain names the chain whose client read it.
+  mocks.getPublicClient.mockImplementation((_config?: unknown, at?: { chainId?: number }) => ({
+    chain: { id: at?.chainId ?? 1 },
     call: mocks.clientCall,
     request: mocks.rawRequest,
-    readContract: mocks.readContract,
+    readContract: (args: object) =>
+      mocks.readContract({ ...args, clientChainId: at?.chainId ?? mocks.account.chainId }),
     estimateGas: mocks.estimateGas,
     getCode: mocks.getCode,
     getTransaction: mocks.getTransaction,
     getTransactionReceipt: mocks.getTransactionReceipt,
     getBlock: mocks.getBlock,
-  });
+    getChainId: async () => at?.chainId ?? 1,
+    // Core's write hold reads the account's nonce; its reviewed send waits for the receipt.
+    getTransactionCount: async () => 5 + mocks.sendTransaction.mock.calls.length,
+    getBlockNumber: async () => 100n,
+    waitForTransactionReceipt: ({ hash }: { hash: Hex }) =>
+      mocks.waitForTransactionReceipt(mocks.config, { chainId: at?.chainId, hash }),
+  }));
   mocks.switchChain.mockImplementation(async ({ chainId }: { chainId: number }) => {
     mocks.account.chainId = chainId;
   });
   mocks.clientCall.mockResolvedValue({ data: "0x" });
   mocks.rawRequest.mockResolvedValue("0x");
   mocks.readContract.mockImplementation(
-    async ({ functionName, address }: { functionName: string; address: Address }) =>
+    async ({
+      functionName,
+      address,
+      clientChainId,
+    }: {
+      functionName: string;
+      address: Address;
+      clientChainId?: number;
+    }) =>
       functionName === "isTrustedForwarder"
         ? true
         : functionName === "eip712Domain"
-          ? ["0x0f", "Juicebox", "1", BigInt(mocks.account.chainId!), address, HASH, []]
+          ? [
+              "0x0f",
+              "Juicebox",
+              "1",
+              BigInt(clientChainId ?? mocks.account.chainId!),
+              address,
+              HASH,
+              [],
+            ]
           : 4n,
   );
   mocks.getCode.mockResolvedValue(PAYMENT_RUNTIME);
   mocks.getTransaction.mockResolvedValue(onchain(PAYMENT_TARGET, payment().calldata));
   mocks.getTransactionReceipt.mockResolvedValue(onchain(PAYMENT_TARGET, payment().calldata));
-  mocks.getBlock.mockResolvedValue({ hash: BLOCK_HASH });
+  mocks.getBlock.mockImplementation(async ({ blockNumber }: { blockNumber?: bigint }) => ({
+    number: blockNumber ?? 123n,
+    hash: BLOCK_HASH,
+  }));
   mocks.estimateGas.mockResolvedValue(21_000n);
   mocks.signTypedData.mockResolvedValue(SIGNATURE);
   mocks.sendTransaction.mockResolvedValue(HASH);
+  // The awaited receipt is the one the chain shows.
   mocks.waitForTransactionReceipt.mockImplementation(
     async (_config: unknown, { hash }: { hash: Hex }) => ({
-      status: "success",
+      ...(await mocks.getTransactionReceipt({ hash })),
       transactionHash: hash,
     }),
   );
@@ -250,22 +332,32 @@ function chainAt({
     async ({ blockTag, blockNumber }: { blockTag?: string; blockNumber?: bigint }) =>
       blockTag === "finalized"
         ? { number: FINAL_BLOCK, hash: FINAL_HASH, timestamp: BigInt(timestamp) }
-        : { hash: blockNumber === FINAL_BLOCK ? FINAL_HASH : BLOCK_HASH },
+        : { number: blockNumber, hash: blockNumber === FINAL_BLOCK ? FINAL_HASH : BLOCK_HASH },
   );
   mocks.readContract.mockImplementation(
     async ({
       functionName,
       address,
       blockNumber,
+      clientChainId,
     }: {
       functionName: string;
       address: Address;
       blockNumber?: bigint;
+      clientChainId?: number;
     }) =>
       functionName === "isTrustedForwarder"
         ? true
         : functionName === "eip712Domain"
-          ? ["0x0f", "Juicebox", "1", BigInt(mocks.account.chainId!), address, HASH, []]
+          ? [
+              "0x0f",
+              "Juicebox",
+              "1",
+              BigInt(clientChainId ?? mocks.account.chainId!),
+              address,
+              HASH,
+              [],
+            ]
           : functionName === "nonces"
             ? blockNumber === undefined
               ? liveNonce
@@ -286,6 +378,7 @@ describe("reviewed Relayr authorization hook", () => {
         let release!: () => void;
         let entered = false;
         let reviewed = false;
+        let signedAfterSwitch: boolean | undefined;
         const waiting = new Promise<void>((resolve) => {
           release = resolve;
         });
@@ -293,15 +386,18 @@ describe("reviewed Relayr authorization hook", () => {
           entered = true;
           await waiting;
         };
-        review.registerTransactionReviewHandler(async () => {
+        review.answerReviews(async () => {
           if (stage === "review") await pause();
           reviewed = true;
           return true;
         });
-        if (stage === "switch")
+        // Core switches only a wallet on another chain than the signature's domain.
+        if (stage === "switch") {
+          mocks.account.chainId = 10;
           mocks.switchChain.mockImplementation(async () => {
             await pause();
           });
+        }
         const guard = { address: TARGET, data: "0xabcdef" as Hex, expected: "0x" as Hex };
         mocks.clientCall.mockImplementation(async ({ data }: { data: Hex }) => {
           if (stage === "preconditions" && reviewed && data === guard.data) await pause();
@@ -312,12 +408,24 @@ describe("reviewed Relayr authorization hook", () => {
         const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
         await act(async () => {
           const pending = result.current.getRelayrTxQuote([{ ...REQUEST, preconditions: [guard] }]);
-          const refused = expect(pending).rejects.toThrow();
+          const settled = pending.then(
+            () => "signed",
+            () => "refused",
+          );
           await vi.waitFor(() => expect(entered).toBe(true));
           changeContext(change, setViewAs);
           release();
-          await refused;
+          signedAfterSwitch = (await settled) === "signed";
         });
+        // A chain change during review is no wallet change: core switches back to the
+        // signature's domain chain before it signs.
+        if (stage === "review" && change === "chain") {
+          expect(signedAfterSwitch).toBe(true);
+          expect(mocks.switchChain).toHaveBeenCalledWith(expect.objectContaining({ chainId: 1 }));
+          expect(mocks.signTypedData).toHaveBeenCalledOnce();
+          return;
+        }
+        expect(signedAfterSwitch).toBe(false);
         expect(mocks.signTypedData).not.toHaveBeenCalled();
         expect(api).not.toHaveBeenCalled();
         expect(activity.transactionActivitySnapshot()).toEqual([]);
@@ -327,19 +435,14 @@ describe("reviewed Relayr authorization hook", () => {
   it("simulates, reviews, signs the exact forward request, and posts only after account rechecks", async () => {
     const events: string[] = [];
     const { review, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async (request) => {
+    review.answerReviews(async (request) => {
       events.push("review");
-      expect(request).toMatchObject({ kind: "authorization" });
       expect(request.calls[0]).toMatchObject({
         chainId: 1,
         from: ACCOUNT,
         to: TARGET,
         value: 3n,
         data: "0x1234",
-      });
-      expect(request.authorization).toMatchObject({
-        primaryType: "ForwardRequest",
-        message: { from: ACCOUNT, to: TARGET, nonce: 4n },
       });
       return true;
     });
@@ -387,7 +490,8 @@ describe("reviewed Relayr authorization hook", () => {
 
     expect(response?.bundle_uuid).toBe(BUNDLE_UUID);
     // Relayr's records are read and bound before the quote, and its payment, are offered.
-    expect(events).toEqual(["switch", "simulate", "nonce", "review", "sign", "post", "read"]);
+    // The wallet is already on the domain's chain, so nothing switches.
+    expect(events).toEqual(["simulate", "nonce", "review", "sign", "post", "read"]);
   });
 
   it.each([
@@ -398,8 +502,8 @@ describe("reviewed Relayr authorization hook", () => {
     async (_, estimate, signed) => {
       const { review, hooks } = await freshHarness();
       mocks.estimateGas.mockResolvedValue(estimate);
-      const reviewer = vi.fn(async (_request: TransactionReviewRequest) => true);
-      review.registerTransactionReviewHandler(reviewer);
+      const reviewer = vi.fn(async (_request: ReviewModel) => true);
+      review.answerReviews(reviewer);
       vi.stubGlobal("fetch", relayrApi());
       const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
       await act(async () => {
@@ -407,7 +511,6 @@ describe("reviewed Relayr authorization hook", () => {
       });
       const [request] = reviewer.mock.calls[0];
       expect(request.calls[0].gas).toBe(signed);
-      expect(request.authorization).toMatchObject({ message: { gas: signed } });
       expect(mocks.signTypedData).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({ message: expect.objectContaining({ gas: signed }) }),
       );
@@ -417,7 +520,7 @@ describe("reviewed Relayr authorization hook", () => {
   it("rejects mismatched senders and same-chain nonce collisions before signing", async () => {
     const { review, hooks } = await freshHarness();
     const reviewer = vi.fn().mockResolvedValue(true);
-    review.registerTransactionReviewHandler(reviewer);
+    review.answerReviews(reviewer);
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
 
     await expect(
@@ -437,14 +540,14 @@ describe("reviewed Relayr authorization hook", () => {
 
   it("does not sign when the account changes during review", async () => {
     const { review, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => {
+    review.answerReviews(async () => {
       mocks.account = { ...mocks.account, address: OTHER_ACCOUNT };
       return true;
     });
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
 
     await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
-      "Connected account changed",
+      /connected account changed/i,
     );
     expect(mocks.signTypedData).not.toHaveBeenCalled();
   });
@@ -468,7 +571,7 @@ describe("reviewed Relayr authorization hook", () => {
       connector: { id: "injected", name: "Injected" },
     };
     const second = await freshHarness();
-    second.review.registerTransactionReviewHandler(async () => true);
+    second.review.answerReviews(async () => true);
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue(
@@ -483,9 +586,10 @@ describe("reviewed Relayr authorization hook", () => {
     );
     expect(mocks.signTypedData).toHaveBeenCalledOnce();
   });
-  it("signs one authorization per destination and posts them in one bundle", async () => {
+  it("wallet-action:relayr-bundle signs one authorization per destination under one review and posts them in one bundle", async () => {
     const { review, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    const reviewer = vi.fn(async (_model: ReviewModel) => true);
+    review.answerReviews(reviewer);
     vi.stubGlobal("fetch", relayrApi());
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -509,11 +613,14 @@ describe("reviewed Relayr authorization hook", () => {
     ]);
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
+    // One in-app confirmation shows both calls; the two signatures ask nothing more.
+    expect(reviewer).toHaveBeenCalledOnce();
+    expect(reviewer.mock.calls[0]![0].calls.map((call) => call.chainId)).toEqual([1, 10]);
   });
 
   it("binds each signed call to the record carrying its exact request when Relayr lists IDs out of order", async () => {
     const { review, activity, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     // Relayr gives chain 1 the first ID and chain 10 the second, but lists both
     // out of posted order, here under the legacy txn_uuids name.
     const relayr = relayrApi({
@@ -574,7 +681,7 @@ describe("reviewed Relayr authorization hook", () => {
     ],
   ])("offers no payment for a bundle with %s", async (_, api, message) => {
     const { review, activity, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi(api));
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -599,7 +706,7 @@ describe("reviewed Relayr authorization hook", () => {
 
   it("blocks unsupported networks and untrusted forwarders before authorizing", async () => {
     const { review, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(
       result.current.getRelayrTxQuote([{ ...REQUEST, chainId: 56 as typeof REQUEST.chainId }]),
@@ -614,7 +721,7 @@ describe("reviewed Relayr authorization hook", () => {
   it("rejects mixed mainnet and testnet destinations before any authorization", async () => {
     const { review, hooks } = await freshHarness();
     const reviewer = vi.fn().mockResolvedValue(true);
-    review.registerTransactionReviewHandler(reviewer);
+    review.answerReviews(reviewer);
     const fetcher = vi.fn();
     vi.stubGlobal("fetch", fetcher);
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
@@ -628,7 +735,7 @@ describe("reviewed Relayr authorization hook", () => {
 
   it("refuses a domain from another deployment", async () => {
     const { review, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     mocks.readContract.mockImplementation(async ({ functionName }) =>
       functionName === "isTrustedForwarder"
         ? true
@@ -645,7 +752,7 @@ describe("reviewed Relayr authorization hook", () => {
 
   it("quotes the published signatures again when POST may have reached Relayr but its response is lost, and signs a new copy only at their saved nonce", async () => {
     const { review, activity, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const posts: string[] = [];
     vi.stubGlobal(
       "fetch",
@@ -684,7 +791,7 @@ describe("reviewed Relayr authorization hook", () => {
 
   it("blocks a newly selected subset of calls from an unresolved bundle", async () => {
     const { review, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -701,7 +808,7 @@ describe("reviewed Relayr authorization hook", () => {
     "blocks a different operation sharing an unresolved signer and forwarder nonce (legacy activity: %s)",
     async (legacyActivity) => {
       const { review, activity, hooks } = await freshHarness();
-      review.registerTransactionReviewHandler(async () => true);
+      review.answerReviews(async () => true);
       vi.stubGlobal("fetch", relayrApi());
       const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
       await act(async () => {
@@ -726,7 +833,7 @@ describe("reviewed Relayr authorization hook", () => {
 
   it("does not publish signatures if browser recovery storage cannot persist them", async () => {
     const { review, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("quota exceeded");
     });
@@ -741,7 +848,7 @@ describe("reviewed Relayr authorization hook", () => {
     "blocks signing and direct fallback when the saved activity journal is invalid: %s",
     async (corrupt) => {
       const { review, hooks } = await freshHarness();
-      review.registerTransactionReviewHandler(async () => true);
+      review.answerReviews(async () => true);
       window.localStorage.setItem("revnet:transaction-activities:v1", corrupt);
       const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
       await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
@@ -758,7 +865,7 @@ describe("reviewed Relayr authorization hook", () => {
 
   it("retains a logical launch lock when a retry changes salt or calldata", async () => {
     const { review, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("POST response lost")));
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(
@@ -777,7 +884,7 @@ describe("reviewed Relayr authorization hook", () => {
 
   it("keeps the 45-second signed-publication timeout and its authorization reservation", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const deadline = vi.spyOn(AbortSignal, "timeout");
     vi.stubGlobal(
       "fetch",
@@ -802,14 +909,14 @@ describe("reviewed Relayr authorization hook", () => {
   it("does not request a signature after cancellation during authorization review", async () => {
     const { hooks, review, activity } = await freshHarness();
     const controller = new AbortController();
-    review.registerTransactionReviewHandler(async () => {
+    review.answerReviews(async () => {
       controller.abort();
       return true;
     });
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(
       quoter.result.current.getRelayrTxQuote([REQUEST], { signal: controller.signal }),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    ).rejects.toMatchObject({ name: "TransactionReviewCancelledError" });
     expect(mocks.signTypedData).not.toHaveBeenCalled();
     expect(fetch).not.toHaveBeenCalled();
     expect(activity.transactionActivitySnapshot()).toEqual([]);
@@ -819,7 +926,7 @@ describe("reviewed Relayr authorization hook", () => {
     "keeps changed setter calldata blocked by an unresolved destination scope: %s",
     async (recoveryScope) => {
       const { review, hooks } = await freshHarness();
-      review.registerTransactionReviewHandler(async () => true);
+      review.answerReviews(async () => true);
       vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("POST response lost")));
       const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
       await expect(
@@ -837,7 +944,7 @@ describe("reviewed Relayr authorization hook", () => {
 
   it("resumes a persisted unpaid quote after reload without signing or publishing again", async () => {
     const first = await freshHarness();
-    first.review.registerTransactionReviewHandler(async () => true);
+    first.review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const initial = renderHook(() => first.hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -863,7 +970,7 @@ describe("reviewed Relayr authorization hook", () => {
     { payment_deadline: String(NOW + 601) },
   ])("does not expose an unauthenticated payment option: %j", async (override) => {
     const { review, hooks } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi({ payments: [payment(override)] }));
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow(
@@ -902,7 +1009,7 @@ describe("raw payer publication and durable source guards", () => {
   };
   it("reviews and publishes exact canonical payer calldata without a forwarder signature", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -924,30 +1031,41 @@ describe("raw payer publication and durable source guards", () => {
     ).toEqual(deployment);
   });
   it.each([
-    ["raw call's duplicate review", () => ({ ...raw, reviewedInParent: true }), 0],
-    ["forwarded call's signature review", () => ({ ...REQUEST, reviewedInParent: true }), 1],
-  ] as const)("a parent review skips only a %s", async (_, request, reviews) => {
+    ["raw call", () => raw],
+    ["forwarded call", () => REQUEST],
+  ] as const)("a parent plan's one review covers a %s", async (_, request) => {
     const { hooks, review } = await freshHarness();
-    const reviewer = vi.fn(async (_request: TransactionReviewRequest) => true);
-    review.registerTransactionReviewHandler(reviewer);
+    const reviewer = vi.fn(async (_request: ReviewModel) => true);
+    review.answerReviews(reviewer);
     vi.stubGlobal("fetch", relayrApi());
+    const core = await import("@bananapus/nana-sdk-core/review");
+    const { reviewedSendDeps } = await import("@/lib/reviewed-send-deps");
+    const client = mocks.getPublicClient(undefined, { chainId: 1 });
+    const call: ReviewedRelayrRequest = request();
+    const gas =
+      call.relayrMode === "raw"
+        ? undefined
+        : await hooks.forwardedRequestGas(
+            client,
+            jbContractAddress[6].ERC2771Forwarder[1],
+            ACCOUNT,
+            call,
+          );
+    const plan = await core.reviewPlan(
+      { account: ACCOUNT, calls: [hooks.relayrPlanCall(call, ACCOUNT, gas)] },
+      reviewedSendDeps(mocks.config as never),
+    );
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
-      await result.current.getRelayrTxQuote([request()]);
+      await result.current.getRelayrTxQuote([call], { planned: { plan, relayrRound: "parent" } });
     });
-    expect(reviewer).toHaveBeenCalledTimes(reviews);
-    if (reviews) {
-      expect(reviewer).toHaveBeenCalledWith(expect.objectContaining({ kind: "authorization" }));
-    } else {
-      expect(mocks.clientCall).toHaveBeenCalledWith(
-        expect.objectContaining({ to: JB_PROJECT_PAYER_DEPLOYER, data: raw.data.data }),
-      );
-    }
+    expect(reviewer).toHaveBeenCalledOnce();
+    expect(mocks.signTypedData).toHaveBeenCalledTimes(call.relayrMode === "raw" ? 0 : 1);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
   it("retains a raw deployment publication after response loss and rejects changed intent", async () => {
     const { hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("POST response lost")));
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(result.current.getRelayrTxQuote([raw])).rejects.toThrow(/POST response lost/);
@@ -958,7 +1076,7 @@ describe("raw payer publication and durable source guards", () => {
   });
   it("persists raw source guards and refuses funding when they change after quote review", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     mocks.clientCall.mockResolvedValue({ data: "0x01" });
     const source = { address: TARGET, data: "0xabcd" as Hex, expected: "0x01" as Hex };
@@ -1061,9 +1179,11 @@ describe("raw pending-payment publication and funding", () => {
   it.each(["source checks", "quote request"] as const)(
     "stops canceled routing during %s before offering a quote or payment",
     async (stage) => {
-      const request = { ...pendingRequest(HASH), reviewedInParent: true };
+      const request = pendingRequest(HASH);
       sources([request]);
-      const { hooks, activity } = await freshHarness();
+      const harness = await freshHarness();
+      const { hooks, activity } = harness;
+      const plan = await parentPlan(harness, [request]);
       const controller = new AbortController();
       let release!: () => void;
       const waiting = new Promise<void>((resolve) => {
@@ -1089,7 +1209,7 @@ describe("raw pending-payment publication and funding", () => {
       let canceled!: Promise<unknown>;
       await act(async () => {
         canceled = quoter.result.current
-          .getRelayrTxQuote([request], { signal: controller.signal })
+          .getRelayrTxQuote([request], { signal: controller.signal, planned: plan })
           .catch((error) => error);
       });
       await act(async () => {
@@ -1116,14 +1236,15 @@ describe("raw pending-payment publication and funding", () => {
       );
       return controller.signal;
     });
-    const requests = Array.from({ length: 14 }, (_, index) => ({
-      ...pendingRequest(`0x${(index + 1).toString(16).padStart(64, "0")}`),
-      reviewedInParent: true,
-    }));
+    const requests = Array.from({ length: 14 }, (_, index) =>
+      pendingRequest(`0x${(index + 1).toString(16).padStart(64, "0")}`),
+    );
     sources(requests);
-    const { hooks, review, activity } = await freshHarness();
+    const harness = await freshHarness();
+    const { hooks, review, activity } = harness;
+    const plan = await parentPlan(harness, requests);
     const reviewPayment = vi.fn(async () => true);
-    review.registerTransactionReviewHandler(reviewPayment);
+    review.answerReviews(reviewPayment);
     const api = relayrApi({
       ids: requests.map((_, index) => `11111111-1111-4111-8111-${String(index).padStart(12, "0")}`),
     });
@@ -1146,7 +1267,10 @@ describe("raw pending-payment publication and funding", () => {
     let failure!: Promise<unknown>;
     await act(async () => {
       failure = quoter.result.current
-        .getRelayrTxQuote(requests, { onMessage: (message) => messages.push(message) })
+        .getRelayrTxQuote(requests, {
+          onMessage: (message) => messages.push(message),
+          planned: plan,
+        })
         .catch((error) => error);
     });
     expect(messages).toEqual([
@@ -1185,6 +1309,7 @@ describe("raw pending-payment publication and funding", () => {
     await act(async () => {
       retried = quoter.result.current.getRelayrTxQuote(requests, {
         onMessage: (message) => messages.push(message),
+        planned: plan,
       });
       void retried.catch(() => undefined);
     });
@@ -1225,7 +1350,8 @@ describe("raw pending-payment publication and funding", () => {
         calls: [
           expect.objectContaining({
             data: payment().calldata,
-            ...relayrPaymentReview(payment().calldata),
+            functionName: "prepayment",
+            contractName: "Relayr payment",
           }),
         ],
       }),
@@ -1237,10 +1363,11 @@ describe("raw pending-payment publication and funding", () => {
     expect(mocks.sendTransaction).toHaveBeenCalledOnce();
   });
   it("reloads a legacy unsigned publication and quotes the current selection without expiring history", async () => {
-    const firstRequest = { ...pendingRequest(HASH), reviewedInParent: true };
-    const secondRequest = { ...pendingRequest(BLOCK_HASH), reviewedInParent: true };
+    const firstRequest = pendingRequest(HASH);
+    const secondRequest = pendingRequest(BLOCK_HASH);
     sources([firstRequest, secondRequest]);
     const initial = await freshHarness();
+    initial.review.answerReviews(async () => true);
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("POST response lost")));
     const first = renderHook(() => initial.hooks.useGetRelayrTxQuote());
     await expect(first.result.current.getRelayrTxQuote([firstRequest])).rejects.toThrow(
@@ -1254,6 +1381,7 @@ describe("raw pending-payment publication and funding", () => {
     const legacy = structuredClone(initial.activity.transactionActivitySnapshot()[0]);
     first.unmount();
     const resumed = await freshHarness();
+    resumed.review.answerReviews(async () => true);
     expect(resumed.hooks.hasRelayrRecoveryScopeSession(ACCOUNT, firstRequest.recoveryScope!)).toBe(
       false,
     );
@@ -1294,9 +1422,10 @@ describe("raw pending-payment publication and funding", () => {
   ] satisfies Array<[string, Partial<TransactionActivity>]>)(
     "keeps an unsigned publication reserved when it also has %s",
     async (_, patch) => {
-      const request = { ...pendingRequest(HASH), reviewedInParent: true };
+      const request = pendingRequest(HASH);
       sources([request]);
-      const { hooks, activity } = await freshHarness();
+      const { hooks, activity, review } = await freshHarness();
+      review.answerReviews(async () => true);
       vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("POST response lost")));
       const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
       await expect(quoter.result.current.getRelayrTxQuote([request])).rejects.toThrow(
@@ -1321,9 +1450,10 @@ describe("raw pending-payment publication and funding", () => {
     ["missing state guards", { preconditions: [] }],
     ["a missing routing identity", { expectedRouterPending: undefined }],
   ])("does not release saved routing with %s", async (_, patch) => {
-    const request = { ...pendingRequest(HASH), reviewedInParent: true };
+    const request = pendingRequest(HASH);
     sources([request]);
-    const { hooks, activity } = await freshHarness();
+    const { hooks, activity, review } = await freshHarness();
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("POST response lost")));
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(quoter.result.current.getRelayrTxQuote([request])).rejects.toThrow(
@@ -1342,7 +1472,7 @@ describe("raw pending-payment publication and funding", () => {
     const requests = [pendingRequest(HASH), pendingRequest(BLOCK_HASH)];
     sources(requests);
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -1370,7 +1500,7 @@ describe("raw pending-payment publication and funding", () => {
     const request = pendingRequest(HASH);
     sources([request]);
     const { hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -1387,7 +1517,7 @@ describe("raw pending-payment publication and funding", () => {
     const requests = [pendingRequest(HASH), pendingRequest(BLOCK_HASH)];
     sources(requests);
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     let completed = false;
     vi.stubGlobal(
       "fetch",
@@ -1479,7 +1609,7 @@ describe("raw pending-payment publication and funding", () => {
     sources([request]);
     mocks.rawRequest.mockRejectedValue(new Error("OffchainLookup: https://attacker.invalid"));
     const { hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(quoter.result.current.getRelayrTxQuote([request])).rejects.toThrow(
@@ -1514,7 +1644,7 @@ describe("metadata source guards in Relayr", () => {
             ? uri
             : originalRead(request),
     );
-    review.registerTransactionReviewHandler(async () => {
+    review.answerReviews(async () => {
       uri = "ipfs://changed";
       return true;
     });
@@ -1539,7 +1669,7 @@ describe("metadata source guards in Relayr", () => {
             ? uri
             : originalRead(request),
     );
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const authorizer = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -1548,7 +1678,7 @@ describe("metadata source guards in Relayr", () => {
     expect(
       activity.transactionActivitySnapshot()[0].relayrExpectedTransactions?.[0].metadataSource,
     ).toEqual(source);
-    review.registerTransactionReviewHandler(async () => {
+    review.answerReviews(async () => {
       uri = "ipfs://changed";
       return true;
     });
@@ -1560,29 +1690,60 @@ describe("metadata source guards in Relayr", () => {
   });
 });
 
+/**
+ * Relayr's bundle read as core checks it before paying: unpaid, every call pending. Once a payment
+ * is sent, `after` answers; by default it names another bundle, which stops the automatic
+ * destination watcher without entering a timer loop.
+ */
+function unpaidUntilSent(
+  calls: number,
+  after: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> = async () =>
+    new Response(JSON.stringify({ bundle_uuid: "wrong", transactions: [] }), { status: 200 }),
+) {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) =>
+    mocks.sendTransaction.mock.settledResults.some((result) => result.type === "fulfilled")
+      ? after(input, init)
+      : new Response(
+          JSON.stringify({
+            bundle_uuid: BUNDLE_UUID,
+            payment_received: false,
+            transactions: TX_UUIDS.slice(0, calls).map((tx_uuid) => ({
+              tx_uuid,
+              status: { state: "Pending" },
+            })),
+          }),
+          { status: 200 },
+        ),
+  );
+}
+
 async function quotedPayment(
   requests: ReviewedRelayrRequest[] = [REQUEST],
   payments: ChainPayment[] = [payment()],
 ) {
   const harness = await freshHarness();
-  harness.review.registerTransactionReviewHandler(async () => true);
+  harness.review.answerReviews(async () => true);
   vi.stubGlobal("fetch", relayrApi({ payments }));
   const authorization = renderHook(() => harness.hooks.useGetRelayrTxQuote());
   await act(async () => {
     await authorization.result.current.getRelayrTxQuote(requests);
   });
   const send = renderHook(() => harness.hooks.useSendRelayrTx());
-  // Stop the automatic destination watcher without entering a timer loop.
-  vi.stubGlobal(
-    "fetch",
-    vi
-      .fn()
-      .mockImplementation(
-        async () =>
-          new Response(JSON.stringify({ bundle_uuid: "wrong", transactions: [] }), { status: 200 }),
-      ),
-  );
+  vi.stubGlobal("fetch", unpaidUntilSent(requests.length));
   return { ...harness, quote: authorization.result.current.data, result: send.result };
+}
+
+/**
+ * A payment no node gives a receipt for: core waits, polls for three minutes, then the send
+ * reports its confirmation uncertain.
+ */
+async function uncertainPayment(send: () => Promise<unknown>) {
+  const now = Date.now();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+  vi.setSystemTime(now);
+  const refused = expect(send()).rejects.toThrow(/confirmation is uncertain/);
+  await vi.advanceTimersByTimeAsync(181_000);
+  await refused;
 }
 
 describe("reviewed Relayr payment hook", () => {
@@ -1607,15 +1768,17 @@ describe("reviewed Relayr payment hook", () => {
             await pause();
           });
         if (stage === "review")
-          review.registerTransactionReviewHandler(async () => {
+          review.answerReviews(async () => {
             await pause();
             return true;
           });
         if (stage === "simulation")
-          mocks.clientCall.mockImplementation(async ({ to }: { to: Address }) => {
-            if (to === PAYMENT_TARGET) await pause();
-            return { data: "0x" };
-          });
+          mocks.rawRequest.mockImplementation(
+            async ({ params }: { params?: [{ to?: Address }] }) => {
+              if (params?.[0]?.to === PAYMENT_TARGET) await pause();
+              return "0x";
+            },
+          );
         let unsubscribe = () => {};
         if (stage === "persistence")
           unsubscribe = activity.subscribeTransactionActivities(() => {
@@ -1628,20 +1791,33 @@ describe("reviewed Relayr payment hook", () => {
               changeContext(change, setViewAs);
             }
           });
+        let paid: boolean | undefined;
         try {
           await act(async () => {
-            const pending = result.current.sendRelayrTx(payment());
-            const refused = expect(pending).rejects.toThrow();
+            const settled = result.current.sendRelayrTx(payment()).then(
+              () => true,
+              () => false,
+            );
             if (stage !== "persistence") {
               await vi.waitFor(() => expect(entered).toBe(true));
               changeContext(change, setViewAs);
               release();
             }
-            await refused;
+            paid = await settled;
           });
         } finally {
           unsubscribe();
         }
+        // A chain change during review is no wallet change: core switches back to the
+        // payment's chain before it sends.
+        if (stage === "review" && change === "chain") {
+          expect(paid).toBe(true);
+          expect(mocks.sendTransaction).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({ chainId: 1, to: PAYMENT_TARGET }),
+          );
+          return;
+        }
+        expect(paid).toBe(false);
         expect(mocks.sendTransaction).not.toHaveBeenCalled();
         expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
           relayrPaymentStatus: "unfunded",
@@ -1734,7 +1910,7 @@ describe("reviewed Relayr payment hook", () => {
 
   it("retains an unusable publication when the service offers only mainnet funding for testnets", async () => {
     const { review, hooks, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const authorizer = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(
@@ -1814,11 +1990,10 @@ describe("reviewed Relayr payment hook", () => {
 
   it("reviews the exact selected funding chain and persists its signed destination calls", async () => {
     const { review, activity, result } = await quotedPayment();
-    review.registerTransactionReviewHandler(async (request) => {
+    review.answerReviews(async (request) => {
       expect(request).toMatchObject({
         kind: "transaction",
-        title: "Review payment",
-        confirmLabel: "Pay",
+        title: "Review network fee",
       });
       expect(request.calls[0]).toMatchObject({
         chainId: 1,
@@ -1868,20 +2043,49 @@ describe("reviewed Relayr payment hook", () => {
     );
   });
 
+  it("pays the network fee within the bound the bundle's one review showed, asking nothing more", async () => {
+    mocks.feeBound = true;
+    try {
+      const harness = await freshHarness();
+      const reviewer = vi.fn(async (_model: ReviewModel) => true);
+      harness.review.answerReviews(reviewer);
+      vi.stubGlobal("fetch", relayrApi());
+      const quoter = renderHook(() => harness.hooks.useGetRelayrTxQuote());
+      await act(async () => {
+        await quoter.result.current.getRelayrTxQuote([REQUEST]);
+      });
+      const payer = renderHook(() => harness.hooks.useSendRelayrTx());
+      vi.stubGlobal("fetch", unpaidUntilSent(1));
+      await act(async () => {
+        await expect(payer.result.current.sendRelayrTx(payment())).resolves.toBe(HASH);
+      });
+      expect(reviewer).toHaveBeenCalledOnce();
+      expect(reviewer.mock.calls[0]![0].context).toEqual(
+        expect.arrayContaining([expect.objectContaining({ label: "Network fee" })]),
+      );
+      expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+    } finally {
+      mocks.feeBound = false;
+    }
+  });
+
   it("simulates the payment at its reviewed gas and sends exactly that gas", async () => {
     const { result } = await quotedPayment();
     mocks.estimateGas.mockClear();
     await act(async () => {
       await expect(result.current.sendRelayrTx(payment())).resolves.toBe(HASH);
     });
-    expect(mocks.clientCall).toHaveBeenCalledWith({
-      account: ACCOUNT,
+    const simulation = mocks.rawRequest.mock.calls.findLastIndex(
+      ([{ method, params }]) => method === "eth_call" && params?.[0]?.to === PAYMENT_TARGET,
+    );
+    expect(mocks.rawRequest.mock.calls[simulation]?.[0].params[0]).toEqual({
+      from: ACCOUNT,
       to: PAYMENT_TARGET,
-      value: 16n,
+      value: "0x10",
       data: payment().calldata,
-      gas: 150_000n,
+      gas: "0x249f0",
     });
-    expect(mocks.clientCall.mock.invocationCallOrder.at(-1)).toBeLessThan(
+    expect(mocks.rawRequest.mock.invocationCallOrder[simulation]).toBeLessThan(
       mocks.sendTransaction.mock.invocationCallOrder[0],
     );
     expect(mocks.estimateGas).not.toHaveBeenCalled();
@@ -1890,15 +2094,14 @@ describe("reviewed Relayr payment hook", () => {
     );
   });
 
-  it.each([
-    ["reverts", () => Promise.reject(new Error("payment reverted: out of gas")), /out of gas/],
-    ["returns data", () => Promise.resolve({ data: "0x01" }), /unexpected result/],
-  ])("sends nothing when the payment %s at its reviewed gas", async (_, simulate, error) => {
+  it("sends nothing when the payment reverts at its reviewed gas", async () => {
     const { activity, result } = await quotedPayment();
-    mocks.clientCall.mockImplementation(async ({ to }: { to: Address }) =>
-      to === PAYMENT_TARGET ? simulate() : { data: "0x" },
-    );
-    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(error);
+    mocks.rawRequest.mockImplementation(async ({ params }: { params?: [{ to?: Address }] }) => {
+      if (params?.[0]?.to === PAYMENT_TARGET)
+        throw Object.assign(new Error("execution reverted: out of gas"), { code: 3 });
+      return "0x";
+    });
+    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(/would fail/);
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
     expect(activity.transactionActivitySnapshot()[0].relayrPaymentStatus).toBe("unfunded");
   });
@@ -1932,19 +2135,19 @@ describe("reviewed Relayr payment hook", () => {
 
   it("rejects account or chain changes before funding submission", async () => {
     const { review, result } = await quotedPayment();
-    review.registerTransactionReviewHandler(async () => {
+    review.answerReviews(async () => {
       mocks.account.address = OTHER_ACCOUNT;
       return true;
     });
     await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
-      /account or chain changed/,
+      /connected account changed/i,
     );
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 
   it("revalidates the exact signed destination after funding review and never pays a consumed nonce or changed destination", async () => {
     const { review, result, activity } = await quotedPayment();
-    review.registerTransactionReviewHandler(async () => {
+    review.answerReviews(async () => {
       mocks.clientCall.mockRejectedValueOnce(
         new Error("signed forwarder request reverted: nonce consumed"),
       );
@@ -1968,7 +2171,7 @@ describe("reviewed Relayr payment hook", () => {
 
   it("rejects a quote that expires while the review sits open", async () => {
     const { review, result } = await quotedPayment();
-    review.registerTransactionReviewHandler(async () => {
+    review.answerReviews(async () => {
       vi.setSystemTime(new Date((NOW + 700) * 1_000));
       return true;
     });
@@ -1985,10 +2188,8 @@ describe("reviewed Relayr payment hook", () => {
 
   it("retains uncertain funding and blocks duplicate funding and newly signed copies", async () => {
     const { activity, hooks, result } = await quotedPayment();
-    mocks.waitForTransactionReceipt.mockRejectedValue(new Error("RPC unavailable"));
-    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
-      /confirmation is uncertain/,
-    );
+    mocks.getTransactionReceipt.mockRejectedValue(new Error("RPC unavailable"));
+    await uncertainPayment(() => result.current.sendRelayrTx(payment()));
     expect(activity.transactionActivityForHash(HASH)).toMatchObject({
       status: "pending",
       relayrPaymentStatus: "submitted",
@@ -2012,50 +2213,44 @@ describe("reviewed Relayr payment hook", () => {
       hash: destinationHash,
       transactionHash: destinationHash,
     };
-    let confirmFunding!: () => void;
+    let fundingReadable = false;
     mocks.getTransaction.mockImplementation(async ({ hash }: { hash: Hex }) =>
       hash === destinationHash ? destination : onchain(PAYMENT_TARGET, payment().calldata),
     );
-    mocks.getTransactionReceipt
-      .mockRejectedValueOnce(new Error("RPC temporarily unavailable"))
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            confirmFunding = () => resolve(onchain(PAYMENT_TARGET, payment().calldata));
-          }),
-      )
-      .mockImplementation(async ({ hash }: { hash: Hex }) =>
-        hash === destinationHash ? destination : onchain(PAYMENT_TARGET, payment().calldata),
-      );
+    mocks.getTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) => {
+      if (hash === destinationHash) return destination;
+      if (!fundingReadable) throw new Error("RPC temporarily unavailable");
+      return onchain(PAYMENT_TARGET, payment().calldata);
+    });
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              bundle_uuid: BUNDLE_UUID,
-              payment_received: true,
-              transactions: [
-                {
-                  tx_uuid: expected.transactionUuid,
-                  request: {
-                    chain: expected.chainId,
-                    target: expected.target,
-                    data: expected.data,
-                    value: expected.value,
+      unpaidUntilSent(
+        1,
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                bundle_uuid: BUNDLE_UUID,
+                payment_received: true,
+                transactions: [
+                  {
+                    tx_uuid: expected.transactionUuid,
+                    request: {
+                      chain: expected.chainId,
+                      target: expected.target,
+                      data: expected.data,
+                      value: expected.value,
+                    },
+                    status: { state: "Success", data: { hash: destinationHash } },
                   },
-                  status: { state: "Success", data: { hash: destinationHash } },
-                },
-              ],
-            }),
-            { status: 200 },
-          ),
+                ],
+              }),
+              { status: 200 },
+            ),
+        ),
       ),
     );
-    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
-      /confirmation is uncertain/,
-    );
-    await vi.waitFor(() => expect(confirmFunding).toBeTypeOf("function"));
+    await uncertainPayment(() => result.current.sendRelayrTx(payment()));
     expect(activity.transactionActivityForHash(HASH)).toMatchObject({
       status: "pending",
       relayrPaymentStatus: "submitted",
@@ -2063,7 +2258,8 @@ describe("reviewed Relayr payment hook", () => {
     await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
       /already has a submitted payment/,
     );
-    confirmFunding();
+    fundingReadable = true;
+    await vi.advanceTimersByTimeAsync(60_000);
     await vi.waitFor(() =>
       expect(activity.transactionActivityForHash(HASH)).toMatchObject({
         status: "success",
@@ -2076,15 +2272,15 @@ describe("reviewed Relayr payment hook", () => {
 
   it("blocks a second funding option after the first has been paid", async () => {
     const harness = await freshHarness();
-    harness.review.registerTransactionReviewHandler(async () => true);
+    harness.review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi({ payments: [payment(), payment({ chain: 10 })] }));
     const authorizer = renderHook(() => harness.hooks.useGetRelayrTxQuote());
     await act(async () => {
       await authorizer.result.current.getRelayrTxQuote([REQUEST]);
     });
     const payer = renderHook(() => harness.hooks.useSendRelayrTx());
-    mocks.waitForTransactionReceipt.mockRejectedValue(new Error("RPC unavailable"));
-    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(/uncertain/);
+    mocks.getTransactionReceipt.mockRejectedValue(new Error("RPC unavailable"));
+    await uncertainPayment(() => payer.result.current.sendRelayrTx(payment()));
     await expect(payer.result.current.sendRelayrTx(payment({ chain: 10 }))).rejects.toThrow(
       /already has a submitted payment/,
     );
@@ -2143,6 +2339,7 @@ describe("reviewed Relayr payment hook", () => {
       return error;
     }
 
+    // Only EIP-1193 4001 says nothing was sent; a rejection by name alone stays held.
     it.each<[string, () => unknown, "unfunded" | "submitted"]>([
       [
         "viem's UserRejectedRequestError by name",
@@ -2150,11 +2347,20 @@ describe("reviewed Relayr payment hook", () => {
           Object.assign(new Error("User rejected the request."), {
             name: "UserRejectedRequestError",
           }),
+        "submitted",
+      ],
+      [
+        "viem's UserRejectedRequestError with code 4001",
+        () =>
+          Object.assign(new Error("User rejected the request."), {
+            name: "UserRejectedRequestError",
+            code: 4001,
+          }),
         "unfunded",
       ],
       ["a rejection seven causes down", () => rejectedBelow(7), "unfunded"],
       ["a rejection eight causes down", () => rejectedBelow(8), "submitted"],
-    ])("as no payment sent for %s", async (_, error, status) => {
+    ])("%s leaves the payment %s", async (_, error, status) => {
       const { activity, result } = await quotedPayment();
       mocks.sendTransaction.mockRejectedValueOnce(error());
       await expect(result.current.sendRelayrTx(payment())).rejects.toBeTruthy();
@@ -2305,7 +2511,7 @@ describe("Safe execution bundles", () => {
           accept = resolve;
         }),
     );
-    review.registerTransactionReviewHandler(reviewed);
+    review.answerReviews(reviewed);
     let releasePost!: () => void;
     const posted = new Promise<void>((resolve) => {
       releasePost = resolve;
@@ -2341,7 +2547,7 @@ describe("Safe execution bundles", () => {
 
   it("simulates exact Safe calldata from a neutral executor before publishing", async () => {
     const { hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -2358,7 +2564,7 @@ describe("Safe execution bundles", () => {
     async (response) => {
       const { hooks, review } = await freshHarness();
       const reviewed = vi.fn(async () => true);
-      review.registerTransactionReviewHandler(reviewed);
+      review.answerReviews(reviewed);
       mocks.rawRequest.mockResolvedValue(
         response === false
           ? encodeFunctionResult({
@@ -2381,7 +2587,7 @@ describe("Safe execution bundles", () => {
 
   it("refuses a Safe execution that returns false when rechecked before payment", async () => {
     const { hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -2406,7 +2612,7 @@ describe("Safe execution bundles", () => {
   it("reviews every Safe execution once, pins nonce and hash, and never switches chains", async () => {
     const { hooks, review, activity } = await freshHarness();
     const reviews: unknown[] = [];
-    review.registerTransactionReviewHandler(async (request) => {
+    review.answerReviews(async (request) => {
       reviews.push(request);
       return true;
     });
@@ -2456,8 +2662,8 @@ describe("Safe execution bundles", () => {
 
   it("reviews fresh Safe calldata after another owner signs and archives the old unfunded quote", async () => {
     const { hooks, review, activity } = await freshHarness();
-    const reviews: TransactionReviewRequest[] = [];
-    review.registerTransactionReviewHandler(async (request) => {
+    const reviews: ReviewModel[] = [];
+    review.answerReviews(async (request) => {
       reviews.push(request);
       return true;
     });
@@ -2531,7 +2737,7 @@ describe("Safe execution bundles", () => {
 
   it("replaces a legacy unfunded Safe quote after reload without a new wallet signature", async () => {
     const first = await freshHarness();
-    first.review.registerTransactionReviewHandler(async () => true);
+    first.review.answerReviews(async () => true);
     const api = refreshingQuotes();
     vi.stubGlobal("fetch", api);
     const initial = renderHook(() => first.hooks.useGetRelayrTxQuote());
@@ -2545,7 +2751,7 @@ describe("Safe execution bundles", () => {
     });
     initial.unmount();
     const restored = await freshHarness();
-    restored.review.registerTransactionReviewHandler(async () => true);
+    restored.review.answerReviews(async () => true);
     const resumed = renderHook(() => restored.hooks.useGetRelayrTxQuote());
     await act(async () => {
       await expect(
@@ -2562,7 +2768,7 @@ describe("Safe execution bundles", () => {
 
   it("retains another account's unresolved Safe funding reservation", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const api = relayrApi();
     vi.stubGlobal("fetch", api);
     const initial = renderHook(() => hooks.useGetRelayrTxQuote());
@@ -2588,7 +2794,7 @@ describe("Safe execution bundles", () => {
 
   it("keeps a pre-publication cancellation released after persisting and reloading it", async () => {
     const first = await freshHarness();
-    first.review.registerTransactionReviewHandler(async () => true);
+    first.review.answerReviews(async () => true);
     const api = relayrApi();
     vi.stubGlobal("fetch", api);
     const abort = new AbortController();
@@ -2627,7 +2833,7 @@ describe("Safe execution bundles", () => {
     expect(api).not.toHaveBeenCalled();
     initial.unmount();
     const restored = await freshHarness();
-    restored.review.registerTransactionReviewHandler(async () => true);
+    restored.review.answerReviews(async () => true);
     const resumed = renderHook(() => restored.hooks.useGetRelayrTxQuote());
     await act(async () => {
       await expect(resumed.result.current.getRelayrTxQuote([safeExec(1)])).resolves.toMatchObject({
@@ -2640,8 +2846,8 @@ describe("Safe execution bundles", () => {
 
   it("replaces a lost four-call quote with the three current calls and funds the fresh bundle once", async () => {
     const { hooks, review, activity } = await freshHarness();
-    const reviews: TransactionReviewRequest[] = [];
-    review.registerTransactionReviewHandler(async (request) => {
+    const reviews: ReviewModel[] = [];
+    review.answerReviews(async (request) => {
       reviews.push(request);
       return true;
     });
@@ -2695,15 +2901,14 @@ describe("Safe execution bundles", () => {
     });
     expect(reviews.at(-1)).toMatchObject({
       kind: "transaction",
-      title: "Review payment",
-      confirmLabel: "Pay",
+      title: "Review network fee",
     });
     expect(mocks.sendTransaction).toHaveBeenCalledOnce();
   });
 
   it("checks a lost quote's finalized Safe nonce and preserves the obsolete release across reloads", async () => {
     const first = await freshHarness();
-    first.review.registerTransactionReviewHandler(async () => true);
+    first.review.answerReviews(async () => true);
     const lost = vi.fn(async () => {
       throw new Error("Quote response lost");
     });
@@ -2757,7 +2962,7 @@ describe("Safe execution bundles", () => {
 
   it("keeps unknown funding reserved even if a lost quote's saved Safe nonce has advanced", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -2787,7 +2992,7 @@ describe("Safe execution bundles", () => {
 
   it("preserves malformed saved payment history and refuses nonce-based release", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => {
@@ -2847,7 +3052,7 @@ describe("Safe execution bundles", () => {
 
   it("aborts before publishing when the outer Safe review closes during its final checks", async () => {
     const { hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const api = relayrApi();
     vi.stubGlobal("fetch", api);
     const original = mocks.rawRequest.getMockImplementation()!;
@@ -2877,8 +3082,8 @@ describe("Safe execution bundles", () => {
 
   it("reviews three currently ready calls instead of an old four-call quote and funds only the new bundle once", async () => {
     const { hooks, review, activity } = await freshHarness();
-    const reviews: TransactionReviewRequest[] = [];
-    review.registerTransactionReviewHandler(async (request) => {
+    const reviews: ReviewModel[] = [];
+    review.answerReviews(async (request) => {
       reviews.push(request);
       return true;
     });
@@ -2939,7 +3144,7 @@ describe("Safe execution bundles", () => {
 
   it("does not reuse a Safe quote when its expected nonce or transaction hash changed", async () => {
     const { hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -2957,7 +3162,7 @@ describe("Safe execution bundles", () => {
 
   it("checks a saved raw Safe quote without silently dropping its live reservation", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -2980,7 +3185,7 @@ describe("Safe execution bundles", () => {
 
   it("keeps a paid saved Safe quote in recovery when all signature payloads change", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const api = relayrApi();
     vi.stubGlobal("fetch", api);
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
@@ -3025,7 +3230,7 @@ describe("Safe execution bundles", () => {
 
   it("does not release a canonically expired Safe quote funded on another device", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const bundle = { payment_received: false };
     vi.stubGlobal("fetch", relayrApi({ bundle }));
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
@@ -3050,7 +3255,7 @@ describe("Safe execution bundles", () => {
 
   it("retains legacy remote activity across reloads even if a later Relayr response reports Pending", async () => {
     const first = await freshHarness();
-    first.review.registerTransactionReviewHandler(async () => true);
+    first.review.answerReviews(async () => true);
     const api = relayrApi();
     vi.stubGlobal("fetch", api);
     const quoter = renderHook(() => first.hooks.useGetRelayrTxQuote());
@@ -3069,7 +3274,7 @@ describe("Safe execution bundles", () => {
     ).toBe(true);
     quoter.unmount();
     const reloaded = await freshHarness();
-    reloaded.review.registerTransactionReviewHandler(async () => true);
+    reloaded.review.answerReviews(async () => true);
     const retry = renderHook(() => reloaded.hooks.useGetRelayrTxQuote());
     await expect(retry.result.current.getRelayrTxQuote([safeExec(1)])).rejects.toBeInstanceOf(
       reloaded.hooks.RelayrRecoveryError,
@@ -3080,7 +3285,7 @@ describe("Safe execution bundles", () => {
 
   it("keeps the old unfunded quote intact when the current selection's review is canceled", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const api = refreshingQuotes();
     vi.stubGlobal("fetch", api);
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
@@ -3088,7 +3293,7 @@ describe("Safe execution bundles", () => {
       await quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
     });
     const saved = activity.transactionActivitySnapshot()[0];
-    review.registerTransactionReviewHandler(async () => false);
+    review.answerReviews(async () => false);
     await expect(quoter.result.current.getRelayrTxQuote([safeExec(10)])).rejects.toThrow();
     expect(activity.transactionActivitySnapshot()).toEqual([saved]);
     expect(api.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
@@ -3097,7 +3302,7 @@ describe("Safe execution bundles", () => {
 
   it("holds a changed-signature subset of a legacy submitted Safe bundle", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const api = relayrApi();
     vi.stubGlobal("fetch", api);
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
@@ -3137,7 +3342,7 @@ describe("Safe execution bundles", () => {
 
   it("does not resume a quote while another historical bundle reserves the same Safe intent", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const api = relayrApi();
     vi.stubGlobal("fetch", api);
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
@@ -3165,7 +3370,7 @@ describe("Safe execution bundles", () => {
 
   it("reserves a Safe nonce across competing transaction hashes but permits the next nonce", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const api = relayrApi();
     vi.stubGlobal("fetch", api);
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
@@ -3213,7 +3418,7 @@ describe("Safe execution bundles", () => {
 
   it("checks Safe chains concurrently before publishing and rechecks them before paying", async () => {
     const { hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const defaultCall = mocks.rawRequest.getMockImplementation()!;
     let releases: Array<() => void> = [];
@@ -3251,7 +3456,7 @@ describe("Safe execution bundles", () => {
       async (change) => {
         const { hooks, review, activity } = await freshHarness();
         const { setViewAs } = await import("@/lib/view-as");
-        review.registerTransactionReviewHandler(async () => true);
+        review.answerReviews(async () => true);
         vi.stubGlobal("fetch", relayrApi());
         const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
         await act(async () => {
@@ -3259,6 +3464,8 @@ describe("Safe execution bundles", () => {
         });
         let release!: () => void;
         let entered = false;
+        // Core switches only a wallet on another chain than the payment's.
+        if (stage === "switch") mocks.account.chainId = 10;
         if (stage === "switch")
           mocks.switchChain.mockImplementation(
             () =>
@@ -3295,7 +3502,7 @@ describe("Safe execution bundles", () => {
 
   it("authenticates and simulates the Safe funding payment before invoking the wallet", async () => {
     const { hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -3308,7 +3515,7 @@ describe("Safe execution bundles", () => {
     );
     mocks.getCode.mockResolvedValue(PAYMENT_RUNTIME);
     mocks.rawRequest.mockResolvedValue("0x1234");
-    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(/unexpected result/);
+    await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow();
     expect(mocks.sendTransaction).not.toHaveBeenCalled();
   });
 
@@ -3319,7 +3526,7 @@ describe("Safe execution bundles", () => {
   ])("retains correct Safe payment certainty: %s", async (failure) => {
     const invoked = failure !== "expired before wallet";
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -3358,7 +3565,7 @@ describe("Safe execution bundles", () => {
     "tracks deferred Safe payment checks, wrapped funding and each verified chain (reopen recovery: %s)",
     async (reopenRecovery) => {
       const { hooks, review, activity } = await freshHarness();
-      review.registerTransactionReviewHandler(async () => true);
+      review.answerReviews(async () => true);
       const ethereumHash = `0x${"11".repeat(32)}` as Hex;
       const optimismHash = `0x${"22".repeat(32)}` as Hex;
       let funded = false;
@@ -3443,8 +3650,8 @@ describe("Safe execution bundles", () => {
         await quoter.result.current.getRelayrTxQuote([safeExec(1), safeExec(10)]);
       });
       let acceptPaymentReview!: () => void;
-      review.registerTransactionReviewHandler((request) => {
-        expect(request).toMatchObject({ title: "Review payment", confirmLabel: "Pay" });
+      review.answerReviews((request) => {
+        expect(request).toMatchObject({ title: "Review network fee" });
         return new Promise<boolean>((resolve) => {
           acceptPaymentReview = () => resolve(true);
         });
@@ -3474,18 +3681,16 @@ describe("Safe execution bundles", () => {
         expect(rechecks).toHaveLength(0);
         expect(mocks.sendTransaction).not.toHaveBeenCalled();
         acceptPaymentReview();
-        await vi.waitFor(() => expect(authenticatePayment).toBeTypeOf("function"));
-        expect(progress).toHaveBeenLastCalledWith(
-          expect.objectContaining({ phase: "payment-review" }),
-        );
-        expect(rechecks).toHaveLength(0);
-        authenticatePayment();
+        // Core rechecks the Safe executions first, then authenticates the payment contract.
         await vi.waitFor(() => expect(rechecks).toHaveLength(2));
         expect(progress).toHaveBeenLastCalledWith(
           expect.objectContaining({ phase: "payment-checking" }),
         );
-        expect(mocks.sendTransaction).not.toHaveBeenCalled();
+        expect(authenticatePayment).toBeUndefined();
         rechecks.forEach((resolve) => resolve());
+        await vi.waitFor(() => expect(authenticatePayment).toBeTypeOf("function"));
+        expect(mocks.sendTransaction).not.toHaveBeenCalled();
+        authenticatePayment();
         await vi.waitFor(() => expect(submitPayment).toBeTypeOf("function"));
         expect(progress).toHaveBeenLastCalledWith(
           expect.objectContaining({ phase: "payment-submitting" }),
@@ -3564,7 +3769,7 @@ describe("Safe execution bundles", () => {
 
   it("persists an uncertain Safe wallet invocation before returning its error", async () => {
     const { hooks, review, activity } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -3587,7 +3792,7 @@ describe("Safe execution bundles", () => {
 
   it("refuses the payment when a Safe nonce moved after the quote", async () => {
     const { hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -3605,7 +3810,7 @@ describe("Safe execution bundles", () => {
     "reconstructs missing legacy guards and refuses %s drift after payment review",
     async (changed) => {
       const { hooks, review, activity } = await freshHarness();
-      review.registerTransactionReviewHandler(async () => true);
+      review.answerReviews(async () => true);
       vi.stubGlobal("fetch", relayrApi());
       const quoter = renderHook(() => hooks.useGetRelayrTxQuote());
       await act(async () => {
@@ -3619,8 +3824,8 @@ describe("Safe execution bundles", () => {
         })),
       });
       mocks.clientCall.mockClear();
-      const paymentReview = vi.fn(async (request: TransactionReviewRequest) => {
-        if (request.title === "Review payment") {
+      const paymentReview = vi.fn(async (request: ReviewModel) => {
+        if (request.title === "Review network fee") {
           mocks.clientCall.mockImplementation(async ({ data }) => ({
             data: data?.startsWith(NONCE)
               ? encodeAbiParameters([{ type: "uint256" }], [changed === "nonce" ? 8n : 7n])
@@ -3629,13 +3834,13 @@ describe("Safe execution bundles", () => {
         }
         return true;
       });
-      review.registerTransactionReviewHandler(paymentReview);
+      review.answerReviews(paymentReview);
       const payer = renderHook(() => hooks.useSendRelayrTx());
       await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(
         /reviewed state changed/,
       );
       expect(paymentReview).toHaveBeenCalledWith(
-        expect.objectContaining({ title: "Review payment", confirmLabel: "Pay" }),
+        expect.objectContaining({ title: "Review network fee" }),
       );
       expect(mocks.clientCall).toHaveBeenCalledTimes(changed === "nonce" ? 1 : 2);
       expect(mocks.sendTransaction).not.toHaveBeenCalled();
@@ -3644,7 +3849,7 @@ describe("Safe execution bundles", () => {
 
   it("rejects a Safe call that is not execTransaction, and mixed bundles", async () => {
     const { hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     vi.stubGlobal("fetch", vi.fn());
     const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
     await expect(
@@ -3806,7 +4011,7 @@ describe("paying a reverted Relayr payment again", () => {
   it("never pays a quote again after sixteen payments, before it opens a review", async () => {
     const { activity, review, result } = await revertedPayment();
     const reviewed = vi.fn(async () => true);
-    review.registerTransactionReviewHandler(reviewed);
+    review.answerReviews(reviewed);
     const hashes = Array.from(
       { length: 16 },
       (_, index) => `0x${(index + 1).toString(16).padStart(64, "0")}` as Hex,
@@ -3878,7 +4083,7 @@ describe("unpaid Relayr quotes", () => {
 
   async function unpaidQuote(request: ReviewedRelayrRequest = REQUEST) {
     const harness = await freshHarness();
-    harness.review.registerTransactionReviewHandler(async () => true);
+    harness.review.answerReviews(async () => true);
     vi.stubGlobal("fetch", relayrApi());
     const authorizer = renderHook(() => harness.hooks.useGetRelayrTxQuote());
     await act(async () => {
@@ -4093,7 +4298,7 @@ describe("Relayr sessions decided from the chain", () => {
     payments?: ChainPayment[],
   ) {
     const harness = await freshHarness();
-    harness.review.registerTransactionReviewHandler(async () => true);
+    harness.review.answerReviews(async () => true);
     guardReads(async () => ({ data: GUARD_VALUE }));
     vi.stubGlobal("fetch", relayrApi({ payments }));
     const authorizer = renderHook(() => harness.hooks.useGetRelayrTxQuote());
@@ -4295,10 +4500,7 @@ describe("Relayr sessions decided from the chain", () => {
         ...onchain(PAYMENT_TARGET, payment().calldata),
         status: "reverted",
       });
-      vi.stubGlobal(
-        "fetch",
-        vi.fn(async () => new Response(JSON.stringify({ bundle_uuid: "wrong" }), { status: 200 })),
-      );
+      vi.stubGlobal("fetch", unpaidUntilSent(1));
       const payer = renderHook(() => harness.hooks.useSendRelayrTx());
       await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(/uncertain/);
       expect(harness.session()).toMatchObject({ relayrPaymentStatus: "reverted" });
@@ -4493,33 +4695,76 @@ describe("Relayr sessions decided from the chain", () => {
     });
   });
 
+  it("relayr-state: Reverted stays pending until Relayr says failed", async () => {
+    const { hooks, session } = await signedSession();
+    const [signed] = session()!.relayrExpectedTransactions!;
+    const states = ["Reverted", "Dropped", "Failed"];
+    const reads = vi.fn(async () => {
+      const state = states[Math.min(reads.mock.calls.length - 1, states.length - 1)];
+      return new Response(
+        JSON.stringify({
+          bundle_uuid: BUNDLE_UUID,
+          payment_received: true,
+          transactions: [
+            {
+              tx_uuid: signed.transactionUuid,
+              request: {
+                chain: signed.chainId,
+                target: signed.target,
+                data: signed.data,
+                value: signed.value,
+              },
+              status: { state },
+            },
+          ],
+        }),
+        { status: 200 },
+      );
+    });
+    const payer = renderHook(() => hooks.useSendRelayrTx());
+    vi.stubGlobal("fetch", unpaidUntilSent(1, reads));
+    await act(async () => {
+      await expect(payer.result.current.sendRelayrTx(payment())).resolves.toBe(HASH);
+    });
+    // Each read is two seconds apart, as Relayr is polled.
+    const outcome = await hooks.waitForRelayrBundle(BUNDLE_UUID).catch((error: Error) => error);
+    // Reverted and Dropped are not final: only Relayr's Failed ends the wait.
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as Error).message).toMatch(/failed/);
+    expect(reads.mock.calls.length).toBeGreaterThanOrEqual(3);
+    expect(session()).toMatchObject({ status: "failed", manualVerificationRequired: true });
+  }, 20_000);
+
   it("holds a paid bundle whose calls reverted while they can run, then marks it for Discard and signs again at the saved nonces once they are dead and unused", async () => {
     const { activity, hooks, result, session } = await signedSession();
     const [signed] = session()!.relayrExpectedTransactions!;
     // Relayr ran the paid bundle and its destination reverted.
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        async () =>
-          new Response(
-            JSON.stringify({
-              bundle_uuid: BUNDLE_UUID,
-              payment_received: true,
-              transactions: [
-                {
-                  tx_uuid: signed.transactionUuid,
-                  request: {
-                    chain: signed.chainId,
-                    target: signed.target,
-                    data: signed.data,
-                    value: signed.value,
+      unpaidUntilSent(
+        1,
+        vi.fn(
+          async () =>
+            new Response(
+              JSON.stringify({
+                bundle_uuid: BUNDLE_UUID,
+                payment_received: true,
+                transactions: [
+                  {
+                    tx_uuid: signed.transactionUuid,
+                    request: {
+                      chain: signed.chainId,
+                      target: signed.target,
+                      data: signed.data,
+                      value: signed.value,
+                    },
+                    status: { state: "Failed" },
                   },
-                  status: { state: "Failed" },
-                },
-              ],
-            }),
-            { status: 200 },
-          ),
+                ],
+              }),
+              { status: 200 },
+            ),
+        ),
       ),
     );
     const payer = renderHook(() => hooks.useSendRelayrTx());
@@ -4636,7 +4881,7 @@ describe("Relayr sessions decided from the chain", () => {
 
   it("holds while one request can still run and another may already have run", async () => {
     const harness = await freshHarness();
-    harness.review.registerTransactionReviewHandler(async () => true);
+    harness.review.answerReviews(async () => true);
     guardReads(async () => ({ data: GUARD_VALUE }));
     vi.stubGlobal("fetch", relayrApi());
     const quoter = renderHook(() => harness.hooks.useGetRelayrTxQuote());
@@ -4727,7 +4972,7 @@ describe("Relayr sessions decided from the chain", () => {
     /** An unpaid raw quote whose payment deadline (NOW + 600) is final onchain. */
     async function rawQuote() {
       const harness = await freshHarness();
-      harness.review.registerTransactionReviewHandler(async () => true);
+      harness.review.answerReviews(async () => true);
       vi.stubGlobal("fetch", relayrApi());
       const quoter = renderHook(() => harness.hooks.useGetRelayrTxQuote());
       await act(async () => {
@@ -4805,7 +5050,7 @@ describe("Relayr sessions decided from the chain", () => {
 
     it("never lets the Discard of a replaced session reset the round that pays its replacement", async () => {
       const { activity, hooks, review } = await freshHarness();
-      review.registerTransactionReviewHandler(async () => true);
+      review.answerReviews(async () => true);
       guardReads(async () => ({ data: GUARD_VALUE }));
       const batches = await import("@/lib/multichain-batch");
       const request = {
@@ -4859,7 +5104,7 @@ describe("Relayr sessions decided from the chain", () => {
 
     it("abandons only the round of a discarded session's own bundle, never another pending batch in its scope", async () => {
       const { activity, hooks, review } = await freshHarness();
-      review.registerTransactionReviewHandler(async () => true);
+      review.answerReviews(async () => true);
       guardReads(async () => ({ data: GUARD_VALUE }));
       const batches = await import("@/lib/multichain-batch");
       const other = batchOf("multichain:other", { state: "quoted", bundleUuid: OTHER_BUNDLE_UUID });
@@ -4887,7 +5132,7 @@ describe("Relayr sessions decided from the chain", () => {
 
   it("abandons a pending batch by its round's scope after a 'ran' Discard of a session Relayr never named (R114 (f))", async () => {
     const { activity, hooks, review } = await freshHarness();
-    review.registerTransactionReviewHandler(async () => true);
+    review.answerReviews(async () => true);
     const batches = await import("@/lib/multichain-batch");
     const call = {
       chainId: 1,

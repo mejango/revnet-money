@@ -1,22 +1,14 @@
 "use client";
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
-import { useAllowance } from "@/hooks/useAllowance";
-import {
-  ACCOUNT_CHANGED,
-  isSafeConnection,
-  submittedViaSafe,
-  useProposeSafeBatch,
-  useSafeConnection,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+import { TxProgress } from "@/components/ui/TxProgress";
+import { useReviewedAction } from "@/hooks/useReviewedAction";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { withWriteIntent } from "@/lib/write-hold";
+import { ACCOUNT_CHANGED, requireProposedOrDone, reviewClosed } from "@/lib/reviewed-call";
+import { isSafeConnection, useSafeConnection } from "@/lib/safe-connector";
 import { liquidityIntent } from "@bananapus/nana-sdk-core/review";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   erc20Abi,
   formatUnits,
@@ -30,9 +22,6 @@ import { chainName, fmtUnits } from "../settlement/lib";
 import {
   addsFunds,
   lpBandPrices,
-  lpDeadline,
-  POSITION_MANAGER_ABI,
-  POSITION_MANAGER_BY_CHAIN,
   prepareMarketEdit,
   refreshPoolAndPosition,
   reverifyMarketEdit,
@@ -46,12 +35,9 @@ import {
 import { LiquidityRangePreview } from "./LiquidityRangePreview";
 import {
   approvalStepsFor,
-  heldLiquidityApprovals,
-  liquidityBatchCalls,
+  liquidityReviewedCalls,
   parseAmountText,
-  runApprovalStep,
   safeBatchIntro,
-  SummaryRow,
   type LiquidityStep,
 } from "./liquidityWrite";
 
@@ -119,13 +105,10 @@ export function MarketEditPanel({
 }) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
-  const proposeSafeBatch = useProposeSafeBatch();
   const viaSafe = useSafeConnection(wagmiConfig);
   const chainId = Number(state.chainId);
   const publicClient = usePublicClient({ chainId });
   const queryClient = useQueryClient();
-  const { ensureAllowance } = useAllowance(chainId);
-  const positionManager = POSITION_MANAGER_BY_CHAIN[chainId]!;
   const corridor = useMemo<MarketCorridor | null>(
     () =>
       state.reference.cashOut && state.reference.issuance
@@ -152,28 +135,14 @@ export function MarketEditPanel({
     account: Address;
   } | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   // The pool is found from the server sucker-group project: an edit that adds funds goes only
   // to a registry-listed pair. Withdrawals of the wallet's own positions stay open.
   const gate = useGroupWriteGate([state]);
 
-  const review = useRef({
-    title: "Review market edit",
-    confirmLabel: "Agree & edit the market",
-    description: "",
-  });
-  const activePlan = useRef<{ pool: PoolSnapshot; plan: MarketEditPlan } | null>(null);
-  const { writeContractAsync } = useWriteContract({
-    transactionReview: review.current,
-    // Runs AFTER the confirm modal, so however long it sat open, a changed
-    // position or drift beyond the reviewed maxima still aborts first.
-    reverify: async () => {
-      if (activePlan.current && address) {
-        await reverifyMarketEdit(activePlan.current.pool, activePlan.current.plan, address);
-      }
-    },
-  });
+  const { run } = useReviewedAction();
 
   const balances = useQuery({
     queryKey: ["v6LpEditBalances", chainId, pool.projectToken, pool.pair.addr, address],
@@ -223,6 +192,7 @@ export function MarketEditPanel({
   }, [corridor, tokenText, pairText, refit, pool, sides, address, tokenSymbol]);
 
   const prepare = async () => {
+    setFailure(null);
     if (!address || !publicClient) {
       setStatus("Connect a wallet first.");
       return;
@@ -321,81 +291,50 @@ export function MarketEditPanel({
     const lpIntent = liquidityIntent({ chainId, pool: current.pool.poolId, positions: [] });
     setBusy(true);
     setStatus(null);
+    setFailure(null);
     try {
-      // ponytail: Safe app only; other EIP-5792 wallets keep the sequential path.
-      if (isSafeConnection(wagmiConfig) && steps.length > 1) {
-        await reverifyMarketEdit(current.pool, plan, account);
-        await proposeSafeBatch(
-          wagmiConfig,
-          chainId,
-          "Edit the market",
-          liquidityBatchCalls({
+      const result = requireProposedOrDone(
+        await run({
+          account,
+          title: "Review market edit",
+          confirmLabel: "Agree & edit the market",
+          context: editContext,
+          description: describeMarketEdit(current.pool, plan, tokenSymbol),
+          calls: liquidityReviewedCalls(lpIntent, {
             chainId: state.chainId,
             steps,
             unlockData: plan.unlockData,
             value: plan.value,
+            safe: isSafeConnection(wagmiConfig),
           }),
-          account,
-          lpIntent,
-        );
+          scope: steps.length > 1 ? lpIntent : undefined,
+          // A Safe proposes the approvals and the write as one transaction.
+          batch: true,
+          // After the review, however long it sat open, a changed position or drift beyond the
+          // reviewed maxima still aborts first.
+          reverify: async (call) => {
+            if (call.functionName === "modifyLiquidities")
+              await reverifyMarketEdit(current.pool, plan, account);
+          },
+          beforeWallet: (_call, step) => setStepIndex(step),
+        }),
+      );
+      setReviewed(null);
+      if (result.status === "proposed") {
         setStatus(
-          "Proposed to Safe as one batch. Both sides show their new state under Your liquidity once it executes.",
+          steps.length > 1
+            ? "Proposed to Safe as one batch. Both sides show their new state under Your liquidity once it executes."
+            : "The edit was proposed to Safe and awaits approvals and execution.",
         );
-        setReviewed(null);
         onDone(null);
         return;
       }
-      for (const [index, step] of steps.entries()) {
-        setStepIndex(index);
-        if (step.approval) {
-          const outcome = await runApprovalStep(step, {
-            chainId: state.chainId,
-            address: account,
-            publicClient: publicClient as PublicClient,
-            ...heldLiquidityApprovals(lpIntent, {
-              chainId,
-              account,
-              ensureAllowance,
-              writeContractAsync: writeContractAsync as never,
-            }),
-          });
-          if (outcome === "safe-proposed") {
-            setStatus(
-              "Permit2 authorization was proposed to Safe. Execute it, then review the edit again.",
-            );
-            setReviewed(null);
-            return;
-          }
-          continue;
-        }
-        activePlan.current = { pool: current.pool, plan };
-        review.current.description = describeMarketEdit(current.pool, plan, tokenSymbol);
-        const hash = await withWriteIntent(
-          writeContractAsync,
-          lpIntent,
-        )({
-          chainId,
-          address: positionManager,
-          abi: POSITION_MANAGER_ABI,
-          functionName: "modifyLiquidities",
-          args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
-          value: plan.value,
-          account,
-        });
-        if (submittedViaSafe(hash)) {
-          setStatus("The edit was proposed to Safe and awaits approvals and execution.");
-          setReviewed(null);
-          onDone(null);
-          return;
-        }
-        const receipt = await waitForReceiptWithRetry(publicClient, hash);
-        if (receipt.status !== "success") throw new Error(`Market edit ${hash} reverted.`);
-        setStepIndex(steps.length);
-        await queryClient.invalidateQueries({ queryKey: ["revnetPoolLpProviders"] });
-        onDone(hash);
-      }
+      setStepIndex(steps.length);
+      await queryClient.invalidateQueries({ queryKey: ["revnetPoolLpProviders"] });
+      onDone(result.hashes.at(-1) ?? null);
     } catch (cause) {
-      setStatus(txMessage(cause, "Could not edit this market."));
+      if (reviewClosed(cause)) setReviewed(null);
+      else setFailure(txMessage(cause, "Could not edit this market."));
     } finally {
       setBusy(false);
     }
@@ -427,6 +366,64 @@ export function MarketEditPanel({
     .map((side) => `#${side!.tokenId.toString()}`)
     .join(" + ");
 
+  const editContext = !current
+    ? []
+    : [
+        { label: "Market", value: `${ids} on ${chainName(state.chainId)}` },
+        {
+          label: "Corridor",
+          value: `${
+            corridor
+              ? `${formatPrice(corridor.floor)} – ${formatPrice(corridor.ceiling)} ${pool.pair.symbol}/${tokenSymbol}`
+              : "None"
+          }${current.plan.refit ? " (re-fit)" : " (kept)"}`,
+        },
+        ...(current.plan.token
+          ? [{ label: `${tokenSymbol} side`, value: String(sideLine(current.plan.token, "token")) }]
+          : []),
+        ...(current.plan.pair
+          ? [
+              {
+                label: `${pool.pair.symbol} side`,
+                value: String(sideLine(current.plan.pair, "pair")),
+              },
+            ]
+          : []),
+        ...(current.plan.tokenFlow > 0n || current.plan.pairFlow > 0n
+          ? [
+              {
+                label: "From your wallet",
+                value: amountsText(
+                  positive(current.plan.tokenFlow),
+                  positive(current.plan.pairFlow),
+                ),
+              },
+            ]
+          : []),
+        {
+          label: "Back to your wallet",
+          value:
+            current.plan.tokenFlow < 0n || current.plan.pairFlow < 0n
+              ? `${amountsText(positive(-current.plan.tokenFlow), positive(-current.plan.pairFlow))} + unclaimed fees`
+              : "Unclaimed fees",
+        },
+        ...(current.plan.tokenFunding > 0n || current.plan.pairFunding > 0n
+          ? [
+              {
+                label: "Authorizes up to",
+                value: `${amountsText(current.plan.tokenFunding, current.plan.pairFunding)} (1% price headroom)`,
+              },
+            ]
+          : []),
+        ...(current.plan.tokenMinimum > 0n || current.plan.pairMinimum > 0n
+          ? [
+              {
+                label: "Enforced onchain",
+                value: `At least ${amountsText(current.plan.tokenMinimum, current.plan.pairMinimum)} back (95% floors)`,
+              },
+            ]
+          : []),
+      ];
   return (
     <div className="mt-2 border border-zinc-200 p-2 text-xs text-zinc-700">
       <p className="font-medium">
@@ -531,7 +528,7 @@ export function MarketEditPanel({
         </ButtonWithWallet>
       </div>
       {current || busy ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReviewed(null)}
           title="Confirm market edit"
@@ -541,57 +538,12 @@ export function MarketEditPanel({
           stepsIntro={
             viaSafe && (current?.steps.length ?? 0) > 1 ? safeBatchIntro(current!.steps) : undefined
           }
-          action="Edit the market"
-          onConfirm={() => void execute()}
+          start={() => void execute()}
           busy={busy}
           status={status}
-        >
-          {current ? (
-            <>
-              <SummaryRow label="Market">
-                {ids} on {chainName(state.chainId)}
-              </SummaryRow>
-              <SummaryRow label="Corridor">
-                {corridor
-                  ? `${formatPrice(corridor.floor)} – ${formatPrice(corridor.ceiling)} ${pool.pair.symbol}/${tokenSymbol}`
-                  : "None"}
-                {current.plan.refit ? " (re-fit)" : " (kept)"}
-              </SummaryRow>
-              {current.plan.token ? (
-                <SummaryRow label={`${tokenSymbol} side`}>
-                  {sideLine(current.plan.token, "token")}
-                </SummaryRow>
-              ) : null}
-              {current.plan.pair ? (
-                <SummaryRow label={`${pool.pair.symbol} side`}>
-                  {sideLine(current.plan.pair, "pair")}
-                </SummaryRow>
-              ) : null}
-              {current.plan.tokenFlow > 0n || current.plan.pairFlow > 0n ? (
-                <SummaryRow label="From your wallet">
-                  {amountsText(positive(current.plan.tokenFlow), positive(current.plan.pairFlow))}
-                </SummaryRow>
-              ) : null}
-              <SummaryRow label="Back to your wallet">
-                {current.plan.tokenFlow < 0n || current.plan.pairFlow < 0n
-                  ? `${amountsText(positive(-current.plan.tokenFlow), positive(-current.plan.pairFlow))} + unclaimed fees`
-                  : "Unclaimed fees"}
-              </SummaryRow>
-              {current.plan.tokenFunding > 0n || current.plan.pairFunding > 0n ? (
-                <SummaryRow label="Authorizes up to">
-                  {amountsText(current.plan.tokenFunding, current.plan.pairFunding)} (1% price
-                  headroom)
-                </SummaryRow>
-              ) : null}
-              {current.plan.tokenMinimum > 0n || current.plan.pairMinimum > 0n ? (
-                <SummaryRow label="Enforced onchain">
-                  At least {amountsText(current.plan.tokenMinimum, current.plan.pairMinimum)} back
-                  (95% floors)
-                </SummaryRow>
-              ) : null}
-            </>
-          ) : null}
-        </TxConfirmDialog>
+          error={failure}
+          rows={editContext}
+        />
       ) : null}
       {status && !current ? (
         <p className="mt-2 wrap-anywhere text-[11px] text-zinc-600" role="status">

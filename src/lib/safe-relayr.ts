@@ -3,10 +3,8 @@ import { verifyActionReceipt, verifyCallPreconditions } from "@/lib/multichain-g
 import type { ChainPayment, JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { verifyMetadataSource } from "@/lib/project-metadata-write";
 import { relayrRecoveryScopeKey, relayrSavedQuote } from "@/lib/relayr-activity";
-import { relayrPaymentReview } from "@/lib/relayr-payment-review";
-import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
+import { loadEngine, reviewedSendDeps, reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
 import { isSafeConnection } from "@/lib/safe-connector";
-import { queuedSafeReviewCall } from "@/lib/safe-queue-review";
 import {
   dismissTransactionActivity,
   recordTransactionActivity,
@@ -15,25 +13,13 @@ import {
   type RelayrExpectedTransaction,
   type TransactionActivity,
 } from "@/lib/transaction-activity";
-import { requireTransactionReview } from "@/lib/transaction-review";
 import { requireNoViewAs } from "@/lib/view-as";
 import {
   browserLocks,
   gasWithHeadroom,
   simulateStateChangingTransaction,
 } from "@bananapus/nana-sdk-core/review";
-import {
-  RELAYR_NATIVE_TOKEN,
-  RELAYR_PAYMENT_GAS,
-  relayrPaymentDetails,
-  RelayrPaymentNotSentError,
-  relayrWalletPaymentError,
-  requireRelayrPaymentRuntime,
-  sentRelayrPayment,
-  simulateRelayrPayment,
-  type RelayrQuote,
-  type RelayrSentPayment,
-} from "@bananapus/nana-sdk-core/review/relayr";
+import { RELAYR_NATIVE_TOKEN, type RelayrQuote } from "@bananapus/nana-sdk-core/review/relayr";
 import {
   createSafeRelayrController,
   requireSafeRelayrExecution,
@@ -45,16 +31,9 @@ import {
   type SafeRelayrSession,
 } from "@bananapus/nana-sdk-core/review/safe-relayr";
 import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
-import {
-  decodeFunctionData,
-  decodeFunctionResult,
-  isHash,
-  zeroAddress,
-  type Address,
-  type Hex,
-} from "viem";
+import { decodeFunctionResult, zeroAddress, type Address } from "viem";
 import type { Config } from "wagmi";
-import { getAccount, getPublicClient, waitForTransactionReceipt } from "wagmi/actions";
+import { getAccount, getPublicClient } from "wagmi/actions";
 
 type ExecutionContext = {
   expected: RelayrExpectedTransaction;
@@ -279,22 +258,11 @@ export function safeRelayrExecution(request: ReviewedRelayrRequest): SafeRelayrE
   return execution;
 }
 
-type Wallet = {
-  switchChain(chainId: JBChainId): Promise<unknown>;
-  sendTransaction(request: {
-    account: Address;
-    chainId: JBChainId;
-    to: Address;
-    value: bigint;
-    data: Hex;
-    gas: bigint;
-  }): Promise<Hex>;
-};
-
 /** Translate storage, review and wallet effects. All Safe session decisions live in the SDK. */
 export function safeRelayrController(
   config: Config,
-  wallet?: Wallet,
+  /** Whether this controller may pay a quote from the connected wallet. */
+  pays = false,
   onProgress?: (progress: SafeRelayrProgress) => void,
 ) {
   const clientFor = (chainId: number) => getPublicClient(config, { chainId: chainId as JBChainId });
@@ -508,129 +476,20 @@ export function safeRelayrController(
         expected.expectedRouterPending,
       );
     },
-    async review(executions, { resumed }) {
-      const account = getAccount(config).address;
-      if (!account) throw new Error("Connect a wallet first.");
-      requireAccount(account);
-      await requireTransactionReview({
-        kind: "transaction",
-        title: resumed
-          ? "Resume saved Safe execution quote"
-          : `Review ${executions.length} Safe executions`,
-        description: resumed
-          ? "These are the original signed calls in the existing unpaid quote. Additional Safe confirmations do not change the saved execution. No new bundle will be created."
-          : "Your Safe signatures authorize the transactions below. A separate payment covers execution on each chain.",
-        confirmLabel: resumed ? "Use saved quote" : "Review & get payment options",
-        calls: executions.map((execution) => {
-          const decoded = decodeFunctionData({ abi: SAFE_EXEC_ABI, data: execution.entry.data });
-          if (decoded.functionName !== "execTransaction")
-            throw new Error("The saved Safe call is not execTransaction.");
-          const args = decoded.args;
-          return {
-            chainId: execution.entry.chain,
-            from: account,
-            to: execution.entry.target,
-            value: BigInt(execution.entry.value),
-            data: execution.entry.data,
-            abi: SAFE_EXEC_ABI,
-            functionName: "execTransaction",
-            args,
-            contractName: "Safe",
-            calls: [
-              queuedSafeReviewCall(execution.entry.chain, {
-                to: args[0],
-                value: args[1],
-                data: args[2],
-                operation: args[3],
-              }),
-            ],
-          };
-        }),
-      });
-    },
-    async sendPayment({ session, payment, beforeSend, onSending, onSent }) {
-      if (!wallet) throw new Error("A wallet payment must be explicitly requested.");
-      requireAccount(session.account);
-      const requirePaymentAccount = captureReviewedWalletContext(
+    // Core reviews the frozen executions and the selected payment; only a requested payment pays.
+    review: async (...args) =>
+      (await loadEngine()).safeRelayrWalletDeps(reviewedSendDeps(config)).review(...args),
+    sendPayment: async (input) => {
+      if (!pays) throw new Error("A wallet payment must be explicitly requested.");
+      requireAccount(input.session.account);
+      // The payment is refused at the wallet for View-as or another wallet connection.
+      const deps = reviewedSendDeps(config);
+      const adapter = reviewedWalletAdapter(
         config,
-        session.account,
-        "Connected account or chain changed. Review the payment again.",
+        input.session.account,
+        getAccount(config).connector,
       );
-      const chainId = payment.chain as JBChainId;
-      const details = relayrPaymentDetails(payment, {
-        bundleUuid: session.bundleUuid!,
-        destinationChainIds: session.executions.map((execution) => execution.entry.chain),
-      });
-      await wallet.switchChain(chainId);
-      requirePaymentAccount(chainId);
-      await requireTransactionReview({
-        kind: "transaction",
-        title: "Review payment",
-        description:
-          "This one payment funds the signed calls on every selected chain. Destination transactions confirm separately.",
-        confirmLabel: "Pay",
-        calls: [
-          {
-            chainId,
-            from: session.account,
-            to: details.target,
-            value: details.amount,
-            gas: RELAYR_PAYMENT_GAS,
-            data: details.calldata,
-            label: "Pay network fee",
-            ...relayrPaymentReview(details.calldata),
-          },
-        ],
-      });
-      requirePaymentAccount(chainId);
-      const client = clientFor(chainId);
-      if (!client) throw new Error("Payment network is unavailable.");
-      await requireRelayrPaymentRuntime(client);
-      await simulateRelayrPayment(client, { from: session.account, payment: details });
-      await beforeSend();
-      requirePaymentAccount(chainId);
-      relayrPaymentDetails(payment, {
-        bundleUuid: session.bundleUuid!,
-        destinationChainIds: session.executions.map((execution) => execution.entry.chain),
-      });
-      await onSending();
-      try {
-        requirePaymentAccount(chainId);
-        relayrPaymentDetails(payment, {
-          bundleUuid: session.bundleUuid!,
-          destinationChainIds: session.executions.map((execution) => execution.entry.chain),
-        });
-      } catch (error) {
-        // Only this synchronous gate proves that the wallet has not been invoked.
-        throw new RelayrPaymentNotSentError(error);
-      }
-      let hash: Hex;
-      try {
-        hash = await wallet.sendTransaction({
-          account: session.account,
-          chainId,
-          to: details.target,
-          value: details.amount,
-          data: details.calldata,
-          gas: RELAYR_PAYMENT_GAS,
-        });
-      } catch (error) {
-        throw relayrWalletPaymentError(error);
-      }
-      const sentAs = (hash: Hex): RelayrSentPayment[] => [
-        ...session.payments,
-        sentRelayrPayment(details, hash),
-      ];
-      let payments = sentAs(hash);
-      await onSent(payments);
-      const receipt = await waitForTransactionReceipt(config, { chainId, hash });
-      if (!isHash(receipt.transactionHash))
-        throw new Error("The payment receipt names no transaction hash.");
-      if (receipt.transactionHash.toLowerCase() !== hash.toLowerCase()) {
-        payments = [...payments, sentRelayrPayment(details, receipt.transactionHash)];
-        await onSent(payments);
-      }
-      return { hash: receipt.transactionHash, payments };
+      return (await loadEngine()).safeRelayrWalletDeps({ ...deps, adapter }).sendPayment(input);
     },
   });
 }

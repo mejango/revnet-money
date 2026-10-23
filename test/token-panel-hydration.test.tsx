@@ -17,11 +17,10 @@ vi.mock("@/components/EtherscanLink", () => ({
   default: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  useSafeConnection: () => false,
-  submittedViaSafe: () => false,
-  requireOnchainExecution: vi.fn(),
-  useWriteContract: () => ({ writeContractAsync: vi.fn() }),
+vi.mock("@/lib/safe-connector", () => ({ useSafeConnection: () => false }));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useReviewedAction: () => ({ run: vi.fn() }),
 }));
 vi.mock("@/hooks/useReviewedRelayr", () => ({
   useGetRelayrTxQuote: () => ({ getRelayrTxQuote: vi.fn(), reset: vi.fn() }),

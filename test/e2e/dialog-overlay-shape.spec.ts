@@ -188,7 +188,7 @@ test("layout utilities on a dialog surface win over the shell's defaults", async
   });
 });
 
-test("a standalone confirm taller than a phone screen scrolls to its Cancel and action", async ({
+test("a standalone confirm taller than a phone screen scrolls to its Try again", async ({
   page,
 }) => {
   await installBrowserBoundary(page);
@@ -207,15 +207,13 @@ test("a standalone confirm taller than a phone screen scrolls to its Cancel and 
     })),
   ).toEqual({ overflowY: "auto", overflows: true });
   await expect(confirm.getByRole("heading", { name: "Confirm a long plan" })).toBeInViewport();
-  const send = confirm.getByRole("button", { name: "Send" });
-  const cancel = confirm.getByRole("button", { name: "Cancel" });
+  const send = confirm.getByRole("button", { name: "Try again" });
   await expect(send).not.toBeInViewport();
 
   // A person's scroll, not a script's, brings the footer into reach.
   await page.mouse.move(195, 420);
   await page.mouse.wheel(0, 5000);
   await expect(send).toBeInViewport();
-  await expect(cancel).toBeInViewport();
   await send.click();
   await expect(page.locator("[data-confirm-proof-pressed]")).toHaveAttribute(
     "data-confirm-proof-pressed",

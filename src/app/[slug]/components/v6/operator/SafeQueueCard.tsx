@@ -1,7 +1,6 @@
 "use client";
 
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
-import { safeExecutionIntent, withWriteIntent } from "@/lib/write-hold";
 import {
   sameSafeRelayrIntents,
   type SafeRelayrPhase,
@@ -10,7 +9,16 @@ import {
 } from "@bananapus/nana-sdk-core/review/safe-relayr";
 
 import { EthereumAddress } from "@/components/EthereumAddress";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
+import {
+  loadEngine,
+  reviewClosed,
+  reviewedWalletAdapter,
+  ReviewRefusal,
+  useReviewedAction,
+  useSafeTransactionSignature,
+  WALLET_CHANGED,
+} from "@/hooks/useReviewedAction";
 import {
   checkRelayrSession,
   RelayrRecoveryError,
@@ -19,14 +27,9 @@ import {
   waitForRelayrBundle,
   type ReviewedRelayrRequest,
 } from "@/hooks/useReviewedRelayr";
-import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
-import {
-  requireOnchainExecution,
-  useSafeConnection,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { readHandleAuthority, unprovenSafeMessage } from "@/lib/handle-authority";
+import { recordSubmittedWrite, settleSubmittedWrite } from "@/lib/held-rows";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import { PROJECT_HANDLE_CHAIN_ID } from "@/lib/projectHandles";
 import { protocolQueueLabel } from "@/lib/protocol-queue-label";
@@ -41,20 +44,15 @@ import {
 } from "@/lib/queuedProjectHandle";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { describeQueuedBatch } from "@/lib/safe-batch";
+import { useSafeConnection } from "@/lib/safe-connector";
 import { queuedSafeReviewCall } from "@/lib/safe-queue-review";
-import {
-  confirmSafeExecution,
-  queueUnavailableMessage,
-  REFUND_REFUSAL,
-} from "@/lib/safe-transactions";
+import { queueUnavailableMessage, REFUND_REFUSAL } from "@/lib/safe-transactions";
 import { refreshTransactionActivities } from "@/lib/transaction-activity";
-import {
-  preselectedRelayrPayment,
-  relayrPaymentOptions,
-  requireTransactionReview,
-} from "@/lib/transaction-review";
+import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { etherscanLink, formatWalletError } from "@/lib/utils";
+import { requireNoViewAs } from "@/lib/view-as";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import { safeExecutionIntent, type ReviewedCall } from "@bananapus/nana-sdk-core/review";
 import {
   multiSendCallsOf,
   readAuthorityIdentity,
@@ -77,6 +75,7 @@ import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { encodeFunctionData, isAddressEqual, type Address, type Hex } from "viem";
 import { useAccount, useConfig } from "wagmi";
+import { getAccount } from "wagmi/actions";
 import { authorityIdentityQuery } from "./authorityIdentityQuery";
 import {
   chainName,
@@ -213,13 +212,6 @@ function QueuedCallSummary({ chainId, tx }: { chainId: number; tx: SafeQueuedTra
   );
 }
 
-type ReviewedExecution = {
-  policy: LiveSafePolicy;
-  target: ProjectSafeQueueTarget;
-  transaction: SafeQueuedTransaction;
-  handleBinding: QueuedProjectHandleBinding | null;
-};
-
 async function requireLiveSafeAuthority(
   row: Pick<QueueRow, "chainId" | "safe" | "authorityRows" | "handleOnly">,
 ): Promise<void> {
@@ -354,7 +346,7 @@ export function SafeQueueCard({
   // or paying Relayr from it would take the very nonce the queued transaction
   // needs. Safe{Wallet}'s own queue is where its owners sign and execute.
   const viaSafeApp = useSafeConnection(config);
-  const { signSafeTransactionAsync } = useReviewedSafeSignature();
+  const { signSafeTransactionAsync } = useSafeTransactionSignature();
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -364,7 +356,6 @@ export function SafeQueueCard({
     tx: SafeQueuedTransaction;
     handleBinding: QueuedProjectHandleBinding | null;
   } | null>(null);
-  const reviewedExecution = useRef<ReviewedExecution | null>(null);
   const operators = useLiveRevnetOperators(rows, {
     ...fallbackProject,
     address: fallbackOperator,
@@ -378,49 +369,7 @@ export function SafeQueueCard({
     }),
     fallbackProject,
   );
-  const { writeContractAsync } = useWriteContract({
-    reviewedInParent: true,
-    // A successful outer call is not a successful Safe execution: the card
-    // journals it only after the Safe's own event for the reviewed hash.
-    manualReceiptVerification: () => true,
-    reverify: async (variables) => {
-      const reviewed = reviewedExecution.current;
-      if (!reviewed) {
-        throw new Error("The reviewed Safe execution is no longer available.");
-      }
-      if (
-        Number(variables.chainId) !== reviewed.target.chainId ||
-        !isAddressEqual(reviewed.target.safe, variables.address)
-      ) {
-        throw new Error("The reviewed Safe execution target changed before submission.");
-      }
-      if (
-        variables.functionName !== "execTransaction" ||
-        !variables.args ||
-        (variables.value !== undefined && BigInt(variables.value) !== 0n)
-      ) {
-        throw new Error("The reviewed Safe execution call changed before submission.");
-      }
-      const submittedData = encodeFunctionData({
-        abi: SAFE_EXEC_ABI,
-        functionName: "execTransaction",
-        args: variables.args as ReturnType<typeof safeExecutionArgs>,
-      });
-      const expectedData = encodeFunctionData({
-        abi: SAFE_EXEC_ABI,
-        functionName: "execTransaction",
-        args: safeExecutionArgs(reviewed.transaction, reviewed.policy.owners),
-      });
-      if (submittedData.toLowerCase() !== expectedData.toLowerCase()) {
-        throw new Error("The reviewed queued transaction changed before submission.");
-      }
-      const confirmed = await readLiveSafePolicy(reviewed.target);
-      if (!sameSafePolicy(reviewed.policy, confirmed)) {
-        throw new Error("The Safe policy changed during review. Inspect the transaction again.");
-      }
-      await verifyLiveQueuedTransaction(reviewed.target, reviewed.transaction);
-    },
-  });
+  const { deps } = useReviewedAction();
 
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
@@ -903,6 +852,32 @@ export function SafeQueueCard({
   if (!queueTargets.length || (!queue.data.length && queueQueries.every((query) => query.data)))
     return null;
 
+  /** The queued transaction's chain, handle, destination, value and signatures, as its review shows them. */
+  const queuedContext = (
+    row: QueueRow,
+    tx: SafeQueuedTransaction,
+    handleBinding = review?.handleBinding,
+  ) => [
+    { label: "Safe transaction", value: `#${tx.nonce} on ${chainName(row.chainId)}`, strong: true },
+    ...(handleBinding
+      ? [
+          {
+            label: "Handle",
+            value:
+              handleBinding.kind === "ens-text"
+                ? `ENS juicebox record → ${handleBinding.value}`
+                : `Publish @${handleBinding.handle.handle} → ${handleBinding.source.chainId}:${handleBinding.source.projectId}`,
+          },
+        ]
+      : []),
+    { label: "To", value: tx.to, mono: true },
+    { label: "Value", value: `${String(tx.value ?? 0)} wei` },
+    {
+      label: "Signatures",
+      value: `${usableSafeConfirmations(tx, row.policy.owners).length}/${row.policy.threshold}`,
+    },
+  ];
+
   const sign = async (row: QueueRow, tx: SafeQueuedTransaction) => {
     if (!address || rowBlocked(row)) return;
     const key = `sign:${row.chainId}:${tx.nonce}`;
@@ -920,7 +895,6 @@ export function SafeQueueCard({
         chainId: row.chainId,
         safe: row.safe,
         tx,
-        review: queuedSafeReviewCall(row.chainId, tx),
         reverify: async (liveAccount) => {
           await verifyLiveQueuedTransaction(row, tx);
           const confirmed = await readLiveSafePolicy(row);
@@ -942,7 +916,8 @@ export function SafeQueueCard({
       setReview(null);
       await queue.refetch();
     } catch (cause) {
-      setError(formatWalletError(cause, "Could not sign the Safe transaction."));
+      if (reviewClosed(cause)) setReview(null);
+      else setError(formatWalletError(cause, "Could not sign the Safe transaction."));
     } finally {
       setBusy(null);
     }
@@ -964,96 +939,102 @@ export function SafeQueueCard({
       if (usableSafeConfirmations(tx, policy.owners).length < policy.threshold) {
         throw new Error("The transaction no longer has enough current-owner confirmations.");
       }
-      const expectedSafeTxHash = safeTransactionHash(row.chainId, row.safe, tx);
-      const args = safeExecutionArgs(tx, policy.owners);
-      const data = encodeFunctionData({
-        abi: SAFE_EXEC_ABI,
-        functionName: "execTransaction",
-        args,
-      });
-      await requireTransactionReview({
-        title: "Review Safe execution",
-        description:
-          "The outer call executes the exact queued destination shown below. Same-nonce alternatives remain unexecuted.",
-        confirmLabel: "Agree & execute Safe transaction",
-        authorization: {
-          safe: row.safe,
-          nonce: tx.nonce,
-          safeTxHash: expectedSafeTxHash,
-          destinationCall: {
-            to: tx.to,
-            value: tx.value,
-            data: tx.data ?? "0x",
-            operation: tx.operation,
+      requireNoViewAs();
+      // Core reviews the exact execution, holds it by its Safe transaction, rechecks the Safe's
+      // policy and nonce and simulates it before the wallet opens, and counts it done only on the
+      // Safe's own success event for this hash.
+      const { executeReviewedSafeTransaction } = await loadEngine();
+      const { connector, address: sender } = getAccount(config);
+      // Without an account, the check at the wallet below refuses the send.
+      const wallet = sender ? reviewedWalletAdapter(config, sender, connector) : deps.adapter;
+      let journaled: string | undefined;
+      const result = await executeReviewedSafeTransaction(
+        { chainId: row.chainId, safe: row.safe, tx, context: queuedContext(row, tx) },
+        {
+          ...deps,
+          adapter: {
+            ...wallet,
+            // This queue's own checks run again at the wallet, after the review.
+            sendTransaction: async (sent) => {
+              await verifyLiveQueuedTransaction(row, tx);
+              requireNoViewAs();
+              const live = getAccount(config);
+              if (
+                !sender ||
+                live.connector !== connector ||
+                live.address?.toLowerCase() !== sender.toLowerCase()
+              )
+                throw new ReviewRefusal(WALLET_CHANGED);
+              const hash = await wallet.sendTransaction(sent);
+              journaled = recordSubmittedWrite(
+                {
+                  chainId: sent.chainId,
+                  to: sent.to,
+                  data: sent.data,
+                  value: sent.value,
+                  intent: safeExecutionIntent({
+                    chainId: row.chainId,
+                    safe: row.safe,
+                    safeTxHash: safeTransactionHash(row.chainId, row.safe, tx),
+                  }),
+                } as ReviewedCall,
+                hash,
+                sender,
+                `Execute Safe transaction #${tx.nonce}`,
+                false,
+              );
+              return hash;
+            },
           },
         },
-        calls: [
-          {
-            chainId: row.chainId,
-            to: row.safe,
-            value: 0n,
-            data,
-            abi: SAFE_EXEC_ABI,
-            functionName: "execTransaction",
-            args,
-            label: `Execute Safe transaction #${tx.nonce}`,
-            contractName: "Safe",
-            calls: [queuedSafeReviewCall(row.chainId, tx)],
-          },
-        ],
-      });
-      await verifyLiveQueuedTransaction(row, tx);
-      const confirmedPolicy = await readLiveSafePolicy(row);
-      if (!sameSafePolicy(policy, confirmedPolicy)) {
-        throw new Error("The Safe policy changed during review. Inspect the transaction again.");
+      );
+      if (journaled && result.status === "done") settleSubmittedWrite(journaled, "success");
+      if (result.status === "proposed") {
+        setNotice(`Proposed the execution of Safe transaction #${tx.nonce} to your Safe.`);
+        setReview(null);
+        return;
       }
-      reviewedExecution.current = {
-        policy: confirmedPolicy,
-        target: row,
-        transaction: tx,
-        handleBinding,
-      };
-      try {
-        // Held by the Safe transaction it runs, not by the signatures collected so far.
-        const hash = await withWriteIntent(
-          writeContractAsync,
-          safeExecutionIntent(row.chainId, row.safe, expectedSafeTxHash),
-        )({
-          chainId: row.chainId,
-          address: row.safe,
-          abi: SAFE_EXEC_ABI,
-          functionName: "execTransaction",
-          args,
-        });
-        requireOnchainExecution(hash);
-        await confirmSafeExecution({
-          client: publicClientFor(row.chainId),
-          hash,
+      const receipt = result.receipts.at(-1);
+      if (handleBinding && receipt)
+        await verifyQueuedProjectHandlePostcondition({
+          binding: handleBinding,
           safe: row.safe,
-          safeTxHash: expectedSafeTxHash,
-          confirm: handleBinding
-            ? (receipt) =>
-                verifyQueuedProjectHandlePostcondition({
-                  binding: handleBinding,
-                  safe: row.safe,
-                  transaction: tx,
-                  clientFor: publicClientFor,
-                  executionBlockNumber: receipt.blockNumber,
-                })
-            : undefined,
+          transaction: tx,
+          clientFor: publicClientFor,
+          executionBlockNumber: receipt.blockNumber,
         });
-      } finally {
-        reviewedExecution.current = null;
-      }
       setNotice(`Executed Safe transaction #${tx.nonce} on ${chainName(row.chainId)}.`);
       setReview(null);
       await queue.refetch();
     } catch (cause) {
-      setError(formatWalletError(cause, "Could not execute the Safe transaction."));
+      if (reviewClosed(cause)) setReview(null);
+      else setError(formatWalletError(cause, "Could not execute the Safe transaction."));
     } finally {
       setBusy(null);
     }
   };
+
+  const batchAction = batch
+    ? batch.running
+      ? batch.phase === "payment-review"
+        ? "Preparing payment…"
+        : batch.phase === "payment-submitting"
+          ? "Confirm payment…"
+          : batch.phase === "payment-confirming"
+            ? "Confirming payment…"
+            : batch.phase === "executing" || batch.phase === "complete"
+              ? "Executing…"
+              : "Checking…"
+      : batch.preparing
+        ? null
+        : batch.recovery
+          ? batch.recovery.bundleUuid
+            ? "Check status"
+            : "Check Safe nonces"
+          : batch.quote
+            ? "Pay"
+            : "Retry checks"
+    : null;
 
   return (
     <OperatorSection title="Pending multisig transactions">
@@ -1271,7 +1252,7 @@ export function SafeQueueCard({
         </p>
       ) : null}
       {review ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => setReview(null)}
           title={review.kind === "sign" ? "Confirm signature" : "Confirm execution"}
@@ -1287,37 +1268,18 @@ export function SafeQueueCard({
                 },
           ]}
           activeIndex={busy ? 0 : -1}
-          action={review.kind === "sign" ? "Sign" : "Execute"}
-          onConfirm={() =>
+          start={() =>
             void (review.kind === "sign"
               ? sign(review.row, review.tx)
               : execute(review.row, review.tx))
           }
           busy={busy !== null}
           error={error}
-        >
-          <SummaryRow label="Safe transaction">
-            #{review.tx.nonce} on {chainName(review.row.chainId)}
-          </SummaryRow>
-          {review.handleBinding ? (
-            <SummaryRow label="Handle">
-              {review.handleBinding.kind === "ens-text"
-                ? `ENS juicebox record → ${review.handleBinding.value}`
-                : `Publish @${review.handleBinding.handle.handle} → ${review.handleBinding.source.chainId}:${review.handleBinding.source.projectId}`}
-            </SummaryRow>
-          ) : null}
-          <SummaryRow label="To">
-            <span className="break-all font-mono text-xs">{review.tx.to}</span>
-          </SummaryRow>
-          <SummaryRow label="Value">{String(review.tx.value ?? 0)} wei</SummaryRow>
-          <SummaryRow label="Signatures">
-            {usableSafeConfirmations(review.tx, review.row.policy.owners).length}/
-            {review.row.policy.threshold}
-          </SummaryRow>
-        </TxConfirmDialog>
+          rows={queuedContext(review.row, review.tx)}
+        />
       ) : null}
       {batch ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={closeBatch}
           title={`Execute ${batch.rows.length} Safe transactions`}
@@ -1352,73 +1314,70 @@ export function SafeQueueCard({
             ),
           }))}
           activeIndex={-1}
-          action={
-            batch.running
-              ? batch.phase === "payment-review"
-                ? "Preparing payment…"
-                : batch.phase === "payment-submitting"
-                  ? "Confirm payment…"
-                  : batch.phase === "payment-confirming"
-                    ? "Confirming payment…"
-                    : batch.phase === "executing" || batch.phase === "complete"
-                      ? "Executing…"
-                      : "Checking…"
-              : batch.preparing
-                ? null
-                : batch.recovery
-                  ? batch.recovery.bundleUuid
-                    ? "Check status"
-                    : "Check Safe nonces"
-                  : batch.quote
-                    ? "Pay"
-                    : "Retry checks"
-          }
-          actionDisabled={
-            batch.preparing ||
-            batch.account.toLowerCase() !== address?.toLowerCase() ||
-            Boolean(batch.quote && batch.paymentChainId === null)
-          }
-          onConfirm={() =>
-            void (batch.recovery
-              ? checkExistingBundle()
-              : batch.quote
-                ? executeAll()
-                : prepareAll(batch.rows))
-          }
           busy={batch.running}
           complete={batch.done}
           status={batch.message}
           error={batch.error}
           footerContent={
-            batch.quote && !batch.done ? (
-              <label className="block text-sm">
-                Pay network fee on
-                <select
-                  className="mt-2 block w-full border border-melon-300 bg-white p-2"
-                  value={batch.paymentChainId ?? ""}
-                  disabled={batch.running}
-                  onChange={(event) =>
-                    setBatch((current) =>
-                      current
-                        ? {
-                            ...current,
-                            paymentChainId: event.target.value ? Number(event.target.value) : null,
-                          }
-                        : current,
-                    )
-                  }
-                >
-                  <option value="" disabled>
-                    Select a payment chain
-                  </option>
-                  {relayrPaymentOptions(batch.quote.payment_info).map((option) => (
-                    <option key={option.chainId} value={option.chainId}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : null
+            // The Relayr bundle's fee chain and its step; R5 moves both into core's review.
+            batch.done ? null : (
+              <div className="space-y-3">
+                {batch.quote && !batch.done ? (
+                  <label className="block text-sm">
+                    Pay network fee on
+                    <select
+                      className="mt-2 block w-full border border-melon-300 bg-white p-2"
+                      value={batch.paymentChainId ?? ""}
+                      disabled={batch.running}
+                      onChange={(event) =>
+                        setBatch((current) =>
+                          current
+                            ? {
+                                ...current,
+                                paymentChainId: event.target.value
+                                  ? Number(event.target.value)
+                                  : null,
+                              }
+                            : current,
+                        )
+                      }
+                    >
+                      <option value="" disabled>
+                        Select a payment chain
+                      </option>
+                      {relayrPaymentOptions(batch.quote.payment_info).map((option) => (
+                        <option key={option.chainId} value={option.chainId}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {batchAction ? (
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="min-h-[44px] border border-melon-700 bg-melon-500 px-5 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-40"
+                      disabled={
+                        batch.running ||
+                        batch.preparing ||
+                        batch.account.toLowerCase() !== address?.toLowerCase() ||
+                        Boolean(batch.quote && batch.paymentChainId === null)
+                      }
+                      onClick={() =>
+                        void (batch.recovery
+                          ? checkExistingBundle()
+                          : batch.quote
+                            ? executeAll()
+                            : prepareAll(batch.rows))
+                      }
+                    >
+                      {batchAction}
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            )
           }
         >
           {batch.recovery ? (
@@ -1475,7 +1434,7 @@ export function SafeQueueCard({
               })}
             </div>
           ) : null}
-        </TxConfirmDialog>
+        </TxProgress>
       ) : null}
     </OperatorSection>
   );

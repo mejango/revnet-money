@@ -83,18 +83,34 @@ vi.mock("@/components/EtherscanLink", () => ({
   default: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  useSafeConnection: () => mocks.safe,
-  submittedViaSafe: () => mocks.safeProposal,
-  isSafeProposalPendingError: (error: unknown) =>
-    error instanceof Error && error.name === "SafeProposalPendingError",
-  requireOnchainExecution: () => {
-    if (mocks.safeProposal)
-      throw Object.assign(new Error("Safe proposal is awaiting Safe approvals and execution."), {
-        name: "SafeProposalPendingError",
-      });
-  },
-  useWriteContract: () => ({ writeContractAsync: mocks.writeContractAsync }),
+vi.mock("@/lib/safe-connector", () => ({ useSafeConnection: () => mocks.safe }));
+vi.mock("@/lib/held-rows", () => ({ submittedViaSafe: () => mocks.safeProposal }));
+/**
+ * Core's run as the panel sees it: each chain in order, the wallet switched to it, its write, then
+ * its receipt before the next. A Safe proposal ends the run; a reverted receipt stops it.
+ */
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useReviewedAction: () => ({
+    run: async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
+      const hashes: Hash[] = [];
+      for (const [step, call] of action.calls.entries()) {
+        await action.beforeWallet?.(call, step);
+        await mocks.switchChainAsync({ chainId: call.chainId });
+        const hash = (await mocks.writeContractAsync({ ...call, address: call.to })) as Hash;
+        if (mocks.safeProposal) return { status: "proposed", step, safeTxHash: hash };
+        const receipt = await mocks.waitForReceiptWithRetry({ chain: { id: call.chainId } }, hash);
+        if (receipt.status !== "success")
+          return {
+            status: "failed",
+            error: `Step ${step + 1} reverted on chain ${call.chainId}. Nothing after it was sent.`,
+            failure: new Error("reverted"),
+          };
+        hashes.push(hash);
+      }
+      return { status: "done", hashes, receipts: [] };
+    },
+  }),
 }));
 vi.mock("@/hooks/useReviewedRelayr", () => ({
   useGetRelayrTxQuote: () => ({
@@ -240,7 +256,6 @@ describe("token panel Relayr funding", () => {
     expect(picker).toHaveTextContent("Select chain");
     expect(confirm).toBeDisabled();
     // Its way back stays open while the funding choice is missing.
-    expect(within(confirmPanel()).getByRole("button", { name: "Cancel" })).toBeEnabled();
     expect(within(confirmPanel()).getByRole("button", { name: "Close" })).toBeEnabled();
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
@@ -304,7 +319,7 @@ describe("token panel Relayr funding", () => {
   it("allows returning to the editor without funding the quote", async () => {
     await openConfirmation([1, 8453]);
     await screen.findByRole("combobox");
-    fireEvent.click(within(confirmPanel()).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(within(confirmPanel()).getByRole("button", { name: "Close" }));
     expect(await screen.findByLabelText("Token name")).toBeInTheDocument();
     expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
     expect(mocks.writeContractAsync).not.toHaveBeenCalled();
@@ -341,12 +356,7 @@ describe("token panel direct routing", () => {
   ])("reviews $label before submitting direct transactions", async ({ chains, safe, deployed }) => {
     mocks.safe = safe;
     await openConfirmation(chains, deployed);
-    const confirm = screen.getByRole("button", { name: deployed ? "Save token" : "Deploy token" });
-    expect(confirm).not.toBeDisabled();
     expect(mocks.getRelayrTxQuote).not.toHaveBeenCalled();
-    expect(mocks.writeContractAsync).not.toHaveBeenCalled();
-
-    fireEvent.click(confirm);
     await waitFor(() => expect(mocks.refetch).toHaveBeenCalledOnce());
     expect(mocks.writeContractAsync.mock.calls.map(([call]) => call.chainId)).toEqual(chains);
     expect(mocks.waitForReceiptWithRetry).toHaveBeenCalledTimes(chains.length);
@@ -392,7 +402,6 @@ describe("token panel direct routing", () => {
       .mockResolvedValueOnce({ status: "success" })
       .mockReturnValueOnce(last.promise);
     await openConfirmation([1, 11155111, 8453], true);
-    fireEvent.click(screen.getByRole("button", { name: "Save token" }));
 
     await waitFor(() => expect(mocks.waitForReceiptWithRetry).toHaveBeenCalledOnce());
     expect(mocks.writeContractAsync).toHaveBeenCalledOnce();
@@ -404,7 +413,6 @@ describe("token panel direct routing", () => {
     expect(mocks.refetch).not.toHaveBeenCalled();
     expect(mocks.toast).not.toHaveBeenCalled();
     // Held between the writes: no way out while one is in flight.
-    expect(within(confirmPanel()).getByRole("button", { name: "Save token" })).toBeDisabled();
     expectEveryWayOutRefused(confirmPanel());
 
     await act(async () => first.resolve({ status: "success" }));
@@ -432,7 +440,6 @@ describe("token panel direct routing", () => {
       .mockResolvedValueOnce({ status: "success" })
       .mockResolvedValueOnce({ status: "reverted" });
     await openConfirmation([1, 11155111, 8453], true);
-    fireEvent.click(screen.getByRole("button", { name: "Save token" }));
 
     expect(await screen.findByText(/reverted on/i)).toBeInTheDocument();
     expect(mocks.writeContractAsync).toHaveBeenCalledTimes(2);
@@ -444,12 +451,11 @@ describe("token panel direct routing", () => {
     mocks.safe = true;
     mocks.safeProposal = true;
     await openConfirmation([1, 8453], true);
-    fireEvent.click(screen.getByRole("button", { name: "Save token" }));
 
     await waitFor(() => expect(mocks.writeContractAsync).toHaveBeenCalledOnce());
     await waitFor(() =>
       expect(`${document.body.textContent} ${JSON.stringify(mocks.toast.mock.calls)}`).toMatch(
-        /awaiting Safe|Safe proposal|Safe approvals/i,
+        /awaiting Safe|Safe proposal|Safe approvals|waiting in your Safe/i,
       ),
     );
     expect(mocks.waitForReceiptWithRetry).not.toHaveBeenCalled();
@@ -460,7 +466,7 @@ describe("token panel direct routing", () => {
     );
     // Nothing is left to send from here: Done, not Save token again.
     const done = await within(confirmPanel()).findByRole("button", { name: "Done" });
-    expect(confirmPanel()).toHaveTextContent("Safe proposal is awaiting Safe approvals");
+    expect(confirmPanel()).toHaveTextContent("This proposal is waiting in your Safe");
     expect(within(confirmPanel()).queryByRole("button", { name: "Save token" })).toBeNull();
     fireEvent.click(done);
     await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());

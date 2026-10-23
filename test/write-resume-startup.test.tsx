@@ -30,7 +30,7 @@ vi.mock("@/lib/transaction-activity", async () => {
   };
 });
 vi.mock("@/hooks/useReviewedRelayr", () => ({ resumePendingRelayrBundles: resume.relayr }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({ resumeSafeProposalTracking: resume.safe }));
+vi.mock("@/lib/held-rows", () => ({ resumeSafeProposalTracking: resume.safe }));
 vi.mock("@/components/HeldRowFollowers", () => ({
   HeldRowFollowers: () => {
     resume.followers();

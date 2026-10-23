@@ -3,19 +3,13 @@ import { BridgeDialog } from "@/app/[slug]/components/Value/BridgeDialog";
 import { ReallocateDialog } from "@/app/[slug]/components/Value/ReallocateDialog";
 import { RedeemDialog } from "@/app/[slug]/components/Value/RedeemDialog";
 import { RepayDialog } from "@/app/[slug]/components/Value/RepayDialog";
-import { SafeProposalPendingError } from "@/hooks/useReviewedWriteContract";
 import { repayCeilingFor } from "@/lib/loanFees";
-import { recordTransactionActivity, updateTransactionActivity } from "@/lib/transaction-activity";
 import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState, type ReactNode } from "react";
-import { formatUnits, pad, type Hex } from "viem";
+import { formatUnits, pad, parseAbi, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-type ReviewedWriteContractOptions = NonNullable<
-  Parameters<typeof import("@/hooks/useReviewedWriteContract").useWriteContract>[0]
->;
 
 // Cash out, bridge, borrow, refinance and repay each host their confirm in
 // their own dialog, whose owner resets and closes it on any request. While a
@@ -31,7 +25,6 @@ const mocks = vi.hoisted(() => ({
   write: vi.fn(),
   prepareCashOut: vi.fn(),
   freshBorrowable: vi.fn(),
-  ensureAllowance: vi.fn(),
   hasPermissions: vi.fn(),
   toast: vi.fn(),
   verifyDestinationMint: vi.fn(),
@@ -50,10 +43,16 @@ const mocks = vi.hoisted(() => ({
    * client usePublicClient returns without a chain (the wallet's).
    */
   allowanceOnLoanChainOnly: false,
+  /** The bridge's token allowance is already enough, so the move is one call. */
+  bridgeAllowed: false,
   /** A pool sale beats cashing out, and the claimed tokens cover it. */
   directSell: false,
   /** A write goes to the Safe as a proposal, which reads as loading until it executes. */
   safeProposal: false,
+  /** That proposal's result can't be confirmed here. */
+  safeUnconfirmed: false,
+  /** The Safe runs the proposed step later, which core reports as done. */
+  safeLands: false,
   /** The chain whose node has a sent hash's receipt; no other chain's node has it. */
   receiptOn: null as number | null,
   /** Whether that receipt shows a revert. */
@@ -106,6 +105,7 @@ vi.mock("wagmi", async (importOriginal) => ({
           ];
         }
         if (functionName === "projectId") return 8n;
+        if (functionName === "allowance" && mocks.bridgeAllowed) return 10n ** 30n;
         if (functionName === "TERMINAL") {
           if (mocks.loanSourceFails) throw new Error("The node can't be reached.");
           return "0x5555555555555555555555555555555555555555";
@@ -215,72 +215,119 @@ vi.mock("@/components/ui/use-toast", () => ({
   toast: mocks.toast,
   useToast: () => ({ toast: mocks.toast }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", async (importOriginal) => {
+/**
+ * Core's run as these flows see it, phase by phase: each call's live checks, then `write` as the
+ * wallet, then its receipt on the chain it was sent on (`receiptOn`'s node only; elsewhere it
+ * never lands, or, with `neverLands`, the run ends unconfirmed). A Safe connection's send is a
+ * proposal; with `safeUnconfirmed` its result can't be confirmed.
+ */
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
   const { useState } = await import("react");
-  const activity = await import("@/lib/transaction-activity");
   return {
-    // The write hook's own refusals, their tests and their lines, as the flows read them.
-    ...(await importOriginal<typeof import("@/hooks/useReviewedWriteContract")>()),
-    requireOnchainExecution: () => undefined,
-    // Like wagmi's mutation, `data` is the hash the last write returned. Like the
-    // reviewed write, a send is tracked on the chain it names, as a Safe proposal
-    // when one is made.
-    useWriteContract: (options?: ReviewedWriteContractOptions) => {
-      const [data, setData] = useState<string | undefined>(() => mocks.sent[mocks.writeHooks++]);
-      return {
-        writeContractAsync: async (
-          variables: Parameters<NonNullable<ReviewedWriteContractOptions["reverify"]>>[0],
-        ) => {
+    ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+    useReviewedAction: () => {
+      const [state, setState] = useState<{ phase: string; held: { exit: object } | null }>({
+        phase: "idle",
+        held: null,
+      });
+      const run = async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
+        const hashes: Hex[] = [];
+        for (const [step, call] of action.calls.entries()) {
+          const variables = { ...call, address: call.to, account: action.account };
           await mocks.beforeReverify(variables);
-          await options?.reverify?.(variables, "0x1111111111111111111111111111111111111111");
-          const hash = await mocks.write(variables);
-          // As the reviewed write does, read the stored activity before recording.
-          activity.refreshTransactionActivities();
-          if (hash && !activity.transactionActivityForHash(hash)) {
-            activity.recordTransactionActivity({
-              id: `tx:${variables.chainId}:${hash}`,
-              kind: mocks.safeProposal ? "safe" : "direct",
-              title: "The step",
-              status: mocks.safeProposal ? "safe-proposed" : "pending",
-              message: mocks.safeProposal ? "Submitted to Safe." : "Pending onchain confirmation.",
-              chainId: variables.chainId,
-              hash,
-              ...(mocks.safeProposal ? { safeProposalHash: hash } : {}),
-            });
+          try {
+            await action.reverify?.(call, step, undefined);
+          } catch (failure) {
+            return { status: "failed", error: (failure as Error).message, failure };
           }
-          setData(hash);
-          return hash;
-        },
-        isPending: false,
-        data,
-        reset: vi.fn(),
+          setState({ phase: "signing", held: null });
+          let hash: Hex;
+          try {
+            hash = await mocks.write(variables);
+          } catch (failure) {
+            setState({ phase: "idle", held: null });
+            return { status: "failed", error: (failure as Error).message, failure };
+          }
+          await action.onSubmitted?.(call, step, hash, {
+            safe: mocks.safeProposal,
+            adopted: false,
+          });
+          if (mocks.safeProposal) {
+            setState({ phase: "proposed", held: mocks.safeUnconfirmed ? { exit: {} } : null });
+            if (mocks.safeLands) setTimeout(() => setState({ phase: "done", held: null }), 0);
+            return { status: "proposed", step, safeTxHash: hash };
+          }
+          setState({ phase: "receipt", held: null });
+          if (call.chainId !== mocks.receiptOn) {
+            if (!mocks.neverLands) await never();
+            setState({ phase: "idle", held: null });
+            return {
+              status: "failed",
+              error: "Couldn't confirm this yet. Check your wallet before sending again.",
+              failure: new Error("unconfirmed"),
+            };
+          }
+          if (mocks.reverted) {
+            setState({ phase: "idle", held: null });
+            return {
+              status: "failed",
+              error: "The transaction reverted onchain. Nothing changed.",
+              failure: new Error("reverted"),
+            };
+          }
+          hashes.push(hash);
+        }
+        setState({ phase: "done", held: null });
+        return { status: "done", hashes, receipts: [] };
+      };
+      return {
+        ...state,
+        run,
+        error: null,
+        reset: () => setState({ phase: "idle", held: null }),
       };
     },
   };
 });
-vi.mock("@/hooks/useAllowance", () => ({
-  useAllowance: () => ({ ensureAllowance: mocks.ensureAllowance, isApproving: false }),
-}));
 vi.mock("@/hooks/useProjectBaseToken", () => ({
   useProjectBaseToken: () => ({ symbol: "ETH", decimals: 18, tokenMap: {} }),
 }));
 vi.mock("@/hooks/useBorrowableAmountFrom", () => ({
   useBorrowableAmountFrom: () => ({ data: 10n ** 18n, capacity: 2n * 10n ** 18n }),
 }));
-vi.mock("@/hooks/useCashOutRoute", () => ({
-  useCashOutRoute: () => ({
-    data: { expectedReturn: 10n ** 17n, minimumReturn: 9n * 10n ** 16n },
-    isFetching: false,
-    isError: false,
-    refetch: vi.fn(),
-  }),
-}));
+vi.mock("@/hooks/useCashOutRoute", () => {
+  const data = { expectedReturn: 10n ** 17n, minimumReturn: 9n * 10n ** 16n };
+  return {
+    useCashOutRoute: () => ({
+      data,
+      isFetching: false,
+      isError: false,
+      refetch: async () => ({ data, isError: false }),
+    }),
+  };
+});
 vi.mock("@/lib/directSellSwap", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/directSellSwap")>()),
   quoteDirectSellSwap: async () =>
     mocks.directSell
       ? { poolKey: {}, zeroForOne: true, quotedOutput: 2n * 10n ** 17n, minimumOutput: 10n ** 17n }
       : null,
+  buildDirectSellSwapTx: ({ chainId }: { chainId: number }) => ({
+    chainId,
+    address: "0x6666666666666666666666666666666666666666",
+    abi: [
+      {
+        type: "function",
+        name: "execute",
+        stateMutability: "payable",
+        inputs: [{ name: "deadline", type: "uint256" }],
+        outputs: [],
+      },
+    ],
+    functionName: "execute",
+    args: [0n],
+    value: 0n,
+  }),
 }));
 vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/app/[slug]/components/v6/owners/market/lib")>()),
@@ -387,8 +434,11 @@ beforeEach(() => {
   mocks.writeHooks = 0;
   mocks.nativeBase = true;
   mocks.allowanceOnLoanChainOnly = false;
+  mocks.bridgeAllowed = false;
   mocks.directSell = false;
   mocks.safeProposal = false;
+  mocks.safeUnconfirmed = false;
+  mocks.safeLands = false;
   mocks.receiptOn = null;
   mocks.neverLands = false;
   mocks.reverted = false;
@@ -406,7 +456,6 @@ beforeEach(() => {
   mocks.write.mockReset().mockImplementation(never);
   mocks.prepareCashOut.mockReset().mockImplementation(never);
   mocks.freshBorrowable.mockReset().mockImplementation(never);
-  mocks.ensureAllowance.mockReset().mockResolvedValue(null);
   mocks.hasPermissions.mockReset().mockResolvedValue(true);
   mocks.verifyDestinationMint.mockReset().mockResolvedValue(undefined);
   mocks.beforeReverify.mockReset().mockResolvedValue(undefined);
@@ -424,11 +473,11 @@ async function confirmCashOut() {
   fireEvent.click(await screen.findByRole("option", { name: /Ethereum/ }));
   fireEvent.change(screen.getByLabelText("Tokens to cash out"), { target: { value: "1" } });
   fireEvent.click(screen.getByRole("button", { name: "Cash out" }));
-  const confirm = await confirmPanel();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Cash out" }));
+  await confirmPanel();
 }
 
 async function confirmBridge() {
+  mocks.bridgeAllowed = true;
   renderWithQueries(
     <BridgeDialog
       projects={[
@@ -447,11 +496,7 @@ async function confirmBridge() {
   const move = screen.getByRole("button", { name: "Move REV" });
   await waitFor(() => expect(move).toBeEnabled());
   fireEvent.click(move);
-  const confirm = await confirmPanel();
-  await waitFor(() =>
-    expect(within(confirm).getByRole("button", { name: "Move REV" })).toBeEnabled(),
-  );
-  fireEvent.click(within(confirm).getByRole("button", { name: "Move REV" }));
+  await confirmPanel();
 }
 
 describe("bridge destination mint readiness at the wallet boundary", () => {
@@ -472,16 +517,7 @@ describe("bridge destination mint readiness at the wallet boundary", () => {
     expect(mocks.write).not.toHaveBeenCalled();
   });
 
-  it("probes the exact destination peer, project, beneficiary and submitted count before writing", async () => {
-    // Deliberately distinguish the submitted request from the form's one-token
-    // selection so the callback cannot accidentally verify component state.
-    mocks.beforeReverify.mockImplementation(async (variables) => {
-      variables.args = [
-        2n * 10n ** 18n,
-        pad("0x6666666666666666666666666666666666666666"),
-        ...variables.args.slice(2),
-      ];
-    });
+  it("probes the exact destination peer, project, beneficiary and reviewed count before writing", async () => {
     await confirmBridge();
 
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
@@ -489,8 +525,8 @@ describe("bridge destination mint readiness at the wallet boundary", () => {
       chainId: 10,
       projectId: 8n,
       sucker: "0x4444444444444444444444444444444444444444",
-      beneficiary: "0x6666666666666666666666666666666666666666",
-      tokenCount: 2n * 10n ** 18n,
+      beneficiary: "0x1111111111111111111111111111111111111111",
+      tokenCount: 10n ** 18n,
     });
     expect(mocks.verifyDestinationMint.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.write.mock.invocationCallOrder[0],
@@ -509,8 +545,7 @@ async function confirmBorrow() {
   const open = screen.getByRole("button", { name: "Open loan" });
   await waitFor(() => expect(open).toBeEnabled());
   fireEvent.click(open);
-  const confirm = await confirmPanel();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
+  await confirmPanel();
 }
 
 describe("a loan's source token, decimals and currency", () => {
@@ -559,10 +594,10 @@ describe("a loan's source token, decimals and currency", () => {
     fireEvent.change(await screen.findByLabelText(/How much REV/), { target: { value: "1" } });
     const open = screen.getByRole("button", { name: "Open loan" });
     await waitFor(() => expect(open).toBeEnabled());
-    fireEvent.click(open);
-    const confirm = await confirmPanel();
+    // The read at send fails.
     mocks.loanSourceFails = true;
-    fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
+    fireEvent.click(open);
+    await confirmPanel();
     expect(
       await screen.findByText("Couldn't read this network's loan token onchain. Try again."),
     ).toBeTruthy();
@@ -582,9 +617,8 @@ describe("a loan's source token, decimals and currency", () => {
     const open = screen.getByRole("button", { name: "Open loan" });
     await waitFor(() => expect(open).toBeEnabled());
     fireEvent.click(open);
-    const confirm = await confirmPanel();
     mocks.loanContext = { token: USDC, decimals: 6, currency: 909516616 };
-    fireEvent.click(within(confirm).getByRole("button", { name: "Open loan" }));
+    await confirmPanel();
     expect(
       await screen.findByText(
         "This network's loan token changed. Check the terms and confirm again.",
@@ -605,8 +639,7 @@ async function confirmRefinance() {
   const refinance = await screen.findByRole("button", { name: "Refinance loan" });
   await waitFor(() => expect(refinance).toBeEnabled());
   fireEvent.click(refinance);
-  const confirm = await confirmPanel();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Refinance loan" }));
+  await confirmPanel();
 }
 
 async function confirmRepay() {
@@ -627,8 +660,7 @@ async function confirmRepay() {
   const repay = await screen.findByRole("button", { name: "Repay loan" });
   await waitFor(() => expect(repay).toBeEnabled());
   fireEvent.click(repay);
-  const confirm = await confirmPanel();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Repay loan" }));
+  await confirmPanel();
 }
 
 describe("a repayment's loan token, decimals and currency", () => {
@@ -674,10 +706,9 @@ describe("a repayment's loan token, decimals and currency", () => {
     openRepay();
     const repay = await screen.findByRole("button", { name: "Repay loan" });
     await waitFor(() => expect(repay).toBeEnabled());
+    mocks.loanSourceFails = true;
     fireEvent.click(repay);
     const confirm = await confirmPanel();
-    mocks.loanSourceFails = true;
-    fireEvent.click(within(confirm).getByRole("button", { name: "Repay loan" }));
     expect(
       await within(confirm).findByText(
         "Couldn't read this network's loan token onchain. Try again.",
@@ -736,8 +767,7 @@ async function approveSale() {
   await waitFor(() => expect(sell).toBeEnabled());
   fireEvent.click(sell);
   const confirm = await confirmPanel();
-  fireEvent.click(within(confirm).getByRole("button", { name: "Approve tokens" }));
-  await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
+  await waitFor(() => expect(mocks.write).toHaveBeenCalled());
   expect(mocks.write.mock.calls[0]![0]).toMatchObject({ functionName: "approve", chainId: 1 });
   return confirm;
 }
@@ -821,97 +851,84 @@ describe("cash out's reviewed chain", () => {
 });
 
 describe("cash out's sale approval", () => {
-  it("ends on Done, with the sale locked, when the approval's receipt never lands", async () => {
+  it("says the approval couldn't be confirmed yet, sends nothing more, and offers Try again", async () => {
     mocks.neverLands = true;
     const confirm = await approveSale();
 
-    const done = await within(confirm).findByRole("button", { name: "Done" });
-    expect(confirm).toHaveTextContent("Couldn't confirm the approval yet.");
-    expect(within(confirm).queryByRole("button", { name: /Approv|Sell/ })).toBeNull();
-    fireEvent.click(done);
-    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
-    const cashOut = dialogNamed("Cash out");
-    expect(cashOut.open).toBe(true);
-    // Settled, not spinning: the sale stays locked and says why.
-    const sell = within(cashOut).getByRole("button", { name: "Sell on market" });
-    expect(sell).toBeDisabled();
-    expect(sell).not.toHaveAttribute("aria-busy");
-    expect(cashOut).toHaveTextContent("Couldn't confirm the approval yet.");
+    await within(confirm).findByText(/Couldn't confirm this yet/);
+    expect(within(confirm).getByRole("button", { name: "Try again" })).toBeEnabled();
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("holds the confirm until the approval's receipt lands", async () => {
+  it("holds the progress until the approval's receipt lands", async () => {
     const confirm = await approveSale();
 
     await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled(),
+      expect(within(confirm).getByRole("button", { name: "Close" })).toBeDisabled(),
     );
     tryEveryWayOut("Cash out");
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("wallet-action:cash-out releases the confirm once the approval's receipt lands on the cash-out chain", async () => {
+  it("wallet-action:cash-out continues to the sale in the same review once the approval's receipt lands on the cash-out chain", async () => {
     mocks.receiptOn = 1;
-    const confirm = await approveSale();
+    await approveSale();
 
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeEnabled(),
-    );
-    expect(mocks.write).toHaveBeenCalledOnce();
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(3));
+    expect(mocks.write.mock.calls.map(([call]) => call.functionName)).toEqual([
+      "approve",
+      "approve",
+      "execute",
+    ]);
   });
 
-  it("shows a reverted approval, and Cancel goes back with nothing more sent", async () => {
+  it("shows a reverted approval, and Close goes back with nothing more sent", async () => {
     mocks.receiptOn = 1;
     mocks.reverted = true;
     const confirm = await approveSale();
 
-    const cancel = within(confirm).getByRole("button", { name: "Cancel" });
-    await waitFor(() => expect(cancel).toBeEnabled());
-    expect(confirm).toHaveTextContent("reverted onchain");
-    fireEvent.click(cancel);
+    await within(confirm).findByText(/reverted onchain/);
+    fireEvent.click(within(confirm).getByRole("button", { name: "Close" }));
     await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
     expect(dialogNamed("Cash out").open).toBe(true);
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("ends on Done when proposed to Safe, rather than holding the confirm until the Safe executes it", async () => {
+  it("closes on a Safe proposal and says to finish it in Safe", async () => {
     mocks.safeProposal = true;
-    const confirm = await approveSale();
+    await approveSale();
 
-    const done = await within(confirm).findByRole("button", { name: "Done" });
-    expect(confirm).toHaveTextContent("The approval was proposed to Safe.");
-    expect(mocks.write).toHaveBeenCalledOnce();
-    fireEvent.click(done);
     await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
-    const cashOut = dialogNamed("Cash out");
-    expect(cashOut.open).toBe(true);
-    const sell = within(cashOut).getByRole("button", { name: "Sell on market" });
-    expect(sell).toBeDisabled();
-    expect(sell).not.toHaveAttribute("aria-busy");
-    expect(cashOut).toHaveTextContent("The approval was proposed to Safe.");
+    expect(mocks.toast).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: "This proposal is waiting in your Safe. Finish it there first.",
+      }),
+    );
+    expect(dialogNamed("Cash out").open).toBe(true);
+    expect(mocks.write).toHaveBeenCalledOnce();
   });
 
-  it("ends on Done with its line, the sale locked, once the approval's Safe proposal can't be confirmed", async () => {
+  it("returns to the sale, not its success, once the Safe runs only the approval", async () => {
     mocks.safeProposal = true;
-    const confirm = await approveSale();
-    await within(confirm).findByRole("button", { name: "Done" });
+    mocks.safeLands = true;
+    await approveSale();
 
-    // The watch gives up on the proposal: its result can't be confirmed here.
-    act(() =>
-      updateTransactionActivity(`tx:1:0x${"cd".repeat(32)}`, { safeResultUnconfirmed: true }),
-    );
-
-    const line = "Check this proposal in your Safe before sending it again.";
-    await waitFor(() => expect(confirm).toHaveTextContent(line));
-    expect(confirm).not.toHaveTextContent("The approval was proposed to Safe.");
-    expect(within(confirm).queryByRole("button", { name: /Approv|Sell/ })).toBeNull();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
-    const cashOut = dialogNamed("Cash out");
-    const sell = within(cashOut).getByRole("button", { name: "Sell on market" });
-    expect(sell).toBeDisabled();
-    expect(sell).not.toHaveAttribute("aria-busy");
-    expect(cashOut).toHaveTextContent(line);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(dialogNamed("Cash out")).not.toHaveTextContent("Success!");
+    expect(screen.getByRole("button", { name: "Sell on market" })).toBeInTheDocument();
+    expect(mocks.write).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the line on the form when the approval's Safe proposal can't be confirmed", async () => {
+    mocks.safeProposal = true;
+    mocks.safeUnconfirmed = true;
+    await approveSale();
+
+    await waitFor(() => expect(document.querySelector("[data-tx-confirm]")).toBeNull());
+    expect(dialogNamed("Cash out")).toHaveTextContent(
+      "Check this proposal in your Safe before sending it again.",
+    );
     expect(mocks.write).toHaveBeenCalledOnce();
   });
 });
@@ -951,6 +968,7 @@ describe("an ERC-20 repayment after its approval", () => {
     mocks.nativeBase = false;
     mocks.loanContext = { token: ERC20_LOAN_TOKEN, decimals: 6, currency: 909516616 };
     mocks.write.mockResolvedValue(`0x${"ef".repeat(32)}`);
+    mocks.receiptOn = 1;
     function Loans() {
       const [open, setOpen] = useState(true);
       return (
@@ -964,12 +982,12 @@ describe("an ERC-20 repayment after its approval", () => {
         />
       );
     }
+    // The approval lands: the loan's chain now holds enough allowance.
+    mocks.beforeReverify.mockImplementation(async () => {
+      mocks.allowanceOnLoanChainOnly = true;
+    });
     renderWithQueries(<Loans />);
     fireEvent.click(await screen.findByRole("button", { name: "Approve ETH" }));
-    const confirm = await confirmPanel();
-    // The approval lands: the loan's chain now holds enough allowance.
-    mocks.allowanceOnLoanChainOnly = true;
-    fireEvent.click(within(confirm).getByRole("button", { name: "Approve ETH" }));
     const repay = await screen.findByRole("button", { name: "Repay loan" });
     await waitFor(() => expect(repay).toBeEnabled());
     expect(mocks.write).toHaveBeenCalledOnce();
@@ -993,7 +1011,7 @@ describe("value sends name the account they pay", () => {
       transaction: {
         chainId: 1,
         address: "0x6666666666666666666666666666666666666666",
-        abi: [],
+        abi: parseAbi(["function cashOutTokensOf()"]),
         functionName: "cashOutTokensOf",
         args: [],
       },
@@ -1007,139 +1025,37 @@ describe("value sends name the account they pay", () => {
   });
 });
 
-// A step whose identical Safe proposal ended where the app can't confirm its result is refused.
-// Each flow says to check that proposal in Safe, and neither that the step failed nor that
-// permission was denied.
-describe("loan flows refused by a Safe proposal the app can't confirm", () => {
-  const PROPOSAL = `0x${"ab".repeat(32)}` as Hex;
+// A step core's write hold refuses (its identical Safe proposal may still run) shows the hold's own
+// line, whichever flow it is.
+describe("value flows refused by core's write hold", () => {
+  const LINE = "Check this proposal in your Safe before sending it again.";
 
   it.each([
     ["borrow's permission step", confirmBorrow, false],
     ["borrow", confirmBorrow, true],
     ["refinance", confirmRefinance, true],
     ["repay", confirmRepay, true],
+    ["cash out", confirmCashOut, true],
   ])("%s", async (_flow, confirmFlow, permitted) => {
     mocks.hasPermissions.mockResolvedValue(permitted);
     mocks.freshBorrowable.mockResolvedValue(10n ** 18n);
-    mocks.write.mockRejectedValue(new SafeProposalPendingError(PROPOSAL, true));
-
-    await confirmFlow();
-
-    const confirm = await confirmPanel();
-    await within(confirm).findByText("Check this proposal in your Safe before sending it again.");
-    expect(confirm.textContent).not.toMatch(/denied|failed|not granted|could not/i);
-    expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
-      title: "Safe proposal unconfirmed",
-      description: "Check this proposal in your Safe before sending it again.",
-    });
-  });
-});
-
-describe("value flows open over their own Safe proposal the app can't confirm", () => {
-  async function openBridge() {
-    renderWithQueries(
-      <BridgeDialog
-        projects={[
-          { projectId: 7, chainId: 1, token: NATIVE_TOKEN },
-          { projectId: 8, chainId: 10, token: NATIVE_TOKEN },
-        ]}
-      >
-        <button type="button">Open move</button>
-      </BridgeDialog>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Open move" }));
-  }
-
-  async function openCashOut() {
-    renderWithQueries(
-      <RedeemDialog projectId={7n} tokenSymbol="REV">
-        <button type="button">Open cash out</button>
-      </RedeemDialog>,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
-  }
-
-  // Only the named step's own hook holds the flagged hash, so each line is pinned on its own.
-  it.each([
-    ["bridge", openBridge, 0],
-    ["cash out's sale", openCashOut, 0],
-    ["cash out's approval", openCashOut, 1],
-  ])("%s says to check the proposal in Safe", async (_flow, open, hook) => {
-    const proposal = `0x${"ce".repeat(32)}` as Hex;
-    recordTransactionActivity({
-      id: `tx:1:${proposal}`,
-      kind: "safe",
-      title: "The step",
-      status: "safe-proposed",
-      message:
-        "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
-      chainId: 1,
-      hash: proposal,
-      safeProposalHash: proposal,
-      safeResultUnconfirmed: true,
-    });
-    mocks.sent[hook] = proposal;
-
-    await open();
-
-    expect(
-      await screen.findByText("Check this proposal in your Safe before sending it again."),
-    ).toBeVisible();
-  });
-});
-
-describe("cash out refused by a Safe proposal the app can't confirm", () => {
-  it("wallet-action:cash-out says to check that proposal in Safe, and not that the cash out failed", async () => {
-    const proposal = `0x${"ab".repeat(32)}` as Hex;
     mocks.prepareCashOut.mockResolvedValue({
       route: { expectedReturn: 10n ** 17n },
       transaction: {
         chainId: 1,
         address: "0x6666666666666666666666666666666666666666",
-        abi: [],
+        abi: parseAbi(["function cashOutTokensOf()"]),
         functionName: "cashOutTokensOf",
         args: [],
       },
     });
-    mocks.write.mockRejectedValue(new SafeProposalPendingError(proposal, true));
+    mocks.write.mockRejectedValue(new Error(LINE));
 
-    await confirmCashOut();
+    await confirmFlow();
 
-    const confirm = await confirmPanel();
-    await within(confirm).findByText("Check this proposal in your Safe before sending it again.");
-    expect(confirm.textContent).not.toMatch(/failed|could not/i);
-    expect(within(confirm).queryByRole("alert")).toBeNull();
-    expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
-      title: "Safe proposal unconfirmed",
-      description: "Check this proposal in your Safe before sending it again.",
-    });
-  });
-});
-
-describe("a repayment left open over its own Safe proposal the app can't confirm", () => {
-  it("stops reading as pending and says to check the proposal in Safe", async () => {
-    const proposal = `0x${"cd".repeat(32)}` as Hex;
-    recordTransactionActivity({
-      id: `tx:1:${proposal}`,
-      kind: "safe",
-      title: "repayLoan",
-      status: "safe-proposed",
-      message:
-        "This Safe transaction's result can't be confirmed here. Check it in Safe before retrying.",
-      chainId: 1,
-      hash: proposal,
-      safeProposalHash: proposal,
-      safeResultUnconfirmed: true,
-    });
-    mocks.write.mockResolvedValue(proposal);
-
-    await confirmRepay();
-
-    expect(
-      (await screen.findAllByText("Check this proposal in your Safe before sending it again."))
-        .length,
-    ).toBeGreaterThan(0);
-    expect(screen.queryByText("Repayment pending...")).toBeNull();
+    await waitFor(() =>
+      expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ description: LINE })),
+    );
   });
 });
 

@@ -5,17 +5,15 @@ import {
   chooseRelayrPayment,
   preselectedRelayrPayment,
   registerFundingChainSelectionHandler,
-  registerTransactionReviewHandler,
   relayrPaymentOptions,
-  requireContractTransactionReview,
   TransactionReviewCancelledError,
   transactionReviewJson,
   type FundingChainOption,
   type TransactionReviewRequest,
 } from "@/lib/transaction-review";
-import { erc20Abi, type Address, type Hex } from "viem";
+import { type Address, type Hex } from "viem";
 import { afterEach, describe, expect, it } from "vitest";
-import { TEST_ACCOUNT, TEST_BENEFICIARY } from "./fixtures/revnet";
+import { TEST_ACCOUNT } from "./fixtures/revnet";
 
 const TOKEN: Address = "0x0000000000000000000000000000000000001000";
 
@@ -61,21 +59,6 @@ describe("review prompts use revnet's chain display", () => {
     expect(prompt).toContain("- Base (chain 8453): https://basescan.org/tx/0xdef");
     expect(prompt).toContain("- Chain 999 (chain 999): 0x123");
     expect(prompt).toContain("etherscan-transaction-debugger");
-  });
-
-  it("rejects a closed review with the cancel error the app checks for", async () => {
-    unregister = registerTransactionReviewHandler(async () => false);
-
-    const review = requireContractTransactionReview({
-      chainId: 1,
-      address: TOKEN,
-      abi: erc20Abi,
-      functionName: "transfer",
-      args: [TEST_BENEFICIARY, 1n],
-    });
-
-    await expect(review).rejects.toBeInstanceOf(TransactionReviewCancelledError);
-    await expect(review).rejects.toThrow("Review closed. Nothing was sent.");
   });
 });
 

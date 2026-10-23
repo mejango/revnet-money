@@ -7,7 +7,11 @@ import {
   jbRouterTerminalRegistryAbi,
   jbV6ContractAddress,
 } from "@bananapus/nana-sdk-core";
-import { prepareUserPay, type PreparedUserPay } from "@bananapus/nana-sdk-core/v6";
+import {
+  PaySwapQuoteFailedError,
+  prepareUserPay,
+  type PreparedUserPay,
+} from "@bananapus/nana-sdk-core/v6";
 import { Address, PublicClient } from "viem";
 
 type PaymentTerminalType = "multi" | "swap";
@@ -24,7 +28,8 @@ export type V6PayRoute = PaymentTerminal & PreparedUserPay;
  * Resolve the best v6 pay route by preparing the payment on both the multi terminal and the
  * router terminal registry, keeping whichever gives the beneficiary the most project tokens.
  * Candidates whose preview reverts (e.g. no accounting context for the token) are
- * skipped, so a surviving route always carries a live quote.
+ * skipped, so a surviving route always carries a live quote. When none survives and a swap
+ * quote failed, that failure is thrown so the payer can retry the quote.
  */
 export async function resolveBestV6PayRoute(args: {
   client: PublicClient;
@@ -39,6 +44,7 @@ export async function resolveBestV6PayRoute(args: {
 }): Promise<V6PayRoute | null> {
   const { client, chainId, projectId, token, amount, beneficiary, slippageBps } = args;
 
+  let swapQuoteFailure: PaySwapQuoteFailedError | undefined;
   const previews = await Promise.all(
     v6PayRouteCandidates(chainId, args.attachedTerminals).map(async (route) => {
       try {
@@ -52,7 +58,8 @@ export async function resolveBestV6PayRoute(args: {
           ...(slippageBps !== undefined ? { slippageBps } : {}),
         });
         return { ...route, ...prepared };
-      } catch {
+      } catch (error) {
+        if (error instanceof PaySwapQuoteFailedError) swapQuoteFailure = error;
         return null;
       }
     }),
@@ -63,6 +70,7 @@ export async function resolveBestV6PayRoute(args: {
     if (!route) continue;
     if (!best || v6PayRouteIsBetter(route, best)) best = route;
   }
+  if (!best && swapQuoteFailure) throw swapQuoteFailure;
   return best;
 }
 

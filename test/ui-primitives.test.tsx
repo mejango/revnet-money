@@ -22,8 +22,8 @@ import {
   ToastViewport,
 } from "@/components/ui/toast";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import { ErrorNote, TxError } from "@/components/ui/TxError";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { stepStatus, TxStep, TxSteps } from "@/components/ui/TxSteps";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
@@ -446,10 +446,10 @@ describe("the write error block", () => {
   });
 });
 
-describe("the confirm", () => {
-  function Confirm(props: Partial<Parameters<typeof TxConfirmDialog>[0]>) {
+describe("the progress", () => {
+  function Progress(props: Partial<Parameters<typeof TxProgress>[0]>) {
     return (
-      <TxConfirmDialog
+      <TxProgress
         open
         onClose={vi.fn()}
         title="Confirm burn"
@@ -459,95 +459,85 @@ describe("the confirm", () => {
         ]}
         steps={[{ title: "Burn 10 ART" }]}
         activeIndex={-1}
-        action="Burn permanently"
-        onConfirm={vi.fn()}
+        start={vi.fn()}
         {...props}
       >
         <p>Supply drops permanently.</p>
-      </TxConfirmDialog>
+      </TxProgress>
     );
   }
   const button = (name: string) => screen.queryByRole("button", { name });
 
-  it("shows the plan with a way back before anything is sent", () => {
+  it("opens the one review once, with no confirm of its own, and keeps the way back", () => {
     const onClose = vi.fn();
-    const onConfirm = vi.fn();
-    render(<Confirm onClose={onClose} onConfirm={onConfirm} />);
+    const start = vi.fn();
+    const { rerender } = render(<Progress onClose={onClose} start={start} />);
 
     const dialog = screen.getByRole("dialog", { name: "Confirm burn" }) as HTMLDialogElement;
-    expect(dialog).toHaveTextContent("Review");
     expect(dialog).toHaveTextContent("Burns10 ART");
     expect(dialog).toHaveTextContent("Supply drops permanently.");
-    expect(dialog).toHaveTextContent("Your wallet will ask for one action.");
+    expect(start).toHaveBeenCalledOnce();
+    expect(button("Cancel")).toBeNull();
     expect(button("Done")).toBeNull();
+    rerender(<Progress onClose={onClose} start={start} />);
+    expect(start).toHaveBeenCalledOnce();
 
-    fireEvent.click(button("Cancel")!);
     fireEvent.click(button("Close")!);
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.pointerDown(dialog);
-    expect(onClose).toHaveBeenCalledTimes(4);
-    expect(onConfirm).not.toHaveBeenCalled();
-
-    fireEvent.click(button("Burn permanently")!);
-    expect(onConfirm).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledTimes(3);
   });
 
-  it("refuses every way out while busy, and offers no second send", () => {
+  it("refuses every way out while busy, and starts nothing", () => {
     const onClose = vi.fn();
-    const onConfirm = vi.fn();
-    render(<Confirm busy activeIndex={0} onClose={onClose} onConfirm={onConfirm} />);
+    const start = vi.fn();
+    render(<Progress busy activeIndex={0} onClose={onClose} start={start} />);
     const dialog = screen.getByRole("dialog", { name: "Confirm burn" }) as HTMLDialogElement;
 
-    expect(button("Cancel")).toBeDisabled();
     expect(button("Close")).toBeDisabled();
-    expect(button("Burn permanently")).toBeDisabled();
-    fireEvent.click(button("Cancel")!);
     fireEvent.click(button("Close")!);
-    fireEvent.click(button("Burn permanently")!);
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.pointerDown(dialog);
 
     expect(onClose).not.toHaveBeenCalled();
-    expect(onConfirm).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
     expect(dialog.open).toBe(true);
   });
 
   it("collapses to Done once the send is complete", () => {
     const onClose = vi.fn();
-    render(<Confirm complete status="Tokens burned." onClose={onClose} />);
+    render(<Progress complete status="Tokens burned." onClose={onClose} />);
 
-    expect(button("Cancel")).toBeNull();
-    expect(button("Burn permanently")).toBeNull();
     expect(screen.getByRole("listitem")).toHaveAttribute("data-state", "complete");
     expect(screen.getByText("Tokens burned.")).toBeInTheDocument();
     fireEvent.click(button("Done")!);
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("holds the action while it prepares, and keeps the way back open", () => {
-    const onClose = vi.fn();
+  it("waits while it prepares, then opens the review", () => {
+    const start = vi.fn();
     const { rerender } = render(
-      <Confirm preparing status="Reading your balance…" onClose={onClose} />,
+      <Progress preparing status="Reading your balance…" start={start} />,
     );
-
     expect(screen.getByRole("status")).toHaveTextContent("Reading your balance…");
     expect(screen.queryByText("Burns")).toBeNull();
-    expect(button("Burn permanently")).toBeDisabled();
-    expect(button("Burn permanently")).toHaveAttribute("aria-busy", "true");
-    fireEvent.click(button("Cancel")!);
-    expect(onClose).toHaveBeenCalledOnce();
+    expect(start).not.toHaveBeenCalled();
 
-    rerender(<Confirm actionDisabled cancelLabel="Back" onClose={onClose} />);
-    expect(button("Burn permanently")).toBeDisabled();
-    expect(button("Burn permanently")).not.toHaveAttribute("aria-busy");
-    expect(button("Back")).toBeEnabled();
+    rerender(<Progress start={start} />);
+    expect(start).toHaveBeenCalledOnce();
   });
 
-  it("shows the send's error under the plan, and renders nothing while closed", () => {
-    const { rerender } = render(<Confirm error="The wallet refused the transaction." />);
+  it("shows the send's error with Try again, and renders nothing while closed", () => {
+    const start = vi.fn();
+    const { rerender } = render(
+      <Progress error="The wallet refused the transaction." start={start} />,
+    );
     expect(screen.getByText("The wallet refused the transaction.")).toBeInTheDocument();
+    expect(start).not.toHaveBeenCalled();
+    fireEvent.click(button("Try again")!);
+    expect(start).toHaveBeenCalledOnce();
 
-    rerender(<Confirm open={false} />);
+    rerender(<Progress open={false} />);
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 });

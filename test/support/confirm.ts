@@ -2,7 +2,7 @@ import { fireEvent, waitFor, within } from "@testing-library/react";
 import { expect } from "vitest";
 
 /**
- * The open confirm: the section TxConfirmDialog renders, in its own dialog or
+ * The open progress: the section TxProgress renders, in its own dialog or
  * in place of the content of the dialog that hosts it.
  */
 export async function findConfirm(): Promise<HTMLElement> {
@@ -16,16 +16,12 @@ export function confirmIsOpen(): boolean {
 }
 
 /**
- * Tries every way out of a confirm whose send is in flight: its Cancel and ×,
- * Escape, and a press on the backdrop of the dialog it sits in. Each must be
+ * Tries every way out of a progress whose send is in flight: its ×, Escape, and a press on the backdrop of the dialog it sits in. Each must be
  * refused, so the confirm and its send stay on screen.
  */
 export function expectEveryWayOutRefused(confirm: HTMLElement) {
-  const cancel = within(confirm).getByRole("button", { name: "Cancel" });
   const close = within(confirm).getByRole("button", { name: "Close" });
-  expect(cancel).toBeDisabled();
   expect(close).toBeDisabled();
-  fireEvent.click(cancel);
   fireEvent.click(close);
   fireEvent.keyDown(document, { key: "Escape" });
   const dialog = confirm.closest("dialog");

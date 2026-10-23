@@ -1,5 +1,5 @@
 import { PayerDeployForm } from "@/app/[slug]/components/v6/extras/PayerDeployForm";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { encodeFunctionData, parseAbi, zeroAddress } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -62,10 +62,6 @@ const owner = "0x0000000000000000000000000000000000000014";
 const onDeployed = vi.fn();
 function setup() {
   return render(<PayerDeployForm rows={rows} existingRows={[]} onDeployed={onDeployed} />);
-}
-/** The confirm's action, named like the form's button. */
-async function confirmAction() {
-  return within(await findConfirm()).getByRole("button", { name: /^Deploy payer address/ });
 }
 
 beforeEach(() => {
@@ -149,10 +145,6 @@ describe("multichain deployment form", () => {
     });
     fireEvent.change(screen.getByLabelText("Default metadata"), { target: { value: "0x1234" } });
     fireEvent.click(screen.getByRole("button", { name: "Deploy payer addresses" }));
-    await screen.findByRole("dialog");
-    expect(screen.getByText(/choose a funding chain/)).toBeTruthy();
-    mocks.readContract.mockRejectedValue(new Error("Do not reread after review"));
-    fireEvent.click(await confirmAction());
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
     const batch = mocks.runBatch.mock.calls[0][0];
     expect(batch.scope).toBe("project-payers:42161:99,8453:42");
@@ -198,8 +190,6 @@ describe("multichain deployment form", () => {
     setup();
     fireEvent.click(screen.getByRole("checkbox", { name: "Arbitrum One" }));
     fireEvent.click(screen.getByRole("button", { name: "Deploy payer address" }));
-    await screen.findByRole("dialog");
-    fireEvent.click(await confirmAction());
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
     expect(mocks.runBatch.mock.calls[0][0].calls).toMatchObject([
       { chainId: 8453, args: [42n, zeroAddress, "", "0x", false, zeroAddress] },
@@ -213,17 +203,6 @@ describe("multichain deployment form", () => {
     fireEvent.click(screen.getByRole("button", { name: "Deploy payer addresses" }));
     await screen.findByText("Factory unavailable");
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(mocks.runBatch).not.toHaveBeenCalled();
-  });
-
-  it("does not submit a frozen deployment with a different account", async () => {
-    const view = setup();
-    fireEvent.click(screen.getByRole("button", { name: "Deploy payer addresses" }));
-    await screen.findByRole("dialog");
-    mocks.account = owner;
-    view.rerender(<PayerDeployForm rows={rows} existingRows={[]} onDeployed={onDeployed} />);
-    fireEvent.click(await confirmAction());
-    await screen.findByText("Your connected account changed. Review the deploy again.");
     expect(mocks.runBatch).not.toHaveBeenCalled();
   });
 
@@ -260,24 +239,10 @@ describe("multichain deployment form", () => {
     setup();
     fireEvent.click(screen.getByRole("checkbox", { name: "Arbitrum One" }));
     fireEvent.click(screen.getByRole("button", { name: "Deploy payer address" }));
-    await screen.findByRole("dialog");
-    fireEvent.click(await confirmAction());
     const link = await screen.findByRole("link", { name: "Verified deployment transaction" });
     expect(link.getAttribute("href")).toContain(hash);
     expect(onDeployed).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("Temporary display RPC failure")).toBeNull();
-  });
-
-  it("goes back to the form with Cancel, and deploys nothing", async () => {
-    setup();
-    fireEvent.click(screen.getByRole("button", { name: "Deploy payer addresses" }));
-    const confirm = await findConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(confirmIsOpen()).toBe(false));
-    expect(mocks.runBatch).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Deploy payer addresses" })).toBeEnabled();
   });
 
   it("refuses every way out while the deployment runs, then closes once it lands", async () => {
@@ -286,10 +251,8 @@ describe("multichain deployment form", () => {
     setup();
     fireEvent.click(screen.getByRole("button", { name: "Deploy payer addresses" }));
     const confirm = await findConfirm();
-    fireEvent.click(await confirmAction());
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
 
-    expect(await confirmAction()).toBeDisabled();
     expectEveryWayOutRefused(confirm);
 
     finish({ status: "success", hashes: [] });

@@ -3,7 +3,6 @@
 import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
 import {
   Dialog,
   DialogContent,
@@ -22,15 +21,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { toast } from "@/components/ui/use-toast";
-import { useAllowance } from "@/hooks/useAllowance";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
+  failedLine,
   isSafeProposalPendingError,
-  SAFE_PROPOSAL_UNCONFIRMED_LINE,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+  reviewedCall,
+  ReviewRefusal,
+  useReviewedAction,
+} from "@/hooks/useReviewedAction";
 import { useSuckerPairs } from "@/hooks/useSuckerPairs";
 import type { Project } from "@/lib/bendystraw/types";
 import {
@@ -40,21 +40,21 @@ import {
   verifyBridgePrepareDestination,
 } from "@/lib/bridgePrepare";
 import { revalidateCacheTag } from "@/lib/cache";
+import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { legacyIntents } from "@/lib/legacy-intents";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { useJBTokenContext } from "@/lib/nana/project";
 import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
+import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { getTokenAddress } from "@/lib/token";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { cn, formatTokenSymbol, formatWalletError } from "@/lib/utils";
-import { withWriteIntent } from "@/lib/write-hold";
 import { JB_TOKEN_DECIMALS, JBChainId } from "@bananapus/nana-sdk-core";
 import { approvalIntent, bridgeIntent } from "@bananapus/nana-sdk-core/review";
-import { suckerBytes32ToAddress } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";
-import { erc20Abi, formatUnits, getAddress, Hex, isAddressEqual, parseUnits } from "viem";
+import { erc20Abi, formatUnits, getAddress, Hex, parseUnits } from "viem";
 import { useAccount, usePublicClient } from "wagmi";
 
 interface Props {
@@ -73,7 +73,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const { token } = useJBTokenContext();
   const baseToken = useProjectBaseToken();
   const tokenSymbol = formatTokenSymbol(token);
-  const { ensureAllowance, isApproving } = useAllowance(sourceChainId);
+  const [isApproving, setApproving] = useState(false);
   // Null until the allowance is read; the confirm prepares in the meantime.
   const [needsApproval, setNeedsApproval] = useState<boolean | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -83,42 +83,12 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const router = useRouter();
   const publicClient = usePublicClient({ chainId: sourceChainId });
   const destinationClient = usePublicClient({ chainId: targetChainId });
-  const {
-    writeContractAsync,
-    data: hash,
-    reset,
-  } = useWriteContract({
-    reverify: async (variables) => {
-      if (
-        !publicClient ||
-        !destinationClient ||
-        !targetChainId ||
-        !targetProject ||
-        !suckerPair ||
-        variables.chainId !== sourceChainId ||
-        !isAddressEqual(variables.address, suckerPair.local)
-      ) {
-        throw new Error("The bridge route changed. Review the transfer again.");
-      }
-      const [projectTokenCount, beneficiary] = variables.args as readonly [bigint, Hex];
-      await verifyBridgePrepareDestination(publicClient, {
-        chainId: sourceChainId,
-        projectId: BigInt(project.projectId),
-        sucker: variables.address,
-        projectTokenCount,
-        beneficiary: suckerBytes32ToAddress(beneficiary),
-        destinationClient,
-        destinationChainId: targetChainId,
-        destinationProjectId: BigInt(targetProject.projectId),
-        destinationSucker: suckerPair.remote,
-      });
-    },
-  });
-  const { isSuccess, isLoading, isSafeResultUnconfirmed } = useWaitForTransactionReceipt({
-    hash,
-    chainId: sourceChainId,
-    query: { enabled: !!hash },
-  });
+  const { run, phase, held, reset } = useReviewedAction();
+  const [hash, setHash] = useState<Hex>();
+  const isLoading = phase === "receipt";
+  // Only the move's own hash is success: a Safe that ran just the approval leaves the move to send.
+  const isSuccess = phase === "done" && !!hash;
+  const isSafeResultUnconfirmed = phase === "proposed" && !!held?.exit;
   const { data: balances, isLoading: isBalanceLoading } = useSuckersUserTokenBalance();
   const { balance } = balances?.find((b) => b.chainId === sourceChainId) || {
     balance: { value: 0n },
@@ -275,6 +245,26 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
     gate.blocked,
   ]);
 
+  const moveContext = useMemo(
+    () =>
+      targetChainId && prepareQuote.data
+        ? [
+            { label: "Move", value: `${amount} ${tokenSymbol}`, strong: true },
+            { label: "From", value: chainDisplayName(sourceChainId) },
+            { label: "To", value: chainDisplayName(targetChainId) },
+            {
+              label: "Funding moved",
+              value: `~${formatUnits(prepareQuote.data.netReclaimAmount, prepareQuote.data.tokenDecimals)} ${backingTokenSymbol}`,
+            },
+            {
+              label: "Minimum funding moved",
+              value: `At least ${formatUnits(prepareQuote.data.minTokensReclaimed, prepareQuote.data.tokenDecimals)} ${backingTokenSymbol}`,
+            },
+          ]
+        : [],
+    [amount, backingTokenSymbol, prepareQuote.data, sourceChainId, targetChainId, tokenSymbol],
+  );
+
   const moveTokens = useCallback(async () => {
     try {
       setIsSubmitting(true);
@@ -294,7 +284,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
 
       const projectId = project.projectId;
 
-      if (!publicClient || !projectId || !writeContractAsync || !terminalToken) {
+      if (!publicClient || !projectId || !terminalToken) {
         throw new Error("Please try again");
       }
 
@@ -313,39 +303,21 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         throw new Error("Could not find a bridge between these networks. Try again.");
       }
 
-      // Named before any prompt opens: the approval is a separate wallet action
-      // and the dialog otherwise gives no sign that a second one is coming.
+      // The approval, when one is needed, is the first step of the move's one review.
       const allowance = await publicClient.readContract({
         address: tokenAddress,
         abi: erc20Abi,
         functionName: "allowance",
         args: [address, suckerPair.local],
       });
-      setNeedsApproval(allowance < amountValue);
-      await ensureAllowance(
-        tokenAddress,
-        suckerPair.local,
-        amountValue,
-        approvalIntent(
-          bridgeIntent({
-            chainId: sourceChainId,
-            sucker: suckerPair.local,
-            token: terminalToken,
-            account: address,
-          }),
-          { step: "erc20", token: tokenAddress, spender: suckerPair.local },
-        ),
-      );
-
-      // An approval can leave the dialog open for minutes. Re-read immediately
-      // before the write and preserve the minimum the user actually reviewed.
-      const freshQuote = await prepareQuote.refetch();
-      if (freshQuote.error || !freshQuote.data) {
-        throw new Error("The transfer quote could not be refreshed. Nothing was submitted.");
-      }
-      if (freshQuote.data.netReclaimAmount < reviewedQuote.minTokensReclaimed) {
-        throw new Error("The transfer quote fell below your minimum. Review it again.");
-      }
+      const approve = allowance < amountValue;
+      setNeedsApproval(approve);
+      const intent = bridgeIntent({
+        chainId: sourceChainId,
+        sucker: suckerPair.local,
+        token: terminalToken,
+        account: address,
+      });
 
       const request = buildProtectedBridgePrepareTx({
         chainId: sourceChainId,
@@ -356,22 +328,91 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         token: terminalToken,
       });
       // Held by the sucker, token and account: the quoted minimum is read again on a retry.
-      await withWriteIntent(
-        writeContractAsync,
-        bridgeIntent({
-          chainId: sourceChainId,
-          sucker: suckerPair.local,
-          token: terminalToken,
-          account: address,
-        }),
-        legacyIntents.bridge({
-          sucker: suckerPair.local,
-          token: terminalToken,
-          amount: amountValue,
-        }),
-      )({ ...request, chainId: sourceChainId, account: address });
+      const sucker = suckerPair.local;
+      const result = await run({
+        account: address,
+        context: moveContext,
+        scope: approve ? intent : undefined,
+        beforeWallet: (_call, step) => setApproving(approve && step === 0),
+        // The route, the destination and the reviewed minimum, right before the wallet.
+        reverify: async (_call, step) => {
+          if (approve && step === 0) return;
+          // An approval can leave the dialog open for minutes: the quote is read again here.
+          const freshQuote = await prepareQuote.refetch();
+          if (freshQuote.error || !freshQuote.data)
+            throw new ReviewRefusal(
+              "The transfer quote could not be refreshed. Nothing was submitted.",
+            );
+          if (freshQuote.data.netReclaimAmount < reviewedQuote.minTokensReclaimed)
+            throw new ReviewRefusal("The transfer quote fell below your minimum. Review it again.");
+          if (!destinationClient || !targetChainId || !targetProject) {
+            throw new ReviewRefusal("The bridge route changed. Review the transfer again.");
+          }
+          await verifyBridgePrepareDestination(publicClient, {
+            chainId: sourceChainId,
+            projectId: BigInt(project.projectId),
+            sucker,
+            projectTokenCount: amountValue,
+            beneficiary: address,
+            destinationClient,
+            destinationChainId: targetChainId,
+            destinationProjectId: BigInt(targetProject.projectId),
+            destinationSucker: suckerPair.remote,
+          }).catch((cause: Error) => {
+            throw new ReviewRefusal(cause.message);
+          });
+        },
+        onSubmitted: (_call, step, sent) => {
+          if (!approve || step === 1) setHash(sent);
+        },
+        calls: [
+          ...(approve
+            ? [
+                reviewedCall(
+                  {
+                    chainId: sourceChainId,
+                    address: tokenAddress,
+                    abi: erc20ApproveAbi,
+                    functionName: "approve",
+                    args: [suckerPair.local, amountValue],
+                  },
+                  {
+                    intent: approvalIntent(intent, {
+                      step: "erc20",
+                      token: tokenAddress,
+                      spender: suckerPair.local,
+                    }),
+                  },
+                ),
+              ]
+            : []),
+          reviewedCall(
+            { ...request, chainId: sourceChainId },
+            {
+              dependsOnPrior: approve,
+              intent,
+              legacyIntents: legacyIntents.bridge({
+                sucker,
+                token: terminalToken,
+                amount: amountValue,
+              }),
+            },
+          ),
+        ],
+      });
+      setApproving(false);
+      if (!result) {
+        setReview(false);
+        return;
+      }
+      if (result.status === "failed") throw new ReviewRefusal(failedLine(result));
+      if (result?.status === "proposed") {
+        setReview(false);
+        toast({ title: "Safe proposal submitted", description: SAFE_PROPOSAL_PENDING_LINE });
+      }
     } catch (error) {
       console.error(error);
+      setApproving(false);
       if (isSafeProposalPendingError(error)) {
         setReview(false);
         toast({ title: "Safe proposal submitted", description: formatWalletError(error) });
@@ -390,9 +431,12 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
     publicClient,
     project.projectId,
     sourceChainId,
-    ensureAllowance,
+    moveContext,
     suckerPair,
-    writeContractAsync,
+    run,
+    destinationClient,
+    targetChainId,
+    targetProject,
     address,
     terminalToken,
     gate,
@@ -649,7 +693,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
           </DialogFooter>
         </form>
         {review && targetChainId && prepareQuote.data ? (
-          <TxConfirmDialog
+          <TxProgress
             open
             onClose={() => setReview(false)}
             title="Confirm move"
@@ -672,26 +716,11 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
               },
             ]}
             activeIndex={isApproving ? 0 : isSubmitting ? (needsApproval ? 1 : 0) : -1}
-            action={`Move ${tokenSymbol}`}
-            onConfirm={() => void moveTokens()}
+            start={() => void moveTokens()}
             busy={isSubmitting}
             error={error}
-          >
-            <SummaryRow label="Move">
-              {amount} {tokenSymbol}
-            </SummaryRow>
-            <SummaryRow label="From">{chainDisplayName(sourceChainId)}</SummaryRow>
-            <SummaryRow label="To">{chainDisplayName(targetChainId)}</SummaryRow>
-            <SummaryRow label="Funding moved">
-              ~{formatUnits(prepareQuote.data.netReclaimAmount, prepareQuote.data.tokenDecimals)}{" "}
-              {backingTokenSymbol}
-            </SummaryRow>
-            <SummaryRow label="Minimum funding moved">
-              At least{" "}
-              {formatUnits(prepareQuote.data.minTokensReclaimed, prepareQuote.data.tokenDecimals)}{" "}
-              {backingTokenSymbol}
-            </SummaryRow>
-          </TxConfirmDialog>
+            rows={moveContext}
+          />
         ) : null}
       </DialogContent>
     </Dialog>

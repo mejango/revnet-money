@@ -8,6 +8,7 @@ import { baseSepolia, sepolia } from "viem/chains";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TEST_ACCOUNT, validRevnetForm } from "./fixtures/revnet";
 import { BUNDLE_UUID, HASH, NOW, OTHER_BUNDLE_UUID, payment, relayrApi } from "./relayr-fixtures";
+import { answerReviews, stopAnswering } from "./support/core-review";
 
 // The Create page with the real Relayr hook, recovery guard and journal: only
 // the wallet, the chain reads and Relayr's API are stubbed.
@@ -33,8 +34,27 @@ const mocks = vi.hoisted(() => ({
   call: vi.fn(),
   readContract: vi.fn(),
   getBlock: vi.fn(),
+  feeBound: false,
 }));
 
+// Core quotes each Relayr round's fee bound from Relayr before the plan review opens. These
+// tests post through their own Relayr stubs, so rounds stay untagged unless a test proves the bound.
+vi.mock("@bananapus/nana-sdk-core/review", async (importOriginal) => {
+  const core = await importOriginal<typeof import("@bananapus/nana-sdk-core/review")>();
+  return {
+    ...core,
+    reviewPlan: (
+      action: Parameters<typeof core.reviewPlan>[0],
+      deps: Parameters<typeof core.reviewPlan>[1],
+    ) =>
+      core.reviewPlan(
+        mocks.feeBound
+          ? action
+          : { ...action, calls: action.calls.map(({ relayrRound: _round, ...call }) => call) },
+        deps,
+      ),
+  };
+});
 vi.mock("@/components/layout/Nav", () => ({ Nav: () => null }));
 vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: mocks.config }));
@@ -53,19 +73,20 @@ vi.mock("wagmi", () => ({
 }));
 vi.mock("wagmi/actions", () => ({
   getAccount: () => mocks.account,
-  getPublicClient: () => ({
+  // One client per chain: a forwarder's domain names the chain whose client read it.
+  getPublicClient: (_config: unknown, at?: { chainId?: number }) => ({
+    chain: { id: at?.chainId ?? mocks.account.chainId },
     call: mocks.call,
-    readContract: mocks.readContract,
+    readContract: (args: object) =>
+      mocks.readContract({ ...args, clientChainId: at?.chainId ?? mocks.account.chainId }),
     getBlock: mocks.getBlock,
+    getChainId: async () => at?.chainId ?? mocks.account.chainId,
     estimateGas: async () => 21_000n,
     estimateContractGas: async () => 1_000_000n,
   }),
+  getWalletClient: async () => ({ signTypedData: mocks.signTypedData }),
+  switchChain: (_config: unknown, request: { chainId: number }) => mocks.switchChain(request),
   waitForTransactionReceipt: vi.fn(),
-}));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  useWriteContract: () => ({ writeContractAsync: vi.fn() }),
-  isSafeConnector: () => false,
-  submittedViaSafe: () => false,
 }));
 vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
@@ -142,12 +163,13 @@ async function createPage() {
   vi.resetModules();
   const [{ default: Page }, review, activity, relayr, staleQuote] = await Promise.all([
     import("@/app/create/page"),
-    import("@/lib/transaction-review"),
+    import("@bananapus/nana-sdk-core/review"),
     import("@/lib/transaction-activity"),
     import("@/hooks/useReviewedRelayr"),
     import("@/app/create/helpers/staleQuote"),
   ]);
-  review.registerTransactionReviewHandler(async () => true);
+  stopAnswering();
+  answerReviews(async () => true, review);
   render(<Page />);
   return { activity, relayr, staleQuote };
 }
@@ -176,11 +198,19 @@ beforeEach(() => {
   // No finalized block is known, so a signed request counts as live.
   mocks.getBlock.mockResolvedValue({ hash: FINAL_HASH });
   mocks.readContract.mockImplementation(
-    async ({ functionName, address }: { functionName: string; address: Address }) =>
+    async ({
+      functionName,
+      address,
+      clientChainId,
+    }: {
+      functionName: string;
+      address: Address;
+      clientChainId: number;
+    }) =>
       functionName === "isTrustedForwarder"
         ? true
         : functionName === "eip712Domain"
-          ? ["0x0f", "Juicebox", "1", BigInt(mocks.account.chainId), address, HASH, []]
+          ? ["0x0f", "Juicebox", "1", BigInt(clientChainId), address, HASH, []]
           : 4n,
   );
   mocks.signTypedData.mockResolvedValue(`0x${"12".repeat(65)}` as Hex);

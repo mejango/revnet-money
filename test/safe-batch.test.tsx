@@ -1,13 +1,7 @@
-import { safeBatchIntent } from "@bananapus/nana-sdk-core/review";
-import {
-  SAFE_PROPOSAL_AWAITING,
-  safeBatchProposalFor,
-  safeTransactionHash,
-} from "@bananapus/nana-sdk-core/safe-service";
-import { render, renderHook, waitFor } from "@testing-library/react";
+import type { ReviewModel } from "@bananapus/nana-sdk-core/review";
+import { act, renderHook } from "@testing-library/react";
 import {
   encodeFunctionData,
-  getAddress,
   parseAbi,
   TransactionNotFoundError,
   TransactionReceiptNotFoundError,
@@ -15,6 +9,7 @@ import {
   type Hex,
 } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { answerReviews, loadCoreReview, stopAnswering } from "./support/core-review";
 
 const mocks = vi.hoisted(() => ({
   config: { id: "test-config", chains: [{ id: 8453, name: "Base" }] },
@@ -23,20 +18,32 @@ const mocks = vi.hoisted(() => ({
     chainId: 8453 as number | undefined,
     connector: { id: "safe", name: "Safe" } as { id: string; name: string } | undefined,
   },
-  getAccount: vi.fn(),
-  switchChain: vi.fn(),
   sendCalls: vi.fn(),
-  simulateContract: vi.fn(),
+  walletLoaded: vi.fn(),
   simulateCalls: vi.fn(),
   request: vi.fn(),
 }));
 
+vi.mock("wagmi", () => ({
+  useConfig: () => mocks.config,
+  useAccount: () => ({ address: mocks.account.address }),
+}));
 vi.mock("wagmi/actions", () => ({
-  getAccount: mocks.getAccount,
+  getAccount: () => mocks.account,
+  getWalletClient: async () => {
+    await mocks.walletLoaded();
+    return { sendCalls: mocks.sendCalls };
+  },
+  switchChain: async (_config: unknown, { chainId }: { chainId: number }) => {
+    mocks.account.chainId = chainId;
+  },
   getPublicClient: () => ({
+    chain: { id: 8453 },
     simulateCalls: mocks.simulateCalls,
     request: mocks.request,
     getChainId: async () => 8453,
+    getBlockNumber: async () => 100n,
+    getTransactionCount: async () => 0,
     // The node has no receipt for a safeTxHash.
     getTransactionReceipt: async ({ hash }: { hash: Hex }) => {
       throw new TransactionReceiptNotFoundError({ hash });
@@ -46,335 +53,192 @@ vi.mock("wagmi/actions", () => ({
       throw new TransactionNotFoundError({ hash });
     },
   }),
-  simulateContract: mocks.simulateContract,
-  switchChain: mocks.switchChain,
-}));
-vi.mock("@wagmi/core", () => ({ sendCalls: mocks.sendCalls }));
-vi.mock("wagmi", () => ({
-  useConfig: () => mocks.config,
-  usePublicClient: () => undefined,
-  useWaitForTransactionReceipt: vi.fn(),
-  useWriteContract: vi.fn(),
 }));
 
-import { HeldRowFollowers } from "@/components/HeldRowFollowers";
-import { useProposeSafeBatch, type ProposeSafeBatch } from "@/hooks/useReviewedWriteContract";
-import { registerFlowChoiceHandler } from "@/lib/flow-choice";
-import {
-  dismissTransactionActivity,
-  transactionActivityForHash,
-  transactionActivitySnapshot,
-} from "@/lib/transaction-activity";
-import {
-  registerTransactionReviewHandler,
-  type TransactionReviewRequest,
-} from "@/lib/transaction-review";
+import { useReviewedAction } from "@/hooks/useReviewedAction";
+import { reviewedCall } from "@/lib/reviewed-call";
+import { transactionActivitySnapshot } from "@/lib/transaction-activity";
 import { clearViewAs, setViewAs } from "@/lib/view-as";
 
 const ACCOUNT = "0x000000000000000000000000000000000000dEaD" as Address;
 const TOKEN = "0x0000000000000000000000000000000000001000" as Address;
 const SPENDER = "0x0000000000000000000000000000000000002000" as Address;
 const SAFE_TX_HASH = `0x${"ab".repeat(32)}` as Hex;
-/** Safe 1.4.1's MultiSendCallOnly, which Safe{Wallet} batches a 1.4.1 Safe's calls through. */
-const MULTI_SEND_CALL_ONLY_141 = getAddress("0x9641d764fc13c8b624c04430c7356c1c7c8102e2");
-/** A MultiSend the SDK does not list, so a proposal that runs through it can't be bound to the calls. */
-const UNLISTED_MULTI_SEND = getAddress("0x0000000000000000000000000000000000005afe");
 const ERC20 = parseAbi(["function approve(address spender, uint256 amount)"]);
 let nonce = 0n;
 // Distinct amounts per test so the duplicate guard sees a fresh batch each time.
 const calls = () => {
   nonce += 1n;
   return [
-    {
+    reviewedCall({
+      chainId: 8453,
       address: TOKEN,
       abi: ERC20,
-      functionName: "approve" as const,
-      args: [SPENDER, nonce] as const,
-    },
-    {
+      functionName: "approve",
+      args: [SPENDER, nonce],
+    }),
+    reviewedCall({
+      chainId: 8453,
       address: SPENDER,
       abi: ERC20,
-      functionName: "approve" as const,
-      args: [TOKEN, nonce * 2n] as const,
+      functionName: "approve",
+      args: [TOKEN, nonce * 2n],
       value: 1n,
-    },
+    }),
   ];
 };
-
-/**
- * The Safe service lists a proposal of `batch` that runs through `multiSend`, and the Safe app
- * answers a proposal with its hash, which this returns.
- */
-function listBatchThrough(batch: ReturnType<typeof calls>, multiSend: Address): Hex {
-  const encoded = batch.map((call) => ({
-    to: call.address,
-    value: call.value,
-    data: encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args }),
+const encoded = (batch: ReturnType<typeof calls>) =>
+  batch.map((call) => ({
+    to: call.to,
+    value: call.value ?? 0n,
+    data: encodeFunctionData({ abi: ERC20, functionName: "approve", args: call.args as never }),
   }));
-  const record = { ...safeBatchProposalFor(encoded, 3), to: multiSend };
-  const proposal = safeTransactionHash(8453, ACCOUNT, record);
-  mocks.sendCalls.mockResolvedValue({ id: proposal });
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (input: RequestInfo | URL) =>
-      String(input).endsWith(`/multisig-transactions/${proposal}/`)
-        ? new Response(JSON.stringify({ ...record, safe: ACCOUNT, isExecuted: false }))
-        : new Response("Not found", { status: 404 }),
-    ),
-  );
-  return proposal;
+
+let seen: ReviewModel | null;
+let approve: boolean;
+
+beforeEach(async () => {
+  await loadCoreReview();
+  stopAnswering();
+  window.localStorage.clear();
+  clearViewAs();
+  seen = null;
+  approve = true;
+  mocks.account.address = ACCOUNT;
+  mocks.account.chainId = 8453;
+  mocks.account.connector = { id: "safe", name: "Safe" };
+  mocks.sendCalls.mockReset().mockResolvedValue({ id: SAFE_TX_HASH });
+  mocks.walletLoaded.mockReset();
+  mocks.simulateCalls
+    .mockReset()
+    .mockResolvedValue({ results: [{ status: "success" }, { status: "success" }] });
+  mocks.request.mockReset().mockResolvedValue("0x");
+  answerReviews(async (model) => {
+    seen = model;
+    return approve;
+  });
+});
+
+/** The Safe batch a flow runs: every call reviewed once, proposed together. */
+async function proposeBatch(batch: ReturnType<typeof calls>, account: Address = ACCOUNT) {
+  const { result } = renderHook(() => useReviewedAction());
+  let outcome!: Awaited<ReturnType<typeof result.current.run>>;
+  await act(async () => {
+    outcome = await result.current.run({
+      account,
+      title: "Make the market",
+      calls: batch,
+      // A batch of several calls resumes as one action.
+      scope: `market-batch:${batch[0]!.args![1]}`,
+      batch: true,
+    });
+  });
+  return outcome;
 }
 
 describe("one Safe proposal for a whole flow", () => {
-  let seen: TransactionReviewRequest | null;
-  let approve: boolean;
-  /** The app's Safe batch proposer, with the followers the app mounts for every proposal. */
-  let proposeSafeBatch: ProposeSafeBatch;
-  beforeEach(() => {
-    proposeSafeBatch = renderHook(() => useProposeSafeBatch()).result.current;
-    render(<HeldRowFollowers />);
-    // Each test's batch is the same intent (approvals keyed by spender): start without holds.
-    window.localStorage.clear();
-    seen = null;
-    approve = true;
-    clearViewAs();
-    mocks.account.address = ACCOUNT;
-    mocks.account.chainId = 8453;
-    mocks.account.connector = { id: "safe", name: "Safe" };
-    mocks.switchChain.mockImplementation(async (_config, { chainId }) => {
-      mocks.account.chainId = chainId;
-    });
-    mocks.getAccount.mockImplementation(() => mocks.account);
-    mocks.sendCalls.mockReset().mockResolvedValue({ id: SAFE_TX_HASH });
-    mocks.simulateContract.mockReset().mockResolvedValue({ request: {} });
-    mocks.simulateCalls
-      .mockReset()
-      .mockResolvedValue({ results: [{ status: "success" }, { status: "success" }] });
-    registerTransactionReviewHandler(async (request) => {
-      seen = request;
-      return approve;
-    });
-  });
-
-  for (const stage of ["review", "switch"] as const) {
-    it.each(["account", "disconnected", "connector", "wallet mode", "view-as", "chain"])(
-      `refuses a changed %s after the deferred Safe batch ${stage}`,
-      async (change) => {
-        let release!: () => void;
-        let entered = false;
-        const wait = new Promise<void>((resolve) => {
-          release = resolve;
-        });
-        const pause = async () => {
-          entered = true;
-          await wait;
-        };
-        if (stage === "review")
-          registerTransactionReviewHandler(async () => {
-            await pause();
-            return true;
-          });
-        else {
-          mocks.account.chainId = 1;
-          mocks.switchChain.mockImplementation(async (_config, { chainId }) => {
-            mocks.account.chainId = chainId;
-            await pause();
-          });
-        }
-        const pending = proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls());
-        const refused = expect(pending).rejects.toThrow();
-        await vi.waitFor(() => expect(entered).toBe(true));
-        if (change === "account") mocks.account.address = TOKEN;
-        else if (change === "disconnected") mocks.account.address = undefined;
-        else if (change === "connector") mocks.account.connector = { id: "safe", name: "Safe" };
-        else if (change === "wallet mode") mocks.account.connector!.id = "injected";
-        else if (change === "view-as") setViewAs(TOKEN);
-        else {
-          mocks.account.chainId = 10;
-          // A chain change during review may be corrected by the requested switch.
-          // Refuse a wallet that acknowledges that switch without applying it.
-          mocks.switchChain.mockResolvedValue(undefined);
-        }
-        release();
-        await refused;
-        expect(mocks.sendCalls).not.toHaveBeenCalled();
-      },
-    );
-  }
-
   it("wallet-action:safe-batch reviews every call in order, sends them as one batch, and tracks the proposal", async () => {
-    const CALLS = calls();
-    const hash = await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
+    const batch = calls();
+    const outcome = await proposeBatch(batch);
 
-    expect(hash).toBe(SAFE_TX_HASH);
-    const expected = CALLS.map((call) => ({
-      to: call.address,
-      value: call.value,
-      data: encodeFunctionData({ abi: call.abi, functionName: call.functionName, args: call.args }),
-    }));
+    expect(outcome).toMatchObject({ status: "proposed", safeTxHash: SAFE_TX_HASH });
+    const expected = encoded(batch);
+    expect(seen!.calls.map(({ to, value, data }) => ({ to, value, data }))).toEqual(expected);
+    expect(mocks.sendCalls).toHaveBeenCalledOnce();
     expect(
-      seen!.calls.map((call) => ({ to: call.to, value: call.value, data: call.data })),
+      mocks.sendCalls.mock.calls[0]![0].calls.map(
+        ({ to, value, data }: { to: Address; value: bigint; data: Hex }) => ({ to, value, data }),
+      ),
     ).toEqual(expected);
-    // wallet_sendCalls carries no Safe gas; Safe{Wallet} picks it, so the review claims none.
-    expect(seen!.calls.every((call) => call.from === ACCOUNT && call.safeTxGas === undefined)).toBe(
-      true,
-    );
-    expect(seen!.description).toContain("one batch");
-    expect(mocks.simulateCalls).toHaveBeenCalledWith({ account: ACCOUNT, calls: expected });
-    expect(mocks.simulateContract).not.toHaveBeenCalled();
-    expect(mocks.sendCalls).toHaveBeenCalledWith(mocks.config, { chainId: 8453, calls: expected });
-    const activity = transactionActivitySnapshot().find((row) => row.hash === SAFE_TX_HASH);
-    expect(activity?.status).toBe("safe-proposed");
-    expect(activity?.kind).toBe("safe");
-    // The journal keeps what the proposal must run, so only that batch can confirm it.
-    expect(activity?.safeProposal).toEqual({
+    // One row for the one proposal, holding every call it must run.
+    const rows = transactionActivitySnapshot().filter((row) => row.hash === SAFE_TX_HASH);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ kind: "safe", status: "safe-proposed" });
+    expect(rows[0]!.safeProposal).toMatchObject({
       safe: ACCOUNT,
-      calls: expected.map((call) => ({ ...call, value: String(call.value ?? 0n) })),
+      calls: expected.map((call) => ({ ...call, value: String(call.value) })),
       batch: true,
-      // A batch with no action's intent is held by the SDK's safeBatchIntent of its calls, and by
-      // the batch namespace the previous build held it by (legacy-intents).
-      holdNamespace: safeBatchIntent({ chainId: 8453, safe: ACCOUNT, calls: expected }),
-      legacyNamespaces: [expect.stringMatching(/^intent:batch:/)],
     });
 
     // The same batch again is the pending proposal, not a second one: its hold refuses it.
-    await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
-    ).rejects.toThrow(SAFE_PROPOSAL_AWAITING);
-    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
-  });
-
-  it("holds the same batch while Safe lists a proposal it can't confirm, offering no resend", async () => {
-    const CALLS = calls();
-    const proposal = listBatchThrough(CALLS, UNLISTED_MULTI_SEND);
-
-    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
-    await waitFor(() =>
-      expect(transactionActivityForHash(proposal)).toMatchObject({ status: "safe-proposed" }),
-    );
-
-    // Safe still lists it unexecuted: the hold keeps it, and nothing is proposed twice.
-    const prompt = vi.fn().mockResolvedValue(true);
-    registerFlowChoiceHandler(prompt);
-    await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
-    ).rejects.toThrow();
-    // Dismissing the listed proposal alone proposes nothing either.
-    dismissTransactionActivity(transactionActivityForHash(proposal)!.id);
-    await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS),
-    ).rejects.toThrow();
-    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
-  });
-
-  it("follows a proposal that runs the batch through Safe 1.4.1's MultiSendCallOnly", async () => {
-    const CALLS = calls();
-    const proposal = listBatchThrough(CALLS, MULTI_SEND_CALL_ONLY_141);
-
-    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", CALLS);
-    await waitFor(() =>
-      expect(transactionActivityForHash(proposal)).toMatchObject({
-        status: "safe-proposed",
-        message: "Waiting for your Safe's approvals.",
-      }),
-    );
-    expect(transactionActivityForHash(proposal)?.safeResultUnconfirmed).toBeUndefined();
-  });
-
-  it("refuses a batch whose sequence reverts in simulation", async () => {
-    mocks.simulateCalls.mockResolvedValue({
-      results: [{ status: "success" }, { status: "failure", error: new Error("allowance") }],
-    });
-    await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
-    ).rejects.toThrow("step 2");
-    expect(seen).toBeNull();
-    expect(mocks.sendCalls).not.toHaveBeenCalled();
-  });
-
-  it("simulates standalone calls one by one when the RPC lacks eth_simulateV1", async () => {
-    mocks.simulateCalls.mockRejectedValue(
-      Object.assign(new Error("JSON-RPC method is not allowed"), { code: -32601 }),
-    );
-    mocks.request.mockReset().mockResolvedValue("0x");
-    const [first, second] = calls();
-    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", [
-      first!,
-      { ...second!, dependsOnPrior: true },
-    ]);
-    // Only the standalone approval runs alone; the dependent call is left to Safe. (The other
-    // call reads the Safe's nonce for the hold.)
-    const simulated = mocks.request.mock.calls.filter(
-      ([args]) => (args as { params: [{ to: string }] }).params[0].to === TOKEN,
-    );
-    expect(simulated).toHaveLength(1);
-    expect(simulated[0]![0]).toMatchObject({
-      method: "eth_call",
-      params: [{ from: ACCOUNT, to: TOKEN }, "latest"],
-    });
-    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
-
-    mocks.request.mockRejectedValueOnce(new Error("allowance"));
-    // Another batch: its approval names another spender.
-    const [other, rest] = calls();
-    await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", [
-        { ...other!, args: [ACCOUNT, other!.args[1]] as const },
-        rest!,
-      ]),
-    ).rejects.toThrow("step 1");
-    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
-  });
-
-  it("stops on a lagging node or a revert instead of skipping the dependent call's simulation", async () => {
-    // viem's message quotes the request body, which names eth_simulateV1; only
-    // the node's own details and the code say what failed.
-    for (const failure of [
-      Object.assign(new Error('header not found\n\nRequest body: {"method":"eth_simulateV1"}'), {
-        code: -32000,
-        details: "header not found",
-      }),
-      Object.assign(new Error("execution reverted: not allowed"), {
-        code: 3,
-        details: "execution reverted: not allowed",
-      }),
-    ]) {
-      mocks.simulateCalls.mockRejectedValueOnce(failure);
-      mocks.request.mockReset().mockResolvedValue("0x");
-      await expect(
-        proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
-      ).rejects.toThrow("could not be simulated");
-      expect(mocks.request).not.toHaveBeenCalled();
-    }
-    expect(mocks.sendCalls).not.toHaveBeenCalled();
+    const again = await proposeBatch(batch);
+    expect(again).toMatchObject({ status: "failed" });
+    expect(mocks.sendCalls).toHaveBeenCalledOnce();
   });
 
   it("sends nothing when the review is closed", async () => {
     approve = false;
-    await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
-    ).rejects.toThrow("Nothing was sent");
+    const outcome = await proposeBatch(calls());
+    expect(outcome?.status).not.toBe("proposed");
     expect(mocks.sendCalls).not.toHaveBeenCalled();
   });
 
-  it("refuses outside a Safe connection", async () => {
-    mocks.account.connector = { id: "injected", name: "Injected" };
-    await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls()),
-    ).rejects.toThrow("Safe connection");
+  it.each(["account", "view-as"] as const)(
+    "refuses a changed %s after the batch review",
+    async (change) => {
+      stopAnswering();
+      answerReviews(async () => {
+        if (change === "account") mocks.account.address = TOKEN;
+        else setViewAs(TOKEN);
+        return true;
+      });
+      const outcome = await proposeBatch(calls());
+      expect(outcome).toMatchObject({ status: "failed" });
+      expect(mocks.sendCalls).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["connector", "view-as"] as const)(
+    "refuses a %s change while the wallet loads, before the wallet opens",
+    async (change) => {
+      mocks.walletLoaded.mockImplementation(() => {
+        if (change === "connector") mocks.account.connector = { id: "safe-2", name: "Safe" };
+        else setViewAs(TOKEN);
+      });
+      const outcome = await proposeBatch(calls());
+      expect(mocks.walletLoaded).toHaveBeenCalled();
+      expect(outcome).toMatchObject({ status: "failed" });
+      expect(mocks.sendCalls).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a run's wallet check when a later run on the same hook ends first", async () => {
+    const { result } = renderHook(() => useReviewedAction());
+    const run = (batch: ReturnType<typeof calls>) =>
+      result.current.run({
+        account: ACCOUNT,
+        title: "Make the market",
+        calls: batch,
+        scope: `market-batch:${batch[0]!.args![1]}`,
+        batch: true,
+      });
+    let release!: () => void;
+    const loading = new Promise<void>((resolve) => (release = resolve));
+    let atWallet!: () => void;
+    const waiting = new Promise<void>((resolve) => (atWallet = resolve));
+    mocks.walletLoaded.mockImplementationOnce(async () => {
+      atWallet();
+      await loading;
+      setViewAs(TOKEN);
+    });
+    let first!: Promise<unknown>;
+    await act(async () => {
+      first = run(calls());
+      await waiting;
+      // The later run is closed at its review and ends while the first waits on the wallet.
+      approve = false;
+      await run(calls());
+      release();
+      await expect(first).resolves.toMatchObject({ status: "failed" });
+    });
     expect(mocks.sendCalls).not.toHaveBeenCalled();
   });
 
   it("refuses a batch built for another account, such as a mint to the account that reviewed it", async () => {
     const other = "0x000000000000000000000000000000000000bEEF" as Address;
-    await expect(
-      proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls(), other),
-    ).rejects.toThrow("The connected account changed. Review again.");
-    expect(mocks.simulateCalls).not.toHaveBeenCalled();
+    const outcome = await proposeBatch(calls(), other);
+    expect(outcome).toMatchObject({ status: "failed" });
     expect(seen).toBeNull();
     expect(mocks.sendCalls).not.toHaveBeenCalled();
-
-    await proposeSafeBatch(mocks.config as never, 8453, "Make the market", calls(), ACCOUNT);
-    expect(mocks.sendCalls).toHaveBeenCalledTimes(1);
   });
 });

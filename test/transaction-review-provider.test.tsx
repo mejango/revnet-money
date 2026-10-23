@@ -7,7 +7,6 @@ import {
   chooseRelayrPayment,
   fundingChainLabel,
   requireFundingChainSelection,
-  requireTransactionReview,
   TransactionReviewCancelledError,
 } from "@/lib/transaction-review";
 import {
@@ -26,6 +25,7 @@ import { encodeFunctionData, parseAbi, type Abi } from "viem";
 import { describe, expect, it, vi } from "vitest";
 import { queuedRolloutSteps } from "./fixtures/queued-rollout";
 import { isBlockedByModalDialog, openModalDialogs } from "./native-dialog-shim";
+import { requireReview as requireTransactionReview } from "./support/core-review";
 
 const relayrPayments: ChainPayment[] = [
   {

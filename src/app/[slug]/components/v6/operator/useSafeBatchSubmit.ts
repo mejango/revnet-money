@@ -1,23 +1,30 @@
 "use client";
 
-import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
 import {
-  followSubmission,
-  isSafeConnection,
-  requireOnchainExecution,
-  useProposeSafeBatch,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+  loadEngine,
+  requireDone,
+  requireProposedOrDone,
+  reviewedCall,
+  reviewedWalletAdapter,
+  ReviewRefusal,
+  useReviewedAction,
+} from "@/hooks/useReviewedAction";
+import { recordSafeProposal } from "@/lib/held-rows";
+import { legacyBatchNamespace } from "@/lib/legacy-intents";
 import { composeBatch, type BatchCall, type BatchStep } from "@/lib/safe-batch";
-import { confirmSafeExecution, SAFE_PROPOSAL_ORIGIN } from "@/lib/safe-transactions";
-import { requireTransactionReview } from "@/lib/transaction-review";
-import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { safeExecutionIntent, withWriteIntent } from "@/lib/write-hold";
+import { isSafeConnection } from "@/lib/safe-connector";
+import { SAFE_PROPOSAL_ORIGIN } from "@/lib/safe-transactions";
+import { requireNoViewAs } from "@/lib/view-as";
+import { safeExecutionIntent } from "@/lib/write-hold";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
-import { simulateCallSequence } from "@bananapus/nana-sdk-core/review";
 import {
-  encodeMultiSend,
-  MULTI_SEND_ABI,
+  intent,
+  safeBatchIntent,
+  simulateCallSequence,
+  writeIntentKey,
+  type ReviewContextRow,
+} from "@bananapus/nana-sdk-core/review";
+import {
   MULTI_SEND_CALL_ONLY,
   readAuthorityIdentity,
   readBoundedSafeApprovedHash,
@@ -26,31 +33,20 @@ import {
 import {
   hasSafeService,
   listPendingSafeTransactions,
-  nextProposalNonce,
   onchainApprovalStep,
-  proposeSafeTransaction,
   SAFE_EXEC_ABI,
-  SAFE_NONCE_GUIDANCE,
   safeBatchProposalFor,
   safeExecutionArgs,
+  safeProposalFor,
   safeTransactionHash,
   safeTransactionMatchesCall,
-  submitSafeConfirmation,
-  usableSafeConfirmations,
+  safeTransactionMessage,
 } from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  decodeFunctionData,
-  encodeFunctionData,
-  isAddressEqual,
-  keccak256,
-  stringToHex,
-  type Address,
-  type Hex,
-} from "viem";
+import { isAddressEqual, keccak256, stringToHex, type Address, type Hex } from "viem";
 import { useConfig } from "wagmi";
 import { getAccount } from "wagmi/actions";
-import { chainName, operatorWriteRoute, publicClientFor, runSequentialWrites } from "./operatorLib";
+import { chainName, operatorWriteRoute, publicClientFor } from "./operatorLib";
 
 /** How a chain's batch leaves the app, decided from (authority identity, connection). */
 export type SafeBatchRoute =
@@ -138,20 +134,15 @@ async function simulateFromSafe(
   });
 }
 
+/** A step as the build before SDK 4 named its batch (legacy-intents.ts). */
+function batchWrite(step: BatchStep) {
+  return { address: step.to, abi: step.abi, functionName: step.functionName, args: step.args };
+}
+
 export function useSafeBatchSubmit() {
   const config = useConfig();
-  const proposeSafeBatch = useProposeSafeBatch();
   const queryClient = useQueryClient();
-  const { writeContractAsync } = useWriteContract();
-  const { signSafeTransactionAsync } = useReviewedSafeSignature();
-  // Onchain Safe writes carry their own review: the SafeTx they authorize and its decoded steps.
-  // An owner's execution is journaled only once the Safe's event for its hash is read from the
-  // receipt. Through a Safe connection the write is a proposal, tracked like any other.
-  const { writeContractAsync: writeReviewedAsync } = useWriteContract({
-    reviewedInParent: true,
-    manualReceiptVerification: (variables) =>
-      variables.functionName === "execTransaction" && !isSafeConnection(config),
-  });
+  const { run, deps } = useReviewedAction();
 
   const routeFor = async ({
     chainId,
@@ -189,7 +180,7 @@ export function useSafeBatchSubmit() {
     /** The index of the step the wallet is on (direct writes only). */
     onStep: (index: number) => void;
   }): Promise<SafeBatchOutcome> => {
-    const account = getAccount(config).address;
+    const { address: account, connector } = getAccount(config);
     if (!account) throw new Error("Connect a wallet first.");
     if (!steps.length) throw new Error("The batch is empty.");
     const { calls, problems } = composeBatch(steps);
@@ -199,46 +190,51 @@ export function useSafeBatchSubmit() {
 
     if (route.kind === "refused") throw new Error(route.message);
 
-    if (route.kind === "safe-app") {
-      onProgress(`Proposing the batch through the Safe app on ${name}…`);
-      const hash = await proposeSafeBatch(
-        config,
-        chainId,
-        title,
-        steps.map((step, index) => ({
-          address: step.to,
-          abi: step.abi,
-          functionName: step.functionName,
-          args: step.args,
-          label: step.label,
-          dependsOnPrior: calls[index]!.dependsOnPrior,
-        })),
-      );
-      return { kind: "proposed", hash, calls: steps.length };
-    }
-
-    if (route.kind === "eoa") {
-      let transactions = 0;
-      for (const [index, step] of steps.entries()) {
-        onStep(index);
-        transactions += await runSequentialWrites({
-          writes: [
-            {
-              chainId: step.chainId as JBChainId,
-              address: step.to,
-              abi: step.abi,
-              functionName: step.functionName,
-              args: step.args,
-              contractName: step.contractName,
-            },
-          ],
+    if (route.kind === "safe-app" || route.kind === "eoa") {
+      if (route.kind === "safe-app")
+        onProgress(`Proposing the batch through the Safe app on ${name}…`);
+      // The whole batch is reviewed once and sent in order, resumable as one action; a Safe app
+      // proposes it as one transaction.
+      const result = requireProposedOrDone(
+        await run({
           account,
-          writeContractAsync,
-          onProgress,
-        });
-      }
+          title,
+          batch: true,
+          scope: writeIntentKey("operator-batch", {
+            account: intent.address(account),
+            chainId,
+            calls: calls.map((call) => [intent.address(call.to), call.data]),
+          }),
+          beforeWallet: (_call, step) => onStep(step),
+          calls: steps.map((step, index) =>
+            reviewedCall(
+              {
+                chainId,
+                address: step.to,
+                abi: step.abi,
+                functionName: step.functionName,
+                args: step.args,
+              },
+              {
+                label: step.label,
+                contractName: step.contractName,
+                dependsOnPrior: calls[index]!.dependsOnPrior,
+                // A Safe app's batch is held as one proposal of exactly these calls, as before.
+                ...(route.kind === "safe-app" && index === 0
+                  ? {
+                      intent: safeBatchIntent({ chainId, safe: account, calls }),
+                      legacyIntents: [legacyBatchNamespace(steps.map(batchWrite))],
+                    }
+                  : {}),
+              },
+            ),
+          ),
+        }),
+      );
+      if (result.status === "proposed")
+        return { kind: "proposed", hash: result.safeTxHash, calls: steps.length };
       onStep(steps.length);
-      return { kind: "sent", transactions };
+      return { kind: "sent", transactions: result.hashes.length };
     }
 
     const { safe } = route;
@@ -262,40 +258,38 @@ export function useSafeBatchSubmit() {
     const reverify = async (signer: Address) => {
       const live = await readAuthorityIdentity(client, safe);
       if (live?.kind !== "safe") {
-        throw new Error(`The operator on ${name} is no longer a supported Safe.`);
+        throw new ReviewRefusal(`The operator on ${name} is no longer a supported Safe.`);
       }
       if (!live.owners.some((owner) => isAddressEqual(owner, signer))) {
-        throw new Error(
+        throw new ReviewRefusal(
           `The connected wallet is no longer a signer of the operator Safe on ${name}.`,
         );
       }
     };
 
-    const batchCall = {
-      to: MULTI_SEND_CALL_ONLY,
-      data: encodeMultiSend(calls),
-      value: 0n,
-      operation: 1 as const,
-    };
-    // The review decodes the MultiSend into the steps it packs.
-    const review = {
-      label: title,
-      contractName: "MultiSendCallOnly",
-      abi: MULTI_SEND_ABI,
-      functionName: "multiSend",
-      args: decodeFunctionData({ abi: MULTI_SEND_ABI, data: batchCall.data }).args,
-      calls: steps.map((step) => ({
-        chainId,
-        to: step.to,
-        data: step.data,
-        value: step.value,
-        label: step.label,
-        abi: step.abi,
-        functionName: step.functionName,
-        args: step.args,
-        contractName: step.contractName,
-      })),
-    };
+    const reviewedSteps = steps.map((step, index) =>
+      reviewedCall(
+        {
+          chainId,
+          address: step.to,
+          abi: step.abi,
+          functionName: step.functionName,
+          args: step.args,
+        },
+        {
+          label: step.label,
+          contractName: step.contractName,
+          dependsOnPrior: calls[index]!.dependsOnPrior,
+        },
+      ),
+    );
+    const context: ReviewContextRow[] = [
+      {
+        label: "Batch",
+        value: `${steps.length} call${steps.length === 1 ? "" : "s"} from the operator Safe`,
+        lines: steps.map((step, index) => `${index + 1}. ${step.label}`),
+      },
+    ];
 
     if (!hasSafeService(chainId)) {
       // No Safe service holds signatures here, so each owner approves the
@@ -325,21 +319,9 @@ export function useSafeBatchSubmit() {
           threshold: live.threshold,
         };
       }
-      const authorization = {
-        safe,
-        nonce: tx.nonce,
-        safeTxHash,
-        destinationCall: {
-          to: tx.to,
-          value: tx.value,
-          data: tx.data ?? "0x",
-          operation: tx.operation,
-        },
-      };
       const write =
         next.kind === "approve"
           ? {
-              abi: SAFE_EXEC_ABI,
               functionName: "approveHash" as const,
               args: [safeTxHash] as const,
               label: `Approve batch on ${name}`,
@@ -347,7 +329,6 @@ export function useSafeBatchSubmit() {
               confirmLabel: "Agree & approve onchain",
             }
           : {
-              abi: SAFE_EXEC_ABI,
               functionName: "execTransaction" as const,
               args: safeExecutionArgs(
                 { ...tx, confirmations: next.signers.map((owner) => ({ owner })) },
@@ -357,62 +338,37 @@ export function useSafeBatchSubmit() {
               description: `${next.signers.length} of ${live.threshold} owners have approved this batch, counting you. Executing runs every step in order.`,
               confirmLabel: "Agree & execute",
             };
-      // A Safe connection proposes this write with gas 0, reviewed as its Safe gas.
-      const viaSafe = isSafeConnection(config);
-      await requireTransactionReview({
-        title: write.label,
-        description: viaSafe ? `${write.description}\n\n${SAFE_NONCE_GUIDANCE}` : write.description,
-        confirmLabel: viaSafe ? "Agree & propose to Safe" : write.confirmLabel,
-        authorization,
-        calls: [
-          {
-            chainId,
-            to: safe,
-            value: 0n,
-            ...(viaSafe ? { safeTxGas: 0n } : {}),
-            data: encodeFunctionData({
-              abi: write.abi,
-              functionName: write.functionName,
-              args: write.args,
-            } as Parameters<typeof encodeFunctionData>[0]),
-            abi: write.abi,
-            functionName: write.functionName,
-            args: write.args,
-            label: write.label,
-            contractName: "Safe",
-            calls: review.calls,
-          },
-        ],
-      });
-      await reverify(account);
-      if (
-        getAccount(config).address?.toLowerCase() !== account.toLowerCase() ||
-        isSafeConnection(config) !== viaSafe
-      ) {
-        throw new Error("Wallet connection changed. Review the batch again.");
-      }
       onProgress(`Confirm the ${write.functionName} transaction on ${name} in your wallet…`);
       // Held by the Safe transaction it approves or runs, not by the signatures collected so far.
-      const hash = await withWriteIntent(
-        writeReviewedAsync,
-        safeExecutionIntent(chainId, safe, safeTxHash),
-      )({
-        chainId,
-        address: safe,
-        abi: write.abi,
-        functionName: write.functionName,
-        args: write.args,
-      } as Parameters<typeof writeReviewedAsync>[0]);
-      requireOnchainExecution(hash);
-      onProgress(`Waiting for confirmation on ${name}…`);
-      if (next.kind === "execute") {
-        await confirmSafeExecution({ client, hash, safe, safeTxHash });
-        return { kind: "executed", hash, calls: steps.length };
-      }
-      const receipt = await waitForReceiptWithRetry(client, hash);
-      if (receipt.status !== "success") {
-        throw new Error(`${write.functionName} reverted on ${name} (${hash}).`);
-      }
+      // An execution is done only once the Safe's own success for its hash is read.
+      const result = requireDone(
+        await run({
+          account,
+          title: write.label,
+          description: write.description,
+          confirmLabel: write.confirmLabel,
+          context,
+          reverify: () => reverify(account),
+          calls: [
+            reviewedCall(
+              {
+                chainId,
+                address: safe,
+                abi: SAFE_EXEC_ABI,
+                functionName: write.functionName,
+                args: write.args,
+              },
+              {
+                label: write.label,
+                contractName: "Safe",
+                intent: safeExecutionIntent(chainId, safe, safeTxHash),
+              },
+            ),
+          ],
+        }),
+      );
+      const hash = result.hashes.at(-1)!;
+      if (next.kind === "execute") return { kind: "executed", hash, calls: steps.length };
       return {
         kind: "approved",
         hash: safeTxHash,
@@ -422,55 +378,37 @@ export function useSafeBatchSubmit() {
       };
     }
 
+    // Core proposes the batch after one review (one call as itself, several as a MultiSend), or
+    // confirms the queued proposal of exactly these calls.
+    const shape = safeTransactionMessage(
+      calls.length === 1
+        ? safeProposalFor(calls[0]!, Number(nonce))
+        : safeBatchProposalFor(calls, Number(nonce)),
+    );
     const pending = await listPendingSafeTransactions(chainId, safe, Number(nonce));
-    const existing = pending.find((tx) => safeTransactionMatchesCall(tx, batchCall));
-    if (existing) {
-      const confirmed = usableSafeConfirmations(existing, route.owners).some((confirmation) =>
-        isAddressEqual(confirmation.owner, account),
-      );
-      if (!confirmed) {
-        onProgress(`Sign the already-queued batch on ${name} in your wallet…`);
-        const signature = await signSafeTransactionAsync({
-          chainId,
-          safe,
-          tx: existing,
-          reverify,
-          review,
-        });
-        await submitSafeConfirmation(chainId, safe, existing, signature);
-      }
-      void queryClient.invalidateQueries({ queryKey: ["revnet-safe-queues"] });
-      // Listed rows carry the hash of their own fields.
-      return { kind: "confirmed", hash: existing.safeTxHash!, calls: steps.length };
-    }
-
-    const tx = safeBatchProposalFor(calls, nextProposalNonce(Number(nonce), pending));
-    onProgress(`Sign the batch proposal for ${name} in your wallet…`);
-    const signature = await signSafeTransactionAsync({ chainId, safe, tx, reverify, review });
-    onProgress(`Queuing the proposal with the Safe service on ${name}…`);
-    const hash = await proposeSafeTransaction(chainId, safe, tx, {
-      sender: account,
-      signature,
-      origin: SAFE_PROPOSAL_ORIGIN,
-    });
+    const queued = pending.some((tx) => safeTransactionMatchesCall(tx, shape));
+    requireNoViewAs();
+    onProgress(
+      queued
+        ? `Sign the already-queued batch on ${name} in your wallet…`
+        : `Sign the batch proposal for ${name} in your wallet…`,
+    );
+    const { proposeReviewedSafeTransaction } = await loadEngine();
+    // The proposal signs after its review, so View-as and the reviewed wallet are checked there.
+    const { safeTxHash: hash } = await proposeReviewedSafeTransaction(
+      { chainId, safe, calls: reviewedSteps, context, title, origin: SAFE_PROPOSAL_ORIGIN },
+      { ...deps, adapter: reviewedWalletAdapter(config, account, connector) },
+    );
     void queryClient.invalidateQueries({ queryKey: ["revnet-safe-queues"] });
+    if (queued) return { kind: "confirmed", hash, calls: steps.length };
     const callKey = `batch:${account.toLowerCase()}:${chainId}:${keccak256(
       stringToHex(calls.map((call) => `${call.to}:${call.value}:${call.data}`).join("|")),
     )}`;
-    followSubmission(
-      config,
-      hash,
-      chainId,
-      title,
-      account,
-      callKey,
-      {
-        safe,
-        calls: calls.map((call) => ({ to: call.to, value: String(call.value), data: call.data })),
-        batch: true,
-      },
-      false,
-    );
+    recordSafeProposal(hash, chainId, title, account, callKey, {
+      safe,
+      calls: calls.map((call) => ({ to: call.to, value: String(call.value), data: call.data })),
+      batch: calls.length > 1,
+    });
     return { kind: "proposed", hash, calls: steps.length };
   };
 

@@ -65,15 +65,15 @@ if (
   failures.push("Safe transaction matching must pass the explicit batch policy to the SDK owner");
 }
 
-const reviewedWrite = read("src/hooks/useReviewedWriteContract.ts");
+const reviewedAction = read("src/hooks/useReviewedAction.ts");
 if (
-  !reviewedWrite.includes("submitReviewedContractWrite({") ||
-  !/import \{[^}]*\bsubmitReviewedContractWrite\b[^}]*\} from ["']@bananapus\/nana-sdk-core\/review["']/.test(
-    reviewedWrite,
+  !reviewedAction.includes("useReviewedRun(deps)") ||
+  !/import \{[^}]*\buseReviewedRun\b[^}]*\} from ["']@bananapus\/nana-sdk-core\/review\/react["']/.test(
+    reviewedAction,
   )
 ) {
   failures.push(
-    "Reviewed contract writes must delegate their wallet boundary to the shared SDK owner",
+    "Reviewed contract writes must delegate their wallet boundary to core's useReviewedRun",
   );
 }
 
@@ -81,6 +81,10 @@ for (const path of sourceFiles("src")) {
   const source = read(path);
   for (const [pattern, what] of APP_HOLD_LOGIC)
     if (pattern.test(source)) failures.push(`${path}: ${what}`);
+  if (/\buse(WriteContract|WaitForTransactionReceipt)\b/.test(source))
+    failures.push(
+      `${path}: sends and receipts go through useReviewedAction, not wagmi's write hooks`,
+    );
 }
 const utils = read("src/lib/utils.ts");
 if (

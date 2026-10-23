@@ -10,16 +10,18 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import {
-  SAFE_PROPOSAL_UNCONFIRMED_LINE,
-  useWaitForTransactionReceipt,
-  useWriteContract,
-} from "@/hooks/useReviewedWriteContract";
+  failedLine,
+  reviewedCall,
+  ReviewRefusal,
+  useReviewedAction,
+  type ReviewedCall,
+} from "@/hooks/useReviewedAction";
 import { buildBurnTokensRequest } from "@/lib/burnTokens";
+import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { formatWalletError } from "@/lib/utils";
-import { withWriteIntent } from "@/lib/write-hold";
 import {
   formatUnits,
   JB_CHAINS,
@@ -71,56 +73,44 @@ export function V6BurnTokensDialog({
 function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string }) {
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: row.chainId });
-  const { writeContractAsync } = useWriteContract({
-    transactionReview: {
-      title: "Review permanent token burn",
-      description:
-        "This permanently destroys project tokens and returns no funds. Verify the chain and amount.",
-    },
-    reverify: async (variables, reviewedAccount) => {
-      if (!publicClient) throw new Error("The chain client is unavailable.");
-      const args = variables.args as readonly [Address, bigint, bigint, string];
-      const [holder, projectId, reviewedCount] = args;
-      if (holder.toLowerCase() !== reviewedAccount.toLowerCase()) {
-        throw new Error("The token holder changed. Review again.");
-      }
-      const [latestBalance, latestController] = await Promise.all([
-        publicClient.readContract({
-          address: jbV6ContractAddress[JBCoreContracts.JBTokens][row.chainId],
-          abi: jbTokensAbi,
-          functionName: "totalBalanceOf",
-          args: [holder, projectId],
-        }),
-        publicClient.readContract({
-          address: jbV6ContractAddress[JBCoreContracts.JBDirectory][row.chainId],
-          abi: jbDirectoryAbi,
-          functionName: "controllerOf",
-          args: [projectId],
-        }),
-      ]);
-      if (reviewedCount > latestBalance) {
-        throw new Error("Your token balance changed. Review the amount.");
-      }
-      if (
-        latestController === zeroAddress ||
-        latestController.toLowerCase() !== variables.address.toLowerCase()
-      ) {
-        throw new Error("The project controller changed. Review again.");
-      }
-    },
-  });
+  const { run, phase, held } = useReviewedAction();
+  /** Right before the wallet: the holder still has the tokens and the controller is the same. */
+  const reverify = async (call: ReviewedCall, account: Address) => {
+    if (!publicClient) throw new ReviewRefusal("The chain client is unavailable.");
+    const [latestBalance, latestController] = await Promise.all([
+      publicClient.readContract({
+        address: jbV6ContractAddress[JBCoreContracts.JBTokens][row.chainId],
+        abi: jbTokensAbi,
+        functionName: "totalBalanceOf",
+        args: [account, row.projectId],
+      }),
+      publicClient.readContract({
+        address: jbV6ContractAddress[JBCoreContracts.JBDirectory][row.chainId],
+        abi: jbDirectoryAbi,
+        functionName: "controllerOf",
+        args: [row.projectId],
+      }),
+    ]);
+    if (count > latestBalance) {
+      throw new ReviewRefusal("Your token balance changed. Review the amount.");
+    }
+    if (
+      latestController === zeroAddress ||
+      latestController.toLowerCase() !== call.to.toLowerCase()
+    ) {
+      throw new ReviewRefusal("The project controller changed. Review again.");
+    }
+  };
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
-  const [hash, setHash] = useState<`0x${string}`>();
+  const [isSuccess, setSuccess] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   // Busy from Confirm: the balance and controller reads before the wallet
   // prompt are part of the send, so the confirm cannot be closed under them.
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { isLoading, isSuccess, isSafeResultUnconfirmed } = useWaitForTransactionReceipt({
-    hash,
-    chainId: row.chainId,
-  });
+  const isLoading = phase === "receipt";
+  const isSafeResultUnconfirmed = phase === "proposed" && !!held?.exit;
   const { toast } = useToast();
   const chainName = JB_CHAINS[row.chainId]?.name ?? String(row.chainId);
   let count = 0n;
@@ -129,6 +119,12 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
   } catch {}
   const invalid = count <= 0n || count > row.balance;
   const amountLabel = `${formatUnits(count, JB_TOKEN_DECIMALS, { fractionDigits: 4 })} ${tokenSymbol}`;
+  const context = [
+    { label: "Burns", value: amountLabel, strong: true },
+    { label: "On", value: chainName },
+    { label: "Returns", value: "Nothing. Supply drops permanently." },
+    ...(memo.trim() ? [{ label: "Note", value: memo.trim() }] : []),
+  ];
 
   useEffect(() => {
     if (isSuccess) {
@@ -160,22 +156,36 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
       if (controller === zeroAddress) throw new Error("The project has no active controller.");
       // Held by the holder's burn of this project (the SDK's burnIntent); the exact call an
       // earlier build held it by holds it too.
-      const txHash = await withWriteIntent(
-        writeContractAsync,
-        burnIntent({ chainId: row.chainId, project: row.projectId, holder: address }),
-      )({
-        ...buildBurnTokensRequest({
-          chainId: row.chainId,
-          controller: controller as Address,
-          holder: address,
-          projectId: row.projectId,
-          tokenCount: count,
-          memo,
-        }),
-        account: address,
+      const holder = address;
+      const result = await run({
+        account: holder,
+        title: "Review permanent token burn",
+        description:
+          "This permanently destroys project tokens and returns no funds. Verify the chain and amount.",
+        context,
+        reverify: (call) => reverify(call, holder),
+        // Sent: the confirm closes while the burn confirms onchain.
+        onSubmitted: () => {
+          setReviewing(false);
+          setSending(false);
+        },
+        calls: [
+          reviewedCall(
+            buildBurnTokensRequest({
+              chainId: row.chainId,
+              controller: controller as Address,
+              holder,
+              projectId: row.projectId,
+              tokenCount: count,
+              memo,
+            }),
+            { intent: burnIntent({ chainId: row.chainId, project: row.projectId, holder }) },
+          ),
+        ],
       });
-      setHash(txHash);
-      setReviewing(false);
+      if (!result) setReviewing(false);
+      if (result?.status === "failed") throw new ReviewRefusal(failedLine(result));
+      if (result?.status === "done") setSuccess(true);
     } catch (cause) {
       setError(formatWalletError(cause));
     } finally {
@@ -228,22 +238,17 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
       {isSafeResultUnconfirmed ? (
         <p className="mt-2 text-xs text-zinc-600">{SAFE_PROPOSAL_UNCONFIRMED_LINE}</p>
       ) : null}
-      <TxConfirmDialog
+      <TxProgress
         open={reviewing}
         onClose={() => setReviewing(false)}
         title="Confirm burn"
         steps={[{ title: `Burn ${amountLabel}`, detail: "Credits go first, then ERC-20 tokens." }]}
         activeIndex={sending ? 0 : -1}
-        action="Burn permanently"
-        onConfirm={() => void burn()}
+        start={() => void burn()}
         busy={sending}
         error={error}
-      >
-        <SummaryRow label="Burns">{amountLabel}</SummaryRow>
-        <SummaryRow label="On">{chainName}</SummaryRow>
-        <SummaryRow label="Returns">Nothing. Supply drops permanently.</SummaryRow>
-        {memo.trim() ? <SummaryRow label="Note">{memo.trim()}</SummaryRow> : null}
-      </TxConfirmDialog>
+        rows={context}
+      />
     </div>
   );
 }

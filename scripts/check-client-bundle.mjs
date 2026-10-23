@@ -22,23 +22,34 @@ const account = `0x${"1".repeat(40)}`;
 // reason and retry (+2), then SDK 3.4.1's retry rule and router-converted quote minimums (+2).
 // Routes +1-2 KiB (2026-10-22): Next 16.4.2's client runtime (critical advisories) adds 1.6-1.9 KiB to each;
 // each ceiling is the new measurement rounded up.
+// Most routes +1 KiB (2026-10-22): the loan dialogs read their token, decimals and currency onchain.
+// /[slug], /[slug]/terms and /[slug]/owners +1 KiB (2026-10-22): SDK 4.0.0 (the failed swap quote's Retry line,
+// the registry check before a queued movement's Execute) measures 569.1, 568.0 and 629.6 KiB.
+// Next 16.4.2 (the image optimizer advisory GHSA-2464-fhr4-w9xw) adds 0.2-1.7 KiB to most routes;
+// each changed ceiling is its new measure rounded up.
+// SDK 4.0.0-local.7 (provenance-based error lines, the wallet-ready wait) adds 0.1-0.4 KiB to eight routes.
+// Every write on core's useReviewedRun (revnet R3): the hook loads core's write hold and its lines
+// with the page (the send engine stays lazy), +1-2 KiB on most routes, +10-13 KiB on /create and
+// the project routes that write. Each changed ceiling is its new measure rounded up.
+// SDK 4.0.0 (R5: core Relayr rounds, one plan review): +0.1-1.0 KiB on five routes; /extras +11.6,
+// where webpack splits a shared 15.8 KiB chunk that repeats modules other chunks hold (all JS fell 16 KiB).
 const routes = [
-  { route: "/", path: "/", kib: 389 },
-  { route: "/learn", path: "/learn", kib: 353 },
-  { route: "/build", path: "/build", kib: 355 },
-  { route: "/audit", path: "/audit", kib: 356 },
-  { route: "/discover", path: "/discover", kib: 338 },
-  { route: "/create", path: "/create", kib: 543 },
-  { route: "/[slug]", path: "/eth:1", kib: 570 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 569 },
+  { route: "/", path: "/", kib: 393 },
+  { route: "/learn", path: "/learn", kib: 354 },
+  { route: "/build", path: "/build", kib: 356 },
+  { route: "/audit", path: "/audit", kib: 357 },
+  { route: "/discover", path: "/discover", kib: 340 },
+  { route: "/create", path: "/create", kib: 549 },
+  { route: "/[slug]", path: "/eth:1", kib: 578 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 576 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 676 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 576 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 571 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 420 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 409 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 584 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 595 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 424 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 414 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
-  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 385 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 389 },
   { route: "/_not-found", path: "/no-such-page/x/y", kib: 300, status: 404 },
 ];
 // Next renders its global error page only when the root layout itself throws; no URL reaches it.
@@ -49,6 +60,9 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
   : routes;
 // 920 -> 922 (and all JS 2726 -> 2727): the onchain sucker-peer and group-write checks on top of Next 16.4.2.
 // All JS 2727 -> 2730: the loan dialogs read their token, decimals and currency onchain.
+// All JS 2730 -> 2754: the R stack on SDK 4.0.0 (core reviewed runs and Relayr rounds), measured 2752.4 locally and 2753.1 on CI.
+// SDK 4.0.0 measures 921.2 KiB route-referenced (919.7 before); the ceiling moves up 1 KiB.
+// Next 16.4.2 measures 923.0 KiB; the ceiling moves to 924.
 const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
@@ -61,7 +75,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // Safe maps replacing revnet's five copies, still within it. Formatting wallet
 // balances as Juicebox Money does (rounded by decimal digits, dust kept visible)
 // brings it to about 2601 KiB, so the budget moved up by the minimum 1 KiB again.
-// axios 1.20.0 in Para's lazy chunk (+3.1), DOMPurify 3.4.16 (+0.4) and Next 16.3.8's
+// axios 1.20.0 in Para's lazy chunk (+3.1), DOMPurify 3.4.16 (+0.4; 3.4.17 for GHSA-cg2g-xh64-v4q7 measures +0.4 more) and Next 16.3.8's
 // client runtime (+0.2) measure 2604.7 KiB against 2601.1 KiB before, so the budget
 // moves up by 4 KiB. The route budgets are unchanged.
 // The transaction review moved into a provider plus a dialog loaded on the first
@@ -188,7 +202,13 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // 2747.6 KiB. Raise only the aggregate ceiling to 2750 KiB; route and lazy-load limits stay fixed.
 // The load-size pass (rendered-HTML gate, splitChunks, lazy dialogs and write machinery, SDK
 // 3.1.0) measures 2714.9 KiB, route-referenced 912.1 KiB. Every ceiling drops to its measure.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2730);
+// SDK 4.0.0 measures 2727.7 KiB (2726.1 before); the aggregate ceiling moves up 1 KiB.
+// Next 16.4.2 measures 2729.5 KiB; the aggregate ceiling moves to 2730.
+// The lazy review dialog renders SDK 4.0.0's review model (buildReviewModel and its decoders):
+// 2733.2 KiB, routes unchanged; builds vary by 0.1 KiB. The aggregate ceiling moves to 2734.
+// Every write on core's useReviewedRun measures 2766.6 KiB: core's hold and lines load with each
+// writing page, and the app's own send engine is gone. The aggregate ceiling moves to 2767.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2754);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");

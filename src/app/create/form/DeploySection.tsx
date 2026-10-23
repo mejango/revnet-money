@@ -1,11 +1,11 @@
 import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { StickyRecipient } from "@/components/sticky/StickyRecipient";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
-import { useSafeConnection } from "@/hooks/useReviewedWriteContract";
+import { TxProgress } from "@/components/ui/TxProgress";
 import { hasErrors } from "@/lib/forms";
 import type { JBChainId } from "@/lib/nana/types";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { useSafeConnection } from "@/lib/safe-connector";
 import {
   isStickyRow,
   stickyDraftGroupId,
@@ -162,7 +162,7 @@ export function DeploySection({
           </p>
         ) : null}
         {review && values.chainIds[0] ? (
-          <TxConfirmDialog
+          <TxProgress
             open
             onClose={() => setReview(false)}
             title={singleChain ? "Confirm deployment" : "Confirm deploy request"}
@@ -185,27 +185,30 @@ export function DeploySection({
                 : `Your wallet will ask for ${values.chainIds.length} signatures. The relay payment comes after the quote.`
             }
             activeIndex={isSubmitting ? 0 : -1}
-            action={action}
-            onConfirm={() => {
+            start={() => {
               void submitForm().finally(() => setReview(false));
             }}
             busy={isSubmitting}
-          >
-            <SummaryRow label="Revnet">{values.name || "Unnamed"}</SummaryRow>
-            <SummaryRow label="Token">${revnetTokenSymbol}</SummaryRow>
-            <SummaryRow label="On">{chainNames.join(", ")}</SummaryRow>
-            <SummaryRow label="Backed by">{reserveAssetSymbol}</SummaryRow>
-            {stickySplits.length > 0 ? (
-              <SummaryRow label="Sticky">
-                {stickySplits.map((split, index) => (
-                  <span key={index} className="block">
-                    Stage {split.stage}:{" "}
-                    <StickyRecipient split={split} chainId={values.chainIds[0]} />
-                  </span>
-                ))}
-              </SummaryRow>
-            ) : null}
-          </TxConfirmDialog>
+            rows={[
+              { label: "Revnet", value: values.name || "Unnamed", strong: true },
+              { label: "Token", value: `$${revnetTokenSymbol}` },
+              { label: "On", value: chainNames.join(", ") },
+              { label: "Backed by", value: reserveAssetSymbol },
+              ...(stickySplits.length > 0
+                ? [
+                    {
+                      label: "Sticky",
+                      value: stickySplits.map((split, index) => (
+                        <span key={index} className="block">
+                          Stage {split.stage}:{" "}
+                          <StickyRecipient split={split} chainId={values.chainIds[0]} />
+                        </span>
+                      )),
+                    },
+                  ]
+                : []),
+            ]}
+          />
         ) : null}
         {submitCount > 0 && !isValid ? (
           <div className="mt-3 max-w-xl border-l-2 border-red-500 pl-3" role="alert">

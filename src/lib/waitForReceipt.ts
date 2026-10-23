@@ -1,6 +1,6 @@
 import { TransactionReceiptNotFoundError, type Hex, type PublicClient } from "viem";
 
-export class TransactionReceiptUnavailableError extends Error {
+class TransactionReceiptUnavailableError extends Error {
   readonly name = "TransactionReceiptUnavailableError";
   /** The node's last read answered that it holds no receipt for the hash, not that it failed. */
   readonly noReceipt: boolean;
@@ -18,14 +18,8 @@ export class TransactionReceiptUnavailableError extends Error {
   }
 }
 
-export function isTransactionReceiptUnavailableError(
-  error: unknown,
-): error is TransactionReceiptUnavailableError {
-  return error instanceof TransactionReceiptUnavailableError;
-}
-
 /** How long a receipt is watched for before confirmation counts as unavailable. */
-export const RECEIPT_WAIT_TIMEOUT_MS = 120_000;
+const RECEIPT_WAIT_TIMEOUT_MS = 120_000;
 
 /** Keep tracking a broadcast transaction when a load-balanced RPC drops the
  * subscription-style receipt watch. Successful writes must not leave the UI

@@ -19,7 +19,6 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { zeroAddress, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  executionLog,
   provenSafe,
   queuedRow,
   SAFE_OWNER_A,
@@ -42,7 +41,6 @@ const mocks = vi.hoisted(() => ({
   /** The live operator check, the first read after each Confirm. */
   live: vi.fn(),
   sign: vi.fn(),
-  review: vi.fn(),
   write: vi.fn(),
   receipt: vi.fn(),
   quote: vi.fn(),
@@ -70,13 +68,19 @@ vi.mock("@/app/[slug]/components/v6/operator/operatorLib", async (importOriginal
   isLiveRevnetOperator: mocks.live,
   publicClientFor: () => mocks.client,
 }));
-vi.mock("@/hooks/useReviewedSafeSignature", () => ({
-  useReviewedSafeSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
+vi.mock("@/lib/safe-connector", () => ({ useSafeConnection: () => false }));
+vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
+  useSafeTransactionSignature: () => ({ signSafeTransactionAsync: mocks.sign }),
+  useReviewedAction: () => ({ deps: {} }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({
-  requireOnchainExecution: vi.fn(),
-  useSafeConnection: () => false,
-  useWriteContract: () => ({ writeContractAsync: mocks.write }),
+vi.mock("wagmi/actions", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("wagmi/actions")>()),
+  getAccount: () => ({ connector: undefined }),
+}));
+vi.mock("@bananapus/nana-sdk-core/review", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/review")>()),
+  executeReviewedSafeTransaction: mocks.write,
 }));
 vi.mock("@/hooks/useReviewedRelayr", async (importOriginal) => ({
   RelayrRecoveryError: (await importOriginal<typeof import("@/hooks/useReviewedRelayr")>())
@@ -88,7 +92,6 @@ vi.mock("@/hooks/useReviewedRelayr", async (importOriginal) => ({
 }));
 vi.mock("@/lib/transaction-review", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/transaction-review")>()),
-  requireTransactionReview: mocks.review,
   chooseRelayrPayment: async (payments: unknown[]) => payments[0],
 }));
 vi.mock("@/lib/waitForReceipt", async (importOriginal) => ({
@@ -146,20 +149,10 @@ beforeEach(() => {
   };
   mocks.live.mockReset().mockResolvedValue(true);
   mocks.sign.mockReset().mockResolvedValue(`0x${"9".repeat(130)}`);
-  mocks.review.mockReset().mockResolvedValue(undefined);
-  mocks.write.mockReset().mockImplementation(async () => {
-    // As the reviewed write does when the caller keeps the receipt.
-    recordTransactionActivity({
-      id: `tx:8453:${EXECUTION}`,
-      kind: "direct",
-      title: "execTransaction",
-      status: "pending",
-      message: "Pending action-specific receipt verification.",
-      chainId: 8453,
-      hash: EXECUTION,
-      manualVerificationRequired: true,
-    });
-    return EXECUTION;
+  mocks.write.mockReset().mockResolvedValue({
+    status: "done",
+    hashes: [EXECUTION],
+    receipts: [{ status: "success", transactionHash: EXECUTION, blockNumber: 1n, logs: [] }],
   });
   mocks.receipt.mockReset();
   mocks.quote.mockReset().mockResolvedValue({
@@ -175,27 +168,16 @@ describe("the Safe queue's signature confirm", () => {
   async function openSign() {
     const service = serveQueues(queued(8453, [COSIGNER]));
     renderCard(8453);
-    fireEvent.click(await screen.findByRole("button", { name: "Sign" }));
+    const sign = await screen.findByRole("button", { name: "Sign" });
+    const release = holdLiveRead();
+    fireEvent.click(sign);
     const confirm = await screen.findByRole("dialog", { name: "Confirm signature" });
-    return { confirm, service };
+    return { confirm, service, release };
   }
 
-  it("goes back with Cancel, and signs nothing", async () => {
-    const { confirm } = await openSign();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(mocks.sign).not.toHaveBeenCalled();
-  });
-
   it("wallet-action:safe-queue refuses every way out from Confirm through the reads before the wallet prompt, then closes once signed", async () => {
-    const { confirm, service } = await openSign();
-    const release = holdLiveRead();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Sign" }));
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled(),
-    );
+    const { confirm, service, release } = await openSign();
+    await waitFor(() => expect(mocks.live).toHaveBeenCalled());
 
     expectEveryWayOutRefused(confirm);
     expect(mocks.sign).not.toHaveBeenCalled();
@@ -209,17 +191,13 @@ describe("the Safe queue's signature confirm", () => {
 });
 
 describe("the Safe queue's execution confirm", () => {
-  async function openExecute() {
+  async function openExecute(before?: () => void) {
     const row = queued(8453, SAFE.owners);
     serveQueues(row);
-    mocks.receipt.mockResolvedValue({
-      status: "success",
-      transactionHash: EXECUTION,
-      blockNumber: 1n,
-      logs: [executionLog(SAFE.address, row.safeTxHash!)],
-    });
     renderCard(8453);
-    fireEvent.click(await screen.findByRole("button", { name: "Execute" }));
+    const execute = await screen.findByRole("button", { name: "Execute" });
+    before?.();
+    fireEvent.click(execute);
     return screen.findByRole("dialog", { name: "Confirm execution" });
   }
 
@@ -231,23 +209,10 @@ describe("the Safe queue's execution confirm", () => {
     expect(await screen.findByRole("button", { name: "Execute" })).toBeDisabled();
   });
 
-  it("goes back with Cancel, and executes nothing", async () => {
-    const confirm = await openExecute();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(mocks.review).not.toHaveBeenCalled();
-    expect(mocks.write).not.toHaveBeenCalled();
-  });
-
   it("does not authorize execution from the cached display identity when the fresh identity check fails", async () => {
-    const confirm = await openExecute();
     const unavailable = safeChain(SAFE.address, { nonce: 5n });
     unavailable.getCode.mockRejectedValue(new Error("RPC temporarily unavailable"));
-    mocks.client = unavailable.client;
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Execute" }));
+    const confirm = await openExecute(() => (mocks.client = unavailable.client));
 
     expect(
       await within(confirm).findByText(
@@ -255,19 +220,15 @@ describe("the Safe queue's execution confirm", () => {
       ),
     ).toBeVisible();
     expect(unavailable.getCode).toHaveBeenCalled();
-    expect(mocks.review).not.toHaveBeenCalled();
     expect(mocks.sign).not.toHaveBeenCalled();
     expect(mocks.write).not.toHaveBeenCalled();
     expect(mocks.pay).not.toHaveBeenCalled();
   });
 
   it("wallet-action:safe-queue refuses every way out from Confirm through the reads before the wallet prompt, then closes once executed", async () => {
-    const confirm = await openExecute();
-    const release = holdLiveRead();
-    fireEvent.click(within(confirm).getByRole("button", { name: "Execute" }));
-    await waitFor(() =>
-      expect(within(confirm).getByRole("button", { name: "Cancel" })).toBeDisabled(),
-    );
+    let release!: () => Promise<void>;
+    const confirm = await openExecute(() => (release = holdLiveRead()));
+    await waitFor(() => expect(mocks.live).toHaveBeenCalled());
 
     expectEveryWayOutRefused(confirm);
     expect(mocks.write).not.toHaveBeenCalled();
@@ -275,11 +236,7 @@ describe("the Safe queue's execution confirm", () => {
     await release();
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(mocks.write).toHaveBeenCalledOnce();
-    expect(mocks.write.mock.calls[0][0]).toMatchObject({
-      chainId: 8453,
-      address: SAFE.address,
-      functionName: "execTransaction",
-    });
+    expect(mocks.write.mock.calls[0][0]).toMatchObject({ chainId: 8453, safe: SAFE.address });
     expect(screen.getByText("Executed Safe transaction #5 on Base.")).toBeInTheDocument();
   });
 });

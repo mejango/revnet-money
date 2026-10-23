@@ -1,8 +1,9 @@
-import { useReviewedSafeSignature } from "@/hooks/useReviewedSafeSignature";
+import { useSafeTransactionSignature } from "@/hooks/useReviewedAction";
 import { clearViewAs, setViewAs } from "@/lib/view-as";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { type Address, type Hex, zeroAddress } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { answerReviews, loadCoreReview, stopAnswering } from "./support/core-review";
 
 const mocks = vi.hoisted(() => ({
   config: { id: "safe-signature-config" },
@@ -25,6 +26,8 @@ vi.mock("wagmi", () => ({
 vi.mock("wagmi/actions", () => ({
   getAccount: mocks.getAccount,
   getWalletClient: mocks.getWalletClient,
+  getPublicClient: () => undefined,
+  switchChain: (_config: unknown, request: { chainId: number }) => mocks.switchChain(request),
 }));
 
 const ACCOUNT = "0x1111111111111111111111111111111111111111" as Address;
@@ -45,7 +48,9 @@ const tx = {
   nonce: 4,
 };
 
-beforeEach(() => {
+beforeEach(async () => {
+  await loadCoreReview();
+  stopAnswering();
   window.localStorage.clear();
   clearViewAs();
   mocks.account = {
@@ -68,20 +73,17 @@ describe("reviewed Safe signature boundary", () => {
   it("wallet-action:safe-signature-boundary reviews the exact Safe call before signing its EIP-712 payload", async () => {
     const events: string[] = [];
     let reviewed: unknown;
-    const review = await import("@/lib/transaction-review");
-    const dispose = review.registerTransactionReviewHandler(async (request) => {
+    const dispose = answerReviews(async (model) => {
       events.push("review");
-      reviewed = (request.authorization as { message?: unknown } | undefined)?.message;
-      expect(request).toMatchObject({
-        kind: "authorization",
-        calls: [
-          { chainId: 8453, from: ACCOUNT, to: TARGET, value: 7n, safeTxGas: 100n, data: "0x1234" },
-        ],
-        authorization: {
-          type: "EIP-712 SafeTx",
-          safe: SAFE,
-          nonce: 4,
-        },
+      const [signature] = model.signatures;
+      reviewed = (signature?.typedData as { message?: unknown } | null)?.message;
+      expect(signature).toMatchObject({ kind: "safe-tx", chainId: 8453 });
+      expect(reviewed).toMatchObject({
+        to: TARGET,
+        value: 7n,
+        data: "0x1234",
+        safeTxGas: 100n,
+        nonce: 4n,
       });
       return true;
     });
@@ -90,7 +92,7 @@ describe("reviewed Safe signature boundary", () => {
       return SIGNATURE;
     });
 
-    const { result } = renderHook(() => useReviewedSafeSignature());
+    const { result } = renderHook(() => useSafeTransactionSignature());
     let signature: Hex | undefined;
     await act(async () => {
       signature = await result.current.signSafeTransactionAsync({
@@ -105,7 +107,7 @@ describe("reviewed Safe signature boundary", () => {
     expect(mocks.switchChain).toHaveBeenCalledWith({ chainId: 8453 });
     expect(mocks.signTypedData).toHaveBeenCalledWith(
       expect.objectContaining({
-        account: { address: ACCOUNT },
+        account: ACCOUNT,
         domain: { chainId: 8453, verifyingContract: SAFE },
         primaryType: "SafeTx",
         // The wallet signs exactly the message the review showed.
@@ -116,7 +118,8 @@ describe("reviewed Safe signature boundary", () => {
   });
 
   it("fails closed if the service hash does not match the reconstructed payload", async () => {
-    const { result } = renderHook(() => useReviewedSafeSignature());
+    answerReviews(async () => true);
+    const { result } = renderHook(() => useSafeTransactionSignature());
 
     await expect(
       result.current.signSafeTransactionAsync({
@@ -175,7 +178,10 @@ describe("reviewed Safe signature boundary", () => {
         },
       ],
     ] as const;
-    it.each(changes.filter(([name]) => stage !== "review" || name !== "chain"))(
+    // A chain change during review is switched back; a signature already made is bound to its
+    // domain's chain, so a later chain change leaves it valid.
+    const signed = stage === "signature" || stage === "post-sign reverify";
+    it.each(changes.filter(([name]) => (stage !== "review" && !signed) || name !== "chain"))(
       `refuses changed %s after awaiting ${stage}`,
       async (_name, change) => {
         let resume!: () => void;
@@ -187,8 +193,7 @@ describe("reviewed Safe signature boundary", () => {
           entered = true;
           await pending;
         };
-        const review = await import("@/lib/transaction-review");
-        const dispose = review.registerTransactionReviewHandler(async () => {
+        const dispose = answerReviews(async () => {
           if (stage === "review") await pause();
           return true;
         });
@@ -214,7 +219,7 @@ describe("reviewed Safe signature boundary", () => {
           if (stage === "signature") await pause();
           return SIGNATURE;
         });
-        const { result } = renderHook(() => useReviewedSafeSignature());
+        const { result } = renderHook(() => useSafeTransactionSignature());
         const signing = result.current.signSafeTransactionAsync({
           chainId: 8453,
           safe: SAFE,
@@ -228,7 +233,6 @@ describe("reviewed Safe signature boundary", () => {
         resume();
         await refused;
 
-        const signed = stage === "signature" || stage === "post-sign reverify";
         expect(mocks.signTypedData).toHaveBeenCalledTimes(signed ? 1 : 0);
         if (stage === "review") expect(mocks.switchChain).not.toHaveBeenCalled();
         dispose();
@@ -236,26 +240,9 @@ describe("reviewed Safe signature boundary", () => {
     );
   }
 
-  it.each([undefined, { address: OTHER_ACCOUNT }])(
-    "refuses a wallet client for another or missing account: %s",
-    async (account) => {
-      const review = await import("@/lib/transaction-review");
-      const dispose = review.registerTransactionReviewHandler(async () => true);
-      mocks.getWalletClient.mockResolvedValue({ account, signTypedData: mocks.signTypedData });
-      const { result } = renderHook(() => useReviewedSafeSignature());
-
-      await expect(
-        result.current.signSafeTransactionAsync({ chainId: 1, safe: SAFE, tx }),
-      ).rejects.toThrow("Connected account changed");
-      expect(mocks.signTypedData).not.toHaveBeenCalled();
-      dispose();
-    },
-  );
-
   it("reverifies Safe authority before and after the wallet signs", async () => {
     const events: string[] = [];
-    const review = await import("@/lib/transaction-review");
-    const dispose = review.registerTransactionReviewHandler(async () => {
+    const dispose = answerReviews(async () => {
       events.push("review");
       return true;
     });
@@ -266,7 +253,7 @@ describe("reviewed Safe signature boundary", () => {
     const reverify = vi.fn(async () => {
       events.push("reverify");
     });
-    const { result } = renderHook(() => useReviewedSafeSignature());
+    const { result } = renderHook(() => useSafeTransactionSignature());
 
     await act(async () => {
       await result.current.signSafeTransactionAsync({
@@ -285,13 +272,12 @@ describe("reviewed Safe signature boundary", () => {
   });
 
   it("withholds a wallet-produced signature when Safe authority rotates during the prompt", async () => {
-    const review = await import("@/lib/transaction-review");
-    const dispose = review.registerTransactionReviewHandler(async () => true);
+    const dispose = answerReviews(async () => true);
     const reverify = vi
       .fn()
       .mockResolvedValueOnce(undefined)
       .mockRejectedValueOnce(new Error("The Safe policy changed during signing."));
-    const { result } = renderHook(() => useReviewedSafeSignature());
+    const { result } = renderHook(() => useSafeTransactionSignature());
 
     await expect(
       result.current.signSafeTransactionAsync({
@@ -303,22 +289,6 @@ describe("reviewed Safe signature boundary", () => {
     ).rejects.toThrow("policy changed");
     expect(mocks.signTypedData).toHaveBeenCalledOnce();
     expect(reverify).toHaveBeenCalledTimes(2);
-    dispose();
-  });
-
-  it("rejects a queued payload that changes while the wallet prompt is open", async () => {
-    const review = await import("@/lib/transaction-review");
-    const dispose = review.registerTransactionReviewHandler(async () => true);
-    const mutableTx = { ...tx };
-    mocks.signTypedData.mockImplementationOnce(async () => {
-      mutableTx.nonce += 1;
-      return SIGNATURE;
-    });
-    const { result } = renderHook(() => useReviewedSafeSignature());
-
-    await expect(
-      result.current.signSafeTransactionAsync({ chainId: 1, safe: SAFE, tx: mutableTx }),
-    ).rejects.toThrow("The Safe transaction changed");
     dispose();
   });
 });

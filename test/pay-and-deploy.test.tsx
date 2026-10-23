@@ -27,7 +27,10 @@ vi.mock("@/hooks/useReviewedRelayr", () => ({
   useSendRelayrTx: () => ({ sendRelayrTx: mocks.sendRelayrTx, data: mocks.paymentHash }),
   useGetRelayrTxBundle: () => ({ ...mocks.bundle, startPolling: mocks.startPolling }),
 }));
-vi.mock("@/hooks/useReviewedWriteContract", () => ({ submittedViaSafe: () => mocks.safe }));
+vi.mock("@/lib/held-rows", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/held-rows")>()),
+  submittedViaSafe: () => mocks.safe,
+}));
 vi.mock("@/app/create/form/useCreateForm", () => ({
   useCreateForm: () => ({ values: { name: "Test revnet", chainIds: [1, 8453] } }),
 }));
@@ -84,8 +87,6 @@ async function confirmPayment() {
   fireEvent.click(screen.getByRole("combobox"));
   fireEvent.click(screen.getByRole("option", { name: "Ethereum (1 ETH)" }));
   fireEvent.click(screen.getByRole("button", { name: "Pay and launch" }));
-  const dialog = await screen.findByRole("dialog", { name: "Confirm payment" });
-  fireEvent.click(within(dialog).getByRole("button", { name: "Pay and launch" }));
   await waitFor(() => expect(mocks.sendRelayrTx).toHaveBeenCalledTimes(1));
 }
 
@@ -226,7 +227,6 @@ describe("PayAndDeploy settlement", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Confirm payment" });
     await within(dialog).findByText("Payment confirmation is uncertain.");
-    expect(within(dialog).getByRole("button", { name: "Pay and launch" })).toBeDisabled();
     const close = within(dialog).getByRole("button", { name: "Close" });
     expect(close).not.toBeDisabled();
     fireEvent.click(close);
@@ -237,20 +237,6 @@ describe("PayAndDeploy settlement", () => {
     expect(mocks.sendRelayrTx).toHaveBeenCalledTimes(1);
   });
 
-  it("goes back to the quote with Cancel, and pays nothing", async () => {
-    render(component());
-    fireEvent.click(screen.getByRole("combobox"));
-    fireEvent.click(screen.getByRole("option", { name: "Ethereum (1 ETH)" }));
-    fireEvent.click(screen.getByRole("button", { name: "Pay and launch" }));
-    const confirm = await findConfirm();
-
-    fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
-
-    await waitFor(() => expect(confirmIsOpen()).toBe(false));
-    expect(mocks.sendRelayrTx).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Pay and launch" })).toBeEnabled();
-  });
-
   it("wallet-action:create-revnet refuses every way out while the payment is sent, then closes once it is", async () => {
     let finish!: (hash: string) => void;
     mocks.sendRelayrTx.mockReturnValue(new Promise((resolve) => (finish = resolve)));
@@ -258,7 +244,6 @@ describe("PayAndDeploy settlement", () => {
     await confirmPayment();
     const confirm = await findConfirm();
 
-    expect(within(confirm).getByRole("button", { name: "Pay and launch" })).toBeDisabled();
     expectEveryWayOutRefused(confirm);
 
     finish(HASH);

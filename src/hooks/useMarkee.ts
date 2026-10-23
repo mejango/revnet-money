@@ -1,6 +1,12 @@
 "use client";
 
-import { requireOnchainExecution, useWriteContract } from "@/hooks/useReviewedWriteContract";
+import {
+  failedLine,
+  reviewedCall,
+  ReviewRefusal,
+  SafeProposalPendingError,
+  useReviewedAction,
+} from "@/hooks/useReviewedAction";
 import { confirmCheckedIt, confirmHeldWriteExit, confirmUnreadableExit } from "@/lib/flow-choice";
 import * as markee from "@/lib/markee";
 import { recoverMarkeeSubmission } from "@/lib/markee-recovery";
@@ -15,7 +21,7 @@ import {
   updateTransactionActivity,
 } from "@/lib/transaction-activity";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { savedAttempts, withWriteIntent } from "@/lib/write-hold";
+import { savedAttempts } from "@/lib/write-hold";
 import {
   browserLocks,
   HELD_RELEASED_ELSEWHERE_LINE,
@@ -193,66 +199,48 @@ export function useMarkee(initialBoardAddress?: Address) {
     };
   }, [refresh]);
 
-  const { writeContractAsync } = useWriteContract({
-    // The SDK's write hold holds each exact call, as for any wallet write; Markee's journal adds
-    // the exact result it verifies.
-    manualReceiptVerification: () => true,
-    allowSafeManualReceiptVerification: true,
-    reverify: async () => {
-      if (!active.current) throw new Error("Markee action is unavailable.");
-      await active.current.guard();
-    },
-    beforeSubmission: async () => {
-      const current = active.current;
-      if (!current) throw new Error("Markee action is unavailable.");
-      if (loadRecovery()?.pending)
-        throw new Error("Another Markee submission is already held. Check it before proceeding.");
-      current.recovery.pending = current.pending;
-      saveRecovery(current.recovery);
-      recordTransactionActivity({
-        id: current.pending.id,
-        hash: undefined,
-        executionHash: undefined,
-        createdAt: Date.now(),
-        kind: "direct",
-        account: current.recovery.account,
-        chainId: markee.MARKEE_CHAIN_ID,
-        title: "Markee Rent",
-        status: "pending",
-        manualVerificationRequired: true,
-        message: "Wallet submission may be in progress. Check its result before sending again.",
-      });
-      requireTransactionActivityPersistence();
-      setPending(true);
-    },
-    onSubmissionRejected: async () => {
-      const current = active.current;
-      if (!current) return;
-      const saved = loadRecovery();
-      if (saved?.pending?.id !== current.pending.id || saved.pending.hash) return;
-      delete saved.pending;
-      saveRecovery(saved);
-      updateTransactionActivity(current.pending.id, {
-        status: "failed",
-        manualVerificationRequired: false,
-        message: "The wallet definitively refused before broadcasting.",
-      });
-      setPending(false);
-    },
-    onBeforeSubmissionAborted: async () => {
-      const current = active.current;
-      if (!current) return;
-      if (loadRecovery()?.pending?.id !== current.pending.id) return;
-      delete current.recovery.pending;
-      saveRecovery(current.recovery);
-      updateTransactionActivity(current.pending.id, {
-        status: "failed",
-        manualVerificationRequired: false,
-        message: "The final wallet gate refused before submission.",
-      });
-      setPending(false);
-    },
-  });
+  const { run } = useReviewedAction();
+  /** The Markee journal's record of the step at the wallet boundary, before the wallet opens. */
+  const beforeWallet = async () => {
+    const current = active.current;
+    if (!current) throw new ReviewRefusal("Markee action is unavailable.");
+    if (loadRecovery()?.pending)
+      throw new ReviewRefusal(
+        "Another Markee submission is already held. Check it before proceeding.",
+      );
+    current.recovery.pending = current.pending;
+    saveRecovery(current.recovery);
+    recordTransactionActivity({
+      id: current.pending.id,
+      hash: undefined,
+      executionHash: undefined,
+      createdAt: Date.now(),
+      kind: "direct",
+      account: current.recovery.account,
+      chainId: markee.MARKEE_CHAIN_ID,
+      title: "Markee Rent",
+      status: "pending",
+      manualVerificationRequired: true,
+      message: "Wallet submission may be in progress. Check its result before sending again.",
+    });
+    requireTransactionActivityPersistence();
+    setPending(true);
+  };
+  /** Nothing was sent (a gate refused, or the wallet said no): the step is no longer held. */
+  const onUnsent = async () => {
+    const current = active.current;
+    if (!current) return;
+    const saved = loadRecovery();
+    if (saved?.pending?.id !== current.pending.id || saved.pending.hash) return;
+    delete saved.pending;
+    saveRecovery(saved);
+    updateTransactionActivity(current.pending.id, {
+      status: "failed",
+      manualVerificationRequired: false,
+      message: "Nothing was sent.",
+    });
+    setPending(false);
+  };
 
   /** What `receipt` shows `step` did on Markee: the board or message it created. Throws when it can't be verified. */
   const markeeEffects = async (
@@ -339,7 +327,7 @@ export function useMarkee(initialBoardAddress?: Address) {
       );
     const activity = transactionActivityForHash(step.hash);
     if (activity?.kind === "safe" && !activity.executionHash) {
-      requireOnchainExecution(step.hash);
+      if (activity.status === "safe-proposed") throw new SafeProposalPendingError(step.hash);
       throw new Error("The Safe proposal has no verified execution receipt yet.");
     }
     const receipt = await waitForReceiptWithRetry(client, activity?.executionHash ?? step.hash);
@@ -425,20 +413,37 @@ export function useMarkee(initialBoardAddress?: Address) {
     };
     active.current = { recovery, pending: step, guard };
     setStatus(`Review ${kind === "start" ? "Take over" : kind}`);
-    const hash = await withWriteIntent(
-      writeContractAsync,
-      markeeIntent(recovery.account, step),
-    )({
-      ...call,
-      chainId: markee.MARKEE_CHAIN_ID,
+    const result = await run({
       account: recovery.account,
-    } as Parameters<typeof writeContractAsync>[0]);
-    step.hash = hash;
-    recovery.pending = step;
-    saveRecovery(recovery);
-    updateTransactionActivity(step.id, {
-      message: "Submitted. Verifying the exact Markee result.",
+      title: "Markee Rent",
+      reverify: async () => {
+        if (!active.current) throw new ReviewRefusal("Markee action is unavailable.");
+        await active.current.guard();
+      },
+      beforeWallet,
+      onUnsent,
+      // The hash is the Markee journal's before its receipt is awaited.
+      onSubmitted: (_call, _step, hash) => {
+        step.hash = hash;
+        recovery.pending = step;
+        saveRecovery(recovery);
+        updateTransactionActivity(step.id, {
+          message: "Submitted. Verifying the exact Markee result.",
+        });
+      },
+      calls: [
+        reviewedCall(
+          { ...call, chainId: markee.MARKEE_CHAIN_ID },
+          { intent: markeeIntent(recovery.account, step) },
+        ),
+      ],
     });
+    if (!result) throw new ReviewRefusal("Review canceled. Nothing was sent.");
+    // Nothing sent: the run's own line. Sent: the step's exact result decides.
+    if (!step.hash)
+      throw new ReviewRefusal(
+        result.status === "failed" ? failedLine(result) : "Nothing was sent.",
+      );
     setStatus("Verifying onchain result");
     await verifyPending(recovery);
   };

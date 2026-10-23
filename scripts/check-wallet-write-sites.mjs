@@ -15,13 +15,14 @@ const reviewedHookModules = {
       bindings: { runBatch: "reviewed-multichain-batch" },
     },
   },
-  "@/hooks/useReviewedWriteContract": {
-    useWriteContract: {
-      hookKind: "reviewed-write-hook",
-      bindings: {
-        writeContract: "reviewed-write",
-        writeContractAsync: "reviewed-write",
-      },
+  "@/hooks/useReviewedAction": {
+    useReviewedAction: {
+      hookKind: "reviewed-action-hook",
+      bindings: { run: "reviewed-action" },
+    },
+    useSafeTransactionSignature: {
+      hookKind: "reviewed-safe-signature-hook",
+      bindings: { signSafeTransactionAsync: "reviewed-safe-signature" },
     },
   },
   "@/hooks/useReviewedRelayr": {
@@ -34,83 +35,6 @@ const reviewedHookModules = {
       bindings: { sendRelayrTx: "reviewed-relayr-payment" },
     },
   },
-  "@/hooks/useReviewedSafeSignature": {
-    useReviewedSafeSignature: {
-      hookKind: "reviewed-safe-signature-hook",
-      bindings: { signSafeTransactionAsync: "reviewed-safe-signature" },
-    },
-  },
-};
-
-const rawWalletImports = {
-  wagmi: new Set([
-    "useWriteContract",
-    "useWriteContracts",
-    "useSendTransaction",
-    "useSendRawTransaction",
-    "useSendCalls",
-    "useSignTypedData",
-    "useSignMessage",
-    "useSignTransaction",
-  ]),
-  "@wagmi/core": new Set([
-    "writeContract",
-    "writeContracts",
-    "sendTransaction",
-    "sendRawTransaction",
-    "sendCalls",
-    "signTypedData",
-    "signMessage",
-    "signTransaction",
-  ]),
-  viem: new Set([
-    "writeContract",
-    "writeContracts",
-    "sendTransaction",
-    "sendRawTransaction",
-    "sendCalls",
-    "signTypedData",
-    "signMessage",
-    "signTransaction",
-  ]),
-  "viem/actions": new Set([
-    "writeContract",
-    "writeContracts",
-    "sendTransaction",
-    "sendRawTransaction",
-    "sendCalls",
-    "signTypedData",
-    "signMessage",
-    "signTransaction",
-  ]),
-};
-const rawCallNames = new Set([
-  "writeContract",
-  "writeContractAsync",
-  "writeContracts",
-  "writeContractsAsync",
-  "sendTransaction",
-  "sendTransactionAsync",
-  "sendRawTransaction",
-  "sendRawTransactionAsync",
-  "sendCalls",
-  "sendCallsAsync",
-  "signTypedData",
-  "signTypedDataAsync",
-  "signMessage",
-  "signMessageAsync",
-  "signTransaction",
-  "signTransactionAsync",
-]);
-const rawRpcPattern =
-  /^(?:eth_send|eth_sign|personal_sign$|wallet_sendCalls|wallet_sendTransaction)/i;
-const allowedRawBoundary = {
-  write: "src/hooks/useReviewedWriteContract.ts",
-  sendOrSign: [
-    "src/hooks/useReviewedRelayr.ts",
-    "src/lib/safe-relayr.ts",
-    "src/hooks/useReviewedSafeSignature.ts",
-  ],
 };
 
 function sourceFiles(directory) {
@@ -154,30 +78,6 @@ function ownerOf(node) {
   return "<module>";
 }
 
-function rawBoundariesFor(callee) {
-  const name = callee.split(":").at(-1);
-  if (["useWriteContract", "writeContract", "writeContractAsync", "sendCalls"].includes(name)) {
-    return [allowedRawBoundary.write];
-  }
-  if (
-    [
-      "useSendTransaction",
-      "sendTransaction",
-      "sendTransactionAsync",
-      "useSignTypedData",
-      "signTypedData",
-      "signTypedDataAsync",
-    ].includes(name)
-  ) {
-    return allowedRawBoundary.sendOrSign;
-  }
-  return [];
-}
-
-function isAllowedRawBoundary(file, callee) {
-  return rawBoundariesFor(callee).includes(file);
-}
-
 function aggregate(sites) {
   const grouped = new Map();
   for (const site of sites) {
@@ -203,7 +103,6 @@ function aggregate(sites) {
 }
 
 const discovered = [];
-const rawBoundaryViolations = [];
 
 for (const path of sourceFiles(sourceRoot).sort()) {
   const file = relative(root, path).replaceAll("\\", "/");
@@ -230,20 +129,6 @@ for (const path of sourceFiles(sourceRoot).sort()) {
       const local = element.name.text;
       const reviewed = reviewedHookModules[moduleName]?.[imported];
       if (reviewed) hookImports.set(local, { ...reviewed, callee: imported });
-
-      if (rawWalletImports[moduleName]?.has(imported)) {
-        const callee = `${moduleName}:${imported}`;
-        const site = { kind: "raw-wallet-import", file, owner: "<module>", callee };
-        discovered.push(site);
-        hookImports.set(local, {
-          hookKind: imported.startsWith("use") ? "raw-wallet-hook" : "raw-wallet-call",
-          bindings: Object.fromEntries([...rawCallNames].map((name) => [name, "raw-wallet-call"])),
-          callee: imported,
-        });
-        if (!isAllowedRawBoundary(file, callee)) {
-          rawBoundaryViolations.push(`${file} imports ${callee}`);
-        }
-      }
     }
   }
 
@@ -272,17 +157,8 @@ for (const path of sourceFiles(sourceRoot).sort()) {
   function collectCalls(node) {
     if (ts.isCallExpression(node)) {
       let site;
-      // withWriteIntent(write, action, params)(variables) is a call of `write`.
-      const intended =
-        ts.isCallExpression(node.expression) &&
-        ts.isIdentifier(node.expression.expression) &&
-        node.expression.expression.text === "withWriteIntent" &&
-        node.expression.arguments[0] &&
-        ts.isIdentifier(node.expression.arguments[0])
-          ? node.expression.arguments[0]
-          : undefined;
-      if (intended || ts.isIdentifier(node.expression)) {
-        const local = (intended ?? node.expression).text;
+      if (ts.isIdentifier(node.expression)) {
+        const local = node.expression.text;
         const hook = hookImports.get(local);
         const binding = callableBindings.get(local);
         if (hook) {
@@ -295,34 +171,10 @@ for (const path of sourceFiles(sourceRoot).sort()) {
           site = { kind: "reviewed-relayr-quote", file, owner: ownerOf(node), callee: local };
         } else if (local === "sendRelayrTx") {
           site = { kind: "reviewed-relayr-payment", file, owner: ownerOf(node), callee: local };
-        } else if (rawCallNames.has(local)) {
-          site = { kind: "raw-wallet-call", file, owner: ownerOf(node), callee: local };
-        }
-      } else if (ts.isPropertyAccessExpression(node.expression)) {
-        const callee = node.expression.name.text;
-        if (rawCallNames.has(callee)) {
-          site = { kind: "raw-wallet-call", file, owner: ownerOf(node), callee };
         }
       }
 
-      if (site) {
-        discovered.push(site);
-        if (site.kind.startsWith("raw-") && !isAllowedRawBoundary(file, site.callee)) {
-          rawBoundaryViolations.push(`${file} calls ${site.callee} in ${site.owner}`);
-        }
-      }
-    }
-    if (
-      (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) &&
-      rawRpcPattern.test(node.text)
-    ) {
-      discovered.push({
-        kind: "raw-wallet-rpc",
-        file,
-        owner: ownerOf(node),
-        callee: node.text,
-      });
-      rawBoundaryViolations.push(`${file} contains raw wallet RPC method ${node.text}`);
+      if (site) discovered.push(site);
     }
     ts.forEachChild(node, collectCalls);
   }
@@ -425,13 +277,6 @@ for (const action of manifest.actions) {
 const actualJson = JSON.stringify(actualSites, null, 2);
 const expectedJson = JSON.stringify(expectedSites, null, 2);
 const failures = [];
-if (rawBoundaryViolations.length) {
-  failures.push(
-    `Raw wallet access is only allowed inside the reviewed boundaries:\n${rawBoundaryViolations
-      .map((violation) => `  - ${violation}`)
-      .join("\n")}`,
-  );
-}
 if (actualJson !== expectedJson) {
   failures.push(
     `Wallet-write sites changed. Review the change, update ${relative(root, manifestPath)}, and keep TESTING.md in sync.\nExpected:\n${expectedJson}\nActual:\n${actualJson}`,

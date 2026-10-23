@@ -1,0 +1,103 @@
+{
+  "format": "juice-sdk-wallet-boundaries-1",
+  "sites": [
+    {
+      "file": "src/app/[slug]/components/Value/RepayDialog.tsx",
+      "line": 92,
+      "api": "useWalletClient",
+      "boundary": "Reads the connected wallet client only to require a connected wallet; it never signs or sends. Writes go through the reviewed write hook.",
+      "test": "test/value-send-hold.test.tsx"
+    },
+    {
+      "file": "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
+      "line": 134,
+      "api": "useWalletClient",
+      "boundary": "Reads the connected wallet client only to require a connected wallet; it never signs or sends. Writes go through the reviewed write hook.",
+      "test": "test/borrow-review-cancel.test.tsx"
+    },
+    {
+      "file": "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
+      "line": 968,
+      "api": "sendTransaction",
+      "boundary": "The reviewed Safe execution's own wallet send, wrapped so the queue rechecks its live transaction, then the reviewed account, the wallet connection and view-as at the wallet, and journals the send under the reviewed account; core reviews, simulates and holds it first.",
+      "test": "test/safe-queue-card.test.tsx"
+    },
+    {
+      "file": "src/components/TransactionReviewProvider.tsx",
+      "line": 138,
+      "api": "registerReviewHandler",
+      "boundary": "The one review dialog answers core's prompts: it returns core's confirmation for the model it showed, or null. It never signs or sends.",
+      "test": "test/transaction-review-provider.test.tsx"
+    },
+    {
+      "file": "src/hooks/useMarkee.ts",
+      "line": 456,
+      "api": "request",
+      "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
+      "test": "test/use-markee.test.tsx"
+    },
+    {
+      "file": "src/hooks/useMultichainBatch.ts",
+      "line": 414,
+      "api": "request",
+      "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
+      "test": "test/multichain-batch.test.tsx"
+    },
+    {
+      "file": "src/hooks/useMultichainBatch.ts",
+      "line": 1099,
+      "api": "request",
+      "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
+      "test": "test/multichain-batch.test.tsx"
+    },
+    {
+      "file": "src/hooks/useReviewedRelayr.ts",
+      "line": 307,
+      "api": "request",
+      "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
+      "test": "test/reviewed-relayr-hooks.test.tsx"
+    },
+    {
+      "file": "src/hooks/useReviewedRelayr.ts",
+      "line": 2653,
+      "api": "request",
+      "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
+      "test": "test/reviewed-relayr-hooks.test.tsx"
+    },
+    {
+      "file": "src/lib/safe-relayr.ts",
+      "line": 415,
+      "api": "request",
+      "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
+      "test": "test/reviewed-relayr-hooks.test.tsx"
+    },
+    {
+      "file": "src/lib/reviewed-send-deps.ts",
+      "line": 41,
+      "api": "sendTransaction",
+      "boundary": "Core's adapter, loaded with the engine: core calls it only after its review, simulation and hold, and the account read it makes refuses View-as or a changed connection for the reviewed wallet.",
+      "test": "test/safe-batch.test.tsx"
+    },
+    {
+      "file": "src/lib/reviewed-send-deps.ts",
+      "line": 42,
+      "api": "signTypedData",
+      "boundary": "Core's adapter, loaded with the engine: core calls it only after its review, simulation and hold, and the account read it makes refuses View-as or a changed connection for the reviewed wallet.",
+      "test": "test/safe-batch.test.tsx"
+    },
+    {
+      "file": "src/lib/reviewed-send-deps.ts",
+      "line": 43,
+      "api": "signMessage",
+      "boundary": "Core's adapter, loaded with the engine: core calls it only after its review, simulation and hold, and the account read it makes refuses View-as or a changed connection for the reviewed wallet.",
+      "test": "test/safe-batch.test.tsx"
+    },
+    {
+      "file": "src/lib/reviewed-send-deps.ts",
+      "line": 44,
+      "api": "sendCalls",
+      "boundary": "Core's adapter, loaded with the engine: core calls it only after its review, simulation and hold, and the account read it makes refuses View-as or a changed connection for the reviewed wallet.",
+      "test": "test/safe-batch.test.tsx"
+    }
+  ]
+}

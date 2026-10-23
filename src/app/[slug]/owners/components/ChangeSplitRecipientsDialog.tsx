@@ -16,20 +16,21 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Trash2 as TrashIcon } from "@/components/ui/icons";
-import { SummaryRow, TxConfirmDialog } from "@/components/ui/TxConfirmDialog";
+import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import { toast } from "@/components/ui/use-toast";
 import { WalletConnectButton } from "@/components/WalletButton";
-import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/hooks/useReviewedWriteContract";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { FieldArray, Form, FormProvider } from "@/lib/forms";
 import { withSchema } from "@/lib/formValidation";
 import { hasSuckerPair, isPairCheckPending, unverifiedPairLine } from "@/lib/nana/suckers";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
+import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import {
   isStickyHook,
   isStickyRow,
   stickyGroupDraft,
   stickyGroupOf,
+  stickyRecipientLabel,
   stickySplitsProblem,
   stickyUnavailableReason,
   type StickyGroupDraft,
@@ -109,6 +110,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   const [reviewing, setReviewing] = useState<ChainFormData[] | null>(null);
   // A multi-chain change stopped at a Safe proposal: nothing more to send from here.
   const [proposal, setProposal] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const { address } = useAccount();
 
   const { hasPermission } = useUserPermissions();
@@ -246,8 +248,37 @@ export function ChangeSplitRecipientsDialog(props: Props) {
       setReviewing(null);
       return;
     }
-    const result = await submitSplits(reviewing);
+    setFailure(null);
+    const result = await submitSplits(reviewing, [
+      { label: "Stage", value: String(stageIdx + 1) },
+      ...reviewing.map((chain) => ({
+        label: chainNameOf(chain.chainId),
+        value:
+          chain.splits.length === 0
+            ? "No recipients"
+            : `${chain.splits.length} recipient${chain.splits.length === 1 ? "" : "s"}`,
+        lines: chain.splits.map((split) => {
+          const routing = splitRouting(split);
+          const to = isStickyRow(split)
+            ? stickyRecipientLabel({
+                projectId: stickySplitGroupId(split),
+                beneficiary: split.beneficiary as Address,
+              })
+            : routing
+              ? routing.kind === "hook"
+                ? `split hook ${routing.address}`
+                : `project #${routing.projectId}`
+              : split.beneficiary;
+          return `${trimTrailingZeros(Number(split.percentage).toFixed(7))}% to ${to}`;
+        }),
+      })),
+    ]);
+    if (result?.closed) {
+      setReviewing(null);
+      return;
+    }
     if (result?.proposal) setProposal(result.proposal);
+    if (result?.error) setFailure(result.error);
     if (result?.success && reviewing.length > 1) setReviewing(null);
   };
 
@@ -276,11 +307,12 @@ export function ChangeSplitRecipientsDialog(props: Props) {
         <Button variant={triggerVariant}>Change split recipients</Button>
       </DialogTrigger>
       {reviewing ? (
-        <TxConfirmDialog
+        <TxProgress
           open
           onClose={() => {
             setReviewing(null);
             setProposal(null);
+            setFailure(null);
           }}
           title="Confirm split recipients"
           steps={
@@ -300,10 +332,10 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                 }))
           }
           activeIndex={writing && !proposed ? 0 : -1}
-          action="Save changes"
-          onConfirm={() => void confirmSubmit()}
+          start={() => void confirmSubmit()}
           busy={writing && !proposed}
           complete={proposed || unconfirmed}
+          error={failure}
           status={
             proposal ??
             (isTxUnconfirmed
@@ -351,7 +383,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
             </SummaryRow>
           ))}
           {relayed ? <SummaryRow label="Relay fee">Quoted in ETH after you sign</SummaryRow> : null}
-        </TxConfirmDialog>
+        </TxProgress>
       ) : null}
       <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
