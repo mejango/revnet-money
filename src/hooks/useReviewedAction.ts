@@ -66,9 +66,16 @@ export function useReviewedAction() {
   const { address } = useAccount();
   // The wallets running actions were reviewed on, each refused at the wallet if it changes.
   const reviewed = useRef(new Set<ReviewedWallet>());
+  // Core's last synchronous gate selects this operation's assertion; the adapter captures it
+  // before acquisition, so overlapping actions cannot replace each other's final assertion.
+  const finalCheck = useRef<(() => void) | undefined>(undefined);
   const deps = useMemo<UseReviewedRunDeps>(
     () => ({
-      ...reviewedSendDeps(config, () => reviewed.current),
+      ...reviewedSendDeps(
+        config,
+        () => reviewed.current,
+        () => finalCheck.current,
+      ),
       account: address,
       guard: requireNoViewAs,
       engine: loadEngine,
@@ -110,6 +117,7 @@ export function useReviewedAction() {
             if (isSafeConnection(config) !== safe) throw new ReviewRefusal(WALLET_CHANGED);
             for (const call of action.calls) requirePriceBasedShopVoting(call.data, call.to);
             action.assertWriteState?.();
+            finalCheck.current = action.assertWriteState;
           },
           onSubmitted: async (call, step, hash, sent) => {
             // A Safe batch is one proposal: one row, for every call, under its first call's hold.

@@ -54,3 +54,7 @@
 ## 2026-10-24 — Preserve module directives when adding imports
 - Local verification caught an import inserted before a client module's directive.
 - Rule: insert imports after existing directives, then run changed-file lint before an expensive artifact build. Prettier can turn a displaced directive into an ordinary expression, so formatting alone does not prove the client boundary survived.
+
+## 2026-10-24 — Invoke within the acquisition continuation
+- Astra reproduced an old provider invocation after a same-account connector switch inside wagmi acquisition; resolving through getWalletClient alone did not close that await race.
+- Rule: acquire the explicit current connector, retry UID drift, run operation-scoped final guards and invoke in the same continuation. Test held real connector acquisition, distinguish pre-invocation cleanup from actual RPC uncertainty, and keep refusal text visible through the installed SDK's UI adapters.

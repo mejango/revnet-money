@@ -40,7 +40,12 @@ import {
 } from "@/lib/relayr-activity";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { relayrPaymentReview } from "@/lib/relayr-payment-review";
-import { loadEngine, reviewedSendDeps, reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
+import {
+  isWalletNotInvoked,
+  loadEngine,
+  reviewedSendDeps,
+  reviewedWalletAdapter,
+} from "@/lib/reviewed-send-deps";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import {
@@ -2343,17 +2348,23 @@ export function useSendRelayrTx() {
         address,
         "Connected account or chain changed. Review the payment again.",
       );
-      // The payment is refused at the wallet for View-as or another wallet connection.
-      const paymentDeps = {
-        ...reviewedSendDeps(config),
-        adapter: reviewedWalletAdapter(config, address, getAccount(config).connector),
-      };
       const payment = { ...offeredPayment };
       const remembered = quotes.get(paymentKey(payment));
       if (!remembered || remembered.account.toLowerCase() !== address.toLowerCase())
         throw new Error(
           "This payment does not belong to a reviewed quote for the connected account. Review the action again.",
         );
+      // The payment is refused at the wallet for View-as or another wallet connection.
+      const paymentDeps = {
+        ...reviewedSendDeps(config),
+        adapter: reviewedWalletAdapter(config, address, getAccount(config).connector, () => {
+          requireWalletContext(payment.chain);
+          relayrPaymentDetails(payment, {
+            bundleUuid: remembered.bundleUuid,
+            destinationChainIds: remembered.chainIds,
+          });
+        }),
+      };
       const activityId = `relayr:${remembered.bundleUuid}`;
       const activity = refreshTransactionActivities().find((row) => row.id === activityId);
       const safeSession = activity && safeRelayrSession(activity);
@@ -2581,7 +2592,8 @@ export function useSendRelayrTx() {
               : undefined;
           else if (
             walletOpened &&
-            (planned ? cause instanceof RelayrPaymentNotSentError : !ready)
+            (isWalletNotInvoked(cause) ||
+              (planned ? cause instanceof RelayrPaymentNotSentError : !ready))
           ) {
             // A gate refused before the wallet: this exact marker belongs to a wallet call never
             // invoked. A changed record may hold another attempt's evidence.

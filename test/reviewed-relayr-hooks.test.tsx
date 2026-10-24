@@ -60,6 +60,7 @@ const mocks = vi.hoisted(() => ({
   getPublicClient: vi.fn(),
   waitForTransactionReceipt: vi.fn(),
   switchChain: vi.fn(),
+  walletLoaded: vi.fn(),
   signTypedData: vi.fn(),
   sendTransaction: vi.fn(),
   resumeSafeProposalTracking: vi.fn(),
@@ -97,11 +98,14 @@ vi.mock("wagmi/actions", () => ({
   getPublicClient: mocks.getPublicClient,
   waitForTransactionReceipt: mocks.waitForTransactionReceipt,
   // Core's reviewed sends and signatures reach the wallet through its viem client.
-  getWalletClient: async () => ({
-    signTypedData: mocks.signTypedData,
-    sendTransaction: (request: { chain: { id: number } }) =>
-      mocks.sendTransaction({ ...request, chainId: request.chain.id }),
-  }),
+  getWalletClient: async () => {
+    await mocks.walletLoaded();
+    return {
+      signTypedData: mocks.signTypedData,
+      sendTransaction: (request: { chain: { id: number } }) =>
+        mocks.sendTransaction({ ...request, chainId: request.chain.id }),
+    };
+  },
   switchChain: (_config: unknown, request: { chainId: number }) => mocks.switchChain(request),
 }));
 
@@ -5377,4 +5381,15 @@ it("does not newly fund a historical signed shop payload with custom votes", asy
   await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(/Rebuild/);
   expect(mocks.sendTransaction).not.toHaveBeenCalled();
   expect(harness.activity.transactionActivitySnapshot()).not.toHaveLength(0);
+});
+
+it("restores a definitely-unsent fee attempt after acquisition failure while retaining its signed quote", async () => {
+  const harness = await quotedPayment();
+  const before = structuredClone(harness.activity.transactionActivitySnapshot());
+  mocks.walletLoaded.mockRejectedValueOnce(new Error("Wallet provider acquisition failed."));
+  await expect(harness.result.current.sendRelayrTx(payment())).rejects.toBeInstanceOf(
+    RelayrPaymentNotSentError,
+  );
+  expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  expect(harness.activity.transactionActivitySnapshot()).toEqual(before);
 });
