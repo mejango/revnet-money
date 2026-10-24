@@ -2,6 +2,10 @@ import { DateTimeField } from "@/components/ui/DateTimeField";
 import { useFormContext } from "@/lib/forms";
 import { timestampToLocalDateTimeInput } from "@/lib/time-zone";
 import { useState } from "react";
+import {
+  getCurrentStageDuration,
+  getStageCutFrequencySeconds,
+} from "../helpers/calculatePickupIssuance";
 import { StageData } from "../types";
 import { NotesSection } from "./AddStageDialog";
 import { FieldGroup } from "./Fields";
@@ -59,7 +63,7 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
   }
 
   const previousStage = stages[stageIdx - 1];
-  const daysPerCut = Number(previousStage.priceCeilingIncreaseFrequency);
+  const daysPerCut = getStageCutFrequencySeconds(previousStage) / 86_400;
   const previousStageHasCuts = daysPerCut > 0;
 
   if (previousStageHasCuts) {
@@ -96,8 +100,12 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
             </div>
           </div>
           <div className="text-sm text-zinc-500 mt-2 pl-1">
-            = {cutsValue * Number(previousStage.priceCeilingIncreaseFrequency)} days
-            {` (${cutsValue} cuts × ${previousStage.priceCeilingIncreaseFrequency} days per cut)`}
+            ={" "}
+            {getCurrentStageDuration(
+              { ...values, stageStartCuts: String(cutsValue) },
+              previousStage,
+            )}{" "}
+            days, at the next cut boundary
           </div>
         </div>
 
@@ -105,7 +113,7 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
           <ul className="list-disc list-inside">
             <li className="flex">
               <span className="mr-2">•</span>
-              <div>Enter a whole number of cuts, at least 1.</div>
+              <div>Stages start at whole cut boundaries, at least one cut later.</div>
             </li>
           </ul>
         </NotesSection>
@@ -131,7 +139,7 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
         <ul className="list-disc list-inside">
           <li className="flex">
             <span className="mr-2">•</span>
-            <div>The delay must be a whole number of this stage’s cut intervals.</div>
+            <div>The delay is measured from the previous stage’s start.</div>
           </li>
         </ul>
       </NotesSection>

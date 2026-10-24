@@ -1380,3 +1380,19 @@ Brief: /private/tmp/claude-501/-Users-jango-Documents-jb-v6-evm/7d1fdce3-54c6-41
 - [ ] Commit and open a PR with evidence.
 
 Review: Unknown home balances are omitted rather than fabricated; registry verification remains pending for aggregate display. Wallet menu rejects incomplete/error totals, and the You card distinguishes unavailable holdings and partial totals while preserving available per-chain actions. Fresh locked dependencies, protocol/source/wallet inventories and dead-code checks pass. Typecheck, full lint, formatting ratchet and focused cases pass; full coverage results recorded below when terminal. Aggregate completeness is explicit and requires a verified registry, successful peer query and known home balance, including unresolved nonloading states without an explicit error.
+
+# Preserve Revnet stage order with exact cycle boundaries — 2026-10-24
+
+## Plan refinement
+- **Objective:** Encode each later revnet stage after the preceding stage's actual cycle boundary, preserving first-start pin and explicit delay choices while preventing intermediate stages from being skipped.
+- **System fit:** The existing timing/issuance helper owns encoded second-based cut frequency and snapped stage intervals; deploy compiler, chart and duration/issuance display consume that result. Existing stale-quote/recovery behavior remains unchanged; no contracts are modified.
+- **Reuse and simplicity:** Extend calculatePickupIssuance's existing timing owner instead of introducing a new framework. Reuse the first absolute start and sequential compiler loop, replacing raw-day accumulation with encoded-second interval snapping.
+- **Evidence and unknowns:** With a30day predecessor,1.5cuts requests45days but core snaps to60days; deriving a subsequent start from45days can bypass that stage. REVDeployer emits no approval hooks, so pinned absolute boundaries are independent of execution delay. Zero-frequency stages keep explicit delay behavior.
+- **Verification:** Add compiler and helper regressions for three-stage fractional cuts, fractional encoded frequencies, no-cut predecessor, explicit first date and delayed execution; assert real unchanged-contract ancestry using a scratch acceptance fixture. Run focused suites, type/lint/format and applicable production checks before independent GPT Astra review.
+- **Resource budget:** One timing owner plus compiler/chart callers and existing tests, no package or contract changes. Reuse physical locked dependencies from the completed balance worktree and cap concurrent test workers.
+
+- [ ] Add failing helper/compiler schedule regressions.
+- [ ] Reuse exact timing owner in compiler, chart and inherited issuance.
+- [ ] Run required checks and report source-bound evidence for Astra review.
+
+Review progress: Baseline compiler tests failed with45/46day starts where core actually needs60/61days. The fixed compiler and chart share absolute start derivation and encoded whole-second frequencies. Five focused suites pass38tests, including rendered rounding feedback; type/lint/format/source/dead-code/dependency/wallet checks pass. A scratch acceptance fixture consumed actual emitted compiler JSON against unchanged contracts and passed5tests, including one-second and100day execution delays with exact basedOn ancestry and active weights. Full coverage and production build are running against frozen algorithm source. No contract modifications, dependencies or transport changes.

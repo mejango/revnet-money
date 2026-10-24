@@ -13,33 +13,30 @@ import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
 import { useMemo } from "react";
 import { parseUnits } from "viem";
-import { getCurrentStageDuration, getResolvedIssuance } from "../helpers/calculatePickupIssuance";
+import {
+  getCurrentStageDuration,
+  getResolvedIssuance,
+  getStageCutFrequencySeconds,
+  getStageStarts,
+} from "../helpers/calculatePickupIssuance";
 import { AddStageDialog } from "./AddStageDialog";
 import { useCreateForm } from "./useCreateForm";
 
 export function Stages({ disabled = false }: { disabled?: boolean }) {
   const { values, revnetTokenSymbol, issuanceBaseCurrencySymbol } = useCreateForm();
 
-  // Pinned at mount so stage 1's start never drifts past the ladder's own "now".
+  // Pin preparation time so the chart does not drift while editing terms.
   const chartNow = useMemo(() => Math.floor(Date.now() / 1000), []);
-  // The stages as chart input, mirroring parseDeployData's start and cut math.
+  const starts = getStageStarts(values.stages, chartNow);
   const chartStages: ChartStage[] = [];
   values.stages.forEach((stage, index) => {
-    const futureStart = Number(values.stages[0].futureStartTimestamp);
-    const start =
-      index === 0
-        ? futureStart > 0
-          ? futureStart
-          : chartNow
-        : chartStages[index - 1].start +
-          Number(getCurrentStageDuration(stage, values.stages[index - 1])) * 86_400;
     let weight = 0n;
     try {
       weight = parseUnits(stage.initialIssuance || "0", 18);
     } catch {}
     chartStages.push({
-      start,
-      duration: Math.floor(Number(stage.priceCeilingIncreaseFrequency) * 86_400) || 0,
+      start: starts[index],
+      duration: getStageCutFrequencySeconds(stage),
       weight,
       weightCutPercent: Math.round((Number(stage.priceCeilingIncreasePercentage) || 0) * 1e7),
       inheritsWeight: Boolean(stage.pickUpFromPrevious) && index > 0,

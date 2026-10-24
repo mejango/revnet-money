@@ -32,6 +32,7 @@ import {
 } from "@bananapus/nana-sdk-core/v6";
 import { Address, parseUnits, zeroAddress } from "viem";
 import { RevnetFormData } from "../types";
+import { getStageCutFrequencySeconds, getStageStarts } from "./calculatePickupIssuance";
 
 export type DeployRevnetRequest = ReturnType<typeof buildDeployRevnetTx>;
 
@@ -60,7 +61,6 @@ export function parseDeployData(
   const formData: RevnetFormData = JSON.parse(JSON.stringify(_formData), (_, value) =>
     typeof value === "number" ? String(value) : value,
   );
-  let prevStart = 0;
   const operator =
     formData?.operator.find((c) => Number(c.chainId) === Number(extra.chainId))?.address ||
     formData.stages[0].initialOperator;
@@ -99,18 +99,9 @@ export function parseDeployData(
           ? [usdcAccountingContext]
           : [nativeAccountingContext];
 
+  const stageStarts = getStageStarts(formData.stages, extra.timestamp);
   const stageConfigurations = formData.stages.map((stage, idx) => {
-    const lengthSeconds = Math.floor(Number(stage.stageStart) * 86400);
-    const bufferSeconds = 600;
-    // Stage 0: use futureStartTimestamp if set, otherwise start in ~10 minutes
-    const futureStart = Number(formData.stages[0].futureStartTimestamp);
-    const startsAtOrAfter =
-      idx === 0
-        ? futureStart > 0
-          ? futureStart
-          : extra.timestamp + bufferSeconds
-        : prevStart + lengthSeconds;
-    prevStart = startsAtOrAfter;
+    const startsAtOrAfter = stageStarts[idx];
     // Every chain receives the FULL auto-issuance row list with the user-chosen
     // chainIds intact: REVDeployer folds all rows into `encodedConfiguration`
     // (which must be byte-identical across chains) and mints only the rows
@@ -181,7 +172,7 @@ export function parseDeployData(
           : stage.initialIssuance && stage.initialIssuance !== ""
             ? parseUnits(`${stage.initialIssuance}`, 18)
             : 0n,
-      issuanceCutFrequency: Math.floor(Number(stage.priceCeilingIncreaseFrequency) * 86400), // seconds
+      issuanceCutFrequency: getStageCutFrequencySeconds(stage),
       // Same integer requirement as splitPercent above: these divisions can leave a fraction
       // that the ABI encoder rejects outright.
       issuanceCutPercent: Math.round(
