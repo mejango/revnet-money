@@ -553,16 +553,14 @@ export function useMultichainBatch() {
           input.onProgress?.(message);
           if (batch) updateTransactionActivity(batch.id, { message });
         };
-        // The connection this run starts on; a replacement connector for the same address is refused.
-        const connector = getAccount(config).connector;
+        // Bind the execution route; the adapter resolves the current wallet at invocation.
         const safe = isSafeConnection(config);
         const requireAccount = () => {
           input.signal?.throwIfAborted();
           requireNoViewAs();
           if (getAccount(config).address?.toLowerCase() !== account.toLowerCase())
             throw new Error("The connected account changed. Resume with the original account.");
-          if (getAccount(config).connector !== connector || isSafeConnection(config) !== safe)
-            throw new ReviewRefusal(WALLET_CHANGED);
+          if (isSafeConnection(config) !== safe) throw new ReviewRefusal(WALLET_CHANGED);
         };
         const result = (status: BatchResult["status"]): BatchResult => ({
           status,

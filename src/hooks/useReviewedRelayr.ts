@@ -2138,6 +2138,9 @@ export function useGetRelayrTxQuote() {
                   plan,
                   reverify: async () => {
                     requireWalletContext();
+                    const { requirePriceBasedShopVoting } =
+                      await import("@/lib/shop-voting-policy");
+                    requirePriceBasedShopVoting(request.data.data, request.data.to);
                     if (request.metadataSource)
                       await verifyMetadataSource(client, request.metadataSource, address);
                     await verifyCallPreconditions(client, request.preconditions);
@@ -2424,6 +2427,9 @@ export function useSendRelayrTx() {
           if (!code || keccak256(code) !== RELAYR_PAYMENT_CODE_HASH)
             throw new Error("Payment contract code is not recognized.");
           // Funding may be approved long after signing.
+          const { requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy");
+          for (const transaction of remembered.expectedTransactions)
+            requirePriceBasedShopVoting(transaction.data, transaction.target);
           await revalidateSignedCalls(config, address, remembered.expectedTransactions);
           const row = journal();
           sent = sentPayments(row);

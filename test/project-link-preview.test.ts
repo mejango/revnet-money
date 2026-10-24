@@ -132,3 +132,44 @@ describe("project link preview balance", () => {
     );
   });
 });
+
+it("qualifies flattened custom-token balances by their deployment chain", () => {
+  const deployment = (chainId: number, balance: string) => ({
+    chainId,
+    balance,
+    decimals: 18,
+    tokenSymbol: "XYZ",
+    projectTokenBalances: {
+      items: [
+        {
+          token: "0x1111111111111111111111111111111111111111",
+          tokenSymbol: "XYZ",
+          decimals: 18,
+          balance,
+        },
+      ],
+    },
+  });
+  expect(
+    formatProjectPreviewBalance([
+      deployment(1, "1000000000000000000"),
+      deployment(8453, "2000000000000000000"),
+    ]),
+  ).toBe("1 XYZ + 2 XYZ");
+  expect(
+    formatProjectPreviewBalance([
+      deployment(1, "1000000000000000000"),
+      deployment(1, "2000000000000000000"),
+    ]),
+  ).toBe("3 XYZ");
+});
+
+it("never presents a partial treasury as complete after a missing or failed row", () => {
+  const known = { balance: "1000000000000000000", decimals: 18, tokenSymbol: "ETH" };
+  for (const balance of [undefined, null, "", "bad"]) {
+    expect(formatProjectPreviewBalance([known, { ...known, balance } as never])).toBe(
+      "Unavailable",
+    );
+  }
+  expect(formatProjectPreviewBalance([known, { ...known, balance: "0" }])).toBe("1 ETH");
+});

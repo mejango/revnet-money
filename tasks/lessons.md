@@ -46,3 +46,11 @@
 ## 2026-10-12 — Composite rankings display project chain membership
 - User correction: Trending chain icons showed only the representative activity unit's chain.
 - Rule: composite project rows use the indexed sucker group's member chains for their icons, deduplicated and supported; do not infer membership from a truncated ranking page or change rank/payment/volume values while fixing presentation. A rendered multi-chain regression enforces the distinction.
+
+## 2026-10-24 — Price-based shop voting is an explicit policy
+- User clarification: always compile new shop tiers with useVotingUnits=false, including legacy drafts containing custom votes.
+- Rule: ignore legacy custom voting values in the owning compiler, describe price-based votes in the editor, and reject priced additions when an existing collection locks new voting power. Never flip true to bypass that lock.
+
+## 2026-10-24 — Preserve module directives when adding imports
+- Local verification caught an import inserted before a client module's directive.
+- Rule: insert imports after existing directives, then run changed-file lint before an expensive artifact build. Prettier can turn a displaced directive into an ordinary expression, so formatting alone does not prove the client boundary survived.

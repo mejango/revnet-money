@@ -94,11 +94,8 @@ export function tierConfigsForDestination(
   configs.forEach((tier) => {
     if (shop.configFlags?.noNewTiersWithReserves && tier.reserveFrequency > 0)
       throw new Error(`Reserves are locked on chain ${chainId}.`);
-    if (shop.configFlags?.noNewTiersWithVotes && tier.votingUnits > 0)
+    if (shop.configFlags?.noNewTiersWithVotes && tier.price > 0n)
       throw new Error(`Voting items are locked on chain ${chainId}.`);
-    // The hook interprets useVotingUnits=false as price-based votes. A collection
-    // which forbids new votes needs an explicit zero, including on priced tiers.
-    if (shop.configFlags?.noNewTiersWithVotes) tier.flags.useVotingUnits = true;
     if (shop.configFlags?.noNewTiersWithOwnerMinting && tier.flags.allowOwnerMint)
       throw new Error(`Owner minting is locked on chain ${chainId}.`);
     if (tier.flags.transfersPausable && shop.fixedTierTransferability !== true)

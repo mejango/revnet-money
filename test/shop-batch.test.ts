@@ -99,15 +99,15 @@ describe("selected-chain shop add requests", () => {
     ).toThrow("non-transferability is unavailable");
   });
 
-  it("uses explicit zero votes on a peer that forbids new voting tiers", () => {
-    const tiers = tierConfigsForDestination([{ ...newDraftItem(), price: "1" }], {
+  it("allows free price-based tiers on a peer that forbids new voting tiers", () => {
+    const tiers = tierConfigsForDestination([{ ...newDraftItem(), price: "0", votingUnits: "9" }], {
       ...destination,
       shop: { ...destination.shop, configFlags: { ...flags, noNewTiersWithVotes: true } },
     });
     expect(tiers[0]).toMatchObject({
-      price: 1000000n,
+      price: 0n,
       votingUnits: 0,
-      flags: { useVotingUnits: true },
+      flags: { useVotingUnits: false },
     });
   });
 

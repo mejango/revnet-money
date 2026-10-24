@@ -38,10 +38,28 @@ function walletAdapter(config: Config, account: () => Address | undefined): Wall
     switchChain: async (chainId) => {
       await options.switchChain(chainId);
     },
-    sendTransaction: async (tx) => (await viem()).sendTransaction(tx),
-    signTypedData: async (typedData) => (await viem()).signTypedData(typedData),
+    sendTransaction: async (tx) => {
+      const { requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy");
+      requirePriceBasedShopVoting(tx.data, tx.to);
+      return (await viem()).sendTransaction(tx);
+    },
+    signTypedData: async (typedData) => {
+      const { requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy");
+      const data = typedData.message?.data;
+      if (typeof data === "string" && data.startsWith("0x"))
+        requirePriceBasedShopVoting(
+          data as `0x${string}`,
+          typedData.message?.to as Address | undefined,
+          Number(typedData.message?.operation ?? 0),
+        );
+      return (await viem()).signTypedData(typedData);
+    },
     signMessage: async (message) => (await viem()).signMessage(message),
-    sendCalls: async (chainId, calls) => (await viem()).sendCalls!(chainId, calls),
+    sendCalls: async (chainId, calls) => {
+      const { requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy");
+      for (const call of calls) requirePriceBasedShopVoting(call.data, call.to);
+      return (await viem()).sendCalls!(chainId, calls);
+    },
   };
 }
 
@@ -59,7 +77,6 @@ function requireWallet(config: Config, reviewed: ReviewedWallet) {
   requireNoViewAs();
   const live = getAccount(config);
   if (
-    live.connector !== reviewed.connector ||
     isSafeConnection(config) !== reviewed.safe ||
     !live.address ||
     !isAddressEqual(live.address, reviewed.account)
@@ -68,8 +85,8 @@ function requireWallet(config: Config, reviewed: ReviewedWallet) {
 }
 
 /**
- * The wallet as core's adapter, bound to every wallet `reviewed` returns: View-as, another connector
- * or a change of Safe mode refuses wherever core reads the account, which it does before and after
+ * The wallet as core's adapter, bound to every wallet `reviewed` returns: View-as or a change
+ * of Safe mode refuses wherever core reads the account, which it does before and after
  * the wallet client loads and before each signature and send. Another account reads as itself, so
  * core refuses it with its own line. With no wallet bound, it reads the wallet as is.
  */

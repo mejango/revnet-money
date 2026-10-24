@@ -275,12 +275,6 @@ describe("Safe queue card", () => {
       };
       const tx = { chainId: 8453, to: SAFE.address, data: "0x6a76" as Hex, value: 0n };
 
-      const connected = mocks.connector;
-      mocks.connector = { id: "other" };
-      await expect(adapter.sendTransaction(tx)).rejects.toThrow(
-        "Wallet connection changed. Review the transaction again.",
-      );
-      mocks.connector = connected;
       const reviewed = mocks.address;
       mocks.address = TARGET;
       await expect(adapter.sendTransaction(tx)).rejects.toThrow(
@@ -292,6 +286,7 @@ describe("Safe queue card", () => {
       clearViewAs();
       expect(mocks.deps.adapter.sendTransaction).not.toHaveBeenCalled();
 
+      mocks.connector = { id: "other" };
       mocks.deps.adapter.sendTransaction.mockResolvedValue(EXECUTION);
       await expect(adapter.sendTransaction(tx)).resolves.toBe(EXECUTION);
       expect(refreshTransactionActivities()).toEqual(

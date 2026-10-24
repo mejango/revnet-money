@@ -33,20 +33,23 @@ const account = `0x${"1".repeat(40)}`;
 // the project routes that write. Each changed ceiling is its new measure rounded up.
 // SDK 4.0.0 (R5: core Relayr rounds, one plan review): +0.1-1.0 KiB on five routes; /extras +11.6,
 // where webpack splits a shared 15.8 KiB chunk that repeats modules other chunks hold (all JS fell 16 KiB).
+// 2026-10-24: shared shop authorization guards reject historical custom voting and deadlocked reserves
+// before new signatures or funding. Measured routes are 550.8/579.2/577.8/585.4/595.2/424.3 KiB;
+// round only those ceilings up. Discover/operator and the route-referenced ceiling remain fixed.
 const routes = [
   { route: "/", path: "/", kib: 393 },
   { route: "/learn", path: "/learn", kib: 354 },
   { route: "/build", path: "/build", kib: 356 },
   { route: "/audit", path: "/audit", kib: 357 },
   { route: "/discover", path: "/discover", kib: 340 },
-  { route: "/create", path: "/create", kib: 549 },
-  { route: "/[slug]", path: "/eth:1", kib: 578 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 576 },
+  { route: "/create", path: "/create", kib: 551 },
+  { route: "/[slug]", path: "/eth:1", kib: 580 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 578 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 676 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 584 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 595 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 424 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 586 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 596 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 425 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 414 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
   { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 389 },
@@ -208,7 +211,8 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // 2733.2 KiB, routes unchanged; builds vary by 0.1 KiB. The aggregate ceiling moves to 2734.
 // Every write on core's useReviewedRun measures 2766.6 KiB: core's hold and lines load with each
 // writing page, and the app's own send engine is gone. The aggregate ceiling moves to 2767.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2754);
+// The same artifact measures 2757.6 KiB total, +3.6 KiB (0.13%) over the previous ceiling.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2758);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");

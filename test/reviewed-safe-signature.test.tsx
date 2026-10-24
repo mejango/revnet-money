@@ -117,6 +117,27 @@ describe("reviewed Safe signature boundary", () => {
     dispose();
   });
 
+  it("uses the current wallet after a same-account connector change during review", async () => {
+    const currentSign = vi.fn().mockResolvedValue(SIGNATURE);
+    const dispose = answerReviews(async () => {
+      mocks.account.connector = { id: "walletConnect", name: "WalletConnect" };
+      mocks.getWalletClient.mockResolvedValue({
+        account: { address: ACCOUNT },
+        signTypedData: currentSign,
+      });
+      return true;
+    });
+    const { result } = renderHook(() => useSafeTransactionSignature());
+    await act(async () => {
+      await expect(
+        result.current.signSafeTransactionAsync({ chainId: 1, safe: SAFE, tx }),
+      ).resolves.toBe(SIGNATURE);
+    });
+    expect(currentSign).toHaveBeenCalledOnce();
+    expect(mocks.signTypedData).not.toHaveBeenCalled();
+    dispose();
+  });
+
   it("fails closed if the service hash does not match the reconstructed payload", async () => {
     answerReviews(async () => true);
     const { result } = renderHook(() => useSafeTransactionSignature());
@@ -157,12 +178,6 @@ describe("reviewed Safe signature boundary", () => {
         "chain",
         () => {
           mocks.account.chainId = 10;
-        },
-      ],
-      [
-        "another connection of the same wallet type",
-        () => {
-          mocks.account.connector = { id: "injected", name: "Injected" };
         },
       ],
       [

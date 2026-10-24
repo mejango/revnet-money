@@ -4,6 +4,7 @@ import { formatTokenAmount } from "@/lib/token";
 import { getTokenSymbolFromAddress, tokenKindOf } from "@/lib/tokenUtils";
 
 type BalanceDeployment = Pick<Project, "balance" | "decimals" | "tokenSymbol"> & {
+  chainId?: number | null;
   token?: string | null;
   projectTokenBalances?: { items: ProjectTokenBalance[] } | null;
 };
@@ -13,11 +14,11 @@ type BalanceDeployment = Pick<Project, "balance" | "decimals" | "tokenSymbol"> &
  * `balance` (which adds unlike units once a project accepts several tokens) is read only
  * when the indexer served no per-token rows.
  */
-export function deploymentTokenBalances(
-  deployment: BalanceDeployment,
-): Array<
+export function deploymentTokenBalances(deployment: BalanceDeployment): Array<
   Pick<Project, "balance" | "decimals" | "tokenSymbol"> &
-    Pick<Partial<ProjectTokenBalance>, "token" | "balanceUsd" | "usdRate">
+    Pick<Partial<ProjectTokenBalance>, "token" | "balanceUsd" | "usdRate"> & {
+      chainId?: number | null;
+    }
 > {
   const rows = deployment.projectTokenBalances?.items;
   if (!rows?.length) {
@@ -30,7 +31,11 @@ export function deploymentTokenBalances(
       },
     ];
   }
-  return rows.map((row) => ({ ...row, tokenSymbol: tokenSymbolOf(row) }));
+  return rows.map((row) => ({
+    ...row,
+    chainId: deployment.chainId,
+    tokenSymbol: tokenSymbolOf(row),
+  }));
 }
 
 /** A per-token row's symbol: the indexer's, else a token this app knows, else null. */
@@ -70,18 +75,25 @@ export function formatProjectPreviewBalance(deployments: readonly BalanceDeploym
   for (const deployment of deployments.flatMap(deploymentTokenBalances)) {
     const symbol = deployment.tokenSymbol?.trim();
     const decimals = deployment.decimals;
-    if (!symbol) unnamedUsd += usdFromScaled(deployment.balanceUsd) ?? 0;
-    if (!symbol || decimals == null || !Number.isSafeInteger(decimals) || decimals < 0) continue;
+    if (!symbol) {
+      const usd = usdFromScaled(deployment.balanceUsd);
+      if (usd === null) return "Unavailable";
+      unnamedUsd += usd;
+      continue;
+    }
+    if (decimals == null || !Number.isSafeInteger(decimals) || decimals < 0) return "Unavailable";
     try {
+      if (deployment.balance == null || deployment.balance === "") return "Unavailable";
       const key = tokenKindOf(deployment);
       const current = buckets.get(key);
       buckets.set(key, {
         symbol,
         decimals,
-        amount: (current?.amount ?? 0n) + BigInt(deployment.balance || 0),
+        amount: (current?.amount ?? 0n) + BigInt(deployment.balance),
       });
     } catch {
-      // An invalid indexer value is unknown, not zero.
+      // An invalid indexer value cannot establish a complete treasury total.
+      return "Unavailable";
     }
   }
 

@@ -17,7 +17,12 @@ type ShieldDeployment = NonNullable<
   NonNullable<ShieldGroupQuery["suckerGroup"]>["projects"]
 >["items"][number];
 
-type Denomination = { token: string | null; tokenSymbol: string | null; decimals: number };
+type Denomination = {
+  chainId: number;
+  token: string | null;
+  tokenSymbol: string | null;
+  decimals: number;
+};
 
 /**
  * The deployments' holdings in one token: rows of that token as held, any other token
@@ -50,6 +55,7 @@ function treasuryIn(
       .find((r) => r !== null) ?? null;
 
   let amount = 0;
+  let unreadAmount = false;
   // By kind, so two tokens sharing a symbol are both named.
   const excluded = new Map<string, { token: string | null; tokenSymbol: string | null }>();
   for (const row of rows) {
@@ -60,12 +66,19 @@ function treasuryIn(
       });
     let held: number;
     try {
-      held = row.decimals == null ? NaN : Number(formatUnits(BigInt(row.balance), row.decimals));
+      held =
+        row.decimals == null || row.balance == null || row.balance === ""
+          ? NaN
+          : Number(formatUnits(BigInt(row.balance), row.decimals));
     } catch {
       held = NaN;
     }
     // An unreadable amount is unknown, not zero.
-    if (Number.isNaN(held)) exclude();
+    if (!Number.isFinite(held)) {
+      unreadAmount = true;
+      exclude();
+      continue;
+    }
     if (!(held > 0)) continue;
     if (tokenKindOf(row) === kind) amount += held;
     else {
@@ -74,7 +87,7 @@ function treasuryIn(
       else exclude();
     }
   }
-  return { amount, excluded: [...excluded.values()] };
+  return { amount: unreadAmount ? null : amount, excluded: [...excluded.values()] };
 }
 
 const JB_CHAINS: Record<ChainId, { name: string }> = {
@@ -148,7 +161,12 @@ export async function GET(req: Request) {
     : badged?.tokenSymbol;
   const denomination =
     badgedSymbol && badged.decimals != null
-      ? { token: badged.token ?? null, tokenSymbol: badgedSymbol, decimals: badged.decimals }
+      ? {
+          chainId: badged.chainId,
+          token: badged.token ?? null,
+          tokenSymbol: badgedSymbol,
+          decimals: badged.decimals,
+        }
       : null;
   const results = items.map((item) => ({
     chainId: item.chainId,

@@ -22,7 +22,8 @@ export function getTokenSymbolFromAddress(tokenAddress: string) {
   return "TOKEN";
 }
 
-type TokenIdentity = {
+export type TokenIdentity = {
+  chainId?: number | null;
   token?: string | null;
   tokenSymbol?: string | null;
   decimals?: number | null;
@@ -30,12 +31,18 @@ type TokenIdentity = {
 
 /**
  * Which rows are the same asset: ETH and USDC by symbol, so each chain's copy adds up;
- * any other token also by its address, so two tokens sharing a name stay apart.
+ * any other token by its chain and address, so unrelated assets stay apart.
  */
 export function tokenKindOf(row: TokenIdentity): string {
   const kind = `${row.tokenSymbol?.trim().toUpperCase()}:${row.decimals ?? 18}`;
-  return row.token && getTokenSymbolFromAddress(row.token) === "TOKEN"
-    ? `${row.token.toLowerCase()}:${kind}`
+  const known =
+    !row.token ||
+    isNativeToken(row.token) ||
+    (row.chainId != null &&
+      USDC_ADDRESSES[row.chainId as keyof typeof USDC_ADDRESSES]?.toLowerCase() ===
+        row.token.toLowerCase());
+  return row.token && !known
+    ? `${row.chainId ?? "unknown"}:${row.token.toLowerCase()}:${kind}`
     : kind;
 }
 

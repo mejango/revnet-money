@@ -82,8 +82,7 @@ export function useReviewedAction() {
   const runOnce = useCallback(
     async (action: ReviewedActionInput): Promise<ReviewedRunResult> => {
       await safeWalletPeerSettled();
-      // Connector identity matters even when both wallets name the same account.
-      const connector = getAccount(config).connector;
+      const { requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy");
       const safe = isSafeConnection(config);
       // Its sends are journaled under the account it was reviewed for, whatever the wallet shows.
       const account = action.account ?? getAccount(config).address;
@@ -108,8 +107,8 @@ export function useReviewedAction() {
               .join("\n\n") || undefined,
           assertWriteState: () => {
             requireNoViewAs();
-            if (getAccount(config).connector !== connector || isSafeConnection(config) !== safe)
-              throw new ReviewRefusal(WALLET_CHANGED);
+            if (isSafeConnection(config) !== safe) throw new ReviewRefusal(WALLET_CHANGED);
+            for (const call of action.calls) requirePriceBasedShopVoting(call.data, call.to);
             action.assertWriteState?.();
           },
           onSubmitted: async (call, step, hash, sent) => {
@@ -239,6 +238,7 @@ export function useSafeTransactionSignature() {
       if (!account) throw new Error("Connect a wallet first.");
       // The service's advertised hash must be the call rebuilt from its fields.
       canonicalSafeTxHash(chainId, safe, tx);
+      const { requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy");
       const { signReviewed } = await loadEngine();
       const adapter = reviewedWalletAdapter(config, account, connector);
       const [signature] = await signReviewed(
@@ -248,7 +248,10 @@ export function useSafeTransactionSignature() {
           title: "Review Safe transaction signature",
           description:
             "This signature approves the exact queued Safe call. It does not execute until the threshold and nonce requirements are met.",
-          reverify: async () => reverify?.(account),
+          reverify: async () => {
+            requirePriceBasedShopVoting(tx.data ?? "0x", tx.to, Number(tx.operation));
+            await reverify?.(account);
+          },
           plan,
         },
         { adapter },

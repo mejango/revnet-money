@@ -800,7 +800,7 @@ describe("fresh review of hashless routing selections", () => {
     },
   );
 
-  it("pays no round when another connector takes the same address during the review", async () => {
+  it("accepts a same-account connector change but still refuses an unbound quote", async () => {
     const original = saveUnknownSelection(scope);
     const connector = mocks.connector;
     mocks.review.mockImplementation(async () => {
@@ -810,14 +810,14 @@ describe("fresh review of hashless routing selections", () => {
     try {
       await act(async () => {
         await expect(result.current.runBatch(inputFor(original))).rejects.toThrow(
-          /Wallet connection changed/,
+          "The quote has no complete destination identity binding.",
         );
       });
     } finally {
       mocks.connector = connector;
     }
     expect(mocks.review).toHaveBeenCalledOnce();
-    expect(mocks.quote).not.toHaveBeenCalled();
+    expect(mocks.quote).toHaveBeenCalled();
     expect(mocks.pay).not.toHaveBeenCalled();
   });
 

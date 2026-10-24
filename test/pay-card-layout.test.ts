@@ -71,3 +71,8 @@ describe("what a payer should buy to pay this project", () => {
     expect(buyableAsset({ accepted: ["DAI"] })).toBe("ETH");
   });
 });
+
+it("keeps an unread or failed accepted-token balance unknown beside confirmed zeros", () => {
+  expect(defaultsToDollars({ isConnected: true, balances: [undefined] })).toBe(false);
+  expect(defaultsToDollars({ isConnected: true, balances: [0n, undefined] })).toBe(false);
+});
