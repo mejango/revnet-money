@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   initialSuckers: [] as { peerChainId: number; projectId: bigint }[],
   balanceOf: vi.fn(),
   homeBalance: undefined as unknown,
+  homeLoading: false,
+  homeError: false,
 }));
 
 vi.mock("@bananapus/nana-sdk-core", async (importOriginal) => ({
@@ -27,8 +29,8 @@ vi.mock("wagmi", async (importOriginal) => ({
   // The home balance, read directly on the page's chain.
   useReadContract: () => ({
     data: mocks.homeBalance,
-    isLoading: false,
-    isError: false,
+    isLoading: mocks.homeLoading,
+    isError: mocks.homeError,
     error: null,
   }),
 }));
@@ -64,6 +66,8 @@ beforeEach(() => {
   mocks.resolveSuckers.mockReset();
   mocks.balanceOf.mockReset().mockResolvedValue(5n);
   mocks.homeBalance = new JBProjectToken(7n);
+  mocks.homeLoading = false;
+  mocks.homeError = false;
   mocks.initialSuckers = [INDEXED_PEER];
 });
 
@@ -96,6 +100,42 @@ describe("useSuckers over an indexer seed", () => {
 });
 
 describe("useSuckersUserTokenBalance", () => {
+  it.each([false, true])(
+    "does not invent a zero home balance when its read fails (peer: %s)",
+    async (withPeer) => {
+      mocks.homeBalance = undefined;
+      mocks.homeError = true;
+      mocks.resolveSuckers.mockResolvedValue(withPeer ? [HOME, ONCHAIN_PEER] : [HOME]);
+      const { result } = renderHook(() => useSuckersUserTokenBalance(), { wrapper: wrapper() });
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.isError).toBe(true);
+      expect(result.current.isComplete).toBe(false);
+      expect(result.current.data?.map((row) => row.projectId)).toEqual(withPeer ? [4n] : []);
+    },
+  );
+
+  it("keeps a missing nonloading home balance incomplete even without an explicit error", async () => {
+    mocks.homeBalance = undefined;
+    mocks.resolveSuckers.mockResolvedValue([HOME, ONCHAIN_PEER]);
+    const { result } = renderHook(() => useSuckersUserTokenBalance(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isError).toBe(false);
+    expect(result.current.isComplete).toBe(false);
+    expect(result.current.data?.map((row) => row.projectId)).toEqual([4n]);
+  });
+
+  it("keeps a confirmed zero balance", async () => {
+    mocks.homeBalance = new JBProjectToken(0n);
+    mocks.resolveSuckers.mockResolvedValue([HOME]);
+    const { result } = renderHook(() => useSuckersUserTokenBalance(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isError).toBe(false);
+    expect(result.current.isComplete).toBe(true);
+    expect(result.current.data).toEqual([
+      { balance: new JBProjectToken(0n), chainId: 8453, projectId: 3n },
+    ]);
+  });
+
   it("lists a balance only for chain-verified pairs, since borrow, burn and claims act on them", async () => {
     let resolve!: (pairs: (typeof HOME)[]) => void;
     mocks.resolveSuckers.mockReturnValue(new Promise((done) => (resolve = done)));
@@ -103,6 +143,7 @@ describe("useSuckersUserTokenBalance", () => {
 
     await waitFor(() => expect(result.current.data).toBeDefined());
     expect(result.current.data!.map((row) => row.projectId)).toEqual([3n]);
+    expect(result.current.isLoading).toBe(true);
     expect(mocks.balanceOf).not.toHaveBeenCalledWith([expect.anything(), 666n]);
 
     // The peer's balance read is slow: the home row stays shown meanwhile.

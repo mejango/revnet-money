@@ -66,6 +66,8 @@ vi.mock("@/lib/nana/project", () => ({
   useJBTokenContext: wallet.tokenContext,
 }));
 vi.mock("@/lib/nana/suckers", () => ({
+  isPairCheckPending: (state: { isVerified: boolean; isError: boolean }) =>
+    !state.isVerified && !state.isError,
   useSuckers: wallet.suckers,
   useSuckersUserTokenBalance: wallet.suckerBalances,
 }));
@@ -285,10 +287,11 @@ describe("local wallet controls", () => {
         isConnected: true,
       });
       wallet.project.mockReturnValue({});
-      wallet.suckers.mockReturnValue({ data: [], isLoading: false });
+      wallet.suckers.mockReturnValue({ data: [], isLoading: false, isVerified: true });
       wallet.suckerBalances.mockReturnValue({
         data: perChain.map((value) => ({ balance: { value } })),
         isLoading: false,
+        isComplete: true,
       });
       wallet.tokenContext.mockReturnValue({
         token: { isLoading: false, data: { symbol: "$REV" } },
@@ -317,6 +320,44 @@ describe("local wallet controls", () => {
       await openMenu();
 
       expect(screen.getByText(`${expected} REV`)).toBeVisible();
+    });
+
+    it.each([undefined, [{ balance: { value: 500_000_000_000_000_000_000n } }]])(
+      "shows unavailable rather than a failed or partial total",
+      async (data) => {
+        signedInOnAProject();
+        wallet.suckerBalances.mockReturnValue({ data, isLoading: false, isError: true });
+        await openMenu();
+        const row = screen.getByText("REV").closest("div")!;
+        expect(row).toHaveTextContent("Unavailable");
+        expect(row).not.toHaveTextContent("0 REV");
+        expect(row).not.toHaveTextContent("500 REV");
+      },
+    );
+
+    it("does not total unresolved balances without an explicit read error", async () => {
+      signedInOnAProject();
+      wallet.suckerBalances.mockReturnValue({
+        data: [{ balance: { value: 500_000_000_000_000_000_000n } }],
+        isLoading: false,
+        isError: false,
+        isComplete: false,
+      });
+      await openMenu();
+      expect(screen.getByText("REV").closest("div")).toHaveTextContent("Unavailable");
+    });
+
+    it("does not present registry-seeded asset balances as complete after verification fails", async () => {
+      signedInOnAProject(0n);
+      wallet.suckers.mockReturnValue({
+        data: [],
+        isLoading: false,
+        isVerified: false,
+        isError: true,
+      });
+      await openMenu();
+      expect(screen.getByText("ETH").closest("div")).toHaveTextContent("Unavailable");
+      expect(screen.getByText("USDC").closest("div")).toHaveTextContent("Unavailable");
     });
 
     it("says it is loading while the balances are", async () => {

@@ -121,7 +121,13 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
     queryFn: () => fetchAmmReferences(pooledAmmStates),
   });
 
-  const { data: balances, isLoading: isLoadingBalances } = useSuckersUserTokenBalance();
+  const {
+    data: balances,
+    isLoading: isLoadingBalances,
+    isError: isBalanceError,
+    isComplete: balancesComplete,
+  } = useSuckersUserTokenBalance();
+  const balancesIncomplete = !balancesComplete;
 
   // Full per-chain project rows (currency/decimals/token) for quotes.
   const { data: projectData } = useBendystrawQuery(
@@ -303,8 +309,15 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
   return (
     <div>
+      {balancesIncomplete && !isLoadingBalances && held.length > 0 && (
+        <p className="text-sm text-zinc-500 mb-2">
+          Some balances are unavailable. Only available balances are shown.
+        </p>
+      )}
       {held.length === 0 ? (
-        isLoadingBalances ? (
+        isBalanceError || (!isLoadingBalances && balancesIncomplete) ? (
+          <p className="text-md text-black font-light italic">Balances unavailable.</p>
+        ) : isLoadingBalances ? (
           <TableSkeleton rows={Math.max(projects.length, 2)} columns={4} />
         ) : (
           <p className="text-md text-black font-light italic">
@@ -351,7 +364,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
             {held.length > 1 && (
               <TableFooter>
                 <TableRow>
-                  <TableCell>Total</TableCell>
+                  <TableCell>{balancesIncomplete ? "Partial total" : "Total"}</TableCell>
                   <TableCell className="text-right tabular-nums">
                     <CellWithSub
                       main={`${formatUnits(totalBalance, projectTokenDecimals, {
