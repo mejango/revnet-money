@@ -33,7 +33,7 @@ import { PickupFromPreviousStage } from "./PickupFromPreviousStage";
 import { StartTimeField } from "./StartTimeField";
 import { useCreateForm } from "./useCreateForm";
 
-export function NotesSection({
+function NotesSection({
   title = "[ ? ]",
   children,
 }: {

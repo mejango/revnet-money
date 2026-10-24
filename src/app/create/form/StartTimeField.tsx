@@ -7,7 +7,6 @@ import {
   getStageCutFrequencySeconds,
 } from "../helpers/calculatePickupIssuance";
 import { StageData } from "../types";
-import { NotesSection } from "./AddStageDialog";
 import { FieldGroup } from "./Fields";
 
 interface StartTimeFieldProps {
@@ -108,15 +107,6 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
             days, at the next cut boundary
           </div>
         </div>
-
-        <NotesSection>
-          <ul className="list-disc list-inside">
-            <li className="flex">
-              <span className="mr-2">•</span>
-              <div>Stages start at whole cut boundaries, at least one cut later.</div>
-            </li>
-          </ul>
-        </NotesSection>
       </div>
     );
   }
@@ -135,14 +125,6 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
         description="How many days after the last stage's start time should this stage start?"
         width="w-32"
       />
-      <NotesSection>
-        <ul className="list-disc list-inside">
-          <li className="flex">
-            <span className="mr-2">•</span>
-            <div>The delay is measured from the previous stage’s start.</div>
-          </li>
-        </ul>
-      </NotesSection>
     </div>
   );
 }

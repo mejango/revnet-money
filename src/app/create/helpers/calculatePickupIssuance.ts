@@ -32,10 +32,7 @@ export function getStageCutFrequencySeconds(stage: StageData): number {
 }
 
 /** A follower starts after a complete cycle of its actual predecessor. */
-function getCurrentStageDurationSeconds(
-  currentStage: StageData,
-  previousStage: StageData,
-): number {
+function getCurrentStageDurationSeconds(currentStage: StageData, previousStage: StageData): number {
   const frequency = getStageCutFrequencySeconds(previousStage);
   const requested =
     currentStage.stageStartCuts && frequency > 0
