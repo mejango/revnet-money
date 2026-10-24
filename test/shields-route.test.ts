@@ -258,3 +258,41 @@ describe("pay-event rates", () => {
     });
   });
 });
+
+it("converts same-address custom assets on different chains through their own USD rates", async () => {
+  const token = "0x1111111111111111111111111111111111111111";
+  const row = (chainId: number, amount: bigint, rate: bigint) => ({
+    ...deployment,
+    chainId,
+    token,
+    tokenSymbol: "XYZ",
+    balance: String(amount * 10n ** 18n),
+    projectTokenBalances: {
+      items: [
+        {
+          token,
+          tokenSymbol: "XYZ",
+          decimals: 18,
+          balance: String(amount * 10n ** 18n),
+          usdRate: String(rate * 10n ** 18n),
+        },
+      ],
+    },
+  });
+  const body = await badge([row(1, 1n, 1n), row(8453, 2n, 10n)], "21000000000000000000");
+  expect(body.tvlBalance).toBe(21);
+  expect(body.chains.map((chain: { balance: number }) => chain.balance)).toEqual([1, 20]);
+  expect(body.message).toBe("21 USD • 1 XYZ + 2 XYZ");
+});
+
+it("keeps unread treasury amounts unknown rather than returning a partial or zero total", async () => {
+  for (const balance of [undefined, null, "", "bad"]) {
+    const body = await badge([{ ...deployment, balance, projectTokenBalances: null }], null);
+    expect(body.tvlBalance).toBeNull();
+    expect(body.chains[0].balance).toBeNull();
+    expect(body.message).toBe("Unavailable");
+  }
+  expect(
+    (await badge([{ ...deployment, balance: "0", projectTokenBalances: null }], "0")).tvlBalance,
+  ).toBe(0);
+});

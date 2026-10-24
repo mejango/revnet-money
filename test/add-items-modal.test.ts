@@ -46,12 +46,12 @@ describe("revnet shop item editor", () => {
       reserveFrequency: 10,
       reserveBeneficiary: beneficiaryA,
       discountPercent: 25,
-      votingUnits: 7,
+      votingUnits: 0,
       splitPercent: 500_000_000,
       flags: {
         allowOwnerMint: true,
         transfersPausable: true,
-        useVotingUnits: true,
+        useVotingUnits: false,
         cantBeRemoved: true,
         cantIncreaseDiscountPercent: true,
         cantBuyWithCredits: true,
@@ -149,4 +149,36 @@ describe("revnet shop item editor", () => {
     }
     // Permission-before-upload behavior is exercised by shop-multichain-dialogs.test.tsx.
   });
+});
+
+it("rejects reserved single-supply items in the shared compiler, including per-chain overrides", () => {
+  const item = {
+    ...newDraftItem(),
+    price: "1",
+    supply: "1",
+    reserveFrequency: "5",
+    reserveBeneficiary: beneficiaryA,
+  };
+  expect(buildTierConfigs([item], 6)).toContain("supply of at least 2");
+  expect(
+    buildTierConfigs([{ ...item, supply: "10", perChainSupply: { 8453: "1" } }], 6, 8453),
+  ).toContain("supply of at least 2");
+  for (const supply of ["2", ""])
+    expect(typeof buildTierConfigs([{ ...item, supply }], 6)).not.toBe("string");
+  expect(typeof buildTierConfigs([{ ...item, reserveFrequency: "0" }], 6)).not.toBe("string");
+});
+
+it("always uses price-based votes, including legacy imported custom-vote fields", () => {
+  for (const votingUnits of ["", "0", "7", "invalid legacy value"]) {
+    const tiers = buildTierConfigs([{ ...newDraftItem(), price: "2", votingUnits }], 6);
+    expect(typeof tiers).not.toBe("string");
+    if (typeof tiers === "string") throw new Error(tiers);
+    expect(tiers[0]).toMatchObject({
+      votingUnits: 0,
+      flags: { useVotingUnits: false },
+    });
+  }
+  expect(readFileSync("src/components/shop/ItemDraftFields.tsx", "utf8")).toContain(
+    "price determines its voting power",
+  );
 });

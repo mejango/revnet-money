@@ -60,6 +60,7 @@ const mocks = vi.hoisted(() => ({
   getPublicClient: vi.fn(),
   waitForTransactionReceipt: vi.fn(),
   switchChain: vi.fn(),
+  walletLoaded: vi.fn(),
   signTypedData: vi.fn(),
   sendTransaction: vi.fn(),
   resumeSafeProposalTracking: vi.fn(),
@@ -97,11 +98,14 @@ vi.mock("wagmi/actions", () => ({
   getPublicClient: mocks.getPublicClient,
   waitForTransactionReceipt: mocks.waitForTransactionReceipt,
   // Core's reviewed sends and signatures reach the wallet through its viem client.
-  getWalletClient: async () => ({
-    signTypedData: mocks.signTypedData,
-    sendTransaction: (request: { chain: { id: number } }) =>
-      mocks.sendTransaction({ ...request, chainId: request.chain.id }),
-  }),
+  getWalletClient: async () => {
+    await mocks.walletLoaded();
+    return {
+      signTypedData: mocks.signTypedData,
+      sendTransaction: (request: { chain: { id: number } }) =>
+        mocks.sendTransaction({ ...request, chainId: request.chain.id }),
+    };
+  },
   switchChain: (_config: unknown, request: { chainId: number }) => mocks.switchChain(request),
 }));
 
@@ -123,14 +127,7 @@ vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: mocks.config }));
 
 const OTHER_ACCOUNT = "0x000000000000000000000000000000000000bEEF" as Address;
 const SIGNATURE = `0x${"12".repeat(65)}` as Hex;
-const CONTEXT_CHANGES = [
-  "account",
-  "disconnected",
-  "chain",
-  "connector",
-  "wallet mode",
-  "view-as",
-] as const;
+const CONTEXT_CHANGES = ["account", "disconnected", "chain", "wallet mode", "view-as"] as const;
 function changeContext(
   change: (typeof CONTEXT_CHANGES)[number],
   viewAs: (account: Address) => void,
@@ -138,7 +135,6 @@ function changeContext(
   if (change === "account") mocks.account.address = OTHER_ACCOUNT;
   else if (change === "disconnected") mocks.account.address = undefined;
   else if (change === "chain") mocks.account.chainId = 10;
-  else if (change === "connector") mocks.account.connector = { id: "injected", name: "Injected" };
   else if (change === "wallet mode") mocks.account.connector!.id = "safe";
   else viewAs(OTHER_ACCOUNT);
 }
@@ -5352,4 +5348,48 @@ describe("Relayr sessions decided from the chain", () => {
     expect(session()).toMatchObject({ status: "success", manualVerificationRequired: false });
     expect(session()?.relayrDiscardable).toBeUndefined();
   });
+});
+
+it("does not newly fund a historical signed shop payload with custom votes", async () => {
+  const harness = await freshHarness();
+  const { buildTierConfigs, newDraftItem } = await import("@/components/shop/itemDraft");
+  const { jb721TiersHookAbi } = await import("@bananapus/nana-sdk-core");
+  const policy = await import("@/lib/shop-voting-policy");
+  const tiers = buildTierConfigs([{ ...newDraftItem(), price: "1" }], 6);
+  if (typeof tiers === "string") throw new Error(tiers);
+  tiers[0].flags.useVotingUnits = true;
+  const data = encodeFunctionData({
+    abi: jb721TiersHookAbi,
+    functionName: "adjustTiers",
+    args: [tiers, []],
+  });
+  // Reproduce an authorization retained from the prior build, before this policy existed.
+  const legacy = vi
+    .spyOn(policy, "requirePriceBasedShopVoting")
+    .mockImplementation(() => undefined);
+  harness.review.answerReviews(async () => true);
+  vi.stubGlobal("fetch", relayrApi());
+  const authorization = renderHook(() => harness.hooks.useGetRelayrTxQuote());
+  await act(async () => {
+    await authorization.result.current.getRelayrTxQuote([
+      { ...REQUEST, data: { ...REQUEST.data, data } },
+    ]);
+  });
+  legacy.mockRestore();
+  vi.stubGlobal("fetch", unpaidUntilSent(1));
+  const payer = renderHook(() => harness.hooks.useSendRelayrTx());
+  await expect(payer.result.current.sendRelayrTx(payment())).rejects.toThrow(/Rebuild/);
+  expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  expect(harness.activity.transactionActivitySnapshot()).not.toHaveLength(0);
+});
+
+it("restores a definitely-unsent fee attempt after acquisition failure while retaining its signed quote", async () => {
+  const harness = await quotedPayment();
+  const before = structuredClone(harness.activity.transactionActivitySnapshot());
+  mocks.walletLoaded.mockRejectedValueOnce(new Error("Wallet provider acquisition failed."));
+  await expect(harness.result.current.sendRelayrTx(payment())).rejects.toBeInstanceOf(
+    RelayrPaymentNotSentError,
+  );
+  expect(mocks.sendTransaction).not.toHaveBeenCalled();
+  expect(harness.activity.transactionActivitySnapshot()).toEqual(before);
 });

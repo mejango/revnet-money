@@ -1,4 +1,4 @@
-import { groupMixesTokens } from "@/lib/tokenUtils";
+import { groupMixesTokens, type TokenIdentity } from "@/lib/tokenUtils";
 
 export type ParticipantInput = {
   address: string;
@@ -15,9 +15,7 @@ export type ParticipantInput = {
  * one symbol. Balances are the project's own token and stay comparable; only volume is
  * affected. Same rule as the activity feed's (`groupMixesTokens`).
  */
-export function participantVolumeIsComparable(
-  projects: ReadonlyArray<{ tokenSymbol?: string | null; decimals?: number | null }>,
-): boolean {
+export function participantVolumeIsComparable(projects: ReadonlyArray<TokenIdentity>): boolean {
   return !groupMixesTokens(projects);
 }
 

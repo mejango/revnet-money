@@ -11,7 +11,6 @@ export function captureReviewedWalletContext(
   accountChangedMessage: string,
   chainChangedMessage = accountChangedMessage,
 ): (chainId?: number) => void {
-  const connector = getAccount(config).connector;
   const safe = isSafeConnection(config);
   const requireContext = (chainId?: number) => {
     requireNoViewAs();
@@ -22,7 +21,7 @@ export function captureReviewedWalletContext(
     if (chainId !== undefined && current.chainId !== chainId) {
       throw new Error(chainChangedMessage);
     }
-    if (current.connector !== connector || isSafeConnection(config) !== safe) {
+    if (isSafeConnection(config) !== safe) {
       throw new Error("Wallet connection changed. Review the transaction again.");
     }
   };

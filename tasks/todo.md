@@ -1398,3 +1398,96 @@ Review: Unknown home balances are omitted rather than fabricated; registry verif
 Review progress: Baseline compiler tests failed with45/46day starts where core actually needs60/61days. The fixed compiler and chart share absolute start derivation and encoded whole-second frequencies. Five focused suites pass38tests, including rendered rounding feedback; type/lint/format/source/dead-code/dependency/wallet checks pass. A scratch acceptance fixture consumed actual emitted compiler JSON against unchanged contracts and passed5tests, including one-second and100day execution delays with exact basedOn ancestry and active weights. Full coverage and production build are running against frozen algorithm source. No contract modifications, dependencies or transport changes.
 
 Final review: 2,841 tests across284files pass with existing coverage thresholds;160browser/accessibility cases pass with10existing skips. Production build/types, standalone, every original bundle ceiling (aggregate2753.3/2754KiB), lint, formatting ratchet, source/dead-code, dependency/wallet and environment/deployment fixtures pass. Duplicate schedule footnotes were removed to stay within the unchanged create-page ceiling; NotesSection remains local to its component. Separate GPT Astra review found no blocker in the schedule code or the final copy-only cleanup, and independently checked300integer cycle eligibility cases. Final emitted compiler JSON was regenerated and verified against unchanged core contracts: two new1second/100day ancestry cases plus three inherited approval lifecycle cases pass. These are direct-controller ordering checks, not a claim of identical late revnet activation/loan-lock behavior. Existing first-start and stale-quote policies remain unchanged; no contracts, dependencies or transport paths changed. An initial sandboxed full run failed only in network/local-server suites; rerunning with required access passed without weakening tests.
+
+
+# Client convergence, 2026-10-24
+
+## Plan refinement
+- **Objective:** Apply five selected rules to Revnet only; wait for voting clarification and preserve dirty original tree, contracts, publishing and merges.
+- **System fit:** Shared reviewed-send adapter owns current-wallet resolution; tokenUtils owns asset identity for preview/API/OG consumers; itemDraft/compiler owns reserve constraints; layout owners preserve unknown balances. Reviewed account/chain/route and recovery remain authoritative.
+- **Reuse and simplicity:** Reuse existing guards, token helpers, validation and tests. Carry parent chain through existing token rows, avoiding new aggregation machinery or dependencies.
+- **Evidence and unknowns:** Isolated source starts at origin/main 733d6c72efb5a1d52b17a46c3a4a665e5d12f9a2. Equal-address custom tokens on two chains currently merge; connector-only changes currently refuse. Voting semantics pending user answer.
+- **Verification:** Add source-bound wallet/identity regressions, inspect supply and unknown-balance sibling paths; run focused tests and required repository checks with physically copied locked dependencies. Report exact passes and limits.
+- **Resource budget:** One bounded consumer trace per rule, minimal owning changes, reused physical dependencies, focused then repository checks. Replan only on changed voting policy or shared ownership.
+
+- [x] Trace consumers and implement applicable rules.
+- [x] Add regression evidence and run repository checks.
+- [x] Record five-rule matrix and verification limits.
+
+## Plan refinement
+- **Objective:** User clarified all new shop tiers use price-based votes, including imported positive custom voting input; keep the other four convergence rules unchanged.
+- **System fit:** Shared itemDraft compiler owns the false flag; ItemDraftFields and summaries describe price-based economics. Existing no-new-votes collections reject priced additions because they cannot honor price-based votes under their lock.
+- **Reuse and simplicity:** Retain legacy draft field for import compatibility, ignore its value in encoding, replace the input with plain explanatory copy and remove obsolete custom-vote validation. Reuse shop restriction checks.
+- **Evidence and unknowns:** Explicit user Yes always price-based supersedes interim zero-only assumption; deployed hook interprets false as price-derived votes. No existing onchain tiers change.
+- **Verification:** Test empty, zero, positive and malformed imported voting fields all encode false and zero custom units; test locked-vote collections refuse priced additions. Run repository checks after final edits.
+- **Resource budget:** One bounded compiler/UI/summary trace and existing regression edits, then final gates. No new voting framework or contract changes.
+
+Additional evidence: malformed/missing treasury rows were previously skipped or coerced to zero by preview/shield aggregation. The preview now reports Unavailable for an incomplete treasury; shield numeric totals are null for unread amounts, while legitimate confirmed zero remains zero. Source-bound missing/null/empty/malformed regressions cover both owners. Same-account Safe queue execution also contained a wrapper connector-only refusal, now removed while retaining queue freshness, sender and adapter route checks.
+
+## Plan refinement
+- **Objective:** Enforce price-based shop items on new authorizations and funding of historical unsigned/unfunded saved calls, preserving signed bytes and funded reconciliation.
+- **System fit:** Shop calldata policy decodes adjustTiers at wallet submission/signature and Relayr funding boundaries. Read-only recovery continues without policy checks; canonical new drafts already rebuild through the false-flag compiler.
+- **Reuse and simplicity:** Reuse canonical hook/forwarder ABI decoding and one small policy owner. Reject outdated custom-vote calldata with rebuild guidance rather than mutating saved journals.
+- **Evidence and unknowns:** AddItemsModal resume passes no calls and loads historical encoded batches, bypassing the new compiler. Create recovery reads saved launch evidence rather than re-encoding a historical signed plan.
+- **Verification:** Test direct and forwarder-wrapped historical adjustTiers calls reject true flags and accept false, and exercise real wallet adapter refusal before old bytes open the wallet. Retain funded recovery suites.
+- **Resource budget:** Bounded shared guard at new wallet boundaries and new Relayr funding recheck, no generic entry guard, framework or historical migration.
+
+## Convergence review
+| Rule | Owning result | Durable evidence |
+| --- | --- | --- |
+| Price-based votes | Shared compiler always encodes false and zero custom units; editor explains price-based votes; existing locked-vote collections refuse priced additions. New signing/funding of historical custom payloads is refused without rewriting recovery. | add-items-modal, shop-batch, shop-voting-policy, current-wallet-adapter, reviewed-relayr-hooks |
+| Current wallet | Generic actions, batches, Relayr, Safe signatures and Safe queue execution accept same-account connector replacement and resolve the current client; account, chain, Safe route and view-as checks remain. | reviewed-safe-signature, multichain-batch, safe-queue-card, current-wallet-adapter, existing Relayr boundary matrix |
+| Chain-qualified identity | Shared identity uses chain+address for custom assets, authenticates USDC on its chain, and flattened token rows plus shield denomination retain chain. Real activity, floor and participant aggregation consume the shared rule. | token-identity, project-link-preview, shields-route |
+| Reserved single supply | Existing compiler rejects supply1 with positive reserves, including per-chain override; historical new authorizations use the same deadlock predicate. | add-items-modal, shop-voting-policy |
+| Unknown balances | Existing payment balance reads/layout preserve unread values; treasury previews now report unavailable and shield numeric totals stay null on unread amounts. Confirmed zero remains zero. | pay-card-layout, you-card-balance-availability, project-link-preview, shields-route |
+
+Source review: independent parent review approved the final policy owner. Focused wallet/policy recovery run passes285 tests; nested Safe/MultiSend/forwarder and historical launch tests pass5 tests. All checks use Node26.12.1 and physically copied dependencies matching the existing package lock. Final full coverage, production build and browser results will be recorded below. No contracts, original dirty checkout, deployment, push or merge changed.
+
+## Plan refinement
+- **Objective:** Finish the authorized five-rule convergence with a measured budget allowance for the necessary shared shop authorization guard; preserve all correctness and recovery policies.
+- **System fit:** The same runtime artifact passes build and standalone checks and is undergoing170 browser cases; the bundle fixture owns bounded acceptance ceilings. The parent approved measured cap updates, not policy removal or deployment.
+- **Reuse and simplicity:** Keep the existing shared ABI decoders, tiny reserve policy owner and lazy loading. Stop loading rearrangements and code-golf; update only seven ceilings that the exact artifact exceeds.
+- **Evidence and unknowns:** Actual gzip KiB: create550.8,slug579.2,terms577.8,shop585.4,extras595.2,account424.3,allclient2757.6. Necessary shared authorization guard adds3.6KiB over the aggregate ceiling, about0.13%; referenced911.8 remains below922, discover339.3 below340 and operator673.6 below676.
+- **Verification:** Set rounded caps to551/580/578/586/596/425 and aggregate2758KiB, rerun budget on the exact existing artifact, finish static and browser checks, then commit only owned files. Report the narrow baseline increase transparently.
+- **Resource budget:** One bounded measured fixture update, no further loading/code changes or artifact rebuild. No contract, deployment, push or merge.
+
+
+## Final verification and limits
+- Full source-frozen coverage:2846 tests across287 files passed, exit0, pinned Node26.12.1, two workers and no cache. Subsequent behavior-preserving loading/domain extraction passed443 wallet/recovery tests and296 focused compiler/policy tests; the final bundle checker passed13 regression tests.
+- Final typecheck, lint, format ratchet, source invariants, dead-code check and wallet inventories pass. Dependency integrity, environment/deployment fixtures and production advisory audit pass. All44 protocol artifacts independently matched the exact pinned deploy-all-v6 revision.
+- Final production build and standalone validation pass. Approved measured caps pass on that exact artifact:2757.6/2758KiB all client JS and911.8/922KiB referenced JS; six route caps are rounded up as documented in the checker. This is an explicit narrow baseline update for the necessary authorization guard.
+- Browser full run:158 passed,10 intentional viewport skips,2 flaky composite-route tests, so CI failOnFlaky correctly returned exit1. Both composite cases passed retry. Their unchanged case then passed all5 viewports in an isolated one-worker run with retries0 and the original30s timeout (36.6s total). The full run is not claimed clean; exact-head GitHub full-browser CI remains required independent evidence before release. First-run traces are preserved at /private/tmp/rn-browser-first-run-results.
+- Independent parent review approved the policy source. No contract edits, original dirty-checkout edits, deployments, wallet transactions, pushes or merges occurred.
+
+## Plan refinement
+- **Objective:** Fix Astra's actual wagmi acquisition race in RN111 so same-account connector replacement invokes the current provider without relaxing reviewed account, chain, Safe route, payload or recovery checks.
+- **System fit:** Existing reviewed-send-deps WalletAdapter owns final client acquisition and invocation for direct writes, approvals, signatures and batches. Installed SDK and contracts remain unchanged; pre-invocation failures must release definitely-unsent journal reservations while actual wallet failures remain ambiguous.
+- **Reuse and simplicity:** Replace the SDK viem adapter delegation with one local callback helper using explicit current connector acquisition, bounded UID-drift retries and synchronous validation/invocation in the same continuation. Preserve native chain formatters, ready/switch semantics and existing shop policy checks.
+- **Evidence and unknowns:** /private/tmp/astra-wallet-race.mjs reproduces current=connected but old=invoked with installed wagmi and SDK. Existing mocks switched before client acquisition and missed the await race; SDK cleanup recognizes4001 only, so the app must classify strictly pre-invocation errors without retagging actual wallet errors.
+- **Verification:** Add real wagmi provider/chain acquisition holds that switch connector mid-acquisition for transactions, typed/message signatures and sendCalls; account/chain/Safe drift must invoke nothing. Exercise SDK rejection rollback for acquisition failures and preserve ambiguous wallet errors. Freeze source before owning full gates and independent Astra re-review.
+- **Resource budget:** One adapter owner and durable focused regression file, max2 workers and pinned Node26 with physical dependencies. Reuse existing policy/recovery tests, no broad census, dependency/SDK/contracts changes, merge or push. Measure any necessary bounded artifact footprint only after source freeze.
+
+- [x] Implement callback-based current-wallet invocation and real-acquisition regressions.
+- [x] Freeze source, obtain Astra review and complete local preflight; exact-head full CI remains required before merge.
+- [x] Commit reviewed changes and report exact proof and limits to parent.
+
+## Plan refinement
+- **Objective:** Finish only the reproduced acquisition race and necessary final existing guards, readable refusal and unsent recovery, then freeze for Astra and required gates.
+- **System fit:** A private pre-invocation write brand supplies SDK4's4001 rollback signal; send/resume engine wrappers normalize it only after cleanup so React shows the real reason. Signatures receive no4001. The existing fee-attempt restore branch recognizes the private brand while retaining signed quote history.
+- **Reuse and simplicity:** One adapter callback helper plus narrow engine bridge; no SDK release. Capture each action's existing synchronous final assertion when that action reaches the adapter, rather than applying every active action's assertion to unrelated sends. Standalone adapters accept an optional final callback for existing fee/context checks.
+- **Evidence and unknowns:** Actual SDK signPrepared rewrites4001 into cancellation, and React useReviewedRun hides it too. Real tests now demonstrate correct current-provider invocation, SDK unsent rollback, signature refusal text and ambiguous invoked-wallet errors; final action assertion plumbing and fee recovery have bounded owning tests.
+- **Verification:** Require actual React same-call retry after acquisition refusal, actual signReviewed reason preservation, actual fee journal restoration with signed bytes unchanged and a held-acquisition final-assertion refusal. Freeze all source before full gates and Astra review.
+- **Resource budget:** No new feature census, cleanup or optimization. Finish the identified owner plumbing, final review and bounded required artifact measurement; no push before parent coordination and Astra approval.
+
+Astra approved the frozen runtime fix after independent27/27 acquisition/SafeBatch tests and1/1 fee-restoration test. Approved SHA256: reviewed-send-deps.ts31deb9b63c39540439f716e5632ba3d95aa660099ab71c39b81c6dfe3bd4acfd, useReviewedAction.tsf4c693b6f634106b3c9ae02a3eecf42f34898fb2d47d19aab431089ec66eda03, useReviewedRelayr.tsf06e8453358b1a770d6b1b54b174001ceeeb1b1d25fefcdd34d4796d378bd12d. Final owning focused run passes458 tests. Full source-frozen gates use pinned Node26.12.1 with CI's NODE_OPTIONS=--no-experimental-webstorage, physical locked dependencies and at most2 workers.
+
+## Plan refinement
+- **Objective:** Complete only the approved acquisition-race fix with the minimal measured bundle allowance needed by its callback and cleanup/UX bridge.
+- **System fit:** The Astra-approved runtime artifact builds and passes standalone validation; existing bundle-checker ceilings own the acceptance baseline, while exact-head CI will own final full coverage/browser proof before merge.
+- **Reuse and simplicity:** Keep frozen runtime source and the existing checker. Update only create552, terms579, shop587 and aggregate2760KiB; no new loading rearrangements, source optimization or rebuild.
+- **Evidence and unknowns:** Measured gzip KiB are create551.4, terms578.4, shop586.0 just over586, aggregate2759.3 versus prior artifact2757.6. The required callback/unsent UX fix adds1.7KiB total; referenced912.4 remains below922 and every other route passes.
+- **Verification:** Rerun the checker against the same artifact and its13 regression tests, preserve Astra's three source hashes, commit the candidate with honest local targeted/static/artifact evidence and require exact-head full CI before merge.
+- **Resource budget:** One approved measured baseline update, no further source edits, feature census, optimization, dependency/SDK changes or local full-suite repetition. Parent coordinates publication and landing.
+
+
+Acquisition-fix review: 458 focused tests across 8 owning wallet/recovery suites pass, plus 13 bundle-checker regressions. Final typecheck, lint, format ratchet, source invariants, dead-code and both wallet inventories pass. Astra independently approves the three exact runtime hashes recorded above and passed 27 acquisition/SafeBatch plus one fee-restoration test. Build and standalone preflight pass. The exact artifact passes approved narrow caps at 2759.3/2760 KiB all client JS and 912.4/922 KiB referenced JS. No runtime source changed after Astra approval. The partial local full-suite run was intentionally stopped, not counted as proof, when the parent chose focused/static/artifact preflight followed by required exact-head full CI before merge. No contracts, SDK, dependencies, original dirty tree, pushes or merges changed in this agent's continuation.

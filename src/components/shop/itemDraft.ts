@@ -1,5 +1,7 @@
 "use client";
 
+import { reserveWouldDeadlock } from "@/lib/shop-item-policy";
+
 import { encodeIpfsCid, TIER_UNLIMITED_SUPPLY } from "@/app/[slug]/components/v6/shop/shopLib";
 import { pinJsonMetadata, pinMediaFile } from "@/app/create/helpers/pinProjectMetaData";
 import { cidFromIpfsUri } from "@/lib/ipfs";
@@ -162,7 +164,7 @@ export function buildTierConfigs(
     const reserveFrequency = Number(reserveStr);
     let reserveBeneficiary: Address = zeroAddress;
     if (reserveFrequency > 0) {
-      if (initialSupply === 1) {
+      if (reserveWouldDeadlock(initialSupply, reserveFrequency)) {
         return `${label}a reserved item needs a supply of at least 2 (or unlimited).`;
       }
       if (!isAddress(item.reserveBeneficiary.trim())) {
@@ -170,12 +172,6 @@ export function buildTierConfigs(
       }
       reserveBeneficiary = item.reserveBeneficiary.trim() as Address;
     }
-
-    const votingStr = item.votingUnits.trim() || "0";
-    if (!/^\d+$/.test(votingStr) || BigInt(votingStr) > 0xffffffffn) {
-      return `${label}voting units must be a whole number that fits uint32.`;
-    }
-    const votingUnits = Number(votingStr);
 
     const discountText = item.discountPct.trim() || "0";
     const discountPct = Number(discountText);
@@ -242,7 +238,7 @@ export function buildTierConfigs(
     configs.push({
       price,
       initialSupply,
-      votingUnits,
+      votingUnits: 0,
       reserveFrequency,
       reserveBeneficiary,
       encodedIpfsUri,
@@ -255,7 +251,7 @@ export function buildTierConfigs(
         // transfer gate closed. This immutable tier flag therefore means
         // exactly "non-transferable", never "possibly paused later".
         transfersPausable: item.nonTransferable,
-        useVotingUnits: votingUnits > 0,
+        useVotingUnits: false,
         cantBeRemoved: item.cantBeRemoved,
         cantIncreaseDiscountPercent: !item.operatorCanEditDiscount,
         cantBuyWithCredits: !item.allowCredits,

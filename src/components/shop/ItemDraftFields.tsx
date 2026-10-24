@@ -365,24 +365,12 @@ export function ItemDraftFields({
           <div>
             <Label className="text-xs">Voting power</Label>
             <p className="mt-1 text-xs text-zinc-500">
-              Give each item a custom number of governance votes.
+              Each item's price determines its voting power.
             </p>
-            {limits.noNewTiersWithVotes ? (
+            {limits.noNewTiersWithVotes && (
               <p className="mt-2 text-xs text-zinc-500">
-                This collection no longer accepts items with voting units.
+                This collection only accepts free items because new voting power is locked.
               </p>
-            ) : (
-              <div className="mt-2 flex items-center gap-2">
-                <Input
-                  value={item.votingUnits}
-                  onChange={(e) => onChange({ votingUnits: e.target.value })}
-                  placeholder="0"
-                  inputMode="numeric"
-                  disabled={disabled}
-                  className="h-10 w-28 bg-white"
-                />
-                <span className="text-sm text-zinc-600">votes each</span>
-              </div>
             )}
           </div>
 

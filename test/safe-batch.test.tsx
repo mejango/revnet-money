@@ -202,6 +202,22 @@ describe("one Safe proposal for a whole flow", () => {
     },
   );
 
+  it("shows an acquisition refusal and releases the exact SDK batch hold before a same-call retry", async () => {
+    const batch = calls();
+    mocks.walletLoaded.mockRejectedValueOnce(new Error("Wallet provider acquisition failed."));
+    await expect(proposeBatch(batch)).resolves.toMatchObject({
+      status: "failed",
+      error: "Wallet connection could not be acquired. Nothing was sent; try again.",
+    });
+    expect(mocks.sendCalls).not.toHaveBeenCalled();
+    mocks.walletLoaded.mockResolvedValue(undefined);
+    await expect(proposeBatch(batch)).resolves.toMatchObject({
+      status: "proposed",
+      safeTxHash: SAFE_TX_HASH,
+    });
+    expect(mocks.sendCalls).toHaveBeenCalledOnce();
+  });
+
   it("keeps a run's wallet check when a later run on the same hook ends first", async () => {
     const { result } = renderHook(() => useReviewedAction());
     const run = (batch: ReturnType<typeof calls>) =>

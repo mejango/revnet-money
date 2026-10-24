@@ -238,7 +238,7 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
                     [
                       "noNewTiersWithVotes",
                       "Lock voting items after launch",
-                      "Items added later can never carry custom voting power.",
+                      "Items added later must be free because their price determines voting power.",
                     ],
                     [
                       "noNewTiersWithOwnerMinting",

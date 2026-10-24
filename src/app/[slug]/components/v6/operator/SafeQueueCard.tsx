@@ -959,11 +959,7 @@ export function SafeQueueCard({
               await verifyLiveQueuedTransaction(row, tx);
               requireNoViewAs();
               const live = getAccount(config);
-              if (
-                !sender ||
-                live.connector !== connector ||
-                live.address?.toLowerCase() !== sender.toLowerCase()
-              )
+              if (!sender || live.address?.toLowerCase() !== sender.toLowerCase())
                 throw new ReviewRefusal(WALLET_CHANGED);
               const hash = await wallet.sendTransaction(sent);
               journaled = recordSubmittedWrite(
