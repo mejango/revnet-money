@@ -2,8 +2,11 @@ import { DateTimeField } from "@/components/ui/DateTimeField";
 import { useFormContext } from "@/lib/forms";
 import { timestampToLocalDateTimeInput } from "@/lib/time-zone";
 import { useState } from "react";
+import {
+  getCurrentStageDuration,
+  getStageCutFrequencySeconds,
+} from "../helpers/calculatePickupIssuance";
 import { StageData } from "../types";
-import { NotesSection } from "./AddStageDialog";
 import { FieldGroup } from "./Fields";
 
 interface StartTimeFieldProps {
@@ -59,7 +62,7 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
   }
 
   const previousStage = stages[stageIdx - 1];
-  const daysPerCut = Number(previousStage.priceCeilingIncreaseFrequency);
+  const daysPerCut = getStageCutFrequencySeconds(previousStage) / 86_400;
   const previousStageHasCuts = daysPerCut > 0;
 
   if (previousStageHasCuts) {
@@ -96,19 +99,14 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
             </div>
           </div>
           <div className="text-sm text-zinc-500 mt-2 pl-1">
-            = {cutsValue * Number(previousStage.priceCeilingIncreaseFrequency)} days
-            {` (${cutsValue} cuts × ${previousStage.priceCeilingIncreaseFrequency} days per cut)`}
+            ={" "}
+            {getCurrentStageDuration(
+              { ...values, stageStartCuts: String(cutsValue) },
+              previousStage,
+            )}{" "}
+            days, at the next cut boundary
           </div>
         </div>
-
-        <NotesSection>
-          <ul className="list-disc list-inside">
-            <li className="flex">
-              <span className="mr-2">•</span>
-              <div>Enter a whole number of cuts, at least 1.</div>
-            </li>
-          </ul>
-        </NotesSection>
       </div>
     );
   }
@@ -127,14 +125,6 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
         description="How many days after the last stage's start time should this stage start?"
         width="w-32"
       />
-      <NotesSection>
-        <ul className="list-disc list-inside">
-          <li className="flex">
-            <span className="mr-2">•</span>
-            <div>The delay must be a whole number of this stage’s cut intervals.</div>
-          </li>
-        </ul>
-      </NotesSection>
     </div>
   );
 }
