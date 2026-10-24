@@ -201,11 +201,7 @@ export function useSuckersUserTokenBalance() {
         }),
       );
       return [
-        {
-          balance: currentChain.data ?? new JBProjectToken(0n),
-          chainId,
-          projectId,
-        },
+        ...(currentChain.data ? [{ balance: currentChain.data, chainId, projectId }] : []),
         ...remote,
       ];
     },
@@ -220,7 +216,7 @@ export function useSuckersUserTokenBalance() {
       (chainId && currentChain.data
         ? [{ balance: currentChain.data, chainId, projectId }]
         : undefined),
-    isLoading: balances.isLoading || suckers.isLoading || currentChain.isLoading,
+    isLoading: balances.isLoading || isPairCheckPending(suckers) || currentChain.isLoading,
     isError: balances.isError || suckers.isError || currentChain.isError,
     error: balances.error ?? suckers.error ?? currentChain.error,
   };

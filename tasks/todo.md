@@ -1364,3 +1364,19 @@ Brief: /private/tmp/claude-501/-Users-jango-Documents-jb-v6-evm/7d1fdce3-54c6-41
 ### Review
 
 `npm run check` green (2903 unit tests, 160 browser, 10 existing skips; no budget change). Codex gpt-6.1-sol: 7 passes, approved on the 7th; fixes covered known event tokens beating USD mode, add-to-balance USD fallback, selected `balanceUsd` on Top rows, unpriced/missing history, unreadable symbols, and token identity by address for anything but ETH/USDC (`tokenKindOf`). Declined: a fallback query for schema absence (the live schema contract test gates field presence). The browser fixture's reserve history now passes the response contract, which surfaced the chart's 3.03:1 axis labels; fixed. Header TVL stays on chain (live balances, already correct).
+
+# Incomplete wallet balances — 2026-10-24
+
+## Plan refinement
+- **Objective:** Never display failed or incomplete cross-chain balances as zero or a complete total, while retaining known per-chain balances for existing actions.
+- **System fit:** The sucker-balance hook owns known per-chain rows and loading/error evidence; WalletButton and V6YouCard own aggregate presentation. No transaction authority or contract changes.
+- **Reuse and simplicity:** Reuse existing hook status flags, pair verification and Unavailable presentation. Omit unknown home rows instead of manufacturing zero; keep confirmed zero balances.
+- **Evidence and unknowns:** Refreshed origin/main is bc87b898. The hook substitutes zero for missing home data and WalletButton ignores failures; aggregate card consumers also require inspection.
+- **Verification:** Add real-hook missing-home/peer/registry loading regressions and rendered menu error/zero regressions, then typecheck, lint, formatting and relevant suites. Run repository checks and CI on the PR.
+- **Resource budget:** One isolated worktree and existing tests; no new dependencies or abstractions. Broaden only to actual aggregate consumers.
+
+- [x] Trace and repair incomplete balance representation and aggregate consumers.
+- [x] Add regressions, 35 focused cases pass; full coverage and static checks run before final handoff.
+- [ ] Commit and open a PR with evidence.
+
+Review: Unknown home balances are omitted rather than fabricated; registry verification remains pending for aggregate display. Wallet menu rejects incomplete/error totals, and the You card distinguishes unavailable holdings and partial totals while preserving available per-chain actions. Fresh locked dependencies, protocol/source/wallet inventories and dead-code checks pass. Typecheck/lint/format/full coverage results recorded below when terminal.

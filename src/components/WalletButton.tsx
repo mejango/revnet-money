@@ -6,7 +6,7 @@ import { ViewAsDialog } from "@/components/ViewAsDialog";
 import { useEnsName } from "@/hooks/ens/useEnsName";
 import { IS_DETERMINISTIC_BROWSER } from "@/lib/browserEnvironment";
 import { useJBProject, useJBTokenContext } from "@/lib/nana/project";
-import { useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
+import { isPairCheckPending, useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { cn, formatEthAddress, formatTokenSymbol } from "@/lib/utils";
 import { useViewAs } from "@/lib/view-as";
 import {
@@ -62,7 +62,7 @@ function BalanceRow({ label, value }: { label: string; value: string }) {
 }
 
 function ProjectWalletBalance() {
-  const { data: balances, isLoading } = useSuckersUserTokenBalance();
+  const { data: balances, isLoading, isError } = useSuckersUserTokenBalance();
   const { token } = useJBTokenContext();
   const total = balances?.reduce((sum, balance) => sum + balance.balance.value, 0n) ?? 0n;
   const symbol = formatTokenSymbol(token) || "tokens";
@@ -70,7 +70,15 @@ function ProjectWalletBalance() {
   return (
     <BalanceRow
       label={symbol}
-      value={isLoading || token.isLoading ? "Loading…" : formattedWalletBalance(total, 18, symbol)}
+      value={
+        isError
+          ? "Unavailable"
+          : isLoading || token.isLoading
+            ? "Loading…"
+            : balances
+              ? formattedWalletBalance(total, 18, symbol)
+              : "Unavailable"
+      }
     />
   );
 }
@@ -111,7 +119,8 @@ function ProjectWalletBalances({ address }: { address: `0x${string}` }) {
       };
     },
   });
-  const isLoading = suckers.isLoading || balances.isLoading;
+  const isLoading = isPairCheckPending(suckers) || balances.isLoading;
+  const isError = suckers.isError || balances.isError;
 
   return (
     <>
@@ -122,21 +131,25 @@ function ProjectWalletBalances({ address }: { address: `0x${string}` }) {
         <BalanceRow
           label={balances.data?.nativeSymbol ?? "ETH"}
           value={
-            isLoading
-              ? "Loading…"
-              : balances.data
-                ? formattedWalletBalance(balances.data.native, 18, balances.data.nativeSymbol)
-                : "Unavailable"
+            isError
+              ? "Unavailable"
+              : isLoading
+                ? "Loading…"
+                : balances.data
+                  ? formattedWalletBalance(balances.data.native, 18, balances.data.nativeSymbol)
+                  : "Unavailable"
           }
         />
         <BalanceRow
           label="USDC"
           value={
-            isLoading
-              ? "Loading…"
-              : balances.data
-                ? formattedWalletBalance(balances.data.usdc, USDC_DECIMALS, "USDC")
-                : "Unavailable"
+            isError
+              ? "Unavailable"
+              : isLoading
+                ? "Loading…"
+                : balances.data
+                  ? formattedWalletBalance(balances.data.usdc, USDC_DECIMALS, "USDC")
+                  : "Unavailable"
           }
         />
         <ProjectWalletBalance />
