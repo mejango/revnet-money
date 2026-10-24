@@ -1376,7 +1376,7 @@ Brief: /private/tmp/claude-501/-Users-jango-Documents-jb-v6-evm/7d1fdce3-54c6-41
 - **Resource budget:** One isolated worktree and existing tests; no new dependencies or abstractions. Broaden only to actual aggregate consumers.
 
 - [x] Trace and repair incomplete balance representation and aggregate consumers.
-- [x] Add regressions, 35 focused cases pass; full coverage and static checks run before final handoff.
+- [x] Add regressions, 38 focused cases pass; full coverage and static checks run before final handoff.
 - [ ] Commit and open a PR with evidence.
 
-Review: Unknown home balances are omitted rather than fabricated; registry verification remains pending for aggregate display. Wallet menu rejects incomplete/error totals, and the You card distinguishes unavailable holdings and partial totals while preserving available per-chain actions. Fresh locked dependencies, protocol/source/wallet inventories and dead-code checks pass. Typecheck/lint/format/full coverage results recorded below when terminal.
+Review: Unknown home balances are omitted rather than fabricated; registry verification remains pending for aggregate display. Wallet menu rejects incomplete/error totals, and the You card distinguishes unavailable holdings and partial totals while preserving available per-chain actions. Fresh locked dependencies, protocol/source/wallet inventories and dead-code checks pass. Typecheck, full lint, formatting ratchet and focused cases pass; full coverage results recorded below when terminal. Aggregate completeness is explicit and requires a verified registry, successful peer query and known home balance, including unresolved nonloading states without an explicit error.

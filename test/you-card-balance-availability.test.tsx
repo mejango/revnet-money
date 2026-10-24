@@ -34,7 +34,7 @@ vi.mock("@/app/[slug]/components/v6/owners/market/AmmCard", () => ({
 }));
 
 beforeEach(() => {
-  state.balances = { data: [], isLoading: false, isError: false };
+  state.balances = { data: [], isLoading: false, isError: false, isComplete: true };
 });
 
 function show() {
@@ -55,4 +55,11 @@ it("does not claim the wallet holds nothing after a balance read fails", () => {
 it("still reports genuinely empty confirmed holdings", () => {
   show();
   expect(screen.getByText("You don't hold any REV yet.")).toBeVisible();
+});
+
+it("keeps unresolved balances distinct from confirmed empty holdings", () => {
+  state.balances = { data: [], isLoading: false, isError: false, isComplete: false };
+  show();
+  expect(screen.getByText("Balances unavailable.")).toBeVisible();
+  expect(screen.queryByText(/You don't hold/)).not.toBeInTheDocument();
 });

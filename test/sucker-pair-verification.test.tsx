@@ -109,9 +109,20 @@ describe("useSuckersUserTokenBalance", () => {
       const { result } = renderHook(() => useSuckersUserTokenBalance(), { wrapper: wrapper() });
       await waitFor(() => expect(result.current.isLoading).toBe(false));
       expect(result.current.isError).toBe(true);
+      expect(result.current.isComplete).toBe(false);
       expect(result.current.data?.map((row) => row.projectId)).toEqual(withPeer ? [4n] : []);
     },
   );
+
+  it("keeps a missing nonloading home balance incomplete even without an explicit error", async () => {
+    mocks.homeBalance = undefined;
+    mocks.resolveSuckers.mockResolvedValue([HOME, ONCHAIN_PEER]);
+    const { result } = renderHook(() => useSuckersUserTokenBalance(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isError).toBe(false);
+    expect(result.current.isComplete).toBe(false);
+    expect(result.current.data?.map((row) => row.projectId)).toEqual([4n]);
+  });
 
   it("keeps a confirmed zero balance", async () => {
     mocks.homeBalance = new JBProjectToken(0n);
@@ -119,6 +130,7 @@ describe("useSuckersUserTokenBalance", () => {
     const { result } = renderHook(() => useSuckersUserTokenBalance(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.isError).toBe(false);
+    expect(result.current.isComplete).toBe(true);
     expect(result.current.data).toEqual([
       { balance: new JBProjectToken(0n), chainId: 8453, projectId: 3n },
     ]);

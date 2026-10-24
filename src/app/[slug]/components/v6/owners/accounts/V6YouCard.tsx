@@ -125,8 +125,9 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
     data: balances,
     isLoading: isLoadingBalances,
     isError: isBalanceError,
+    isComplete: balancesComplete,
   } = useSuckersUserTokenBalance();
-  const balancesIncomplete = isLoadingBalances || isBalanceError || !balances;
+  const balancesIncomplete = !balancesComplete;
 
   // Full per-chain project rows (currency/decimals/token) for quotes.
   const { data: projectData } = useBendystrawQuery(
@@ -308,13 +309,13 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
 
   return (
     <div>
-      {isBalanceError && held.length > 0 && (
+      {balancesIncomplete && !isLoadingBalances && held.length > 0 && (
         <p className="text-sm text-zinc-500 mb-2">
           Some balances are unavailable. Only available balances are shown.
         </p>
       )}
       {held.length === 0 ? (
-        isBalanceError || (!isLoadingBalances && !balances) ? (
+        isBalanceError || (!isLoadingBalances && balancesIncomplete) ? (
           <p className="text-md text-black font-light italic">Balances unavailable.</p>
         ) : isLoadingBalances ? (
           <TableSkeleton rows={Math.max(projects.length, 2)} columns={4} />

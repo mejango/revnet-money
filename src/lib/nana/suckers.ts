@@ -207,8 +207,16 @@ export function useSuckersUserTokenBalance() {
     },
   });
 
+  const isLoading = balances.isLoading || isPairCheckPending(suckers) || currentChain.isLoading;
+  const isError = balances.isError || suckers.isError || currentChain.isError;
   return {
     ...balances,
+    isComplete:
+      suckers.isVerified &&
+      balances.isSuccess &&
+      currentChain.data !== undefined &&
+      !isLoading &&
+      !isError,
     // While verified peers are read, or if a peer read fails, the home balance read
     // on its own stays shown (and selectable).
     data:
@@ -216,8 +224,8 @@ export function useSuckersUserTokenBalance() {
       (chainId && currentChain.data
         ? [{ balance: currentChain.data, chainId, projectId }]
         : undefined),
-    isLoading: balances.isLoading || isPairCheckPending(suckers) || currentChain.isLoading,
-    isError: balances.isError || suckers.isError || currentChain.isError,
+    isLoading,
+    isError,
     error: balances.error ?? suckers.error ?? currentChain.error,
   };
 }

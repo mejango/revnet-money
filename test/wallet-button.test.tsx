@@ -291,6 +291,7 @@ describe("local wallet controls", () => {
       wallet.suckerBalances.mockReturnValue({
         data: perChain.map((value) => ({ balance: { value } })),
         isLoading: false,
+        isComplete: true,
       });
       wallet.tokenContext.mockReturnValue({
         token: { isLoading: false, data: { symbol: "$REV" } },
@@ -333,6 +334,18 @@ describe("local wallet controls", () => {
         expect(row).not.toHaveTextContent("500 REV");
       },
     );
+
+    it("does not total unresolved balances without an explicit read error", async () => {
+      signedInOnAProject();
+      wallet.suckerBalances.mockReturnValue({
+        data: [{ balance: { value: 500_000_000_000_000_000_000n } }],
+        isLoading: false,
+        isError: false,
+        isComplete: false,
+      });
+      await openMenu();
+      expect(screen.getByText("REV").closest("div")).toHaveTextContent("Unavailable");
+    });
 
     it("does not present registry-seeded asset balances as complete after verification fails", async () => {
       signedInOnAProject(0n);

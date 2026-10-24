@@ -62,7 +62,7 @@ function BalanceRow({ label, value }: { label: string; value: string }) {
 }
 
 function ProjectWalletBalance() {
-  const { data: balances, isLoading, isError } = useSuckersUserTokenBalance();
+  const { data: balances, isLoading, isError, isComplete } = useSuckersUserTokenBalance();
   const { token } = useJBTokenContext();
   const total = balances?.reduce((sum, balance) => sum + balance.balance.value, 0n) ?? 0n;
   const symbol = formatTokenSymbol(token) || "tokens";
@@ -75,7 +75,7 @@ function ProjectWalletBalance() {
           ? "Unavailable"
           : isLoading || token.isLoading
             ? "Loading…"
-            : balances
+            : isComplete
               ? formattedWalletBalance(total, 18, symbol)
               : "Unavailable"
       }
