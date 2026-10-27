@@ -103,10 +103,11 @@ const fetchTopProjects = unstable_cache(
   { revalidate: 600 }, // 10 minutes
 );
 
-export async function getHomepageSuckerGroups() {
+export async function getHomepageSuckerGroups({ strict = false } = {}) {
   try {
     return (await fetchTopProjects()).suckerGroups.items;
-  } catch {
+  } catch (error) {
+    if (strict) throw error;
     return [];
   }
 }
