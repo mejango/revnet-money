@@ -1508,3 +1508,13 @@ Acquisition-fix review: 458 focused tests across 8 owning wallet/recovery suites
 - [ ] Complete focused tests, Astra review, static/artifact gates and reviewable PR.
 
 Review: Independent Astra approved all ten runtime files, including final formatting/type-only changes (approval artifact SHA256 d44aab58d85f9d432e935952bbb406b17de5947275f925ac01633f416be88d8f). Astra independently passed 77 focused tests; parent final changed suites passed 41 tests. Sixteen valid launch configurations retained byte-identical calldata, SHA256 b0d9a956b653d131226baae90b20952ecd5ae02fd445c820048aa2485ead9006. Contract/source/SDK evidence covers six sources across four mainnets, plus all 44 pinned deployment artifacts; no live bytecode attestation is claimed. Typecheck, formatter ratchet, source invariants, wallet inventories, dead-code, dependency integrity, environment/deployment fixtures and production audit pass. Build/artifact and exact-head CI remain final gates before landing. No contract, SDK or dependency changes.
+
+## Plan refinement
+- **Objective:** Complete the four approved fixes with the minimal measured per-route bundle baseline adjustment.
+- **System fit:** Keep all ten Astra-approved runtime files frozen; the existing artifact checker remains the size gate and exact-head CI remains the release proof.
+- **Reuse and simplicity:** Reuse the existing integer-ceiling policy; round only home to394, project to581, terms to580 and extras to597 KiB. No source optimization, dependency change or new mechanism.
+- **Evidence and unknowns:** The built artifact measures393.0,580.0,579.2,596.1 KiB on those routes, slightly over their existing caps. All client JS2759.9 versus prior2759.3 stays within2760; referenced912.5 stays within922. Measurements are local, CI still pending.
+- **Verification:** Rerun the unchanged artifact checker and its existing regression suite, obtain Astra allowance review and require final-head full CI. Preserve runtime approval hashes.
+- **Resource budget:** One narrow measured baseline update, no rebuild locally or expanded census; use existing full CI for final browser/coverage proof.
+
+Artifact review: production build and standalone pass. Exact artifact budget passes at2759.9/2760 KiB aggregate and912.5/922 KiB referenced after four sub0.3KiB route overages are rounded to the next integer ceiling. Independent Astra approves those four caps; runtime hashes remain unchanged. PR112 full CI is the final coverage/browser/container gate.

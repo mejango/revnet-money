@@ -38,19 +38,22 @@ const account = `0x${"1".repeat(40)}`;
 // round only those ceilings up. Discover/operator and the route-referenced ceiling remain fixed.
 // Astra acquisition fix: callback invocation plus pre-invocation cleanup/UX measures551.4/578.4/586.0 KiB
 // on create/terms/shop. Round only those ceilings up; all other route limits stay unchanged.
+// 2026-10-26: source-token loan context and canonical reserve identity measure home393.0,
+// project580.0, terms579.2 and extras596.1 KiB. Round only these route ceilings up;
+// aggregate2759.9/2760 and referenced912.5/922 KiB remain within existing limits.
 const routes = [
-  { route: "/", path: "/", kib: 393 },
+  { route: "/", path: "/", kib: 394 },
   { route: "/learn", path: "/learn", kib: 354 },
   { route: "/build", path: "/build", kib: 356 },
   { route: "/audit", path: "/audit", kib: 357 },
   { route: "/discover", path: "/discover", kib: 340 },
   { route: "/create", path: "/create", kib: 552 },
-  { route: "/[slug]", path: "/eth:1", kib: 580 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 579 },
+  { route: "/[slug]", path: "/eth:1", kib: 581 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 580 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 676 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 587 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 596 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 597 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 425 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 414 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
