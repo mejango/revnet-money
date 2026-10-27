@@ -4,8 +4,13 @@ import { ReviewRefusal } from "@/lib/review-refusal";
 import { isSafeConnection, safeWalletPeerSettled } from "@/lib/safe-connector";
 import { requireNoViewAs } from "@/lib/view-as";
 import { writeHolds } from "@/lib/write-hold";
-import type { ReviewedSendDeps, WalletAdapter } from "@bananapus/nana-sdk-core/review";
-import { isAddressEqual, type Address, type PublicClient } from "viem";
+import {
+  viemWalletAdapter,
+  WalletNotInvokedError,
+  type ReviewedSendDeps,
+  type WalletAdapter,
+} from "@bananapus/nana-sdk-core/review";
+import { isAddressEqual, type Address, type PublicClient, type WalletClient } from "viem";
 import type { Config, Connector } from "wagmi";
 import { getAccount, getPublicClient, getWalletClient, switchChain } from "wagmi/actions";
 
@@ -13,193 +18,79 @@ import { getAccount, getPublicClient, getWalletClient, switchChain } from "wagmi
  * The send engine loads with the first write, not with the page: every send through it takes it
  * from here, never from a static import.
  */
-class WalletAcquisitionRefusal extends ReviewRefusal {
-  readonly walletNotInvoked = true;
-  get reviewFixedLine() {
-    return true;
-  }
-  get line() {
-    return this.message;
-  }
-  constructor(
-    message: string,
-    readonly acquisitionCause: unknown,
-  ) {
-    super(message);
-  }
-}
-class UninvokedWalletWrite extends WalletAcquisitionRefusal {
-  readonly code = 4001;
-}
+export const loadEngine = () => import("@bananapus/nana-sdk-core/review");
 
-/** Branded locally: a provider cannot classify an invoked request as unsent by setting a field. */
-export const isWalletNotInvoked = (error: unknown): boolean =>
-  error instanceof WalletAcquisitionRefusal;
-
-async function readableWrite<T>(work: () => Promise<T>): Promise<T> {
-  try {
-    return await work();
-  } catch (error) {
-    // SDK4 has now released the hold. Its React wrapper must show the real refusal, not a
-    // synthetic user cancellation; keep acquisition diagnostics out of the SDK's cause traversal.
-    if (error instanceof UninvokedWalletWrite)
-      throw new WalletAcquisitionRefusal(error.message, error.acquisitionCause);
-    throw error;
-  }
-}
-export const loadEngine = async () => {
-  const engine = await import("@bananapus/nana-sdk-core/review");
-  return {
-    ...engine,
-    sendReviewed: (...args: Parameters<typeof engine.sendReviewed>) =>
-      readableWrite(() => engine.sendReviewed(...args)),
-    resumeReviewed: (...args: Parameters<typeof engine.resumeReviewed>) =>
-      readableWrite(() => engine.resumeReviewed(...args)),
-  };
-};
-
-/** Acquire and invoke in one continuation; returning a client across an await can retain an old provider. */
+/**
+ * Core's wallet adapter over the connected wagmi connector. `check` runs, with core's own checks,
+ * as each request reaches the wallet; a send or signature also checks the shop-voting policy.
+ */
 function walletAdapter(
   config: Config,
   account: () => Address | undefined,
   finalCheck: () => (() => void) | undefined,
 ): WalletAdapter {
-  type Client = Awaited<ReturnType<typeof getWalletClient>>;
-  const invoke = async <T>(
-    chainId: number | undefined,
-    send: (client: Client, account: Address) => T,
-    prepare?: () => Promise<() => void>,
-    releaseUnsent = false,
-  ): Promise<Awaited<T>> => {
-    let client: Client | undefined;
-    let asked: Address | undefined;
-    try {
-      asked = account();
-      const checkState = finalCheck();
-      const chain = chainId ?? getAccount(config).chainId;
-      const safe = isSafeConnection(config);
-      const requireContext = () => {
+  // Each send captures the operation's final check as it starts; a later action cannot replace it.
+  const over = (state = finalCheck(), payload?: () => void) =>
+    viemWalletAdapter({
+      walletClient: () => {
+        const { address, chainId, connector } = getAccount(config);
+        return getWalletClient(config, {
+          account: address,
+          chainId,
+          connector,
+        } as never) as Promise<WalletClient>;
+      },
+      account: () => getAccount(config).address,
+      chainId: () => getAccount(config).chainId,
+      isSafe: () => isSafeConnection(config),
+      switchChain: (chainId) => switchChain(config, { chainId } as never),
+      ready: safeWalletPeerSettled,
+      connector: () => getAccount(config).connector?.uid,
+      check: () => {
         requireNoViewAs();
-        if (
-          !asked ||
-          account()?.toLowerCase() !== asked.toLowerCase() ||
-          getAccount(config).chainId !== chain ||
-          isSafeConnection(config) !== safe
-        )
-          throw new ReviewRefusal(WALLET_CHANGED);
-      };
-      requireContext();
-      const checkPayload = await prepare?.();
-      checkPayload?.();
-      for (let attempt = 0; attempt < 3; attempt++) {
-        requireContext();
-        const connector = getAccount(config).connector;
-        let acquired: Client;
-        try {
-          acquired = await getWalletClient(config, {
-            account: asked,
-            connector,
-            ...(chain === undefined ? {} : { chainId: chain }),
-          });
-        } catch (error) {
-          requireContext();
-          if (getAccount(config).connector?.uid !== connector?.uid) continue;
-          throw new WalletAcquisitionRefusal(
-            "Wallet connection could not be acquired. Nothing was sent; try again.",
-            error,
-          );
-        }
-        requireContext();
-        if (getAccount(config).connector?.uid !== connector?.uid) continue;
-        if (acquired.account?.address && !isAddressEqual(acquired.account.address, asked!))
-          throw new ReviewRefusal(WALLET_CHANGED);
-        if (acquired.chain && acquired.chain.id !== chain) throw new ReviewRefusal(WALLET_CHANGED);
-        checkPayload?.();
-        checkState?.();
-        requireContext();
-        if (getAccount(config).connector?.uid !== connector?.uid) continue;
-        client = acquired;
-        break;
-      }
-      if (!client) throw new ReviewRefusal(WALLET_CHANGED);
-    } catch (cause) {
-      // SDK4 releases a reserved write on 4001. Only this pre-invocation path can prove that
-      // no wallet method ran; never tag the callback's synchronous or asynchronous errors.
-      const Refusal = releaseUnsent ? UninvokedWalletWrite : WalletAcquisitionRefusal;
-      throw new Refusal(cause instanceof Error ? cause.message : WALLET_CHANGED, cause);
-    }
-    // No await or callback separates the final identity checks from the actual method invocation.
-    return await send(client, asked!);
-  };
-  const chainOf = (client: Client, chainId: number) =>
-    client.chain?.id === chainId ? client.chain : { id: chainId };
+        account();
+        state?.();
+        payload?.();
+      },
+    });
+  const policy = () =>
+    import("@/lib/shop-voting-policy").then(
+      (module) => module.requirePriceBasedShopVoting,
+      (error) => {
+        throw Object.assign(new WalletNotInvokedError(WALLET_UNREACHABLE), { cause: error });
+      },
+    );
   return {
-    kind: "wallet",
-    ready: safeWalletPeerSettled,
+    ...over(),
     account,
-    chainId: () => getAccount(config).chainId,
-    isSafe: () => isSafeConnection(config),
-    switchChain: async (chainId) => {
-      await switchChain(config, { chainId } as never);
+    signMessage: (message) => over().signMessage(message),
+    sendTransaction: async (tx) => {
+      const state = finalCheck();
+      const require = await policy();
+      return over(state, () => require(tx.data, tx.to)).sendTransaction(tx);
     },
-    sendTransaction: (tx) =>
-      invoke(
-        tx.chainId,
-        (client, account) =>
-          client.sendTransaction({
-            account,
-            chain: chainOf(client, tx.chainId),
-            to: tx.to,
-            data: tx.data,
-            value: tx.value,
-            ...(tx.gas === undefined ? {} : { gas: tx.gas }),
-          } as never),
-        async () => {
-          const { requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy");
-          return () => requirePriceBasedShopVoting(tx.data, tx.to);
-        },
-        true,
-      ),
-    signTypedData: (typedData) =>
-      invoke(
-        typedData.domain?.chainId === undefined ? undefined : Number(typedData.domain.chainId),
-        (client, account) => client.signTypedData({ ...typedData, account } as never),
-        async () => {
-          const { requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy");
-          return () => {
-            const data = typedData.message?.data;
-            if (typeof data === "string" && data.startsWith("0x"))
-              requirePriceBasedShopVoting(
-                data as `0x${string}`,
-                typedData.message?.to as Address | undefined,
-                Number(typedData.message?.operation ?? 0),
-              );
-          };
-        },
-      ),
-    signMessage: (message) =>
-      invoke(undefined, (client, account) => client.signMessage({ account, message })),
-    sendCalls: (chainId, calls) =>
-      invoke(
-        chainId,
-        async (client, account) => {
-          const { id } = await client.sendCalls({
-            account,
-            chain: chainOf(client, chainId),
-            calls: calls.map(({ to, data, value }) => ({ to, data, value })),
-          } as never);
-          return id;
-        },
-        async () => {
-          const { requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy");
-          return () => {
-            for (const call of calls) requirePriceBasedShopVoting(call.data, call.to);
-          };
-        },
-        true,
-      ),
+    signTypedData: async (typedData) => {
+      const state = finalCheck();
+      const require = await policy();
+      return over(state, () => {
+        const data = typedData.message?.data;
+        if (typeof data === "string" && data.startsWith("0x"))
+          require(data as `0x${string}`, typedData.message?.to as Address | undefined, Number(
+            typedData.message?.operation ?? 0,
+          ));
+      }).signTypedData(typedData);
+    },
+    sendCalls: async (chainId, calls) => {
+      const state = finalCheck();
+      const require = await policy();
+      return over(state, () => {
+        for (const call of calls) require(call.data, call.to);
+      }).sendCalls!(chainId, calls);
+    },
   };
 }
+
+const WALLET_UNREACHABLE = "Your wallet could not be reached. Nothing was sent; try again.";
 
 /** The wallet a review was confirmed on: its account, connector and Safe mode. */
 export type ReviewedWallet = { account: Address; connector: Connector | undefined; safe: boolean };
@@ -233,17 +124,14 @@ function guardedAdapter(
   reviewed: () => Iterable<ReviewedWallet>,
   finalCheck: () => (() => void) | undefined = () => undefined,
 ): WalletAdapter {
-  return walletAdapter(
-    config,
-    () => {
-      const live = getAccount(config).address;
-      if (live)
-        for (const bound of reviewed())
-          if (isAddressEqual(live, bound.account)) requireWallet(config, bound);
-      return live;
-    },
-    finalCheck,
-  );
+  const bound = () => {
+    const live = getAccount(config).address;
+    if (live)
+      for (const wallet of reviewed())
+        if (isAddressEqual(live, wallet.account)) requireWallet(config, wallet);
+    return live;
+  };
+  return walletAdapter(config, bound, finalCheck);
 }
 
 /** revnet's wallet, chains and write hold, as core's reviewed sends take them. */

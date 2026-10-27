@@ -66,11 +66,11 @@ const CLIENT = client();
 vi.mock("wagmi/actions", () => ({
   getAccount: () => mocks.account,
   getPublicClient: () => CLIENT,
-  getWalletClient: async () => ({
-    account: { address: mocks.account.address, type: "json-rpc" },
-    chain: { id: 1 },
-    sendTransaction: mocks.submit,
-  }),
+  getWalletClient: async () =>
+    (await import("./support/viem-wallet")).viemWallet(
+      { sendTransaction: mocks.submit },
+      () => mocks.account.chainId,
+    ),
   switchChain: async () => undefined,
   watchAccount: () => () => undefined,
 }));

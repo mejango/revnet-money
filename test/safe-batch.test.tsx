@@ -32,7 +32,8 @@ vi.mock("wagmi/actions", () => ({
   getAccount: () => mocks.account,
   getWalletClient: async () => {
     await mocks.walletLoaded();
-    return { sendCalls: mocks.sendCalls };
+    const { viemWallet } = await import("./support/viem-wallet");
+    return viemWallet({ sendCalls: mocks.sendCalls }, () => mocks.account.chainId);
   },
   switchChain: async (_config: unknown, { chainId }: { chainId: number }) => {
     mocks.account.chainId = chainId;
@@ -207,7 +208,7 @@ describe("one Safe proposal for a whole flow", () => {
     mocks.walletLoaded.mockRejectedValueOnce(new Error("Wallet provider acquisition failed."));
     await expect(proposeBatch(batch)).resolves.toMatchObject({
       status: "failed",
-      error: "Wallet connection could not be acquired. Nothing was sent; try again.",
+      error: "Your wallet could not be reached. Nothing was sent; try again.",
     });
     expect(mocks.sendCalls).not.toHaveBeenCalled();
     mocks.walletLoaded.mockResolvedValue(undefined);

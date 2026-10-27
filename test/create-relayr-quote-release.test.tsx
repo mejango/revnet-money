@@ -84,7 +84,11 @@ vi.mock("wagmi/actions", () => ({
     estimateGas: async () => 21_000n,
     estimateContractGas: async () => 1_000_000n,
   }),
-  getWalletClient: async () => ({ signTypedData: mocks.signTypedData }),
+  getWalletClient: async () =>
+    (await import("./support/viem-wallet")).viemWallet(
+      { signTypedData: mocks.signTypedData },
+      () => mocks.account.chainId,
+    ),
   switchChain: (_config: unknown, request: { chainId: number }) => mocks.switchChain(request),
   waitForTransactionReceipt: vi.fn(),
 }));
