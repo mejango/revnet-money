@@ -95,6 +95,21 @@ describe("useReviewedAction", () => {
     expect(mocks.run).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps a run left at its receipt pending until its hold ends it, then returns that end", async () => {
+    let end!: (value: unknown) => void;
+    const ended = new Promise((resolve) => (end = resolve));
+    mocks.run.mockResolvedValueOnce({ status: "receipt", step: 0, hash: HASH, ended: () => ended });
+    const { result } = renderHook(() => useReviewedAction());
+    let returned: unknown = "pending";
+    await act(async () => {
+      void result.current.run({ calls: [call(1)] }).then((value) => (returned = value));
+    });
+    expect(returned).toBe("pending");
+    const done = { status: "done", hashes: [HASH], receipts: [] };
+    await act(async () => end(done));
+    expect(returned).toBe(done);
+  });
+
   it("sends nothing, and says why, when the earlier run still has a held step", async () => {
     const { result } = renderHook(() => useReviewedAction());
     mocks.find.mockReturnValue({ calls: [call(1)] });
