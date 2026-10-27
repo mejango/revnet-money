@@ -1491,3 +1491,30 @@ Astra approved the frozen runtime fix after independent27/27 acquisition/SafeBat
 
 
 Acquisition-fix review: 458 focused tests across 8 owning wallet/recovery suites pass, plus 13 bundle-checker regressions. Final typecheck, lint, format ratchet, source invariants, dead-code and both wallet inventories pass. Astra independently approves the three exact runtime hashes recorded above and passed 27 acquisition/SafeBatch plus one fee-restoration test. Build and standalone preflight pass. The exact artifact passes approved narrow caps at 2759.3/2760 KiB all client JS and 912.4/922 KiB referenced JS. No runtime source changed after Astra approval. The partial local full-suite run was intentionally stopped, not counted as proof, when the parent chose focused/static/artifact preflight followed by required exact-head full CI before merge. No contracts, SDK, dependencies, original dirty tree, pushes or merges changed in this agent's continuation.
+
+
+# Align pricing, loan units, inventory validation and homepage identity — 2026-10-26
+
+## Plan refinement
+- **Objective:** Correct exactly the four confirmed client bugs without changing contract economics or adding friction: accurate shop currency labels, source-token loan units, effective-chain stock validation and authenticated native/USDC homepage grouping.
+- **System fit:** Artifact-bound hook pricing currency/decimals are independent of accepted token; REVLoans reads sourceToken accounting context; hook store enforces effective reserve supply; terminal identity is chain+token. UI/schema/display use these existing meanings. Unknown custom context remains unknown and recovery/review flows remain intact.
+- **Reuse and simplicity:** Configuration owner extracts/reuses creation pricing with SDKresolve721PricingContext and existing issuance label, then feeds schema/compiler/labels consistently. Data owner reuses tokenUtils/existing loan source reads for exact source metadata and canonical classification. Disjoint changes, one home per rule, no parallel copies or dependency upgrades.
+- **Evidence and unknowns:** Parent verified4key sources against Ethereum metadata; Astra verified6sources across4mainnets(24matches), SDK4addresses(all24) and hook conversion library. This verifies recorded artifact/source alignment, not liveRPC bytecode. ExistingETH1/18 encoding andUSD6 SDKprecision retained; native token-keyedcurrency61166 is not ETHpricingdenomination1.
+- **Verification:** Renderedform/schema/encodedprice regressions across ETH/USD/custom/mixedaccepted, selected/inactivechain overrides, mixed-token actual loan rows/fees/actions and unknownsource handling, canonicalnative/USDC versus symbol/addresslookalikes with unchangedUSDtotals. Focused Node26tests/static/build/budget, separateAstra finalsource review and mandatory exact-head fullCI before any landing.
+- **Resource budget:** Two disjoint fix owners max2workers, absolute paths/explicitworkdirs; parent owns this taskrecord. No othercensus, contract/SDK/package changes, newconfirmationflows, deployments orwallettransactions. Use focused local proofs and one required fullCI run rather than redundant full local suites.
+
+- [x] Share contract-backed creation pricing and validate effective selected-chain supplies.
+- [x] Resolve loan units/actions by exact source and authenticate homepage asset grouping.
+- [ ] Complete focused tests, Astra review, static/artifact gates and reviewable PR.
+
+Review: Independent Astra approved all ten runtime files, including final formatting/type-only changes (approval artifact SHA256 d44aab58d85f9d432e935952bbb406b17de5947275f925ac01633f416be88d8f). Astra independently passed 77 focused tests; parent final changed suites passed 41 tests. Sixteen valid launch configurations retained byte-identical calldata, SHA256 b0d9a956b653d131226baae90b20952ecd5ae02fd445c820048aa2485ead9006. Contract/source/SDK evidence covers six sources across four mainnets, plus all 44 pinned deployment artifacts; no live bytecode attestation is claimed. Typecheck, formatter ratchet, source invariants, wallet inventories, dead-code, dependency integrity, environment/deployment fixtures and production audit pass. Build/artifact and exact-head CI remain final gates before landing. No contract, SDK or dependency changes.
+
+## Plan refinement
+- **Objective:** Complete the four approved fixes with the minimal measured per-route bundle baseline adjustment.
+- **System fit:** Keep all ten Astra-approved runtime files frozen; the existing artifact checker remains the size gate and exact-head CI remains the release proof.
+- **Reuse and simplicity:** Reuse the existing integer-ceiling policy; round only home to394, project to581, terms to580 and extras to597 KiB. No source optimization, dependency change or new mechanism.
+- **Evidence and unknowns:** The built artifact measures393.0,580.0,579.2,596.1 KiB on those routes, slightly over their existing caps. All client JS2759.9 versus prior2759.3 stays within2760; referenced912.5 stays within922. Measurements are local, CI still pending.
+- **Verification:** Rerun the unchanged artifact checker and its existing regression suite, obtain Astra allowance review and require final-head full CI. Preserve runtime approval hashes.
+- **Resource budget:** One narrow measured baseline update, no rebuild locally or expanded census; use existing full CI for final browser/coverage proof.
+
+Artifact review: production build and standalone pass. Exact artifact budget passes at2759.9/2760 KiB aggregate and912.5/922 KiB referenced after four sub0.3KiB route overages are rounded to the next integer ceiling. Independent Astra approves those four caps; runtime hashes remain unchanged. PR112 full CI is the final coverage/browser/container gate.

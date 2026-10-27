@@ -9,12 +9,10 @@ import {
 } from "@/lib/sticky";
 import {
   CashOutTaxRate,
-  ETH_CURRENCY_ID,
   JBChainId,
   NATIVE_TOKEN,
   NATIVE_TOKEN_DECIMALS,
   SPLITS_TOTAL_PERCENT,
-  USD_CURRENCY_ID,
   USDC_ADDRESSES,
   WeightCutPercent,
 } from "@bananapus/nana-sdk-core";
@@ -25,14 +23,13 @@ import {
   buildRevnet721Config,
   buildRevnetStageConfig,
   fillSplitPercents,
-  resolve721PricingContext,
   REV_METADATA_ALLOW_SUCKER_DEPLOYMENT,
   RULESET_WEIGHT_INHERIT,
-  tokenCurrencyId,
 } from "@bananapus/nana-sdk-core/v6";
 import { Address, parseUnits, zeroAddress } from "viem";
 import { RevnetFormData } from "../types";
 import { getStageCutFrequencySeconds, getStageStarts } from "./calculatePickupIssuance";
+import { createBaseCurrency, createStorePricing } from "./createPricing";
 
 export type DeployRevnetRequest = ReturnType<typeof buildDeployRevnetTx>;
 
@@ -70,19 +67,17 @@ export function parseDeployData(
   // (1/2) are base-currency denominations only — encoding them as context
   // currencies is the convention violation this file used to carry.
   // `buildAccountingContext` defaults to `tokenCurrencyId(token)`.
-  let baseCurrency: number;
+  const baseCurrency = createBaseCurrency(formData);
   let tokenAddress: Address;
   let tokenDecimals: number;
 
   if (formData.reserveAsset === "CUSTOM") {
     tokenAddress = formData.customReserveAsset.address as Address;
     tokenDecimals = Number(formData.customReserveAsset.decimals);
-    baseCurrency = tokenCurrencyId(tokenAddress);
   } else {
     const acceptsUsdc = formData.reserveAsset === "USDC" || formData.reserveAsset === "ETH_USDC";
     tokenAddress = acceptsUsdc ? USDC_ADDRESSES[extra.chainId] : NATIVE_TOKEN;
     tokenDecimals = acceptsUsdc ? USDC_DECIMALS : NATIVE_TOKEN_DECIMALS;
-    baseCurrency = formData.issuanceBaseCurrency === "USD" ? USD_CURRENCY_ID(6) : ETH_CURRENCY_ID;
   }
 
   const nativeAccountingContext = buildAccountingContext(NATIVE_TOKEN, NATIVE_TOKEN_DECIMALS);
@@ -199,10 +194,7 @@ export function parseDeployData(
   });
 
   // Shop prices follow their currency, independently of the reserve token.
-  const storePricing = resolve721PricingContext({
-    currency: formData.store.pricing === "USD" ? USD_CURRENCY_ID(6) : baseCurrency,
-    accountingContexts: accountingContextsToAccept,
-  });
+  const storePricing = createStorePricing(formData);
 
   const tiers = buildTierConfigs(formData.store.items, storePricing.decimals, extra.chainId);
   if (typeof tiers === "string") throw new Error(tiers);

@@ -218,4 +218,49 @@ describe("homepage reserves", () => {
     expect(reserves.totalUsd).toBe(2150);
     expect(reserves.points.every((point) => point.chains.length === 0)).toBe(true);
   });
+  it("classifies canonical reserves by chain and address, not token symbols", async () => {
+    const input = JSON.parse(JSON.stringify(groups));
+    input[0].projects.items[0].projectTokenBalances.items.push(
+      {
+        token: "0x1111111111111111111111111111111111111111",
+        tokenSymbol: "ETH",
+        decimals: 18,
+        balance: e18(1000),
+        balanceUsd: e18(1000),
+      },
+      {
+        token: "0x2222222222222222222222222222222222222222",
+        tokenSymbol: "USDC",
+        decimals: 6,
+        balance: "3000000",
+        balanceUsd: e18(3),
+      },
+      // Base's USDC address is not a canonical USDC deployment on Ethereum.
+      {
+        token: BASE_USDC,
+        tokenSymbol: "USDC",
+        decimals: 6,
+        balance: "4000000",
+        balanceUsd: e18(4),
+      },
+      { token: "", tokenSymbol: "ETH", decimals: 18, balance: e18(5), balanceUsd: e18(5) },
+      {
+        token: "0x3333333333333333333333333333333333333333",
+        tokenSymbol: "ZERO",
+        decimals: 0,
+        balance: "0",
+        balanceUsd: "0",
+      },
+    );
+    mocks.groups.mockResolvedValue(input);
+    const result = await getHomepageReserves();
+    expect(result.chains.find((chain) => chain.chainId === 1)).toEqual({
+      chainId: 1,
+      eth: 1,
+      usdc: 100,
+      otherAssets: ["ETH", "USDC"],
+    });
+    // These classifications do not change the indexer's USD headline.
+    expect(result.totalUsd).toBe(2150);
+  });
 });

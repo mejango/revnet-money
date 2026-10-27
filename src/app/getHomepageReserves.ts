@@ -15,6 +15,7 @@ import type {
 } from "@/lib/bendystraw/types";
 import { mainnet } from "@/lib/chains";
 import { tokenSymbolOf } from "@/lib/project-link-preview";
+import { canonicalTokenSymbol } from "@/lib/tokenUtils";
 import { unstable_cache } from "next/cache";
 import { formatUnits } from "viem";
 import { getHomepageSuckerGroups } from "./getTopProjects";
@@ -157,8 +158,9 @@ const cachedReserves = unstable_cache(
           const amount = Number(formatUnits(BigInt(row.balance), row.decimals));
           if (!(amount > 0)) continue;
           const symbol = (tokenSymbolOf(row) ?? "?").replace(/^\$+/, "").toUpperCase();
-          if (symbol === "ETH") chain.eth += amount;
-          else if (symbol === "USDC") chain.usdc += amount;
+          const canonical = canonicalTokenSymbol({ chainId: project.chainId, token: row.token });
+          if (canonical === "ETH") chain.eth += amount;
+          else if (canonical === "USDC") chain.usdc += amount;
           else chain.otherAssets.add(symbol);
         }
       }
