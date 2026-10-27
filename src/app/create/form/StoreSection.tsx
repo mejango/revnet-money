@@ -24,7 +24,7 @@ import { useCreateForm } from "./useCreateForm";
  */
 export function StoreSection({ disabled = false }: { disabled?: boolean }) {
   const { values, setFieldValue } = useFormContext<RevnetFormData>();
-  const { revnetTokenSymbol, reserveAssetSymbol } = useCreateForm();
+  const { revnetTokenSymbol, issuanceBaseCurrencySymbol } = useCreateForm();
   const store = values.store;
   const chains = sortChains(values.chainIds);
   const [configOpen, setConfigOpen] = useState(false);
@@ -40,12 +40,7 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
     [],
   );
 
-  const priceSymbol =
-    store.pricing === "USD"
-      ? "USD"
-      : values.issuanceBaseCurrency === "USD" && values.reserveAsset !== "CUSTOM"
-        ? "USD"
-        : reserveAssetSymbol;
+  const priceSymbol = store.pricing === "USD" ? "USD" : issuanceBaseCurrencySymbol;
 
   // Two writes in one handler — naming a category, then putting the item in it — would each
   // spread the same render's `store` and the second would drop the first. The ref carries the
@@ -123,11 +118,7 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="reserve">
-                {values.issuanceBaseCurrency === "USD" && values.reserveAsset !== "CUSTOM"
-                  ? "USD"
-                  : reserveAssetSymbol}
-              </SelectItem>
+              <SelectItem value="reserve">{issuanceBaseCurrencySymbol}</SelectItem>
               <SelectItem value="USD">USD</SelectItem>
             </SelectContent>
           </Select>

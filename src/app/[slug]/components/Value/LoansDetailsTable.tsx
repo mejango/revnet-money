@@ -11,10 +11,11 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
 import { useCompleteLoansByAccount } from "@/hooks/useCompleteBendystrawLists";
+import { useLoanToken } from "@/hooks/useLoanToken";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import type { Project } from "@/lib/bendystraw/types";
 import { useJBChainId, useJBTokenContext } from "@/lib/nana/project";
-import { getTokenConfigForChain, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
+import type { LoanTokenProject } from "@/lib/tokenUtils";
 import { formatSeconds } from "@/lib/utils";
 import { getRevnetLoanContract, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { formatUnits } from "viem";
@@ -50,13 +51,14 @@ function LoanRow({
   const { token } = useJBTokenContext();
   const projectTokenDecimals = token?.data?.decimals ?? 18;
 
-  // Null token config is LOADING: don't format or quote with ETH/18 defaults.
-  const chainTokenConfig = getTokenConfigForChain(suckerGroupData, loan.chainId);
-
-  const baseTokenSymbol = chainTokenConfig
-    ? (chainTokenConfig.symbol ?? getTokenSymbolFromAddress(chainTokenConfig.token))
-    : undefined;
+  const {
+    source: chainTokenConfig,
+    pending,
+    retry,
+  } = useLoanToken(loan, suckerGroupData?.suckerGroup?.projects?.items ?? [], true);
+  const baseTokenSymbol = chainTokenConfig?.symbol;
   const baseTokenDecimals = chainTokenConfig?.decimals;
+  const sourceReady = chainTokenConfig?.currency !== undefined;
 
   const borrowAmount =
     baseTokenDecimals !== undefined
@@ -70,23 +72,26 @@ function LoanRow({
   const { capacity: currentCollateralValue } = useBorrowableAmountFrom({
     chainId: loan.chainId as JBChainId,
     address: getRevnetLoanContract(6, loan.chainId as JBChainId),
-    args: chainTokenConfig
-      ? [
-          BigInt(loan.projectId),
-          BigInt(loan.collateral),
-          BigInt(chainTokenConfig.decimals),
-          BigInt(chainTokenConfig.currency),
-        ]
-      : undefined,
+    args:
+      sourceReady && chainTokenConfig
+        ? [
+            BigInt(loan.projectId),
+            BigInt(loan.collateral),
+            BigInt(chainTokenConfig.decimals),
+            BigInt(chainTokenConfig.currency!),
+          ]
+        : undefined,
   });
 
   const headroom =
-    currentCollateralValue && currentCollateralValue > BigInt(loan.borrowAmount)
-      ? currentCollateralValue - BigInt(loan.borrowAmount)
-      : 0n;
+    currentCollateralValue !== undefined && sourceReady
+      ? currentCollateralValue > BigInt(loan.borrowAmount)
+        ? currentCollateralValue - BigInt(loan.borrowAmount)
+        : 0n
+      : undefined;
 
   const headroomAmount =
-    baseTokenDecimals !== undefined
+    baseTokenDecimals !== undefined && headroom !== undefined
       ? Number(formatUnits(headroom, baseTokenDecimals)).toFixed(6)
       : undefined;
 
@@ -103,7 +108,11 @@ function LoanRow({
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="whitespace-nowrap">
-              {borrowAmount !== undefined ? `${borrowAmount} ${baseTokenSymbol}` : "…"}
+              {borrowAmount !== undefined
+                ? `${borrowAmount} ${baseTokenSymbol}`
+                : pending
+                  ? "…"
+                  : "Unavailable"}
             </span>
           </TooltipTrigger>
           <TooltipContent>Loan ID: {loan.id?.toString() ?? "Unavailable"}</TooltipContent>
@@ -119,7 +128,11 @@ function LoanRow({
       </TableCell>
       <TableCell className="text-left px-3 py-2">
         <span className="whitespace-nowrap">
-          {headroomAmount !== undefined ? `${headroomAmount} ${baseTokenSymbol}` : "…"}
+          {headroomAmount !== undefined
+            ? `${headroomAmount} ${baseTokenSymbol}`
+            : pending
+              ? "…"
+              : "Unavailable"}
         </span>
       </TableCell>
       <TableCell className="text-left px-3 py-2">
@@ -128,9 +141,25 @@ function LoanRow({
         </span>
       </TableCell>
       <TableCell className="text-center px-3 py-2">
+        {!sourceReady && (
+          <div className="mb-1 text-xs text-gray-600">
+            {pending ? (
+              "Checking loan token…"
+            ) : (
+              <>
+                Loan token context unavailable.{" "}
+                <button type="button" className="underline" onClick={() => void retry()}>
+                  Retry
+                </button>
+              </>
+            )}
+          </div>
+        )}
         <div className="flex gap-1 justify-center">
           <Button
             size="sm"
+            disabled={!sourceReady}
+            title={!sourceReady ? "Waiting for this loan’s source token context." : undefined}
             onClick={() => onSelectLoan?.(loan.id, Number(loan.chainId), Number(loan.projectId))}
             className="text-xs px-2 py-1 bg-teal-500 text-melon-950 hover:bg-teal-600"
           >
@@ -139,6 +168,8 @@ function LoanRow({
           {onReallocateLoan && (
             <Button
               size="sm"
+              disabled={!sourceReady}
+              title={!sourceReady ? "Waiting for this loan’s source token context." : undefined}
               onClick={() => onReallocateLoan(loan)}
               className="text-xs px-2 py-1 bg-teal-500 text-melon-950 hover:bg-teal-600"
             >
@@ -184,7 +215,7 @@ export function LoanDetailsTable({
   tokenSymbol: string;
   title?: string;
   selectedLoanId?: string;
-  projects: Array<Pick<Project, "projectId" | "chainId">>;
+  projects: Array<LoanTokenProject & Pick<Project, "chainId" | "projectId">>;
 }) {
   const currentChainId = useJBChainId();
 
