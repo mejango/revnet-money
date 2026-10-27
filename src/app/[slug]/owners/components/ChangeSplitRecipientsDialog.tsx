@@ -3,6 +3,7 @@
 import { chainDisplayName } from "@/app/constants";
 import { Field } from "@/app/create/form/Fields";
 import { ChainLogo } from "@/components/ChainLogo";
+import { PermissionStatus } from "@/components/PermissionStatus";
 import { StickyGroupFields } from "@/components/sticky/StickyGroupFields";
 import { StickyRecipient } from "@/components/sticky/StickyRecipient";
 import { StickyTokenStatus } from "@/components/sticky/StickyTokenStatus";
@@ -113,7 +114,8 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   const [failure, setFailure] = useState<string | null>(null);
   const { address } = useAccount();
 
-  const { hasPermission } = useUserPermissions();
+  const permissions = useUserPermissions();
+  const { hasPermission } = permissions;
   const { chainSplits, verifiedPairs, suckerCheck, refetch } = useChainSplits(stageIdx);
 
   const {
@@ -298,7 +300,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   const chainNameOf = (chainId: JBChainId) => JB_CHAINS[chainId]?.name ?? `chain ${chainId}`;
 
   if (!hasPermission("SET_SPLIT_GROUPS")) {
-    return null;
+    return <PermissionStatus {...permissions} />;
   }
 
   return (
