@@ -14,6 +14,10 @@ type ChainSplit = {
 };
 
 const state = vi.hoisted(() => ({
+  permissionGranted: true,
+  permissionError: false,
+  permissionLoading: false,
+  retryPermissions: vi.fn(),
   chainSplits: [] as unknown[],
   submitSplits: vi.fn(),
   relayrAvailable: true,
@@ -37,7 +41,13 @@ vi.mock("wagmi", async (importOriginal) => ({
 }));
 
 vi.mock("@/hooks/useUserPermissions", () => ({
-  useUserPermissions: () => ({ hasPermission: () => true, isLoading: false }),
+  useUserPermissions: () => ({
+    hasPermission: () => state.permissionGranted,
+    isLoading: state.permissionLoading,
+    isError: state.permissionError,
+    isFetching: false,
+    refetch: state.retryPermissions,
+  }),
 }));
 
 vi.mock("@/app/[slug]/owners/components/hooks/useChainSplits", () => ({
@@ -119,6 +129,10 @@ async function openDialog(stageIdx: number, initialChainId = 8453) {
 }
 
 beforeEach(() => {
+  state.permissionGranted = true;
+  state.permissionError = false;
+  state.permissionLoading = false;
+  state.retryPermissions = vi.fn();
   state.chainSplits = [chain()];
   state.submitSplits = vi.fn();
   state.relayrAvailable = true;
@@ -429,5 +443,31 @@ describe("ChangeSplitRecipientsDialog confirm stage", () => {
 
     await waitFor(() => expect(confirmIsOpen()).toBe(false));
     expect(state.submitSplits).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("split editor permission availability", () => {
+  it("offers retry for failed verification without offering an unverified editor", () => {
+    state.permissionGranted = false;
+    state.permissionError = true;
+    render(<ChangeSplitRecipientsDialog stageIdx={0} initialChainId={8453} />);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Could not verify your project permissions.",
+    );
+    expect(screen.queryByRole("button", { name: "Change split recipients" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Retry permissions" }));
+    expect(state.retryPermissions).toHaveBeenCalledTimes(1);
+  });
+
+  it("distinguishes loading from a verified denial", () => {
+    state.permissionGranted = false;
+    state.permissionLoading = true;
+    const { rerender } = render(<ChangeSplitRecipientsDialog stageIdx={0} initialChainId={8453} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Checking permissions");
+    state.permissionLoading = false;
+    rerender(<ChangeSplitRecipientsDialog stageIdx={0} initialChainId={8453} />);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry permissions" })).toBeNull();
   });
 });

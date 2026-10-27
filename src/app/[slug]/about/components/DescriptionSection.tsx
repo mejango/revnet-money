@@ -1,5 +1,6 @@
 "use client";
 
+import { PermissionStatus } from "@/components/PermissionStatus";
 import { Button } from "@/components/ui/button";
 import { useUserPermissions } from "@/hooks/useUserPermissions";
 import type { Project } from "@/lib/bendystraw/types";
@@ -27,7 +28,8 @@ interface Props {
 
 export function DescriptionSection({ projects }: Props) {
   const { metadata } = useJBProjectMetadataContext();
-  const { hasPermission } = useUserPermissions();
+  const permissions = useUserPermissions();
+  const { hasPermission } = permissions;
 
   const { description } = metadata?.data ?? {};
   const canEditMetadata = hasPermission("SET_PROJECT_URI");
@@ -40,7 +42,11 @@ export function DescriptionSection({ projects }: Props) {
         <RichPreview source={description || ""} />
       </div>
       {links.length > 0 && <ProjectLinks links={links} />}
-      {canEditMetadata && <EditMetadataDialog projects={projects} />}
+      {canEditMetadata ? (
+        <EditMetadataDialog projects={projects} />
+      ) : (
+        <PermissionStatus {...permissions} />
+      )}
     </div>
   );
 }

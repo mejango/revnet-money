@@ -30,7 +30,7 @@ export function SecuredReserveChart({
   points,
   ariaLabel = "Cumulative secured reserve value over time, shown as bars. Focus and use arrow keys to inspect total and per-chain values.",
 }: {
-  points: HomepageReserves["points"];
+  points: NonNullable<HomepageReserves["points"]>;
   ariaLabel?: string;
 }) {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);

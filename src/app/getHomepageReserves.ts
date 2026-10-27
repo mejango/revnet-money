@@ -27,22 +27,22 @@ type ReservePoint = {
 };
 export type HomepageReserves = {
   /** Every revnet's holdings, each token at its latest indexed USD rate. */
-  totalUsd: number;
+  totalUsd: number | null;
   chains: Array<{
     chainId: number;
     eth: number;
     usdc: number;
     otherAssets: string[];
-  }>;
-  points: ReservePoint[];
+  }> | null;
+  points: ReservePoint[] | null;
   /** All-time payment and add-to-balance volume across revnets, in USD at the time. */
-  passedThroughUsd: number;
-  volumePoints: ReservePoint[];
+  passedThroughUsd: number | null;
+  volumePoints: ReservePoint[] | null;
   /** REV's cumulative inflows — the fees it collects from revnet cash outs and
    *  loans. Measured as the sum of REV's balance increases, so REV's own cash
    *  outs don't subtract. */
-  feesUsd: number;
-  feePoints: ReservePoint[];
+  feesUsd: number | null;
+  feePoints: ReservePoint[] | null;
 };
 
 const RESERVE_CHAIN_IDS = [1, 42161, 8453, 10] as const;
@@ -125,16 +125,23 @@ function feePointsFrom(
   });
 }
 
+/** Keep successful metrics without caching a failed snapshot as fresh financial evidence. */
+class PartialHomepageReserves extends Error {
+  constructor(readonly data: HomepageReserves) {
+    super("Homepage financial data is incomplete");
+  }
+}
+
 const cachedReserves = unstable_cache(
   async (): Promise<HomepageReserves> => {
     const [groups, inflows] = await Promise.all([
-      getHomepageSuckerGroups(),
-      addToBalanceInflows().catch(() => [] as AddToBalanceInflow[]),
+      getHomepageSuckerGroups({ strict: true }).catch(() => null),
+      addToBalanceInflows().catch(() => null),
     ]);
-    const supported = groups.filter((group) => group.projects?.items[0]?.isRevnet);
+    const supported = (groups ?? []).filter((group) => group.projects?.items[0]?.isRevnet);
     const supportedIds = new Set(supported.map((group) => group.id));
     const addedByGroup = new Map<string, number>();
-    for (const inflow of inflows) {
+    for (const inflow of inflows ?? []) {
       if (!supportedIds.has(inflow.suckerGroupId)) continue;
       addedByGroup.set(
         inflow.suckerGroupId,
@@ -168,12 +175,12 @@ const cachedReserves = unstable_cache(
     const histories = await Promise.all(
       supported.map(async (group) => ({
         groupId: group.id,
-        moments: await momentsFor(group.id).catch(() => []),
+        moments: await momentsFor(group.id).catch(() => null),
       })),
     );
     const events = histories
       .flatMap((history) =>
-        history.moments.map((moment) => ({
+        (history.moments ?? []).map((moment) => ({
           groupId: history.groupId,
           timestamp: moment.timestamp,
           valueUsd: usd(moment.balanceUsd),
@@ -218,10 +225,17 @@ const cachedReserves = unstable_cache(
       });
     });
     const revGroupIds = new Set(
-      groups
+      (groups ?? [])
         .filter((group) => group.projects?.items.some((project) => project.projectId === 3))
         .map((group) => group.id),
     );
+    const feeHistoryAvailable =
+      groups !== null &&
+      projectHistories
+        .filter((history) => revGroupIds.has(history.groupId))
+        .every((history) => history.moments !== null);
+    const historyAvailable =
+      groups !== null && histories.every((history) => history.moments !== null);
     const rawFeePoints = feePointsFrom(
       tokenHistories.filter((history) => revGroupIds.has(history.groupId)),
     );
@@ -266,7 +280,7 @@ const cachedReserves = unstable_cache(
     const latestProjects = new Map<string, { chainId: number; valueUsd: number }>();
     let projectEventIndex = 0;
     // The same inflows, replayed in order, so the curve reaches the headline.
-    const inflowEvents = inflows
+    const inflowEvents = (inflows ?? [])
       .filter((inflow) => supportedIds.has(inflow.suckerGroupId))
       .map((inflow) => ({
         groupId: inflow.suckerGroupId,
@@ -315,45 +329,52 @@ const cachedReserves = unstable_cache(
       raw.push({ timestamp: event.timestamp, valueUsd, chains });
       rawVolumePoints.push({ timestamp: event.timestamp, valueUsd: volumeUsd, chains: [] });
     }
-    return {
-      totalUsd,
-      chains: RESERVE_CHAIN_IDS.map((chainId) => {
-        const chain = perChain.get(chainId)!;
-        return {
-          chainId,
-          eth: chain.eth,
-          usdc: chain.usdc,
-          otherAssets: [...chain.otherAssets].sort(),
-        };
-      }),
-      points: downsample(raw),
-      passedThroughUsd,
-      volumePoints: downsample(rawVolumePoints),
-      feesUsd: rawFeePoints.at(-1)?.valueUsd ?? 0,
-      feePoints: downsample(rawFeePoints),
+    const result: HomepageReserves = {
+      totalUsd: groups === null ? null : totalUsd,
+      chains:
+        groups === null
+          ? null
+          : RESERVE_CHAIN_IDS.map((chainId) => {
+              const chain = perChain.get(chainId)!;
+              return {
+                chainId,
+                eth: chain.eth,
+                usdc: chain.usdc,
+                otherAssets: [...chain.otherAssets].sort(),
+              };
+            }),
+      points: historyAvailable ? downsample(raw) : null,
+      passedThroughUsd: groups === null || inflows === null ? null : passedThroughUsd,
+      volumePoints: historyAvailable && inflows !== null ? downsample(rawVolumePoints) : null,
+      feesUsd: feeHistoryAvailable ? (rawFeePoints.at(-1)?.valueUsd ?? 0) : null,
+      feePoints: feeHistoryAvailable ? downsample(rawFeePoints) : null,
     };
+    if (
+      groups === null ||
+      inflows === null ||
+      !historyAvailable ||
+      projectHistories.some((history) => history.moments === null)
+    )
+      throw new PartialHomepageReserves(result);
+    return result;
   },
-  ["revnet-homepage-reserves-v7"],
+  ["revnet-homepage-reserves-v8"],
   { revalidate: 600 },
 );
 
 export async function getHomepageReserves(): Promise<HomepageReserves> {
   try {
     return await cachedReserves();
-  } catch {
+  } catch (error) {
+    if (error instanceof PartialHomepageReserves) return error.data;
     return {
-      totalUsd: 0,
-      chains: RESERVE_CHAIN_IDS.map((chainId) => ({
-        chainId,
-        eth: 0,
-        usdc: 0,
-        otherAssets: [],
-      })),
-      points: [],
-      passedThroughUsd: 0,
-      volumePoints: [],
-      feesUsd: 0,
-      feePoints: [],
+      totalUsd: null,
+      chains: null,
+      points: null,
+      passedThroughUsd: null,
+      volumePoints: null,
+      feesUsd: null,
+      feePoints: null,
     };
   }
 }

@@ -2,7 +2,8 @@
 
 import { ChainLogo } from "@/components/ChainLogo";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useState, useTransition } from "react";
 import type { HomepageReserves } from "./getHomepageReserves";
 import { SecuredReserveChart } from "./SecuredReserveChart";
 
@@ -10,7 +11,8 @@ function amount(value: number, maximumFractionDigits: number) {
   return value.toLocaleString("en-US", { maximumFractionDigits });
 }
 
-function usd(value: number) {
+function usd(value: number | null) {
+  if (value === null) return "Unavailable";
   return value.toLocaleString("en-US", {
     style: "currency",
     currency: "USD",
@@ -43,6 +45,8 @@ const METRICS: { value: Metric; label: string; chartLabel: string }[] = [
 ];
 
 export function SecuredReserves({ data }: { data: HomepageReserves }) {
+  const router = useRouter();
+  const [refreshing, startRefresh] = useTransition();
   const [metric, setMetric] = useState<Metric>("secured");
   const selected = METRICS.find((item) => item.value === metric)!;
   const totalUsd =
@@ -75,7 +79,8 @@ export function SecuredReserves({ data }: { data: HomepageReserves }) {
               role="tooltip"
               className="pointer-events-none absolute left-1/2 top-full -translate-x-1/2 md:left-0 md:translate-x-0 z-20 mt-2 hidden w-64 border border-teal-100 bg-white px-3 py-2 text-left text-xs font-normal leading-relaxed text-zinc-600 shadow-lg group-hover:block group-focus-within:block"
             >
-              {data.chains.map((chain, index) => {
+              {data.chains === null ? <span>Balance breakdown unavailable.</span> : null}
+              {(data.chains ?? []).map((chain, index) => {
                 const hasReserves = chain.eth > 0 || chain.usdc > 0 || chain.otherAssets.length > 0;
                 return (
                   <span
@@ -145,7 +150,26 @@ export function SecuredReserves({ data }: { data: HomepageReserves }) {
           </span>
         </span>
       </div>
-      <SecuredReserveChart points={points} ariaLabel={selected.chartLabel} />
+      {points !== null ? (
+        <SecuredReserveChart points={points} ariaLabel={selected.chartLabel} />
+      ) : null}
+      {totalUsd === null || points === null || (metric === "secured" && data.chains === null) ? (
+        <p className="text-center text-xs text-zinc-600 md:text-left">
+          {totalUsd === null
+            ? "This total is unavailable."
+            : points === null
+              ? "History is unavailable."
+              : "Balance breakdown is unavailable."}{" "}
+          <button
+            type="button"
+            className="underline disabled:opacity-50"
+            disabled={refreshing}
+            onClick={() => startRefresh(() => router.refresh())}
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+        </p>
+      ) : null}
     </section>
   );
 }

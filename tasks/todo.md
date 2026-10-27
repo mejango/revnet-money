@@ -1484,7 +1484,7 @@ Astra approved the frozen runtime fix after independent27/27 acquisition/SafeBat
 ## Plan refinement
 - **Objective:** Complete only the approved acquisition-race fix with the minimal measured bundle allowance needed by its callback and cleanup/UX bridge.
 - **System fit:** The Astra-approved runtime artifact builds and passes standalone validation; existing bundle-checker ceilings own the acceptance baseline, while exact-head CI will own final full coverage/browser proof before merge.
-- **Reuse and simplicity:** Keep frozen runtime source and the existing checker. Update only create552, terms579, shop587 and aggregate2760KiB; no new loading rearrangements, source optimization or rebuild.
+- **Reuse and simplicity:** Keep frozen runtime source and the existing checker. Update only create552, terms579, shop587 and aggregate 2760KiB; no new loading rearrangements, source optimization or rebuild.
 - **Evidence and unknowns:** Measured gzip KiB are create551.4, terms578.4, shop586.0 just over586, aggregate2759.3 versus prior artifact2757.6. The required callback/unsent UX fix adds1.7KiB total; referenced912.4 remains below922 and every other route passes.
 - **Verification:** Rerun the checker against the same artifact and its13 regression tests, preserve Astra's three source hashes, commit the candidate with honest local targeted/static/artifact evidence and require exact-head full CI before merge.
 - **Resource budget:** One approved measured baseline update, no further source edits, feature census, optimization, dependency/SDK changes or local full-suite repetition. Parent coordinates publication and landing.
@@ -1518,3 +1518,21 @@ Review: Independent Astra approved all ten runtime files, including final format
 - **Resource budget:** One narrow measured baseline update, no rebuild locally or expanded census; use existing full CI for final browser/coverage proof.
 
 Artifact review: production build and standalone pass. Exact artifact budget passes at2759.9/2760 KiB aggregate and912.5/922 KiB referenced after four sub0.3KiB route overages are rounded to the next integer ceiling. Independent Astra approves those four caps; runtime hashes remain unchanged. PR112 full CI is the final coverage/browser/container gate.
+
+# Client recovery identity and availability — 2026-10-27
+
+## Plan refinement
+- **Objective:** Truthful unavailable homepage data and permission-query error/retry presentation with fail-closed writes. Fix only the reported client issues and prepare reviewable changes.
+- **System fit:** Client helpers own chain-qualified sequence identity and explicit unavailable versus valid-zero data; permission reads remain fail closed. SDK and contracts are unchanged.
+- **Reuse and simplicity:** Reuse existing domain owners, sequence/recovery primitives and React Query refetch; no dependencies or redundant helpers. Parent alone writes task notes, disjoint owners coordinate shared checkout.
+- **Evidence and unknowns:** Current main is pinned in this isolated checkout; prior actual-consumer proofs reproduce the failures. Preserve unrelated dirty originals and exact legacy pending records, including records belonging to other chains.
+- **Verification:** Focused actual-consumer regressions cover failure, retry, real zero and successful results plus safe legacy recovery. Independent Astra review and final static/build/artifact checks precede exact-head full CI.
+- **Resource budget:** Node26/npm12 physical locked dependencies, max2 workers per app, stagger heavy builds. No SDK overlap, broad census, contract changes, transactions or inferred merge authority.
+
+- [x] Implement scoped fixes with meaningful regressions.
+- [x] Complete independent review and preflight.
+- [ ] Publish reviewable changes with exact-head CI evidence.
+
+Artifact baseline note: final RN build passes every route, referenced total (913.1/922 KiB) and vendor/lazy boundary. Aggregate measures 2760.4 KiB against 2760, approximately 0.5 KiB above prior main. Round only the aggregate ceiling to 2761 KiB; keep all other checks and approved runtime source unchanged. Independent Astra allowance review and same-artifact rerun are required before publication. This is a measured baseline adjustment within the existing artifact-verification plan.
+
+Review: Permission reads expose failure and retry while retaining fail-closed grants and independent inventory authority checks. Homepage metric/history availability is explicit and independent; real empty stays zero. Independent Astra passed 51 focused tests. Full type/lint/format/source/wallet/dead-code/environment/deployment/protocol/audit/build/standalone checks pass. Artifact referenced 913.1/922KiB and aggregate 2760.4/2761KiB pass with only the independently approved 1 KiB aggregate rounding; 13 checker regressions pass. Approval artifact SHA256 15c5b8cf42b8ffd6c8582ef4d2d8c0a998da2d43a899decea59e3afff7fcc67f. No contract, SDK or dependency changes. Final-head full CI remains required for publication evidence; no new merge authority inferred.
