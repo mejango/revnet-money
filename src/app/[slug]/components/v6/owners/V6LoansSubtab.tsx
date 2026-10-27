@@ -19,7 +19,10 @@ import { currentOutstandingLoanFee } from "@/lib/loanFees";
 import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { commaNumber } from "@/lib/number";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
-import { accountingDecimalsOf, getTokenSymbolFromAddress } from "@/lib/tokenUtils";
+import {
+  accountingDecimalsOf,
+  getTokenSymbolFromAddress,
+} from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
@@ -30,7 +33,78 @@ import { ReallocateDialog } from "../../Value/ReallocateDialog";
 import { RepayDialog } from "../../Value/RepayDialog";
 import { ProjectItem } from "../shared";
 
-function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; tokenSymbol: string }) {
+function AllLoanRow({
+  loan,
+  projects,
+  tokenSymbol,
+  now,
+}: {
+  loan: any;
+  projects: ProjectItem[];
+  tokenSymbol: string;
+  now: number;
+}) {
+  const project = projects.find(
+    (candidate) =>
+      candidate.chainId === loan.chainId &&
+      candidate.projectId === loan.projectId,
+  );
+  const knownSymbol = getTokenSymbolFromAddress(loan.token);
+  const sourceSymbol =
+    knownSymbol === "TOKEN" ? project?.tokenSymbol || "TOKEN" : knownSymbol;
+  const sourceDecimals = accountingDecimalsOf({
+    token: loan.token,
+    decimals: project?.decimals,
+  });
+  const fee = currentOutstandingLoanFee({
+    amount: BigInt(loan.borrowAmount),
+    prepaidFeePercent: loan.prepaidFeePercent,
+    prepaidDuration: loan.prepaidDuration,
+    createdAt: loan.createdAt,
+    now,
+  });
+
+  return (
+    <TableRow key={`${loan.chainId}:${loan.id}`}>
+      <TableCell className="whitespace-nowrap">
+        <ChainLogo chainId={loan.chainId as JBChainId} standalone />
+      </TableCell>
+      <TableCell className="whitespace-nowrap">
+        <EthereumAddress
+          address={loan.owner as `0x${string}`}
+          short
+          withEnsName
+        />
+      </TableCell>
+      <TableCell className="whitespace-nowrap tabular-nums">
+        {commaNumber(formatUnits(BigInt(loan.borrowAmount), sourceDecimals))}{" "}
+        {sourceSymbol}
+      </TableCell>
+      <TableCell className="whitespace-nowrap tabular-nums">
+        {commaNumber(formatUnits(BigInt(loan.collateral), 18))} {tokenSymbol}
+      </TableCell>
+      <TableCell className="whitespace-nowrap tabular-nums">
+        {loan.prepaidFeePercent / 10}%
+      </TableCell>
+      <TableCell className="whitespace-nowrap tabular-nums">
+        {fee === null
+          ? "Expired"
+          : `${commaNumber(formatUnits(fee, sourceDecimals))} ${sourceSymbol}`}
+      </TableCell>
+      <TableCell className="whitespace-nowrap">
+        {new Date(loan.createdAt * 1000).toLocaleDateString()}
+      </TableCell>
+    </TableRow>
+  );
+}
+
+function AllLoansCard({
+  projects,
+  tokenSymbol,
+}: {
+  projects: ProjectItem[];
+  tokenSymbol: string;
+}) {
   const { data, isLoading, isError } = useCompleteLoans(
     projects.map((project) => ({
       chainId: project.chainId,
@@ -44,7 +118,9 @@ function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; toke
 
   return (
     <div className="mb-8 w-full min-w-0">
-      <h3 className="mb-2 text-base font-semibold text-zinc-700">Active loans</h3>
+      <h3 className="mb-2 text-base font-semibold text-zinc-700">
+        Active loans
+      </h3>
       {isLoading ? (
         <TableSkeleton rows={4} columns={7} />
       ) : isError ? (
@@ -60,64 +136,30 @@ function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; toke
                   <TableHead className="whitespace-nowrap">Network</TableHead>
                   <TableHead className="whitespace-nowrap">Borrower</TableHead>
                   <TableHead className="whitespace-nowrap">Borrowed</TableHead>
-                  <TableHead className="whitespace-nowrap">Tokens backing loan</TableHead>
                   <TableHead className="whitespace-nowrap">
-                    <ConceptTerm note={PROTOCOL_CONCEPTS.prepaidFee}>Prepaid fee</ConceptTerm>
+                    Tokens backing loan
                   </TableHead>
-                  <TableHead className="whitespace-nowrap">Current repayment fee</TableHead>
+                  <TableHead className="whitespace-nowrap">
+                    <ConceptTerm note={PROTOCOL_CONCEPTS.prepaidFee}>
+                      Prepaid fee
+                    </ConceptTerm>
+                  </TableHead>
+                  <TableHead className="whitespace-nowrap">
+                    Current repayment fee
+                  </TableHead>
                   <TableHead className="whitespace-nowrap">Opened</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {rows.map((loan) => {
-                  const project = projects.find(
-                    (candidate) =>
-                      candidate.chainId === loan.chainId && candidate.projectId === loan.projectId,
-                  );
-                  const knownSymbol = getTokenSymbolFromAddress(loan.token);
-                  const sourceSymbol =
-                    knownSymbol === "TOKEN" ? project?.tokenSymbol || "TOKEN" : knownSymbol;
-                  const sourceDecimals = accountingDecimalsOf({
-                    token: loan.token,
-                    decimals: project?.decimals,
-                  });
-                  const fee = currentOutstandingLoanFee({
-                    amount: BigInt(loan.borrowAmount),
-                    prepaidFeePercent: loan.prepaidFeePercent,
-                    prepaidDuration: loan.prepaidDuration,
-                    createdAt: loan.createdAt,
-                    now,
-                  });
-
-                  return (
-                    <TableRow key={`${loan.chainId}:${loan.id}`}>
-                      <TableCell className="whitespace-nowrap">
-                        <ChainLogo chainId={loan.chainId as JBChainId} standalone />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        <EthereumAddress address={loan.owner as `0x${string}`} short withEnsName />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap tabular-nums">
-                        {commaNumber(formatUnits(BigInt(loan.borrowAmount), sourceDecimals))}{" "}
-                        {sourceSymbol}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap tabular-nums">
-                        {commaNumber(formatUnits(BigInt(loan.collateral), 18))} {tokenSymbol}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap tabular-nums">
-                        {loan.prepaidFeePercent / 10}%
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap tabular-nums">
-                        {fee === null
-                          ? "Expired"
-                          : `${commaNumber(formatUnits(fee, sourceDecimals))} ${sourceSymbol}`}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap">
-                        {new Date(loan.createdAt * 1000).toLocaleDateString()}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                {rows.map((loan) => (
+                  <AllLoanRow
+                    key={`${loan.chainId}:${loan.id}`}
+                    loan={loan}
+                    projects={projects}
+                    tokenSymbol={tokenSymbol}
+                    now={now}
+                  />
+                ))}
               </TableBody>
             </Table>
           </div>
@@ -140,10 +182,16 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
   const { address } = useViewedAccount();
 
   const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
-  const [selectedChainId, setSelectedChainId] = useState<JBChainId | null>(null);
-  const [selectedLoanProjectId, setSelectedLoanProjectId] = useState<number | null>(null);
+  const [selectedChainId, setSelectedChainId] = useState<JBChainId | null>(
+    null,
+  );
+  const [selectedLoanProjectId, setSelectedLoanProjectId] = useState<
+    number | null
+  >(null);
   const [showRepayDialog, setShowRepayDialog] = useState(false);
-  const [reallocateLoan, setReallocateLoan] = useState<SelectedLoan | null>(null);
+  const [reallocateLoan, setReallocateLoan] = useState<SelectedLoan | null>(
+    null,
+  );
   const [showReallocateDialog, setShowReallocateDialog] = useState(false);
 
   if (!address) {
@@ -163,9 +211,10 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
       <AllLoansCard projects={projects} tokenSymbol={tokenSymbol} />
 
       <p className="text-md text-black font-light italic mb-2">
-        Use {tokenSymbol} to back a loan from the revnet. This backing is called collateral. The
-        tokens are removed from supply; repay to create them again. If they can support more
-        borrowing later, you can use the extra capacity for a new loan, called refinancing.
+        Use {tokenSymbol} to back a loan from the revnet. This backing is called
+        collateral. The tokens are removed from supply; repay to create them
+        again. If they can support more borrowing later, you can use the extra
+        capacity for a new loan, called refinancing.
       </p>
 
       <LoanDetailsTable
