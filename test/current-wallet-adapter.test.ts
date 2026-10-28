@@ -41,11 +41,12 @@ it.each(["direct payment", "ERC20 approval"])(
     const adapter = reviewedSendDeps(config, () => [bound]).adapter;
     const oldSend = vi.fn();
     const currentSend = vi.fn().mockResolvedValue("0x1234");
-    state.load.mockResolvedValue({ account: state.account, sendTransaction: oldSend });
+    const { viemWallet } = await import("./support/viem-wallet");
+    state.load.mockResolvedValue(viemWallet({ sendTransaction: oldSend }, () => 1));
     // Model the held review/simulation completing after a connector switch.
     await Promise.resolve();
     state.account = { ...state.account, connector: { id: "walletConnect" } };
-    state.load.mockResolvedValue({ account: state.account, sendTransaction: currentSend });
+    state.load.mockResolvedValue(viemWallet({ sendTransaction: currentSend }, () => 1));
     await adapter.sendTransaction({
       chainId: 1,
       to: "0x2222222222222222222222222222222222222222",

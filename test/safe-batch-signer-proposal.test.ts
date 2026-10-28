@@ -32,7 +32,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("wagmi", () => ({ useConfig: () => ({}) }));
 vi.mock("wagmi/actions", () => ({
   getAccount: () => ({ address: mocks.account, chainId: 8453 }),
-  getWalletClient: async () => ({ signTypedData: mocks.sign }),
+  getWalletClient: async () =>
+    (await import("./support/viem-wallet")).viemWallet({ signTypedData: mocks.sign }, () => 8453),
   switchChain: vi.fn(),
 }));
 vi.mock("@tanstack/react-query", () => ({

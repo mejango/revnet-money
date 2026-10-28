@@ -1,7 +1,11 @@
 import { reviewedSendDeps } from "@/lib/reviewed-send-deps";
-import { clearViewAs } from "@/lib/view-as";
+import { clearViewAs, setViewAs } from "@/lib/view-as";
 import type { WalletAdapter } from "@bananapus/nana-sdk-core/review";
-import { signReviewed, submitReviewedContractWrite } from "@bananapus/nana-sdk-core/review";
+import {
+  signReviewed,
+  submitReviewedContractWrite,
+  WalletNotInvokedError,
+} from "@bananapus/nana-sdk-core/review";
 import { mainnet } from "viem/chains";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Config } from "wagmi";
@@ -13,6 +17,23 @@ vi.mock("@/lib/safe-connector", () => ({
   isSafeConnection: () => safe.value,
   safeWalletPeerSettled: async () => undefined,
 }));
+/** The shop-voting policy's import, held while `wait` is pending. */
+const policyLoad = vi.hoisted(() => ({
+  wait: null as Promise<void> | null,
+  /** Runs as the policy is read from its loaded module. */
+  onRead: undefined as (() => void) | undefined,
+}));
+vi.mock("@/lib/shop-voting-policy", async (original) => {
+  await policyLoad.wait;
+  const loaded = await original<typeof import("@/lib/shop-voting-policy")>();
+  return {
+    ...loaded,
+    get requirePriceBasedShopVoting() {
+      policyLoad.onRead?.();
+      return loaded.requirePriceBasedShopVoting;
+    },
+  };
+});
 const ACCOUNT = "0x1111111111111111111111111111111111111111";
 const OTHER = "0x2222222222222222222222222222222222222222";
 const HASH = `0x${"12".repeat(32)}` as const;
@@ -36,11 +57,12 @@ function harness(stage: "chain" | "provider") {
   const calls: string[] = [];
   let held = false;
   let failure = false;
-  let walletError: Error | undefined;
+  let walletError: unknown;
+  let chainRead: (() => void) | undefined;
   const connector = (uid: string, blocked = false) => ({
     id: uid,
     uid,
-    getAccounts: async () => [ACCOUNT],
+    getAccounts: async () => connections.get(uid)!.accounts,
     getChainId: async () => {
       if (blocked && stage === "chain" && !held) {
         held = true;
@@ -58,7 +80,10 @@ function harness(stage: "chain" | "provider") {
       }
       return {
         request: async ({ method }: { method: string }) => {
-          if (method === "eth_chainId") return "0x1";
+          if (method === "eth_chainId") {
+            chainRead?.();
+            return "0x1";
+          }
           calls.push(`${uid}:${method}`);
           if (walletError) throw walletError;
           if (method === "wallet_sendCalls") return { id: HASH };
@@ -70,6 +95,10 @@ function harness(stage: "chain" | "provider") {
       };
     },
   });
+  const connections = new Map<
+    string,
+    { accounts: string[]; chainId: number; connector: unknown }
+  >();
   const old = connector("old", true);
   const current = connector("current");
   const config = {
@@ -77,10 +106,9 @@ function harness(stage: "chain" | "provider") {
     state: {
       current: "old",
       status: "connected",
-      connections: new Map([
-        ["old", { accounts: [ACCOUNT], chainId: 1, connector: old }],
-        ["current", { accounts: [ACCOUNT], chainId: 1, connector: current }],
-      ]),
+      connections: connections
+        .set("old", { accounts: [ACCOUNT], chainId: 1, connector: old })
+        .set("current", { accounts: [ACCOUNT], chainId: 1, connector: current }),
     },
   };
   return {
@@ -91,8 +119,11 @@ function harness(stage: "chain" | "provider") {
     fail: () => {
       failure = true;
     },
-    walletFails: (error: Error) => {
+    walletFails: (error: unknown) => {
       walletError = error;
+    },
+    onChainRead: (read: () => void) => {
+      chainRead = read;
     },
     adapter: reviewedSendDeps(config as unknown as Config).adapter,
   };
@@ -113,6 +144,54 @@ beforeEach(async () => {
 
 afterEach(stopAnswering);
 
+// First in the file: its held policy import is the module's first.
+it("invokes nothing for a send, typed signature or batch when the account changes while the shop-voting policy loads", async () => {
+  let open!: () => void;
+  policyLoad.wait = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  try {
+    const h = harness("provider");
+    h.release();
+    const adapter = h.adapter;
+    const rejected = (["sendTransaction", "signTypedData", "sendCalls"] as const).map((name) =>
+      expect(operations[name](adapter)).rejects.toBeInstanceOf(WalletNotInvokedError),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    h.config.state.connections.get("old")!.accounts = [OTHER];
+    open();
+    await Promise.all(rejected);
+    expect(h.calls).toEqual([]);
+  } finally {
+    policyLoad.wait = null;
+  }
+});
+
+it.each(
+  (["sendTransaction", "signTypedData", "sendCalls"] as const).flatMap((name) =>
+    [1, 2, 3, 4, 5, 6].map((turns) => [name, turns] as const),
+  ),
+)(
+  "invokes nothing for %s when the account changes %i turns after the shop-voting policy is read",
+  async (name, turns) => {
+    const h = harness("provider");
+    h.release();
+    policyLoad.onRead = () => {
+      let later = Promise.resolve();
+      for (let turn = 1; turn < turns; turn += 1) later = later.then(() => undefined);
+      void later.then(() => {
+        h.config.state.connections.get("old")!.accounts = [OTHER];
+      });
+    };
+    try {
+      await expect(operations[name](h.adapter)).rejects.toBeInstanceOf(WalletNotInvokedError);
+      expect(h.calls).toEqual([]);
+    } finally {
+      policyLoad.onRead = undefined;
+    }
+  },
+);
+
 for (const stage of ["chain", "provider"] as const) {
   it.each(Object.entries(operations))(
     `invokes the replacement wallet for %s after held ${stage} acquisition`,
@@ -132,10 +211,7 @@ for (const stage of ["chain", "provider"] as const) {
     async (changed) => {
       const h = harness(stage);
       const pending = h.adapter.sendTransaction(tx);
-      const rejected = expect(pending).rejects.toMatchObject({
-        code: 4001,
-        walletNotInvoked: true,
-      });
+      const rejected = expect(pending).rejects.toBeInstanceOf(WalletNotInvokedError);
       await h.waiting;
       if (changed === "account") h.config.state.connections.get("old")!.accounts = [OTHER];
       else if (changed === "chain") h.config.state.connections.get("old")!.chainId = 10;
@@ -165,7 +241,7 @@ it("releases the actual SDK reservation when acquisition fails before invocation
     write: () => h.adapter.sendTransaction(tx),
   });
   const rejected = expect(pending).rejects.toThrow(
-    "Wallet connection could not be acquired. Nothing was sent; try again.",
+    "Your wallet could not be reached. Nothing was sent; try again.",
   );
   await h.waiting;
   h.release();
@@ -183,11 +259,11 @@ it("preserves actual SDK signature refusal text instead of classifying it as use
     { account: ACCOUNT },
     { adapter: h.adapter },
   );
-  const rejected = expect(pending).rejects.toMatchObject({
-    name: "ReviewRefusal",
-    message: "Wallet connection changed. Review the transaction again.",
-    walletNotInvoked: true,
-  });
+  const rejected = expect(pending).rejects.toSatisfy(
+    (error) =>
+      error instanceof WalletNotInvokedError &&
+      error.message === "The connected account changed. Review again.",
+  );
   await h.waiting;
   h.config.state.connections.get("old")!.accounts = [OTHER];
   h.release();
@@ -243,7 +319,50 @@ it("captures the current operation's final assertion across acquisition without 
   invalid = true;
   h.release();
   await rejected;
-  expect(own).toHaveBeenCalledOnce();
+  expect(own).toHaveBeenCalled();
   expect(unrelated).not.toHaveBeenCalled();
   expect(h.calls).toEqual([]);
+});
+
+// viem awaits its own chain read after the client loads and before it sends: a change there is
+// caught as the request reaches the provider.
+it.each(["connector", "account", "route", "view-as"] as const)(
+  "invokes nothing when the %s changes during viem's chain read before the send",
+  async (changed) => {
+    const h = harness("chain");
+    h.config.state.current = "current";
+    h.onChainRead(() => {
+      if (changed === "connector") h.config.state.current = "old";
+      else if (changed === "account") h.config.state.connections.get("current")!.accounts = [OTHER];
+      else if (changed === "route") safe.value = true;
+      else setViewAs(OTHER);
+    });
+    await expect(h.adapter.sendTransaction(tx)).rejects.toBeInstanceOf(WalletNotInvokedError);
+    expect(h.calls).toEqual([]);
+  },
+);
+
+it("sends once, never retrying a wallet error that may have broadcast", async () => {
+  const h = harness("chain");
+  h.config.state.current = "current";
+  h.walletFails({ code: -32603, message: "Internal error" });
+  const release = vi.fn();
+  const uncertain = vi.fn();
+  await expect(
+    submitReviewedContractWrite({
+      request: tx,
+      expectedAccount: ACCOUNT,
+      currentAccount: () => ACCOUNT,
+      review: async () => {},
+      switchChain: async () => {},
+      simulate: async (request) => request,
+      beforeWrite: async () => {},
+      onWriteRejected: release,
+      onWriteUncertain: uncertain,
+      write: () => h.adapter.sendTransaction(tx),
+    }),
+  ).rejects.toThrow();
+  expect(h.calls).toEqual(["current:eth_sendTransaction"]);
+  expect(release).not.toHaveBeenCalled();
+  expect(uncertain).toHaveBeenCalledOnce();
 });

@@ -4,6 +4,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { type Address, type Hex, zeroAddress } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { answerReviews, loadCoreReview, stopAnswering } from "./support/core-review";
+import { viemWallet } from "./support/viem-wallet";
 
 const mocks = vi.hoisted(() => ({
   config: { id: "safe-signature-config" },
@@ -63,10 +64,9 @@ beforeEach(async () => {
     mocks.account = { ...mocks.account, chainId };
   });
   mocks.signTypedData.mockResolvedValue(SIGNATURE);
-  mocks.getWalletClient.mockResolvedValue({
-    account: { address: ACCOUNT },
-    signTypedData: mocks.signTypedData,
-  });
+  mocks.getWalletClient.mockImplementation(async () =>
+    viemWallet({ signTypedData: mocks.signTypedData }, () => mocks.account.chainId),
+  );
 });
 
 describe("reviewed Safe signature boundary", () => {
@@ -121,10 +121,9 @@ describe("reviewed Safe signature boundary", () => {
     const currentSign = vi.fn().mockResolvedValue(SIGNATURE);
     const dispose = answerReviews(async () => {
       mocks.account.connector = { id: "walletConnect", name: "WalletConnect" };
-      mocks.getWalletClient.mockResolvedValue({
-        account: { address: ACCOUNT },
-        signTypedData: currentSign,
-      });
+      mocks.getWalletClient.mockImplementation(async () =>
+        viemWallet({ signTypedData: currentSign }, () => mocks.account.chainId),
+      );
       return true;
     });
     const { result } = renderHook(() => useSafeTransactionSignature());
@@ -227,8 +226,7 @@ describe("reviewed Safe signature boundary", () => {
         });
         mocks.getWalletClient.mockImplementation(async () => {
           if (stage === "wallet client") await pause();
-          // A wallet client can still retain the reviewed account after the live connection changes.
-          return { account: { address: ACCOUNT }, signTypedData: mocks.signTypedData };
+          return viemWallet({ signTypedData: mocks.signTypedData }, () => mocks.account.chainId);
         });
         mocks.signTypedData.mockImplementation(async () => {
           if (stage === "signature") await pause();

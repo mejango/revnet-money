@@ -40,12 +40,7 @@ import {
 } from "@/lib/relayr-activity";
 import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-chains";
 import { relayrPaymentReview } from "@/lib/relayr-payment-review";
-import {
-  isWalletNotInvoked,
-  loadEngine,
-  reviewedSendDeps,
-  reviewedWalletAdapter,
-} from "@/lib/reviewed-send-deps";
+import { loadEngine, reviewedSendDeps, reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
 import { captureReviewedWalletContext } from "@/lib/reviewed-wallet-context";
 import { isSafeConnection } from "@/lib/safe-connector";
 import {
@@ -76,6 +71,7 @@ import {
   relayrDiscardLine,
   ReviewedCallRevertedError,
   relayrHeldMessage as sharedHeldMessage,
+  WalletNotInvokedError,
   writeIntentKey,
   type ReviewedForwardRequest,
   type ReviewedPlan,
@@ -2575,6 +2571,8 @@ export function useSendRelayrTx() {
                   if (walletOpened) ready = true;
                 },
                 onSubmitted: (_call, _step, submitted) => onSent(submitted),
+                // A receipt still confirming is followed here, so the bundle goes on once it lands.
+                follow: { onConfirming: () => options?.onMessage?.(engine.HELD_CONFIRMING_LINE) },
               },
               paymentDeps,
             );
@@ -2592,7 +2590,7 @@ export function useSendRelayrTx() {
               : undefined;
           else if (
             walletOpened &&
-            (isWalletNotInvoked(cause) ||
+            (cause instanceof WalletNotInvokedError ||
               (planned ? cause instanceof RelayrPaymentNotSentError : !ready))
           ) {
             // A gate refused before the wallet: this exact marker belongs to a wallet call never

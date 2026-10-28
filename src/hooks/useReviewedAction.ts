@@ -144,6 +144,9 @@ export function useReviewedAction() {
         const id = step === undefined ? undefined : rows[step];
         if (id) settleSubmittedWrite(id, "failed");
       }
+      // Sent, its receipt still verifying: pending (the hook's `receipt` phase), never failed or a
+      // reason to resend, until its hold ends the run. Its rows follow the hold.
+      if (result?.status === "receipt") return result.ended();
       return result;
     },
     [config],

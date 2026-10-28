@@ -41,19 +41,25 @@ const account = `0x${"1".repeat(40)}`;
 // 2026-10-26: source-token loan context and canonical reserve identity measure home393.0,
 // project580.0, terms579.2 and extras596.1 KiB. Round only these route ceilings up;
 // aggregate2759.9/2760 and referenced912.5/922 KiB remain within existing limits.
+// SDK 5.0.0 (followed receipts, ended(), the follow option): shop 587.0 and project 581.0 KiB;
+// round only those ceilings up. Its in-place follow and Relayr proof retry measure create 552.1,
+// terms 580.2, extras 597.0 KiB and all client JS 2761.2 KiB; round only those up. The hold as the
+// only outcome source measures operator 676.4 KiB; round only that ceiling up. Checked Safe
+// completion and settlement provenance measure project 582.1, terms 581.0 and shop 588.1 KiB.
+// One confirmed notice per settlement measures create 553.06 KiB; round only that ceiling up.
 const routes = [
   { route: "/", path: "/", kib: 394 },
   { route: "/learn", path: "/learn", kib: 354 },
   { route: "/build", path: "/build", kib: 356 },
   { route: "/audit", path: "/audit", kib: 357 },
   { route: "/discover", path: "/discover", kib: 340 },
-  { route: "/create", path: "/create", kib: 552 },
-  { route: "/[slug]", path: "/eth:1", kib: 581 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 580 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 676 },
+  { route: "/create", path: "/create", kib: 554 },
+  { route: "/[slug]", path: "/eth:1", kib: 583 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 582 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 677 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 587 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 597 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 589 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 598 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 425 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 414 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
@@ -219,7 +225,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // The same artifact measures 2757.6 KiB total, +3.6 KiB (0.13%) over the previous ceiling.
 // The same frozen acquisition-fix artifact measures2759.3 KiB, +1.7 KiB over the prior artifact.
 // Explicit homepage availability and permission retry: measured 2760.4 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2761);
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2762);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");

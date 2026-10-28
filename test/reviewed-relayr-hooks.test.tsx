@@ -100,11 +100,15 @@ vi.mock("wagmi/actions", () => ({
   // Core's reviewed sends and signatures reach the wallet through its viem client.
   getWalletClient: async () => {
     await mocks.walletLoaded();
-    return {
-      signTypedData: mocks.signTypedData,
-      sendTransaction: (request: { chain: { id: number } }) =>
-        mocks.sendTransaction({ ...request, chainId: request.chain.id }),
-    };
+    const { viemWallet } = await import("./support/viem-wallet");
+    return viemWallet(
+      {
+        signTypedData: mocks.signTypedData,
+        sendTransaction: (request) =>
+          mocks.sendTransaction({ ...request, chainId: request.chain.id }),
+      },
+      () => mocks.account.chainId,
+    );
   },
   switchChain: (_config: unknown, request: { chainId: number }) => mocks.switchChain(request),
 }));
@@ -2286,7 +2290,9 @@ describe("reviewed Relayr payment hook", () => {
   it("retains a lock when wallet broadcast fails ambiguously, but permits explicit rejection retry", async () => {
     const { activity, result } = await quotedPayment();
     mocks.sendTransaction.mockRejectedValueOnce({ code: 4001 });
-    await expect(result.current.sendRelayrTx(payment())).rejects.toEqual({ code: 4001 });
+    await expect(result.current.sendRelayrTx(payment())).rejects.toMatchObject({
+      cause: { code: 4001 },
+    });
     expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
       relayrPaymentStatus: "unfunded",
     });
@@ -2307,7 +2313,10 @@ describe("reviewed Relayr payment hook", () => {
       );
       await expect(result.current.sendRelayrTx(payment())).rejects.toThrow("wallet result lost");
       expect(mocks.sendTransaction).toHaveBeenCalledOnce();
-      expect(activity.transactionActivitySnapshot()[0].relayrPaymentStatus).toBe("submitted");
+      // The marker class proves nothing from a wallet; a 4001 inside what it threw still does.
+      expect(activity.transactionActivitySnapshot()[0].relayrPaymentStatus).toBe(
+        nestedRejection ? "unfunded" : "submitted",
+      );
     },
   );
 
@@ -2354,8 +2363,9 @@ describe("reviewed Relayr payment hook", () => {
           }),
         "unfunded",
       ],
-      ["a rejection seven causes down", () => rejectedBelow(7), "unfunded"],
-      ["a rejection eight causes down", () => rejectedBelow(8), "submitted"],
+      // viem wraps the provider's error twice: five below it is seven causes down.
+      ["a rejection seven causes down", () => rejectedBelow(5), "unfunded"],
+      ["a rejection eight causes down", () => rejectedBelow(6), "submitted"],
     ])("%s leaves the payment %s", async (_, error, status) => {
       const { activity, result } = await quotedPayment();
       mocks.sendTransaction.mockRejectedValueOnce(error());
@@ -2405,9 +2415,8 @@ describe("reviewed Relayr payment hook", () => {
   it("does not accept a funding receipt for another payment", async () => {
     const { result } = await quotedPayment();
     mocks.getTransaction.mockResolvedValue(onchain(TARGET, "0x"));
-    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
-      /confirmation is uncertain/,
-    );
+    // Core reads the proof again for as long as it follows a step, then hands it back uncertain.
+    await uncertainPayment(() => result.current.sendRelayrTx(payment()));
     await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
       /already has a submitted payment/,
     );
@@ -3551,9 +3560,11 @@ describe("Safe execution bundles", () => {
       }),
     ).rejects.toThrow();
     expect(mocks.sendTransaction).toHaveBeenCalledTimes(invoked ? 1 : 0);
+    // The marker class proves nothing from a wallet; a 4001 inside what it threw still does.
+    const unknown = failure === "wallet threw not-sent";
     expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
-      relayrPaymentStatus: invoked ? "submitted" : "unfunded",
-      relayrSafeFundingUnknown: invoked,
+      relayrPaymentStatus: unknown ? "submitted" : "unfunded",
+      relayrSafeFundingUnknown: unknown,
     });
   });
 
@@ -3928,6 +3939,40 @@ describe("paying a reverted Relayr payment again", () => {
     ).toEqual([HASH, SECOND_HASH]);
   });
 
+  it("follows a repayment still confirming to its receipt in the same run, showing it as pending", async () => {
+    const { result } = await revertedPayment();
+    relayrReports();
+    fundingChain({ [HASH]: "reverted", [SECOND_HASH]: "success" });
+    const proven = mocks.getTransactionReceipt.getMockImplementation()!;
+    let landed = false;
+    // The wallet's node has the repayment's receipt; the node the hold reads lags behind it.
+    mocks.waitForTransactionReceipt.mockImplementation(
+      async (_config: unknown, { hash }: { hash: Hex }) => proven({ hash }),
+    );
+    mocks.getTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) => {
+      if (hash === SECOND_HASH && !landed) throw new Error("RPC temporarily unavailable");
+      return proven({ hash });
+    });
+    mocks.sendTransaction.mockResolvedValueOnce(SECOND_HASH);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const messages: string[] = [];
+    const paid = result.current.sendRelayrTx(payment(), {
+      onMessage: (message) => messages.push(message),
+    });
+    paid.catch(() => undefined);
+    for (
+      let waited = 0;
+      waited < 60 && !messages.includes("Confirming your transaction.");
+      waited++
+    )
+      await vi.advanceTimersByTimeAsync(1_000);
+    expect(messages).toContain("Confirming your transaction.");
+    landed = true;
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(paid).resolves.toBe(SECOND_HASH);
+    expect(mocks.sendTransaction).toHaveBeenCalledTimes(2);
+  });
+
   it("does not pay again when Relayr reports a payment from another device", async () => {
     const { result } = await revertedPayment();
     relayrReports({ payment_received: true });
@@ -3987,7 +4032,9 @@ describe("paying a reverted Relayr payment again", () => {
       /confirmation is uncertain/,
     );
     mocks.sendTransaction.mockRejectedValueOnce({ code: 4001 });
-    await expect(result.current.sendRelayrTx(payment())).rejects.toEqual({ code: 4001 });
+    await expect(result.current.sendRelayrTx(payment())).rejects.toMatchObject({
+      cause: { code: 4001 },
+    });
     // A quote paid before stays on the retry rule when the wallet declines to pay it again.
     expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
       relayrPaymentStatus: "reverted",
