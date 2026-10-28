@@ -46,13 +46,14 @@ const account = `0x${"1".repeat(40)}`;
 // terms 580.2, extras 597.0 KiB and all client JS 2761.2 KiB; round only those up. The hold as the
 // only outcome source measures operator 676.4 KiB; round only that ceiling up. Checked Safe
 // completion and settlement provenance measure project 582.1, terms 581.0 and shop 588.1 KiB.
+// One confirmed notice per settlement measures create 553.06 KiB; round only that ceiling up.
 const routes = [
   { route: "/", path: "/", kib: 394 },
   { route: "/learn", path: "/learn", kib: 354 },
   { route: "/build", path: "/build", kib: 356 },
   { route: "/audit", path: "/audit", kib: 357 },
   { route: "/discover", path: "/discover", kib: 340 },
-  { route: "/create", path: "/create", kib: 553 },
+  { route: "/create", path: "/create", kib: 554 },
   { route: "/[slug]", path: "/eth:1", kib: 583 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 582 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 677 },
