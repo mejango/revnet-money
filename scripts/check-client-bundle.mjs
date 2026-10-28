@@ -47,6 +47,9 @@ const account = `0x${"1".repeat(40)}`;
 // only outcome source measures operator 676.4 KiB; round only that ceiling up. Checked Safe
 // completion and settlement provenance measure project 582.1, terms 581.0 and shop 588.1 KiB.
 // One confirmed notice per settlement measures create 553.06 KiB; round only that ceiling up.
+// 2026-10-28: URI-sensitive media keys and retryable detail reads affect shared chunks:
+// CI measures extras 598.1 and holdings just above 414.0 KiB. Round only these ceilings up;
+// aggregate 2761.6/2762 and route-referenced 915.3/922 KiB stay within existing limits.
 const routes = [
   { route: "/", path: "/", kib: 394 },
   { route: "/learn", path: "/learn", kib: 354 },
@@ -59,9 +62,9 @@ const routes = [
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 677 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 589 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 598 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 599 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 425 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 414 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 415 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
   { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 389 },
   { route: "/_not-found", path: "/no-such-page/x/y", kib: 300, status: 404 },
