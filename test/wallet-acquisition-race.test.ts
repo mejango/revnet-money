@@ -18,10 +18,21 @@ vi.mock("@/lib/safe-connector", () => ({
   safeWalletPeerSettled: async () => undefined,
 }));
 /** The shop-voting policy's import, held while `wait` is pending. */
-const policyLoad = vi.hoisted(() => ({ wait: null as Promise<void> | null }));
+const policyLoad = vi.hoisted(() => ({
+  wait: null as Promise<void> | null,
+  /** Runs as the policy is read from its loaded module. */
+  onRead: undefined as (() => void) | undefined,
+}));
 vi.mock("@/lib/shop-voting-policy", async (original) => {
   await policyLoad.wait;
-  return original();
+  const loaded = await original<typeof import("@/lib/shop-voting-policy")>();
+  return {
+    ...loaded,
+    get requirePriceBasedShopVoting() {
+      policyLoad.onRead?.();
+      return loaded.requirePriceBasedShopVoting;
+    },
+  };
 });
 const ACCOUNT = "0x1111111111111111111111111111111111111111";
 const OTHER = "0x2222222222222222222222222222222222222222";
@@ -155,6 +166,31 @@ it("invokes nothing for a send, typed signature or batch when the account change
     policyLoad.wait = null;
   }
 });
+
+it.each(
+  (["sendTransaction", "signTypedData", "sendCalls"] as const).flatMap((name) =>
+    [1, 2, 3, 4, 5, 6].map((turns) => [name, turns] as const),
+  ),
+)(
+  "invokes nothing for %s when the account changes %i turns after the shop-voting policy is read",
+  async (name, turns) => {
+    const h = harness("provider");
+    h.release();
+    policyLoad.onRead = () => {
+      let later = Promise.resolve();
+      for (let turn = 1; turn < turns; turn += 1) later = later.then(() => undefined);
+      void later.then(() => {
+        h.config.state.connections.get("old")!.accounts = [OTHER];
+      });
+    };
+    try {
+      await expect(operations[name](h.adapter)).rejects.toBeInstanceOf(WalletNotInvokedError);
+      expect(h.calls).toEqual([]);
+    } finally {
+      policyLoad.onRead = undefined;
+    }
+  },
+);
 
 for (const stage of ["chain", "provider"] as const) {
   it.each(Object.entries(operations))(

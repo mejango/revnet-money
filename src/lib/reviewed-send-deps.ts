@@ -29,8 +29,17 @@ function walletAdapter(
   account: () => Address | undefined,
   finalCheck: () => (() => void) | undefined,
 ): WalletAdapter {
-  // Each send captures the operation's final check as it starts; a later action cannot replace it.
-  const over = (state = finalCheck(), payload?: () => void) =>
+  /**
+   * The wallet as connected now: its account, chain and Safe mode. Not its connector: core fetches
+   * a replacement connector for the same account again, and asks that one.
+   */
+  const identity = () => {
+    const { address, chainId } = getAccount(config);
+    return [address?.toLowerCase(), chainId, isSafeConnection(config)].join(":");
+  };
+  // Each request captures the operation's final check, and the wallet core checked last, as it
+  // starts: every wallet request after it, however many awaits later, must reach that same wallet.
+  const over = (state = finalCheck(), payload?: () => void, pinned?: string) =>
     viemWalletAdapter({
       walletClient: () => {
         const { address, chainId, connector } = getAccount(config);
@@ -48,58 +57,53 @@ function walletAdapter(
       connector: () => getAccount(config).connector?.uid,
       check: () => {
         requireNoViewAs();
+        if (pinned !== undefined && identity() !== pinned) throw new ReviewRefusal(WALLET_CHANGED);
         account();
         state?.();
         payload?.();
       },
     });
-  // The policy loads after core's last check: the wallet it was checked on must still be the one
-  // connected once it has, or nothing is sent.
-  const policy = async () => {
-    const before = getAccount(config);
-    const safe = isSafeConnection(config);
-    const require = await import("@/lib/shop-voting-policy").then(
+  const policy = () =>
+    import("@/lib/shop-voting-policy").then(
       (module) => module.requirePriceBasedShopVoting,
       (error) => {
         throw Object.assign(new WalletNotInvokedError(WALLET_UNREACHABLE), { cause: error });
       },
     );
-    const now = getAccount(config);
-    if (
-      now.address !== before.address ||
-      now.chainId !== before.chainId ||
-      now.connector?.uid !== before.connector?.uid ||
-      isSafeConnection(config) !== safe
-    )
-      throw new WalletNotInvokedError(WALLET_CHANGED);
-    return require;
-  };
   return {
     ...over(),
     account,
-    signMessage: (message) => over().signMessage(message),
+    signMessage: (message) => over(finalCheck(), undefined, identity()).signMessage(message),
     sendTransaction: async (tx) => {
-      const state = finalCheck();
+      const [state, pinned] = [finalCheck(), identity()];
       const require = await policy();
-      return over(state, () => require(tx.data, tx.to)).sendTransaction(tx);
+      return over(state, () => require(tx.data, tx.to), pinned).sendTransaction(tx);
     },
     signTypedData: async (typedData) => {
-      const state = finalCheck();
+      const [state, pinned] = [finalCheck(), identity()];
       const require = await policy();
-      return over(state, () => {
-        const data = typedData.message?.data;
-        if (typeof data === "string" && data.startsWith("0x"))
-          require(data as `0x${string}`, typedData.message?.to as Address | undefined, Number(
-            typedData.message?.operation ?? 0,
-          ));
-      }).signTypedData(typedData);
+      return over(
+        state,
+        () => {
+          const data = typedData.message?.data;
+          if (typeof data === "string" && data.startsWith("0x"))
+            require(data as `0x${string}`, typedData.message?.to as Address | undefined, Number(
+              typedData.message?.operation ?? 0,
+            ));
+        },
+        pinned,
+      ).signTypedData(typedData);
     },
     sendCalls: async (chainId, calls) => {
-      const state = finalCheck();
+      const [state, pinned] = [finalCheck(), identity()];
       const require = await policy();
-      return over(state, () => {
-        for (const call of calls) require(call.data, call.to);
-      }).sendCalls!(chainId, calls);
+      return over(
+        state,
+        () => {
+          for (const call of calls) require(call.data, call.to);
+        },
+        pinned,
+      ).sendCalls!(chainId, calls);
     },
   };
 }
