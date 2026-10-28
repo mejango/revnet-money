@@ -58,8 +58,10 @@ function ShopTabInner({ projects }: { projects: ProjectItem[] }) {
     }, href);
   };
 
+  const [retryingMedia, setRetryingMedia] = useState(false);
   const shopQuery = useShopInventory(chainId, projectId);
-  const { data: mediaById } = useTierMedia(chainId, shopQuery.data);
+  const media = useTierMedia(chainId, shopQuery.data);
+  const mediaById = media.data;
 
   if (!chainId) return null;
 
@@ -102,6 +104,22 @@ function ShopTabInner({ projects }: { projects: ProjectItem[] }) {
 
       {visited.inventory || subtab === "inventory" ? (
         <div className={subtab === "inventory" ? "" : "hidden"}>
+          {media.isError || retryingMedia ? (
+            <p className="mb-4 text-sm text-zinc-500" role="status">
+              Some item details could not be loaded.{" "}
+              <button
+                type="button"
+                className="underline disabled:opacity-50"
+                disabled={retryingMedia || media.isFetching}
+                onClick={() => {
+                  setRetryingMedia(true);
+                  void media.retryFailed().finally(() => setRetryingMedia(false));
+                }}
+              >
+                {retryingMedia || media.isFetching ? "Retrying details…" : "Retry details"}
+              </button>
+            </p>
+          ) : null}
           <InventorySection
             shop={shop}
             chainId={chainId}
