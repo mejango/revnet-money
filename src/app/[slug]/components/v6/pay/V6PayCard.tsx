@@ -183,7 +183,12 @@ export function V6PayCard() {
   }, [amount]);
 
   // ---- Payment surface: accepted tokens + live ruleset gates ----
-  const { data: surface, isError: surfaceError } = usePaySurface(chainId, projectId);
+  const {
+    data: surface,
+    isError: surfaceError,
+    isFetching: surfaceFetching,
+    refetch: refetchSurface,
+  } = usePaySurface(chainId, projectId);
   const tokens = useMemo(() => surface?.tokens ?? [], [surface]);
   const selected = tokens.length > 0 ? tokens[Math.min(tokenIndex, tokens.length - 1)] : undefined;
   const decimals = selected?.decimals ?? 18;
@@ -1491,6 +1496,19 @@ export function V6PayCard() {
       {surfaceError ? (
         <p className="mt-2 text-sm text-red-600">
           Couldn&apos;t verify this project&apos;s accepted tokens. Payments are off.
+        </p>
+      ) : null}
+      {surface?.routingUnavailable ? (
+        <p className="mt-2 text-sm text-zinc-600" role="status">
+          Some payment routes could not be checked.{" "}
+          <button
+            type="button"
+            className="underline disabled:opacity-50"
+            disabled={surfaceFetching}
+            onClick={() => void refetchSurface()}
+          >
+            {surfaceFetching ? "Checking routes…" : "Retry routes"}
+          </button>
         </p>
       ) : null}
       {surface?.pausePay && mode === "pay" ? (

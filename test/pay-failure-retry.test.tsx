@@ -31,6 +31,9 @@ const mocks = vi.hoisted(() => ({
   reverted: false,
   routeCalls: [] as { slippageBps?: bigint }[],
   quoteFailed: false,
+  routingUnavailable: false,
+  surfaceFetching: false,
+  refetchSurface: vi.fn(),
   // The wallet's send.
   submit: vi.fn(),
   resetRunner: () => undefined as void,
@@ -146,7 +149,14 @@ vi.mock("@/app/[slug]/components/v6/pay/usePaySurface", () => {
     pausePay: false,
     terminals: ["0x3333333333333333333333333333333333333333"],
   };
-  return { usePaySurface: () => ({ data: surface, isError: false }) };
+  return {
+    usePaySurface: () => ({
+      data: { ...surface, routingUnavailable: mocks.routingUnavailable },
+      isError: false,
+      isFetching: mocks.surfaceFetching,
+      refetch: mocks.refetchSurface,
+    }),
+  };
 });
 vi.mock("@/app/[slug]/components/v6/pay/V6PayShopStrip", () => ({ V6PayShopStrip: () => null }));
 
@@ -181,6 +191,9 @@ beforeEach(() => {
   mocks.routeError = null;
   mocks.routeCalls = [];
   mocks.quoteFailed = false;
+  mocks.routingUnavailable = false;
+  mocks.surfaceFetching = false;
+  mocks.refetchSurface.mockReset().mockResolvedValue(undefined);
   mocks.cardSimulate.mockReset().mockResolvedValue({ request: {} });
   mocks.reverted = false;
   mocks.submit.mockReset().mockResolvedValue(HASH);
@@ -207,6 +220,38 @@ async function payFromConfirm() {
 }
 
 describe("a failed payment's reason and a looser minimum", () => {
+  it("keeps a verified payment usable while additional routes are checked and retried", async () => {
+    mocks.routingUnavailable = true;
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const card = (
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>
+    );
+    const view = render(card);
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pay" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Retry routes" }));
+    expect(mocks.refetchSurface).toHaveBeenCalledOnce();
+    mocks.surfaceFetching = true;
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("button", { name: "Checking routes…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Pay" })).toBeEnabled();
+    mocks.surfaceFetching = false;
+    mocks.routingUnavailable = false;
+    view.rerender(
+      <QueryClientProvider client={client}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByText(/Some payment routes could not be checked/)).toBeNull();
+    client.clear();
+  });
+
   it("sends the SDK's minimum with its default tolerance when nothing fails", async () => {
     await payFromConfirm();
     await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));

@@ -286,7 +286,13 @@ export function WalletButton() {
   const balanceAddress = viewAs ?? address;
   const { data: balance } = useBalance({ address: balanceAddress });
   const usdcAddress = chain?.id ? USDC_ADDRESSES[chain.id as JBChainId] : undefined;
-  const { data: usdcBalance } = useReadContract({
+  const {
+    data: usdcBalance,
+    isError: usdcError,
+    isLoading: usdcLoading,
+    isFetching: usdcFetching,
+    refetch: refetchUsdc,
+  } = useReadContract({
     abi: erc20Abi,
     address: usdcAddress,
     chainId: chain?.id,
@@ -311,10 +317,13 @@ export function WalletButton() {
    */
   const endSession = useCallback(async () => {
     if (!IS_DETERMINISTIC_BROWSER) {
-      const { getParaClient } = await import("@/providers/para-config");
-      const hasParaSession = await getParaClient()
-        .isFullyLoggedIn()
-        .catch(() => false);
+      let hasParaSession: boolean;
+      try {
+        const { getParaClient } = await import("@/providers/para-config");
+        hasParaSession = await getParaClient().isFullyLoggedIn();
+      } catch {
+        throw new ParaSessionLogoutError();
+      }
       if (hasParaSession) {
         await logoutParaSession({ disconnect: disconnectAsync });
         return;
@@ -347,10 +356,11 @@ export function WalletButton() {
   const formattedBalance = balance
     ? formattedWalletBalance(balance.value, balance.decimals, balance.symbol)
     : null;
-  const formattedUsdcBalance =
-    usdcBalance !== undefined
+  const formattedUsdcBalance = usdcError
+    ? "Unavailable"
+    : usdcBalance !== undefined
       ? formattedWalletBalance(usdcBalance, USDC_DECIMALS, "USDC")
-      : usdcAddress
+      : usdcLoading
         ? "Loading…"
         : "Unavailable";
 
@@ -523,6 +533,17 @@ export function WalletButton() {
                   />
                   <BalanceRow label="USDC" value={formattedUsdcBalance} />
                 </dl>
+                {usdcError && usdcAddress ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="mt-2 underline disabled:opacity-50"
+                    disabled={usdcFetching}
+                    onClick={() => void refetchUsdc()}
+                  >
+                    {usdcFetching ? "Retrying USDC balance…" : "Retry USDC balance"}
+                  </button>
+                ) : null}
               </>
             )}
           </div>

@@ -18,6 +18,8 @@ import { usePublicClient } from "wagmi";
 export interface V6PaySurface {
   /** Directly accepted tokens first, then live-probed via-router options. */
   tokens: V6PayTokenOption[];
+  /** Some additional routes could not be checked; verified choices remain usable. */
+  routingUnavailable: boolean;
   /** Current ruleset start timestamp (seconds), 0 when unknown. */
   rulesetStart: number;
   pausePay: boolean;
@@ -33,8 +35,8 @@ export interface V6PaySurface {
  * also lists a known router registry, gateway, or current/previous router, native ETH and/or USDC that it does
  * NOT accept directly are offered as swap-via-router options — but ONLY when a
  * live `previewPayFor` probe through an attached entry succeeds (a listed router
- * with no route reverts at pay time). Built atomically so the token list is
- * never a partial snapshot.
+ * with no route reverts at pay time). The token list retains verified choices
+ * when an additional route cannot be checked.
  */
 export function usePaySurface(chainId: JBChainId, projectId: bigint) {
   const publicClient = usePublicClient({ chainId });
@@ -59,7 +61,7 @@ export function usePaySurface(chainId: JBChainId, projectId: bigint) {
             functionName: "terminalsOf",
             args: [projectId],
           })
-          .catch(() => [] as readonly Address[]),
+          .catch(() => null),
       ]);
 
       const direct: V6PayTokenOption[] = await Promise.all(
@@ -76,9 +78,10 @@ export function usePaySurface(chainId: JBChainId, projectId: bigint) {
       const routerEntries = routerEntriesFor(chainId, terminals);
 
       // Router candidates: ETH/USDC that aren't already accepted directly,
-      // each gated by an actual previewPayFor route probe (cached).
+      // each gated by a fresh previewPayFor route probe.
       const has = (a: string) => direct.some((t) => t.token.toLowerCase() === a.toLowerCase());
       let routable: V6PayTokenOption[] = [];
+      let routingUnavailable = terminalsRaw === null;
       if (routerEntries.length) {
         const candidates: V6PayTokenOption[] = [];
         if (!has(NATIVE_TOKEN)) {
@@ -101,23 +104,24 @@ export function usePaySurface(chainId: JBChainId, projectId: bigint) {
           });
         }
         const gated = await Promise.all(
-          candidates.map(async (c) =>
-            (
-              await Promise.all(
-                routerEntries.map((entry) =>
-                  routerPayRouteWorks(client, chainId, projectId, entry, c.token, c.decimals),
-                ),
-              )
-            ).some(Boolean)
-              ? c
-              : null,
-          ),
+          candidates.map(async (candidate) => {
+            const probes = await Promise.allSettled(
+              routerEntries.map((entry) =>
+                routerPayRouteWorks(client, projectId, entry, candidate.token, candidate.decimals),
+              ),
+            );
+            if (probes.some((probe) => probe.status === "fulfilled" && probe.value))
+              return candidate;
+            if (probes.some((probe) => probe.status === "rejected")) routingUnavailable = true;
+            return null;
+          }),
         );
         routable = gated.filter((c): c is V6PayTokenOption => c !== null);
       }
 
       return {
         tokens: [...direct, ...routable],
+        routingUnavailable,
         rulesetStart: ruleset ? Number(ruleset.ruleset.start) : 0,
         pausePay: ruleset ? ruleset.metadata.pausePay : false,
         terminals,

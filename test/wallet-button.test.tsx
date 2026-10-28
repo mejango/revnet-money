@@ -26,7 +26,7 @@ const wallet = vi.hoisted(() => ({
 }));
 
 /** Whether Para reports a live session when Disconnect asks. */
-const paraSessionLive = vi.hoisted(() => ({ value: false }));
+const paraSessionLive = vi.hoisted(() => ({ value: false, failure: false }));
 
 vi.mock("wagmi", () => ({
   useAccount: wallet.account,
@@ -56,7 +56,12 @@ vi.mock("@wagmi/core", () => ({
 
 vi.mock("@/providers/para-config", () => ({
   // Disconnect asks whether a Para session exists before deciding how to end it.
-  getParaClient: () => ({ isFullyLoggedIn: async () => paraSessionLive.value }),
+  getParaClient: () => ({
+    isFullyLoggedIn: async () => {
+      if (paraSessionLive.failure) throw new Error("Para check unavailable: private details");
+      return paraSessionLive.value;
+    },
+  }),
   PARA_APP: { appName: "Revnet" },
 }));
 
@@ -80,6 +85,8 @@ vi.mock("@/providers/para-logout", async (importOriginal) => {
 describe("local wallet controls", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    paraSessionLive.failure = false;
+    paraSessionLive.value = false;
     clearViewAs();
     wallet.account.mockReturnValue({
       address: undefined,
@@ -202,6 +209,31 @@ describe("local wallet controls", () => {
     paraSessionLive.value = false;
   });
 
+  it("keeps a session-check failure connected and retries before any local disconnect", async () => {
+    wallet.account.mockReturnValue({
+      address: "0x1234567890abcdef1234567890abcdef12345678",
+      chain: { id: 1, name: "Ethereum" },
+      isConnected: true,
+    });
+    window.localStorage.setItem("revnet.para-session", "true");
+    paraSessionLive.failure = true;
+    render(<WalletButton />);
+    fireEvent.click(await screen.findByRole("button", { name: /0x1234.*5678/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Disconnect" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Your session is still connected; try again.");
+    expect(alert).not.toHaveTextContent("private details");
+    expect(wallet.disconnectAsync).not.toHaveBeenCalled();
+    expect(wallet.logoutParaSession).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem("revnet.para-session")).toBe("true");
+    paraSessionLive.failure = false;
+    paraSessionLive.value = true;
+    fireEvent.click(screen.getByRole("menuitem", { name: "Disconnect" }));
+    await waitFor(() => expect(wallet.logoutParaSession).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.queryByRole("menu")).toBeNull());
+    window.localStorage.removeItem("revnet.para-session");
+  });
+
   it("ends a Para session whatever the connector calls itself", async () => {
     // The old check keyed on `connector.id === "para"`. An email sign-in whose connector reads
     // as anything else took the plain Wagmi path, failed, and left the visitor signed in with
@@ -274,6 +306,49 @@ describe("local wallet controls", () => {
       expect(screen.getByText("1,234.5 ETH")).toBeVisible();
       expect(screen.getByText("12.5 USDC")).toBeVisible();
     });
+  });
+
+  it("shows a failed ordinary USDC balance as unavailable, and retries without hiding a known native balance", async () => {
+    wallet.account.mockReturnValue({
+      address: "0x1234567890abcdef1234567890abcdef12345678",
+      chain: { id: 1, name: "Ethereum" },
+      isConnected: true,
+    });
+    wallet.balance.mockReturnValue({ data: { value: 10n ** 18n, decimals: 18, symbol: "ETH" } });
+    const refetch = vi.fn();
+    wallet.readContract.mockReturnValue({
+      data: undefined,
+      isError: true,
+      isLoading: false,
+      isFetching: false,
+      refetch,
+    });
+    const view = render(<WalletButton />);
+    fireEvent.click(await screen.findByRole("button", { name: /0x1234.*5678/i }));
+    expect(screen.getByText("Unavailable")).toBeVisible();
+    expect(screen.queryByText("Loading…")).toBeNull();
+    expect(screen.getByText("1 ETH")).toBeVisible();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Retry USDC balance" }));
+    expect(refetch).toHaveBeenCalledOnce();
+    wallet.readContract.mockReturnValue({
+      data: undefined,
+      isError: false,
+      isLoading: true,
+      isFetching: true,
+      refetch,
+    });
+    view.rerender(<WalletButton />);
+    expect(screen.getByText("Loading…")).toBeVisible();
+    wallet.readContract.mockReturnValue({
+      data: 0n,
+      isError: false,
+      isLoading: false,
+      isFetching: false,
+      refetch,
+    });
+    view.rerender(<WalletButton />);
+    expect(screen.getByText("0 USDC")).toBeVisible();
+    expect(screen.queryByRole("menuitem", { name: "Retry USDC balance" })).toBeNull();
   });
 
   describe("the project token balance", () => {
