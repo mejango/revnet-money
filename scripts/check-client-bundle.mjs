@@ -41,7 +41,8 @@ const account = `0x${"1".repeat(40)}`;
 // 2026-10-26: source-token loan context and canonical reserve identity measure home393.0,
 // project580.0, terms579.2 and extras596.1 KiB. Round only these route ceilings up;
 // aggregate2759.9/2760 and referenced912.5/922 KiB remain within existing limits.
-// SDK 5.0.0 (followed receipts, ended()): shop measures 587.0 KiB; round only that ceiling up.
+// SDK 5.0.0 (followed receipts, ended(), the follow option): shop 587.0 and project 581.0 KiB;
+// round only those ceilings up.
 const routes = [
   { route: "/", path: "/", kib: 394 },
   { route: "/learn", path: "/learn", kib: 354 },
@@ -49,7 +50,7 @@ const routes = [
   { route: "/audit", path: "/audit", kib: 357 },
   { route: "/discover", path: "/discover", kib: 340 },
   { route: "/create", path: "/create", kib: 552 },
-  { route: "/[slug]", path: "/eth:1", kib: 581 },
+  { route: "/[slug]", path: "/eth:1", kib: 582 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 580 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 676 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
