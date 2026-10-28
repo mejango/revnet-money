@@ -73,28 +73,28 @@
     },
     {
       "file": "src/lib/reviewed-send-deps.ts",
-      "line": 70,
+      "line": 84,
       "api": "sendTransaction",
       "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty.",
       "test": "test/safe-batch.test.tsx"
     },
     {
       "file": "src/lib/reviewed-send-deps.ts",
-      "line": 75,
+      "line": 89,
       "api": "signTypedData",
       "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty.",
       "test": "test/safe-batch.test.tsx"
     },
     {
       "file": "src/lib/reviewed-send-deps.ts",
-      "line": 66,
+      "line": 80,
       "api": "signMessage",
       "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty.",
       "test": "test/safe-batch.test.tsx"
     },
     {
       "file": "src/lib/reviewed-send-deps.ts",
-      "line": 86,
+      "line": 100,
       "api": "sendCalls",
       "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty.",
       "test": "test/safe-batch.test.tsx"

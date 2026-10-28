@@ -53,13 +53,27 @@ function walletAdapter(
         payload?.();
       },
     });
-  const policy = () =>
-    import("@/lib/shop-voting-policy").then(
+  // The policy loads after core's last check: the wallet it was checked on must still be the one
+  // connected once it has, or nothing is sent.
+  const policy = async () => {
+    const before = getAccount(config);
+    const safe = isSafeConnection(config);
+    const require = await import("@/lib/shop-voting-policy").then(
       (module) => module.requirePriceBasedShopVoting,
       (error) => {
         throw Object.assign(new WalletNotInvokedError(WALLET_UNREACHABLE), { cause: error });
       },
     );
+    const now = getAccount(config);
+    if (
+      now.address !== before.address ||
+      now.chainId !== before.chainId ||
+      now.connector?.uid !== before.connector?.uid ||
+      isSafeConnection(config) !== safe
+    )
+      throw new WalletNotInvokedError(WALLET_CHANGED);
+    return require;
+  };
   return {
     ...over(),
     account,

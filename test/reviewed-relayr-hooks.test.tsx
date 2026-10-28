@@ -2415,9 +2415,8 @@ describe("reviewed Relayr payment hook", () => {
   it("does not accept a funding receipt for another payment", async () => {
     const { result } = await quotedPayment();
     mocks.getTransaction.mockResolvedValue(onchain(TARGET, "0x"));
-    await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
-      /confirmation is uncertain/,
-    );
+    // Core reads the proof again for as long as it follows a step, then hands it back uncertain.
+    await uncertainPayment(() => result.current.sendRelayrTx(payment()));
     await expect(result.current.sendRelayrTx(payment())).rejects.toThrow(
       /already has a submitted payment/,
     );

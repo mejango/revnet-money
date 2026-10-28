@@ -17,6 +17,12 @@ vi.mock("@/lib/safe-connector", () => ({
   isSafeConnection: () => safe.value,
   safeWalletPeerSettled: async () => undefined,
 }));
+/** The shop-voting policy's import, held while `wait` is pending. */
+const policyLoad = vi.hoisted(() => ({ wait: null as Promise<void> | null }));
+vi.mock("@/lib/shop-voting-policy", async (original) => {
+  await policyLoad.wait;
+  return original();
+});
 const ACCOUNT = "0x1111111111111111111111111111111111111111";
 const OTHER = "0x2222222222222222222222222222222222222222";
 const HASH = `0x${"12".repeat(32)}` as const;
@@ -45,7 +51,7 @@ function harness(stage: "chain" | "provider") {
   const connector = (uid: string, blocked = false) => ({
     id: uid,
     uid,
-    getAccounts: async () => [ACCOUNT],
+    getAccounts: async () => connections.get(uid)!.accounts,
     getChainId: async () => {
       if (blocked && stage === "chain" && !held) {
         held = true;
@@ -78,6 +84,10 @@ function harness(stage: "chain" | "provider") {
       };
     },
   });
+  const connections = new Map<
+    string,
+    { accounts: string[]; chainId: number; connector: unknown }
+  >();
   const old = connector("old", true);
   const current = connector("current");
   const config = {
@@ -85,10 +95,9 @@ function harness(stage: "chain" | "provider") {
     state: {
       current: "old",
       status: "connected",
-      connections: new Map([
-        ["old", { accounts: [ACCOUNT], chainId: 1, connector: old }],
-        ["current", { accounts: [ACCOUNT], chainId: 1, connector: current }],
-      ]),
+      connections: connections
+        .set("old", { accounts: [ACCOUNT], chainId: 1, connector: old })
+        .set("current", { accounts: [ACCOUNT], chainId: 1, connector: current }),
     },
   };
   return {
@@ -123,6 +132,29 @@ beforeEach(async () => {
 });
 
 afterEach(stopAnswering);
+
+// First in the file: its held policy import is the module's first.
+it("invokes nothing for a send, typed signature or batch when the account changes while the shop-voting policy loads", async () => {
+  let open!: () => void;
+  policyLoad.wait = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  try {
+    const h = harness("provider");
+    h.release();
+    const adapter = h.adapter;
+    const rejected = (["sendTransaction", "signTypedData", "sendCalls"] as const).map((name) =>
+      expect(operations[name](adapter)).rejects.toBeInstanceOf(WalletNotInvokedError),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    h.config.state.connections.get("old")!.accounts = [OTHER];
+    open();
+    await Promise.all(rejected);
+    expect(h.calls).toEqual([]);
+  } finally {
+    policyLoad.wait = null;
+  }
+});
 
 for (const stage of ["chain", "provider"] as const) {
   it.each(Object.entries(operations))(
