@@ -23,8 +23,8 @@ export interface V6PaySurface {
   /** Current ruleset start timestamp (seconds), 0 when unknown. */
   rulesetStart: number;
   pausePay: boolean;
-  /** The project's listed payment terminals (JBDirectory.terminalsOf). */
-  terminals: Address[];
+  /** Listed payment terminals; undefined means the directory read is unavailable. */
+  terminals: Address[] | undefined;
 }
 
 /**
@@ -124,7 +124,7 @@ export function usePaySurface(chainId: JBChainId, projectId: bigint) {
         routingUnavailable,
         rulesetStart: ruleset ? Number(ruleset.ruleset.start) : 0,
         pausePay: ruleset ? ruleset.metadata.pausePay : false,
-        terminals,
+        terminals: terminalsRaw === null ? undefined : terminals,
       };
     },
   });

@@ -51,6 +51,7 @@ const routeArgs = {
   token: TOKEN,
   amount: 1_000_000n,
   beneficiary: TEST_ACCOUNT,
+  attachedTerminals: [ROUTER, MULTI],
 };
 
 function preview(beneficiaryTokenCount: bigint, reservedTokenCount = 0n): PayPreview {
@@ -97,6 +98,68 @@ describe("v6 payment route selection", () => {
         expect.objectContaining({ terminal }),
       );
     }
+  });
+
+  it("recovers an unknown attachment list using only the freshly confirmed direct primary", async () => {
+    const readContract = vi.fn().mockResolvedValue(MULTI);
+    previewPayMock.mockResolvedValue(preview(100n));
+    const route = await resolveBestV6PayRoute({
+      ...routeArgs,
+      attachedTerminals: undefined,
+      client: { readContract } as unknown as PublicClient,
+    });
+    expect(route).toMatchObject({ address: MULTI, type: "multi" });
+    expect(readContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functionName: "primaryTerminalOf",
+        args: [routeArgs.projectId, TOKEN],
+      }),
+    );
+    expect(previewPayMock).toHaveBeenCalledOnce();
+    expect(previewPayMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ terminal: MULTI }),
+    );
+  });
+
+  it("never reopens global router candidates for an unknown, absent, or unsupported primary", async () => {
+    for (const primary of [
+      "0x0000000000000000000000000000000000000000",
+      ROUTER,
+      "0x0000000000000000000000000000000000000001",
+    ]) {
+      const readContract = vi.fn().mockResolvedValue(primary);
+      expect(
+        await resolveBestV6PayRoute({
+          ...routeArgs,
+          attachedTerminals: undefined,
+          client: { readContract } as unknown as PublicClient,
+        }),
+      ).toBeNull();
+    }
+    await expect(
+      resolveBestV6PayRoute({
+        ...routeArgs,
+        attachedTerminals: undefined,
+        client: {
+          readContract: vi.fn().mockRejectedValue(new Error("Directory unavailable")),
+        } as unknown as PublicClient,
+      }),
+    ).rejects.toThrow("Directory unavailable");
+    expect(previewPayMock).not.toHaveBeenCalled();
+  });
+
+  it("treats a confirmed empty attachment list as empty, without a primary fallback", async () => {
+    const readContract = vi.fn();
+    expect(
+      await resolveBestV6PayRoute({
+        ...routeArgs,
+        attachedTerminals: [],
+        client: { readContract } as unknown as PublicClient,
+      }),
+    ).toBeNull();
+    expect(readContract).not.toHaveBeenCalled();
+    expect(previewPayMock).not.toHaveBeenCalled();
   });
 
   it("uses reserved issuance as the second tie-breaker, then prefers the direct terminal", async () => {

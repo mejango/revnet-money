@@ -408,7 +408,7 @@ export function V6PayCard() {
     queryKey: [
       "v6PayPreview",
       chainId,
-      surface?.terminals.join(",") ?? "",
+      surface?.terminals?.join(",") ?? null,
       projectId.toString(),
       selected ? payTokenKey(selected) : "",
       amountRaw.toString(),

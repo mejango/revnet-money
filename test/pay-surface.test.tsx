@@ -1,23 +1,31 @@
 import { usePaySurface } from "@/app/[slug]/components/v6/pay/usePaySurface";
-import { NATIVE_TOKEN, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
+import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
+import { jbV6ContractAddress, NATIVE_TOKEN, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
-import type { Address } from "viem";
+import type { Address, PublicClient } from "viem";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ readContract: vi.fn(), contexts: vi.fn(), ruleset: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  readContract: vi.fn(),
+  contexts: vi.fn(),
+  ruleset: vi.fn(),
+  prepare: vi.fn(),
+}));
 vi.mock("wagmi", () => ({ usePublicClient: () => ({ readContract: mocks.readContract }) }));
 vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
   getAccountingContexts: mocks.contexts,
   getCurrentRuleset: mocks.ruleset,
+  prepareUserPay: mocks.prepare,
 }));
 const ENTRY_A = "0x0000000000000000000000000000000000000001" as Address;
 const ENTRY_B = "0x0000000000000000000000000000000000000002" as Address;
 const DIRECT = "0x0000000000000000000000000000000000000003" as Address;
 vi.mock("@/lib/protocol-rollout", () => ({
-  routerEntriesFor: (_chain: number, terminals: Address[]) => terminals,
+  routerEntriesFor: (_chain: number, terminals: Address[]) =>
+    terminals.filter((terminal) => terminal === ENTRY_A || terminal === ENTRY_B),
 }));
 const clients: QueryClient[] = [];
 let probe: (entry: Address, token: Address) => Promise<unknown>;
@@ -25,6 +33,11 @@ let probe: (entry: Address, token: Address) => Promise<unknown>;
 beforeEach(() => {
   mocks.contexts.mockResolvedValue([{ token: DIRECT, decimals: 18, currency: 3 }]);
   mocks.ruleset.mockResolvedValue({ ruleset: { start: 10 }, metadata: { pausePay: false } });
+  mocks.prepare.mockResolvedValue({
+    preview: { beneficiaryTokenCount: 10n, reservedTokenCount: 0n },
+    metadata: "0x",
+    minReturnedTokens: 9n,
+  });
   probe = async () => [{ id: 0n }];
   mocks.readContract.mockImplementation(
     async ({
@@ -118,6 +131,43 @@ describe("payment surface route read status", () => {
     expect(result.current.data?.routingUnavailable).toBe(false);
   });
 
+  it("previews a known direct token through its verified primary while topology remains unknown", async () => {
+    const multi = jbV6ContractAddress.JBMultiTerminal[1];
+    mocks.readContract.mockImplementation(async ({ functionName }: { functionName: string }) => {
+      if (functionName === "terminalsOf") throw new Error("Directory topology unavailable");
+      if (functionName === "primaryTerminalOf") return multi;
+      if (functionName === "symbol") return "DIRECT";
+      throw new Error(`Unexpected read: ${functionName}`);
+    });
+    const { result } = mount();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.terminals).toBeUndefined();
+    const choice = result.current.data!.tokens[0];
+    const route = await resolveBestV6PayRoute({
+      client: { readContract: mocks.readContract } as unknown as PublicClient,
+      chainId: 1,
+      projectId: 27n,
+      token: choice.token,
+      amount: 1n,
+      beneficiary: DIRECT,
+      attachedTerminals: result.current.data!.terminals,
+    });
+    expect(route).toMatchObject({
+      address: multi,
+      type: "multi",
+      preview: { beneficiaryTokenCount: 10n },
+    });
+    expect(mocks.readContract).toHaveBeenCalledWith(
+      expect.objectContaining({ functionName: "primaryTerminalOf", args: [27n, DIRECT] }),
+    );
+    expect(mocks.prepare).toHaveBeenCalledOnce();
+    expect(mocks.prepare).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ terminal: multi, token: DIRECT }),
+    );
+    expect(result.current.data?.routingUnavailable).toBe(true);
+  });
+
   it("does not report uncertainty when terminal discovery confirms an empty list", async () => {
     mocks.readContract.mockImplementation(async ({ functionName }: { functionName: string }) => {
       if (functionName === "terminalsOf") return [];
@@ -128,6 +178,7 @@ describe("payment surface route read status", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.tokens.map((token) => token.token)).toEqual([DIRECT]);
     expect(result.current.data?.routingUnavailable).toBe(false);
+    expect(result.current.data?.terminals).toEqual([]);
   });
 
   it("refreshes both confirmed dead and confirmed live route verdicts", async () => {

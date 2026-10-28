@@ -351,6 +351,44 @@ describe("local wallet controls", () => {
     expect(screen.queryByRole("menuitem", { name: "Retry USDC balance" })).toBeNull();
   });
 
+  it.each([false, true])(
+    "shows truthful native read state with cached data and recovery, view-as=%s",
+    async (viewAs) => {
+      wallet.account.mockReturnValue({
+        address: "0x1234567890abcdef1234567890abcdef12345678",
+        chain: { id: 1, name: "Ethereum" },
+        isConnected: true,
+      });
+      if (viewAs) setViewAs("0x2222222222222222222222222222222222222222" as Address);
+      wallet.balance.mockReturnValue({
+        data: { value: 10n ** 18n, decimals: 18, symbol: "ETH" },
+        isError: true,
+        isLoading: false,
+      });
+      wallet.readContract.mockReturnValue({ data: 0n, isError: false, isLoading: false });
+      const view = render(<WalletButton />);
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: viewAs ? /Viewing as 0x2222.*2222/i : /0x1234.*5678/i,
+        }),
+      );
+      expect(screen.getByText("Unavailable")).toBeVisible();
+      expect(screen.queryByText("1 ETH")).toBeNull();
+      expect(screen.getByText("0 USDC")).toBeVisible();
+      wallet.balance.mockReturnValue({ data: undefined, isError: false, isLoading: true });
+      view.rerender(<WalletButton />);
+      expect(screen.getByText("Loading…")).toBeVisible();
+      wallet.balance.mockReturnValue({
+        data: { value: 0n, decimals: 18, symbol: "ETH" },
+        isError: false,
+        isLoading: false,
+      });
+      view.rerender(<WalletButton />);
+      expect(screen.getByText("0 ETH")).toBeVisible();
+      expect(screen.queryByText("Unavailable")).toBeNull();
+    },
+  );
+
   describe("the project token balance", () => {
     const address = "0x1234567890abcdef1234567890abcdef12345678";
 
