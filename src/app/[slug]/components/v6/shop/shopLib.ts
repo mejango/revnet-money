@@ -412,7 +412,14 @@ export function useTierMedia(
   const tiers = shop?.tiers ?? [];
   return useQueries({
     queries: tiers.map((tier) => ({
-      queryKey: ["v6Shop721TierMedia", chainId, shop?.hook, tier.id],
+      queryKey: [
+        "v6Shop721TierMedia",
+        chainId,
+        shop?.hook,
+        tier.id,
+        tier.encodedIpfsUri,
+        tier.resolvedUri,
+      ],
       enabled: !!shop,
       staleTime: Infinity,
       queryFn: () => resolveTierMedia(tier),
@@ -425,12 +432,15 @@ export function useTierMedia(
       ) as Record<number, TierMedia>,
       isLoading: results.some((result) => result.isLoading),
       isError: results.some((result) => result.isError),
+      isFetching: results.some((result) => result.isFetching),
+      retryFailed: () =>
+        Promise.all(results.filter((result) => result.isError).map((result) => result.refetch())),
       error: results.find((result) => result.error)?.error ?? null,
     }),
   });
 }
 
-/** Best-effort tier metadata resolution — {} on any failure. */
+/** Missing metadata stays empty; failed reads remain retryable without blocking inventory. */
 export async function resolveTierMedia(tier: TierMediaSource): Promise<TierMedia> {
   const resolved = tier.resolvedUri ? parseTierMetadataJson(tier.resolvedUri) : null;
   if (resolved && Object.keys(resolved).length > 0) return tierDisplayMetadata(resolved);
@@ -475,7 +485,7 @@ export async function resolveTierMedia(tier: TierMediaSource): Promise<TierMedia
       // Try the next gateway.
     }
   }
-  return {};
+  throw new Error("Item details could not be loaded. Try again.");
 }
 
 /** Shopper-facing "X% off" — discountPercent is out of 200. */
