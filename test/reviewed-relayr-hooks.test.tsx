@@ -3940,6 +3940,40 @@ describe("paying a reverted Relayr payment again", () => {
     ).toEqual([HASH, SECOND_HASH]);
   });
 
+  it("follows a repayment still confirming to its receipt in the same run, showing it as pending", async () => {
+    const { result } = await revertedPayment();
+    relayrReports();
+    fundingChain({ [HASH]: "reverted", [SECOND_HASH]: "success" });
+    const proven = mocks.getTransactionReceipt.getMockImplementation()!;
+    let landed = false;
+    // The wallet's node has the repayment's receipt; the node the hold reads lags behind it.
+    mocks.waitForTransactionReceipt.mockImplementation(
+      async (_config: unknown, { hash }: { hash: Hex }) => proven({ hash }),
+    );
+    mocks.getTransactionReceipt.mockImplementation(async ({ hash }: { hash: Hex }) => {
+      if (hash === SECOND_HASH && !landed) throw new Error("RPC temporarily unavailable");
+      return proven({ hash });
+    });
+    mocks.sendTransaction.mockResolvedValueOnce(SECOND_HASH);
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const messages: string[] = [];
+    const paid = result.current.sendRelayrTx(payment(), {
+      onMessage: (message) => messages.push(message),
+    });
+    paid.catch(() => undefined);
+    for (
+      let waited = 0;
+      waited < 60 && !messages.includes("Confirming your transaction.");
+      waited++
+    )
+      await vi.advanceTimersByTimeAsync(1_000);
+    expect(messages).toContain("Confirming your transaction.");
+    landed = true;
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(paid).resolves.toBe(SECOND_HASH);
+    expect(mocks.sendTransaction).toHaveBeenCalledTimes(2);
+  });
+
   it("does not pay again when Relayr reports a payment from another device", async () => {
     const { result } = await revertedPayment();
     relayrReports({ payment_received: true });

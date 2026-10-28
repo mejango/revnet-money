@@ -2571,6 +2571,8 @@ export function useSendRelayrTx() {
                   if (walletOpened) ready = true;
                 },
                 onSubmitted: (_call, _step, submitted) => onSent(submitted),
+                // A receipt still confirming is followed here, so the bundle goes on once it lands.
+                follow: { onConfirming: () => options?.onMessage?.(engine.HELD_CONFIRMING_LINE) },
               },
               paymentDeps,
             );
