@@ -818,7 +818,7 @@ export function AddStageDialog({
 
                           <li className="flex">
                             <span className="mr-2">•</span>A higher cash-out tax reduces loan
-                            amounts. It does not change the loan&apos;s repayment terms.
+                            capacity.
                           </li>
                           <li className="flex">
                             <span className="mr-2">•</span>
