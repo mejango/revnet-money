@@ -527,12 +527,16 @@ body {
   border-radius: 0 !important;
 }
 
-/* Native selection controls appear throughout create, owner, operator, and
-   extras flows. Keep their selected state on the shared Melon accent instead
-   of allowing the browser/forms plugin to fall back to blue. */
+/* Native controls and the browser's own pickers (date and time calendars,
+   select menus) take the shared Melon accent instead of falling back to blue. */
+:root {
+  accent-color: theme("colors.melon.500");
+  color-scheme: light;
+}
+
+/* Checkboxes and radios also need the forms plugin's color and border. */
 input[type="checkbox"],
 input[type="radio"] {
-  accent-color: theme("colors.melon.500");
   color: theme("colors.melon.500");
   border-color: theme("colors.melon.600");
 }
