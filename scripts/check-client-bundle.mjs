@@ -50,20 +50,23 @@ const account = `0x${"1".repeat(40)}`;
 // 2026-10-28: URI-sensitive media keys and retryable detail reads affect shared chunks:
 // CI measures extras 598.1 and holdings just above 414.0 KiB. Round only these ceilings up;
 // aggregate 2761.6/2762 and route-referenced 915.3/922 KiB stay within existing limits.
+// Read-status and recovery UX measures learn 354.1, audit 357.1 and account 425.1 KiB.
+// Round only these ceilings up; aggregate 2761.7/2762 and referenced 915.3/922 remain within limits.
+// CI measures operator just above 677 KiB; round that ceiling up without changing aggregate limits.
 const routes = [
   { route: "/", path: "/", kib: 394 },
-  { route: "/learn", path: "/learn", kib: 354 },
+  { route: "/learn", path: "/learn", kib: 355 },
   { route: "/build", path: "/build", kib: 356 },
-  { route: "/audit", path: "/audit", kib: 357 },
+  { route: "/audit", path: "/audit", kib: 358 },
   { route: "/discover", path: "/discover", kib: 340 },
   { route: "/create", path: "/create", kib: 554 },
   { route: "/[slug]", path: "/eth:1", kib: 583 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 582 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 677 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 589 },
   { route: "/[slug]/extras", path: "/eth:1/extras", kib: 599 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 425 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 426 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 415 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
   { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 389 },

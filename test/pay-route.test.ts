@@ -18,7 +18,7 @@ import {
   USDC_ADDRESSES,
 } from "@bananapus/nana-sdk-core";
 import { PaySwapQuoteFailedError, type PayPreview } from "@bananapus/nana-sdk-core/v6";
-import type { Address, PublicClient } from "viem";
+import { ContractFunctionRevertedError, type Address, type PublicClient } from "viem";
 import { sepolia } from "viem/chains";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TEST_ACCOUNT } from "./fixtures/revnet";
@@ -51,6 +51,7 @@ const routeArgs = {
   token: TOKEN,
   amount: 1_000_000n,
   beneficiary: TEST_ACCOUNT,
+  attachedTerminals: [ROUTER, MULTI],
 };
 
 function preview(beneficiaryTokenCount: bigint, reservedTokenCount = 0n): PayPreview {
@@ -97,6 +98,68 @@ describe("v6 payment route selection", () => {
         expect.objectContaining({ terminal }),
       );
     }
+  });
+
+  it("recovers an unknown attachment list using only the freshly confirmed direct primary", async () => {
+    const readContract = vi.fn().mockResolvedValue(MULTI);
+    previewPayMock.mockResolvedValue(preview(100n));
+    const route = await resolveBestV6PayRoute({
+      ...routeArgs,
+      attachedTerminals: undefined,
+      client: { readContract } as unknown as PublicClient,
+    });
+    expect(route).toMatchObject({ address: MULTI, type: "multi" });
+    expect(readContract).toHaveBeenCalledWith(
+      expect.objectContaining({
+        functionName: "primaryTerminalOf",
+        args: [routeArgs.projectId, TOKEN],
+      }),
+    );
+    expect(previewPayMock).toHaveBeenCalledOnce();
+    expect(previewPayMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ terminal: MULTI }),
+    );
+  });
+
+  it("never reopens global router candidates for an unknown, absent, or unsupported primary", async () => {
+    for (const primary of [
+      "0x0000000000000000000000000000000000000000",
+      ROUTER,
+      "0x0000000000000000000000000000000000000001",
+    ]) {
+      const readContract = vi.fn().mockResolvedValue(primary);
+      expect(
+        await resolveBestV6PayRoute({
+          ...routeArgs,
+          attachedTerminals: undefined,
+          client: { readContract } as unknown as PublicClient,
+        }),
+      ).toBeNull();
+    }
+    await expect(
+      resolveBestV6PayRoute({
+        ...routeArgs,
+        attachedTerminals: undefined,
+        client: {
+          readContract: vi.fn().mockRejectedValue(new Error("Directory unavailable")),
+        } as unknown as PublicClient,
+      }),
+    ).rejects.toThrow("Directory unavailable");
+    expect(previewPayMock).not.toHaveBeenCalled();
+  });
+
+  it("treats a confirmed empty attachment list as empty, without a primary fallback", async () => {
+    const readContract = vi.fn();
+    expect(
+      await resolveBestV6PayRoute({
+        ...routeArgs,
+        attachedTerminals: [],
+        client: { readContract } as unknown as PublicClient,
+      }),
+    ).toBeNull();
+    expect(readContract).not.toHaveBeenCalled();
+    expect(previewPayMock).not.toHaveBeenCalled();
   });
 
   it("uses reserved issuance as the second tie-breaker, then prefers the direct terminal", async () => {
@@ -156,18 +219,14 @@ describe("router and minimum-output guardrails", () => {
     expect(isNativePayToken(NATIVE_TOKEN.toLowerCase())).toBe(true);
   });
 
-  it("accepts only a preview with a live ruleset and caches the exact route probe", async () => {
+  it("accepts only a preview with a live ruleset and rereads the exact route probe", async () => {
     const readContract = vi.fn().mockResolvedValue([{ id: 9n }]);
     const client = { readContract } as unknown as PublicClient;
     const projectId = 9001n;
 
-    await expect(
-      routerPayRouteWorks(client, sepolia.id, projectId, ROUTER, TOKEN, 6),
-    ).resolves.toBe(true);
-    await expect(
-      routerPayRouteWorks(client, sepolia.id, projectId, ROUTER, TOKEN, 6),
-    ).resolves.toBe(true);
-    expect(readContract).toHaveBeenCalledTimes(1);
+    await expect(routerPayRouteWorks(client, projectId, ROUTER, TOKEN, 6)).resolves.toBe(true);
+    await expect(routerPayRouteWorks(client, projectId, ROUTER, TOKEN, 6)).resolves.toBe(true);
+    expect(readContract).toHaveBeenCalledTimes(2);
     expect(readContract).toHaveBeenCalledWith(
       expect.objectContaining({
         address: ROUTER,
@@ -177,7 +236,20 @@ describe("router and minimum-output guardrails", () => {
     );
   });
 
-  it("fails closed for a dead or unavailable custom-token router path", async () => {
+  it("does not offer a confirmed reverted route, and checks it again after recovery", async () => {
+    const readContract = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ContractFunctionRevertedError({ abi: [], functionName: "previewPayFor" }),
+      )
+      .mockResolvedValue([{ id: 9n }]);
+    const client = { readContract } as unknown as PublicClient;
+    await expect(routerPayRouteWorks(client, 9004n, ROUTER, TOKEN, 6)).resolves.toBe(false);
+    await expect(routerPayRouteWorks(client, 9004n, ROUTER, TOKEN, 6)).resolves.toBe(true);
+    expect(readContract).toHaveBeenCalledTimes(2);
+  });
+
+  it("distinguishes a confirmed dead route from an unavailable route probe", async () => {
     const deadClient = {
       readContract: vi.fn().mockResolvedValue([{ id: 0n }]),
     } as unknown as PublicClient;
@@ -185,12 +257,10 @@ describe("router and minimum-output guardrails", () => {
       readContract: vi.fn().mockRejectedValue(new Error("RPC unavailable")),
     } as unknown as PublicClient;
 
-    await expect(
-      routerPayRouteWorks(deadClient, sepolia.id, 9002n, ROUTER, TOKEN, 6),
-    ).resolves.toBe(false);
-    await expect(
-      routerPayRouteWorks(unavailableClient, sepolia.id, 9003n, ROUTER, TOKEN, 6),
-    ).resolves.toBe(false);
+    await expect(routerPayRouteWorks(deadClient, 9002n, ROUTER, TOKEN, 6)).resolves.toBe(false);
+    await expect(routerPayRouteWorks(unavailableClient, 9003n, ROUTER, TOKEN, 6)).rejects.toThrow(
+      "RPC unavailable",
+    );
   });
 });
 

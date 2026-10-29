@@ -1,15 +1,14 @@
 import { routerEntriesFor } from "@/lib/protocol-rollout";
 import {
-  getJBContractAddress,
   JBChainId,
   jbMultiTerminalAbi,
-  JBRouterTerminalContracts,
   jbRouterTerminalRegistryAbi,
   jbV6ContractAddress,
 } from "@bananapus/nana-sdk-core";
 import {
   PaySwapQuoteFailedError,
   prepareUserPay,
+  resolvePaymentTerminal,
   type PreparedUserPay,
 } from "@bananapus/nana-sdk-core/v6";
 import { Address, PublicClient } from "viem";
@@ -44,9 +43,19 @@ export async function resolveBestV6PayRoute(args: {
 }): Promise<V6PayRoute | null> {
   const { client, chainId, projectId, token, amount, beneficiary, slippageBps } = args;
 
+  let attachedTerminals = args.attachedTerminals;
+  if (attachedTerminals === undefined) {
+    // Accounting contexts do not prove attachment. Recover only a direct route
+    // whose token-specific primary is freshly confirmed by the directory.
+    const primary = await resolvePaymentTerminal(client, { chainId, projectId, token });
+    const multi = jbV6ContractAddress.JBMultiTerminal[chainId];
+    if (primary.isRouter || primary.address.toLowerCase() !== multi?.toLowerCase()) return null;
+    attachedTerminals = [primary.address];
+  }
+
   let swapQuoteFailure: PaySwapQuoteFailedError | undefined;
   const previews = await Promise.all(
-    v6PayRouteCandidates(chainId, args.attachedTerminals).map(async (route) => {
+    v6PayRouteCandidates(chainId, attachedTerminals).map(async (route) => {
       try {
         const prepared = await prepareUserPay(client, {
           chainId,
@@ -76,43 +85,21 @@ export async function resolveBestV6PayRoute(args: {
 
 function v6PayRouteCandidates(
   chainId: JBChainId,
-  attachedTerminals?: readonly Address[],
+  attachedTerminals: readonly Address[],
 ): PaymentTerminal[] {
-  const routes: PaymentTerminal[] = [];
-
-  if (attachedTerminals) {
-    routes.push(
-      ...routerEntriesFor(chainId, attachedTerminals).map((address) => ({
-        address,
-        abi: jbRouterTerminalRegistryAbi,
-        type: "swap" as const,
-      })),
-    );
-  } else
-    try {
-      routes.push({
-        address: getJBContractAddress(
-          JBRouterTerminalContracts.JBRouterTerminalRegistry,
-          6,
-          chainId,
-        ),
-        abi: jbRouterTerminalRegistryAbi,
-        type: "swap",
-      });
-    } catch {
-      // Router registry not deployed on this chain.
-    }
-
+  const routes: PaymentTerminal[] = routerEntriesFor(chainId, attachedTerminals).map((address) => ({
+    address,
+    abi: jbRouterTerminalRegistryAbi,
+    type: "swap",
+  }));
   const multi = jbV6ContractAddress.JBMultiTerminal[chainId];
   if (
     multi &&
-    (!attachedTerminals ||
-      attachedTerminals.some((address) => address.toLowerCase() === multi.toLowerCase())) &&
+    attachedTerminals.some((address) => address.toLowerCase() === multi.toLowerCase()) &&
     !routes.some((route) => route.address.toLowerCase() === multi.toLowerCase())
   ) {
     routes.push({ address: multi, abi: jbMultiTerminalAbi, type: "multi" });
   }
-
   return routes;
 }
 
