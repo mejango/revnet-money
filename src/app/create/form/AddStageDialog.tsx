@@ -655,15 +655,15 @@ export function AddStageDialog({
                             {values.autoIssuance?.map((autoissuance, index) => (
                               <div
                                 key={`autoissuance-${index}`}
-                                className="mt-4 grid grid-cols-[auto_12rem_auto_minmax(0,1fr)_auto] items-center gap-2 text-md text-zinc-600 sm:flex sm:flex-wrap"
+                                className="mt-4 flex flex-wrap items-start gap-2 text-md text-zinc-600"
                               >
                                 <label
-                                  className="whitespace-nowrap"
+                                  className="flex h-9 items-center whitespace-nowrap"
                                   htmlFor={`autoIssuance.${index}.amount`}
                                 >
                                   {index === 0 ? "Issue" : "... and"}
                                 </label>
-                                <div className="relative w-48 sm:w-40">
+                                <div className="relative w-40 shrink-0">
                                   <Field
                                     id={`autoIssuance.${index}.amount`}
                                     name={`autoIssuance.${index}.amount`}
@@ -677,40 +677,45 @@ export function AddStageDialog({
                                     {revnetTokenSymbol}
                                   </span>
                                 </div>
-                                <label htmlFor={`autoIssuance.${index}.beneficiary`}>to</label>
-                                <Field
-                                  id={`autoIssuance.${index}.beneficiary`}
-                                  name={`autoIssuance.${index}.beneficiary`}
-                                  className="col-span-3 col-start-2 row-start-2 h-9 w-full min-w-0 sm:col-auto sm:row-auto sm:w-auto sm:min-w-48 sm:flex-1"
-                                  placeholder="0x"
-                                  required
-                                />
-                                {chainIds.length > 1 && (
-                                  <div className="contents sm:flex sm:items-center sm:gap-2">
-                                    <label className="col-start-1 row-start-3 whitespace-nowrap sm:col-auto sm:row-auto">
-                                      on
-                                    </label>
-                                    <div className="col-span-3 col-start-2 row-start-3 sm:col-auto sm:row-auto">
-                                      <ChainSelector
-                                        value={
-                                          (autoissuance.chainId ?? sortedChainIds[0]) as JBChainId
-                                        }
-                                        onChange={(chainId) =>
-                                          setFieldValue(`autoIssuance.${index}.chainId`, chainId)
-                                        }
-                                        options={chainIds}
-                                      />
-                                    </div>
-                                  </div>
-                                )}
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => arrayHelpers.remove(index)}
-                                  className="col-start-5 row-span-2 row-start-1 h-9 justify-self-end self-center pr-0 pl-2 sm:col-auto sm:row-auto sm:px-3"
+                                <label
+                                  className="flex h-9 items-center"
+                                  htmlFor={`autoIssuance.${index}.beneficiary`}
                                 >
-                                  <XIcon className="h-4 w-4" />
-                                </Button>
+                                  to
+                                </label>
+                                <div className="flex min-w-56 flex-1 items-start gap-2">
+                                  <div className="flex min-w-0 flex-1 flex-col gap-2">
+                                    <Field
+                                      id={`autoIssuance.${index}.beneficiary`}
+                                      name={`autoIssuance.${index}.beneficiary`}
+                                      className="h-9 w-full min-w-0"
+                                      placeholder="0x"
+                                      required
+                                    />
+                                    {chainIds.length > 1 && (
+                                      <div className="flex items-center gap-2 self-end">
+                                        <label>on</label>
+                                        <ChainSelector
+                                          value={
+                                            (autoissuance.chainId ?? sortedChainIds[0]) as JBChainId
+                                          }
+                                          onChange={(chainId) =>
+                                            setFieldValue(`autoIssuance.${index}.chainId`, chainId)
+                                          }
+                                          options={chainIds}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => arrayHelpers.remove(index)}
+                                    className="h-9 shrink-0 px-0 sm:px-3"
+                                  >
+                                    <XIcon className="h-4 w-4" />
+                                  </Button>
+                                </div>
                               </div>
                             ))}
                             <Button
