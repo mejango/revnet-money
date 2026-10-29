@@ -114,7 +114,7 @@ describe("create form section order", () => {
 
     const settlement = screen.getByRole("heading", { name: "2. Money and chains" }).closest("div");
     expect(settlement?.textContent).toContain(
-      "Choose where your revnet runs and which tokens it accepts. The money it holds is its reserve. Holders can exchange SAFE for a share of that reserve, called cashing out.",
+      "Choose where your revnet runs and which tokens its reserve accepts. Holders can cash out SAFE for a share of that reserve.",
     );
     expect(settlement?.textContent).toContain(
       "Holders can cash out on a selected chain if it has enough reserves. They can also move their SAFE between linked chains. The matching share of tokens set aside for other recipients moves with them.",
@@ -190,7 +190,9 @@ describe("inline per-chain inputs driven by the up-front chain selection", () =>
     // Single value by default; expandable to the selected chains, seeded with
     // the single default value.
     expect(screen.queryByLabelText("Sepolia recipient")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByLabelText(/each chain/i, { selector: "#perChainBeneficiary-0" }));
+    fireEvent.click(
+      screen.getByLabelText(/adjust per chain/i, { selector: "#perChainBeneficiary-0" }),
+    );
     expect(screen.getByLabelText("Sepolia recipient")).toHaveValue(TEST_BENEFICIARY);
     expect(screen.getByLabelText("Base Sepolia recipient")).toHaveValue(TEST_BENEFICIARY);
 
@@ -286,7 +288,7 @@ describe("inline per-chain inputs driven by the up-front chain selection", () =>
     renderCreateForm(multiChainForm());
 
     fireEvent.click(screen.getByLabelText("Edit stage 1"));
-    fireEvent.click(screen.getByText("add tokens at stage start +"));
+    fireEvent.click(screen.getByText("add auto issuance +"));
 
     // Both rows' chain pickers show a chain from the up-front selection: the
     // fixture row keeps its chain, the new row defaults to the first one.

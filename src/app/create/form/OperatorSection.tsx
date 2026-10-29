@@ -123,8 +123,8 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
       <div className="md:col-span-1">
         <h2 className="mb-4 text-lg font-bold md:mb-2">5. Operator</h2>
         <p className="text-lg text-zinc-600">
-          Choose who can manage the revnet after launch. This optional role is called the operator,
-          and has only the powers listed here.
+          Optionally, choose an operator to manage the revnet after launch, with only the powers
+          listed here.
         </p>
         <p className="mt-2 text-lg text-zinc-600">
           Only the current operator can pass the role to someone else.

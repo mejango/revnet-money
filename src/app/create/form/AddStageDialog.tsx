@@ -159,7 +159,7 @@ export function AddStageDialog({
       <DialogTrigger asChild>
         {cloneElement(children, { disabled: !hydrated || children.props.disabled })}
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-xl p-4 sm:p-6">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[37rem] p-4 sm:p-6">
         <DialogHeader className="text-left">
           <DialogTitle className="text-xl">Add stage</DialogTitle>
         </DialogHeader>
@@ -247,11 +247,10 @@ export function AddStageDialog({
                   <div className="pb-10">
                     <div>
                       <div className="block text-md font-semibold leading-6">
-                        1. New {revnetTokenSymbol}
+                        1. {revnetTokenSymbol} issuance
                       </div>
                       <p className="text-md text-zinc-500 mt-3">
                         How many {revnetTokenSymbol} a payment of 1 {baseCurrencySymbol} creates.
-                        Creating tokens is called issuance.
                       </p>
 
                       <PickupFromPreviousStage
@@ -260,8 +259,8 @@ export function AddStageDialog({
                         setFieldValue={setFieldValue}
                       />
 
-                      <div className="mt-2 flex flex-col items-start gap-2 text-md text-zinc-600">
-                        <div className="grid h-9 w-full min-w-0 grid-cols-[minmax(6rem,1fr)_max-content] items-center border-2 border-melon-300 bg-melon-25 hover:border-melon-400 focus-within:border-melon-600 sm:w-[260px]">
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-md text-zinc-600">
+                        <div className="grid h-9 w-full min-w-0 grid-cols-[minmax(6rem,1fr)_max-content] items-center border-2 border-melon-300 bg-melon-25 hover:border-melon-400 focus-within:border-melon-600 sm:w-[250px]">
                           <Field
                             id="initialIssuance"
                             name="initialIssuance"
@@ -314,7 +313,7 @@ export function AddStageDialog({
                             )}
                           </span>
                         </div>
-                        <div className="flex w-full flex-wrap items-center gap-2">
+                        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                           {!enableCut ? (
                             <>
                               <label
@@ -370,7 +369,7 @@ export function AddStageDialog({
                                     inputMode="decimal"
                                     min="0.042"
                                     step="any"
-                                    className="h-9 w-28 border-2 border-melon-300 bg-melon-25 pr-10 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
+                                    className="h-9 w-25 border-2 border-melon-300 bg-melon-25 pr-10 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
                                     value={String(uiCutFrequency)}
                                     onChange={(e) => {
                                       setUiCutFrequency(Number(e.target.value));
@@ -394,12 +393,12 @@ export function AddStageDialog({
                             <div>
                               {values.splits.map((split, index) => (
                                 <div key={`split-${index}`}>
-                                  <div className="mt-4 flex flex-wrap items-center gap-2 text-md text-zinc-600">
+                                  <div className="mt-4 flex flex-wrap items-start gap-2 text-md text-zinc-600">
                                     <label
-                                      className="whitespace-nowrap"
+                                      className="flex h-9 items-center whitespace-nowrap"
                                       htmlFor={`splits.${index}.amount`}
                                     >
-                                      {index === 0 ? "set aside" : "... and"}
+                                      {index === 0 ? "split" : "... and"}
                                     </label>
                                     <Field
                                       id={`splits.${index}.percentage`}
@@ -413,7 +412,12 @@ export function AddStageDialog({
                                       required
                                       placeholder="100"
                                     />
-                                    <label htmlFor={`splits.${index}.defaultBeneficiary`}>to</label>
+                                    <label
+                                      className="flex h-9 items-center"
+                                      htmlFor={`splits.${index}.defaultBeneficiary`}
+                                    >
+                                      to
+                                    </label>
                                     <select
                                       aria-label="Recipient type"
                                       value={isStickyRow(split) ? "hook" : "address"}
@@ -450,24 +454,50 @@ export function AddStageDialog({
                                         <option value="sticky">Sticky</option>
                                       </select>
                                     ) : null}
-                                    <Field
-                                      id={`splits.${index}.defaultBeneficiary`}
-                                      name={`splits.${index}.defaultBeneficiary`}
-                                      aria-label={isStickyRow(split) ? "Sticky token" : undefined}
-                                      className="h-9"
-                                      width="min-w-40 flex-1"
-                                      placeholder={isStickyRow(split) ? "0x… (Sticky token)" : "0x"}
-                                      required
-                                      defaultValue={isStickyRow(split) ? undefined : namedOperator}
-                                    />
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => arrayHelpers.remove(index)}
-                                      className="h-9 px-0 sm:px-3"
-                                    >
-                                      <TrashIcon className="h-4 w-4" />
-                                    </Button>
+                                    <div className="flex min-w-40 flex-1 flex-col gap-2">
+                                      <div className="flex items-center gap-2">
+                                        <Field
+                                          id={`splits.${index}.defaultBeneficiary`}
+                                          name={`splits.${index}.defaultBeneficiary`}
+                                          aria-label={
+                                            isStickyRow(split) ? "Sticky token" : undefined
+                                          }
+                                          className="h-9"
+                                          width="min-w-0 flex-1"
+                                          placeholder={
+                                            isStickyRow(split) ? "0x… (Sticky token)" : "0x"
+                                          }
+                                          required
+                                          defaultValue={
+                                            isStickyRow(split) ? undefined : namedOperator
+                                          }
+                                        />
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() => arrayHelpers.remove(index)}
+                                          className="h-9 shrink-0 px-0 sm:px-3"
+                                        >
+                                          <TrashIcon className="h-4 w-4" />
+                                        </Button>
+                                      </div>
+                                      {chainIds.length > 1 && !isStickyRow(split) && (
+                                        <label
+                                          className="flex w-fit items-center gap-2 text-md italic text-zinc-400"
+                                          htmlFor={`perChainBeneficiary-${index}`}
+                                        >
+                                          adjust per chain
+                                          <input
+                                            type="checkbox"
+                                            id={`perChainBeneficiary-${index}`}
+                                            checked={(split.beneficiary?.length ?? 0) > 0}
+                                            onChange={(e) =>
+                                              toggleSplitPerChain(index, e.target.checked)
+                                            }
+                                          />
+                                        </label>
+                                      )}
+                                    </div>
                                   </div>
                                   {isStickyRow(split) && stickyReason ? (
                                     <p role="alert" className="mt-2 text-sm text-red-500">
@@ -492,20 +522,6 @@ export function AddStageDialog({
                                   ) : null}
                                   {chainIds.length > 1 && !isStickyRow(split) && (
                                     <div className="mt-2">
-                                      <label
-                                        className="flex w-fit items-center gap-2 text-md italic text-zinc-400"
-                                        htmlFor={`perChainBeneficiary-${index}`}
-                                      >
-                                        Use a different recipient on each chain
-                                        <input
-                                          type="checkbox"
-                                          id={`perChainBeneficiary-${index}`}
-                                          checked={(split.beneficiary?.length ?? 0) > 0}
-                                          onChange={(e) =>
-                                            toggleSplitPerChain(index, e.target.checked)
-                                          }
-                                        />
-                                      </label>
                                       {(split.beneficiary?.length ?? 0) > 0 && (
                                         <div className="mt-2 space-y-2">
                                           {sortedChainIds.map((chainId) => {
@@ -559,14 +575,14 @@ export function AddStageDialog({
                                 }
                                 className="h-7 mt-3 bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900"
                               >
-                                add recipient +
+                                add split +
                               </Button>
                             </div>
                           )}
                         />
                         {values.splits.length > 0 && (
                           <div className="text-sm font-medium text-zinc-500 mt-4 border-l border-zinc-300 pl-2 py-1 px-1">
-                            Set aside{" "}
+                            Split{" "}
                             {values.splits.reduce(
                               (sum, split) => sum + (Number(split.percentage) || 0),
                               0,
@@ -577,12 +593,12 @@ export function AddStageDialog({
                                 (sum, split) => sum + (Number(split.percentage) || 0),
                                 0,
                               )}
-                            %. The set-aside share is called a token split.
+                            %.
                           </div>
                         )}
                         {values.splits.length == 0 && (
                           <div className="text-sm font-medium text-zinc-500 mt-4 border-l border-zinc-300 pl-2 py-1 px-1">
-                            With no tokens set aside, the payer receives them all.
+                            With no tokens split, the payer receives them all.
                           </div>
                         )}
                       </div>
@@ -596,8 +612,8 @@ export function AddStageDialog({
                             <li className="flex">
                               <span className="mr-2">•</span>
                               If a configured Uniswap market offers more {revnetTokenSymbol} for the
-                              payment, it can buy existing tokens there instead of creating new
-                              ones. This is a buyback; the money used goes to the market.
+                              payment, it can buy back existing tokens there instead of issuing new
+                              ones. The money used goes to the market.
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>
@@ -606,18 +622,14 @@ export function AddStageDialog({
                             <li className="flex">
                               <span className="mr-2">•</span>
                               <span>
-                                A recipient can be a contract that handles the tokens automatically,
-                                called a split hook.
+                                A recipient can be a split hook that handles the tokens
+                                automatically.
                               </span>
                             </li>
                             <li className="flex">
-                              <span className="mr-2">•</span>A Sticky recipient pays the holders of
-                              a Sticky token instead of one address.
-                            </li>
-                            <li className="flex">
                               <span className="mr-2">•</span>
-                              The operator can change who receives the set-aside tokens at any time,
-                              but cannot increase the total share set for this stage.
+                              The operator can change who receives the split tokens at any time, but
+                              cannot increase the total split for this stage.
                             </li>
                             <li className="flex">
                               <span className="mr-2">•</span>
@@ -637,13 +649,13 @@ export function AddStageDialog({
                         render={(arrayHelpers) => (
                           <div>
                             <p className="text-md text-zinc-500 mt-10">
-                              Optionally, create {revnetTokenSymbol} for chosen recipients when the
-                              stage starts, without a payment.
+                              Optionally, issue {revnetTokenSymbol} automatically when the stage
+                              starts, without a payment.
                             </p>
                             {values.autoIssuance?.map((autoissuance, index) => (
                               <div
                                 key={`autoissuance-${index}`}
-                                className="mt-4 grid grid-cols-[auto_12rem_auto_minmax(0,1fr)_auto] items-center gap-2 text-md text-zinc-600 sm:flex"
+                                className="mt-4 grid grid-cols-[auto_12rem_auto_minmax(0,1fr)_auto] items-center gap-2 text-md text-zinc-600 sm:flex sm:flex-wrap"
                               >
                                 <label
                                   className="whitespace-nowrap"
@@ -669,12 +681,12 @@ export function AddStageDialog({
                                 <Field
                                   id={`autoIssuance.${index}.beneficiary`}
                                   name={`autoIssuance.${index}.beneficiary`}
-                                  className="col-span-3 col-start-2 row-start-2 h-9 w-full min-w-0 sm:col-auto sm:row-auto sm:flex-1"
+                                  className="col-span-3 col-start-2 row-start-2 h-9 w-full min-w-0 sm:col-auto sm:row-auto sm:w-auto sm:min-w-48 sm:flex-1"
                                   placeholder="0x"
                                   required
                                 />
                                 {chainIds.length > 1 && (
-                                  <>
+                                  <div className="contents sm:flex sm:items-center sm:gap-2">
                                     <label className="col-start-1 row-start-3 whitespace-nowrap sm:col-auto sm:row-auto">
                                       on
                                     </label>
@@ -689,7 +701,7 @@ export function AddStageDialog({
                                         options={chainIds}
                                       />
                                     </div>
-                                  </>
+                                  </div>
                                 )}
                                 <Button
                                   variant="ghost"
@@ -714,11 +726,11 @@ export function AddStageDialog({
                               }}
                               className="h-7 mt-3 bg-zinc-100 border border-zinc-200 text-zinc-600 hover:bg-zinc-200 hover:text-zinc-900"
                             >
-                              add tokens at stage start +
+                              add auto issuance +
                             </Button>
                             {values.autoIssuance.length > 0 && (
                               <div className="text-sm font-medium text-zinc-500 mt-4 border-l border-zinc-300 pl-2 py-1 px-1">
-                                Total created at stage start:{" "}
+                                Total issued at stage start:{" "}
                                 {commaNumber(
                                   values.autoIssuance?.reduce(
                                     (sum, issuance) => sum + (Number(issuance.amount) || 0),
@@ -742,13 +754,13 @@ export function AddStageDialog({
                       2. {revnetTokenSymbol} cash outs
                     </div>
                     <p className="text-md text-zinc-500 mt-3">
-                      Holders can exchange {revnetTokenSymbol} for a share of the revnet&apos;s{" "}
-                      {reserveAsset}, called cashing out. They can also borrow against their tokens.
+                      Holders can cash out {revnetTokenSymbol} for a share of the revnet&apos;s{" "}
+                      {reserveAsset}, or borrow against their tokens.
                     </p>
                     <p className="text-md text-zinc-500 mt-3">
-                      You can leave some of that share in the revnet for remaining holders. This is
-                      the cash-out tax. A higher setting leaves more behind and reduces how much
-                      holders can cash out or borrow.
+                      A cash-out tax leaves some of that share in the revnet for remaining holders.
+                      A higher tax leaves more behind and reduces how much holders can cash out or
+                      borrow.
                     </p>
                     <p className="text-md text-zinc-500 mt-3">
                       Use the preview to compare what a holder receives with what remains in the

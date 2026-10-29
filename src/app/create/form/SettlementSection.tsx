@@ -13,9 +13,8 @@ export function SettlementSection({ disabled = false }: { disabled?: boolean }) 
       <div className="md:col-span-1">
         <h2 className="mb-4 text-lg font-bold md:mb-2">2. Money and chains</h2>
         <p className="text-lg text-zinc-600">
-          Choose where your revnet runs and which tokens it accepts. The money it holds is its
-          reserve. Holders can exchange {revnetTokenSymbol} for a share of that reserve, called
-          cashing out.
+          Choose where your revnet runs and which tokens its reserve accepts. Holders can cash out{" "}
+          {revnetTokenSymbol} for a share of that reserve.
         </p>
         <p className="mt-2 text-lg text-zinc-600">
           Holders can cash out on a selected chain if it has enough reserves. They can also move

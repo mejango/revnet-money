@@ -54,7 +54,7 @@ export function CashOutCurvePreview({
       <div className="mb-2 flex items-baseline justify-between gap-4 text-xs text-zinc-500">
         <span>Cash-out preview</span>
         <span className="text-right text-melon-700">
-          {samplePercent}% of tokens → {sampleReturn.toFixed(1)}% of reserves
+          {samplePercent}% of tokens → {sampleReturn.toFixed(1)}% of balance
         </span>
       </div>
       <svg
@@ -66,7 +66,7 @@ export function CashOutCurvePreview({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={samplePercent}
-        aria-valuetext={`${samplePercent}% of the token supply returns ${sampleReturn.toFixed(1)}% of reserves`}
+        aria-valuetext={`${samplePercent}% of the token supply returns ${sampleReturn.toFixed(1)}% of balance`}
         onPointerDown={(event) => {
           event.currentTarget.setPointerCapture(event.pointerId);
           updateFromPointer(event);
