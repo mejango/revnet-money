@@ -813,7 +813,7 @@ export function AddStageDialog({
                         <ul className="list-disc list-inside space-y-2">
                           <li className="flex">
                             <span className="mr-2">•</span>
-                            The cash-out tax stays in the revnet. It does not go to the operator.
+                            The cash-out tax stays in the revnet.
                           </li>
 
                           <li className="flex">
