@@ -454,8 +454,8 @@ export function AddStageDialog({
                                         <option value="sticky">Sticky</option>
                                       </select>
                                     ) : null}
-                                    <div className="flex min-w-40 flex-1 flex-col gap-2">
-                                      <div className="flex items-center gap-2">
+                                    <div className="flex min-w-40 flex-1 items-start gap-2">
+                                      <div className="flex min-w-0 flex-1 flex-col gap-2">
                                         <Field
                                           id={`splits.${index}.defaultBeneficiary`}
                                           name={`splits.${index}.defaultBeneficiary`}
@@ -463,7 +463,7 @@ export function AddStageDialog({
                                             isStickyRow(split) ? "Sticky token" : undefined
                                           }
                                           className="h-9"
-                                          width="min-w-0 flex-1"
+                                          width="w-full min-w-0"
                                           placeholder={
                                             isStickyRow(split) ? "0x… (Sticky token)" : "0x"
                                           }
@@ -472,31 +472,31 @@ export function AddStageDialog({
                                             isStickyRow(split) ? undefined : namedOperator
                                           }
                                         />
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          onClick={() => arrayHelpers.remove(index)}
-                                          className="h-9 shrink-0 px-0 sm:px-3"
-                                        >
-                                          <TrashIcon className="h-4 w-4" />
-                                        </Button>
+                                        {chainIds.length > 1 && !isStickyRow(split) && (
+                                          <label
+                                            className="flex w-fit items-center self-end gap-2 text-md italic text-zinc-400"
+                                            htmlFor={`perChainBeneficiary-${index}`}
+                                          >
+                                            adjust per chain
+                                            <input
+                                              type="checkbox"
+                                              id={`perChainBeneficiary-${index}`}
+                                              checked={(split.beneficiary?.length ?? 0) > 0}
+                                              onChange={(e) =>
+                                                toggleSplitPerChain(index, e.target.checked)
+                                              }
+                                            />
+                                          </label>
+                                        )}
                                       </div>
-                                      {chainIds.length > 1 && !isStickyRow(split) && (
-                                        <label
-                                          className="flex w-fit items-center gap-2 text-md italic text-zinc-400"
-                                          htmlFor={`perChainBeneficiary-${index}`}
-                                        >
-                                          adjust per chain
-                                          <input
-                                            type="checkbox"
-                                            id={`perChainBeneficiary-${index}`}
-                                            checked={(split.beneficiary?.length ?? 0) > 0}
-                                            onChange={(e) =>
-                                              toggleSplitPerChain(index, e.target.checked)
-                                            }
-                                          />
-                                        </label>
-                                      )}
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => arrayHelpers.remove(index)}
+                                        className="h-9 shrink-0 px-0 sm:px-3"
+                                      >
+                                        <TrashIcon className="h-4 w-4" />
+                                      </Button>
                                     </div>
                                   </div>
                                   {isStickyRow(split) && stickyReason ? (
