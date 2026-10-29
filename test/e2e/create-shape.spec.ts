@@ -127,7 +127,7 @@ test("production create surface stays visible and contained", async ({ page }) =
   expect(amountBox).not.toBeNull();
   expect(suffixBox).not.toBeNull();
   expect(amountBox!.x + amountBox!.width).toBeLessThanOrEqual(suffixBox!.x + 0.5);
-  await page.getByRole("checkbox", { name: "Reduce this rate over time" }).check();
+  await page.getByRole("checkbox", { name: "Cut automatically?" }).check();
   const dialogBox = await page.getByRole("dialog").boundingBox();
   const enabledSuffixBox = await issuanceSuffix.boundingBox();
   const cutLabelBox = await page.locator('label[for="uiCutPercentage"]').boundingBox();

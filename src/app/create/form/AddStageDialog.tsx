@@ -320,7 +320,7 @@ export function AddStageDialog({
                                 htmlFor="enableCut"
                                 className="whitespace-nowrap italic text-zinc-400"
                               >
-                                Reduce this rate over time
+                                Cut automatically?
                               </label>
                               <input
                                 type="checkbox"
