@@ -12,7 +12,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Trash2 as TrashIcon } from "@/components/ui/icons";
+import { X as XIcon } from "@/components/ui/icons";
 import { toast } from "@/components/ui/use-toast";
 import { useHydrated } from "@/hooks/useHydrated";
 import { withSchema } from "@/lib/formValidation";
@@ -495,7 +495,7 @@ export function AddStageDialog({
                                         onClick={() => arrayHelpers.remove(index)}
                                         className="h-9 shrink-0 px-0 sm:px-3"
                                       >
-                                        <TrashIcon className="h-4 w-4" />
+                                        <XIcon className="h-4 w-4" />
                                       </Button>
                                     </div>
                                   </div>
@@ -661,7 +661,7 @@ export function AddStageDialog({
                                   className="whitespace-nowrap"
                                   htmlFor={`autoIssuance.${index}.amount`}
                                 >
-                                  {index === 0 ? "Create" : "... and"}
+                                  {index === 0 ? "Issue" : "... and"}
                                 </label>
                                 <div className="relative w-48 sm:w-40">
                                   <Field
@@ -709,7 +709,7 @@ export function AddStageDialog({
                                   onClick={() => arrayHelpers.remove(index)}
                                   className="col-start-5 row-span-2 row-start-1 h-9 justify-self-end self-center pr-0 pl-2 sm:col-auto sm:row-auto sm:px-3"
                                 >
-                                  <TrashIcon className="h-4 w-4" />
+                                  <XIcon className="h-4 w-4" />
                                 </Button>
                               </div>
                             ))}

@@ -16,7 +16,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Trash2 as TrashIcon } from "@/components/ui/icons";
+import { X as XIcon } from "@/components/ui/icons";
 import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import { toast } from "@/components/ui/use-toast";
 import { WalletConnectButton } from "@/components/WalletButton";
@@ -602,7 +602,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
                                                 : undefined
                                             }
                                           >
-                                            <TrashIcon className="size-4" />
+                                            <XIcon className="size-4" />
                                           </Button>
                                         </div>
                                       );

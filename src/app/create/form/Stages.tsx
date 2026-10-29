@@ -5,7 +5,7 @@ import {
   Lock as LockClosedIcon,
   SquarePen as PencilSquareIcon,
   Plus as PlusIcon,
-  Trash2 as TrashIcon,
+  X as XIcon,
 } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FieldArray } from "@/lib/forms";
@@ -109,7 +109,7 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
                             {disabled ? (
                               <LockClosedIcon className="h-4 w-4" />
                             ) : (
-                              <TrashIcon className="h-4 w-4" />
+                              <XIcon className="h-4 w-4" />
                             )}
                           </Button>
                         </div>
