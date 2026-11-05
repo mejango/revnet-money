@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useHydrated } from "@/hooks/useHydrated";
 import type { Project } from "@/lib/bendystraw/types";
@@ -17,6 +18,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { getAccountingContexts } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
+import { Fragment } from "react";
 import type { Address, PublicClient } from "viem";
 import { useConfig } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
@@ -154,33 +156,35 @@ export function TvlDatum({ projects }: Props) {
           <span className="text-zinc-500">balance</span>
         </span>
       </TooltipTrigger>
-      <TooltipContent className="w-72">
-        {rows.map((row) => (
-          <div key={`${row.chainId}:${row.token}`} className="flex justify-between gap-2">
-            <span>
-              Chain {row.chainId} | {row.symbol}
-            </span>
-            <span className="font-medium">
-              {formatTokenAmount(row.balance, row)} {row.symbol}
-              {row.usd == null ? " | USD unavailable" : ` | ${formatUsd18(row.usd)}`}
-            </span>
-          </div>
-        ))}
-        {chainResults
-          .filter((result) => !result.verified)
-          .map((result) => (
-            <div key={result.chainId} className="flex justify-between gap-2">
-              <span>Chain {result.chainId}</span>
-              <span className="font-medium">Unavailable</span>
-            </div>
+      <TooltipContent className="w-max max-w-[calc(100vw-2rem)]">
+        <div className="grid grid-cols-[auto_auto_auto] gap-x-4 gap-y-1 tabular-nums">
+          {rows.map((row) => (
+            <Fragment key={`${row.chainId}:${row.token}`}>
+              <span>{chainDisplayName(row.chainId)}</span>
+              <span className="text-right">
+                {formatTokenAmount(row.balance, row)} {row.symbol}
+              </span>
+              <span className="text-right font-medium">
+                {row.usd == null ? "No USD price" : formatUsd18(row.usd)}
+              </span>
+            </Fragment>
           ))}
-        <hr className="py-1" />
-        <div className="flex justify-between gap-2">
-          <span>[All chains]</span>
-          <span className="font-medium">{total}</span>
+          {chainResults
+            .filter((result) => !result.verified)
+            .map((result) => (
+              <Fragment key={result.chainId}>
+                <span>{chainDisplayName(result.chainId)}</span>
+                <span className="col-span-2 text-right">Unavailable</span>
+              </Fragment>
+            ))}
+          <hr className="col-span-3 my-1" />
+          <span>All chains</span>
+          <span className="col-span-2 text-right font-medium">{total}</span>
         </div>
         {treasury?.unpriced.length ? (
-          <div className="text-zinc-500">Excludes {treasury.unpriced.join(", ")}: no USD price</div>
+          <div className="mt-1 text-zinc-500">
+            Excludes {treasury.unpriced.join(", ")}: no USD price
+          </div>
         ) : null}
       </TooltipContent>
     </Tooltip>
