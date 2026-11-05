@@ -158,6 +158,9 @@ export function TvlDatum({ projects }: Props) {
       </TooltipTrigger>
       <TooltipContent className="w-max max-w-[calc(100vw-2rem)]">
         <div className="grid grid-cols-[auto_auto_auto] gap-x-4 gap-y-1 tabular-nums">
+          <span className="text-zinc-500">Chain</span>
+          <span className="text-right text-zinc-500">Balance</span>
+          <span className="text-right text-zinc-500">Value</span>
           {rows.map((row) => (
             <Fragment key={`${row.chainId}:${row.token}`}>
               <span>{chainDisplayName(row.chainId)}</span>
