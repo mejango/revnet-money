@@ -58,3 +58,6 @@
 ## 2026-10-24 — Invoke within the acquisition continuation
 - Astra reproduced an old provider invocation after a same-account connector switch inside wagmi acquisition; resolving through getWalletClient alone did not close that await race.
 - Rule: acquire the explicit current connector, retry UID drift, run operation-scoped final guards and invoke in the same continuation. Test held real connector acquisition, distinguish pre-invocation cleanup from actual RPC uncertainty, and keep refusal text visible through the installed SDK's UI adapters.
+
+## 2026-11-05 Same widget, same layout across clients
+- When restyling a header tooltip or breakdown in one client, first open the equivalent in the other client and copy its layout. jango picked jbm's stacked per-chain layout (title line, chain icon and name, token amount over USD, divider, All chains) over a fresh column grid built in revnet. Diverging designs cost a second round; parity is the default, not a follow-up.

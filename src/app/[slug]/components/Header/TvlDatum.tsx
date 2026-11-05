@@ -1,11 +1,13 @@
 "use client";
 
 import { chainDisplayName } from "@/app/constants";
+import { ChainLogo } from "@/components/ChainLogo";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useHydrated } from "@/hooks/useHydrated";
 import type { Project } from "@/lib/bendystraw/types";
 import { PERSIST } from "@/lib/query-persist";
 import { formatTokenAmount } from "@/lib/token";
+import { cn } from "@/lib/utils";
 import {
   getJBContractAddress,
   JBCoreContracts,
@@ -18,7 +20,6 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { getAccountingContexts } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { Fragment } from "react";
 import type { Address, PublicClient } from "viem";
 import { useConfig } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
@@ -156,33 +157,49 @@ export function TvlDatum({ projects }: Props) {
           <span className="text-zinc-500">balance</span>
         </span>
       </TooltipTrigger>
-      <TooltipContent className="w-max max-w-[calc(100vw-2rem)]">
-        <div className="grid grid-cols-[auto_auto_auto] gap-x-4 gap-y-1 tabular-nums">
-          <span className="text-zinc-500">Chain</span>
-          <span className="text-right text-zinc-500">Balance</span>
-          <span className="text-right text-zinc-500">Value</span>
+      <TooltipContent className="w-80 max-w-[calc(100vw-2rem)] p-3 text-xs">
+        <p className="mb-2 font-medium uppercase tracking-wide text-zinc-500">Balance by chain</p>
+        <div className="space-y-2">
           {rows.map((row) => (
-            <Fragment key={`${row.chainId}:${row.token}`}>
-              <span>{chainDisplayName(row.chainId)}</span>
-              <span className="text-right">
-                {formatTokenAmount(row.balance, row)} {row.symbol}
+            <div
+              key={`${row.chainId}:${row.token}`}
+              className={cn(
+                "flex items-start justify-between gap-4",
+                row.balance === 0n && "opacity-50",
+              )}
+            >
+              <span className="inline-flex min-w-0 items-center gap-1.5 text-zinc-600">
+                <ChainLogo chainId={row.chainId} width={17} height={17} />
+                <span className="truncate">{chainDisplayName(row.chainId)}</span>
               </span>
-              <span className="text-right font-medium">
-                {row.usd == null ? "No USD price" : formatUsd18(row.usd)}
+              <span className="shrink-0 text-right tabular-nums">
+                <span className="block">
+                  {formatTokenAmount(row.balance, row)} {row.symbol}
+                </span>
+                <span className="block text-[11px] text-zinc-500">
+                  {row.usd == null ? "No USD price" : formatUsd18(row.usd)}
+                </span>
               </span>
-            </Fragment>
+            </div>
           ))}
           {chainResults
             .filter((result) => !result.verified)
             .map((result) => (
-              <Fragment key={result.chainId}>
-                <span>{chainDisplayName(result.chainId)}</span>
-                <span className="col-span-2 text-right">Unavailable</span>
-              </Fragment>
+              <div
+                key={result.chainId}
+                className="flex items-center justify-between gap-4 text-zinc-500"
+              >
+                <span className="inline-flex items-center gap-1.5">
+                  <ChainLogo chainId={result.chainId} width={17} height={17} />
+                  {chainDisplayName(result.chainId)}
+                </span>
+                <span>Unavailable</span>
+              </div>
             ))}
-          <hr className="col-span-3 my-1" />
+        </div>
+        <div className="mt-2 flex items-center justify-between gap-4 border-t border-zinc-200 pt-2 font-medium">
           <span>All chains</span>
-          <span className="col-span-2 text-right font-medium">{total}</span>
+          <span className="tabular-nums">{total}</span>
         </div>
         {treasury?.unpriced.length ? (
           <div className="mt-1 text-zinc-500">
