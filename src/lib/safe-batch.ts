@@ -183,7 +183,14 @@ export function contractAddressOn(contract: ContractName, chainId: number): Addr
   return address ? getAddress(address) : undefined;
 }
 
-export function stepKey(step: Pick<BatchStep, "kind" | "to">): string {
+/**
+ * A step's identity in its chain's batch. A pool registration is one per terminal token whatever
+ * its operation, so a re-mirrored `setPoolFor` replaces a queued `initializePoolFor` and back.
+ */
+export function stepKey(step: Pick<BatchStep, "kind" | "to" | "values">): string {
+  if (step.kind === "setPoolFor" || step.kind === "initializePoolFor") {
+    return `setPoolFor:${step.to.toLowerCase()}:${String(step.values.terminalToken).toLowerCase()}`;
+  }
   return `${step.kind}:${step.to.toLowerCase()}`;
 }
 
@@ -336,9 +343,7 @@ export type StepResolver = (
   step: BatchStep,
   chainId: number,
   projectId: number,
-  /** The steps already mirrored onto the target chain. */
-  prior?: readonly BatchStep[],
-) => Promise<{ kind?: BatchStepKind; to?: Address; values: BatchStepValues } | null>;
+) => Promise<{ to?: Address; values: BatchStepValues } | null>;
 
 /**
  * Rebuild one chain's steps for another chain: same values, the kind's
@@ -380,7 +385,7 @@ export async function mirrorBatch(
     }
     try {
       if (definition.perChain) {
-        const resolved = await resolve(step, target.chainId, target.projectId, mirrored);
+        const resolved = await resolve(step, target.chainId, target.projectId);
         if (!resolved) {
           if (step.kind === "setHookFor") hookSelectionSkipped = true;
           skipped.push({
@@ -391,7 +396,7 @@ export async function mirrorBatch(
         }
         mirrored.push(
           buildStep({
-            kind: resolved.kind ?? step.kind,
+            kind: step.kind,
             chainId: target.chainId,
             projectId: target.projectId,
             values: resolved.values,

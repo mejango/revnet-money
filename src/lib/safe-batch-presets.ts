@@ -4,12 +4,14 @@ import {
   poolMove,
   poolSqrtPriceX96,
   poolTwapSqrtPriceX96,
+  pricesAgree,
   type V4PoolKey,
 } from "@/lib/buyback-pool-migration";
 import { rolloutAddress, rolloutTargets } from "@/lib/protocol-rollout";
 import {
   buildStep,
   contractAddressOn,
+  mirrorBatch,
   type BatchStep,
   type BatchStepValues,
   type StepResolver,
@@ -134,10 +136,16 @@ type PoolStep =
   | { kind: "setPoolFor" | "initializePoolFor"; values: BatchStepValues; notes: string[] }
   | { kind: "skip"; notes: string[] };
 
+/** "30 minutes" for 1800 seconds; seconds when not whole minutes. */
+function windowLabel(seconds: bigint | number): string {
+  const value = BigInt(seconds);
+  return value % 60n === 0n ? `${value / 60n} minute${value === 60n ? "" : "s"}` : `${value}s`;
+}
+
 /**
- * One terminal token's pool carried onto the target hook, from this chain's own state: registered
- * when its new pool exists, opened at the old pool's TWAP otherwise. Null when the old hook has
- * no pool for the token.
+ * One terminal token's pool carried onto the target hook, from this chain's own state: an existing
+ * new pool is registered only when it trades within 1% of the old pool's TWAP, otherwise the pool
+ * opens at that TWAP. Null when the old hook has no pool for the token.
  */
 async function poolStepOn(
   client: PresetReadClient,
@@ -147,6 +155,7 @@ async function poolStepOn(
   targetHook: Address,
   poolHook: Address,
   probe: TokenProbe,
+  twapWindow: bigint,
 ): Promise<PoolStep | null> {
   const oldWindow = await twapWindowOn(client, currentHook, pid, probe.read);
   if (oldWindow <= 0n) return null;
@@ -165,6 +174,12 @@ async function poolStepOn(
     poolTwapSqrtPriceX96(client, chainId, oldKey, Number(PRESET_TWAP_WINDOW)),
     poolSqrtPriceX96(client, chainId, newKey),
   ]);
+  if (!reference) {
+    return {
+      kind: "skip",
+      notes: [`${probe.label} pool: the old pool's price history can't be read; not carried.`],
+    };
+  }
   const move = poolMove(reference.sqrtPriceX96, newPrice);
   if (move.kind === "none") {
     return {
@@ -172,19 +187,27 @@ async function poolStepOn(
       notes: [`${probe.label} pool has no price to carry; set it up on the new hook directly.`],
     };
   }
+  if (move.kind === "setPoolFor" && !pricesAgree(newPrice, reference.sqrtPriceX96)) {
+    return {
+      kind: "skip",
+      notes: [
+        `${probe.label} pool: the new pool is priced more than 1% off the old one; not registered.`,
+      ],
+    };
+  }
   const notes: string[] = [];
   if (oldWindow === MAX_TWAP_WINDOW) {
     notes.push(
-      `${probe.label} pool: the old window was the deployer default (48h); 30 minutes will be stored.`,
+      `${probe.label} pool: the old window was the deployer default (48h); ${windowLabel(twapWindow)} will be stored.`,
     );
-  } else if (oldWindow !== PRESET_TWAP_WINDOW) {
-    notes.push(`${probe.label} pool: the old window was ${oldWindow}s; 30 minutes will be stored.`);
+  } else if (oldWindow !== twapWindow) {
+    notes.push(
+      `${probe.label} pool: the old window was ${oldWindow}s; ${windowLabel(twapWindow)} will be stored.`,
+    );
   }
   if (move.kind === "initializePoolFor") {
     notes.push(
-      reference.twap
-        ? `${probe.label} pool: starts at the old pool's 30-minute average price with no TWAP history; LPs move their own liquidity.`
-        : `${probe.label} pool: the old pool has no price history, so it starts at the old spot price; LPs move their own liquidity.`,
+      `${probe.label} pool: starts at the old pool's average price over ${windowLabel(reference.window)} with no TWAP history; LPs move their own liquidity.`,
     );
   }
   return {
@@ -193,7 +216,7 @@ async function poolStepOn(
     values: {
       fee: BigInt(newKey.fee),
       tickSpacing: BigInt(newKey.tickSpacing),
-      twapWindow: PRESET_TWAP_WINDOW,
+      twapWindow,
       terminalToken: probe.write,
       ...(move.kind === "initializePoolFor" ? { sqrtPriceX96: move.sqrtPriceX96 } : {}),
     },
@@ -207,7 +230,18 @@ async function poolStepOn(
  */
 export async function resolvePreset(
   preset: SafeBatchPreset,
-  { chainId, projectId, client }: { chainId: number; projectId: number; client: PresetReadClient },
+  {
+    chainId,
+    projectId,
+    client,
+    windows = {},
+  }: {
+    chainId: number;
+    projectId: number;
+    client: PresetReadClient;
+    /** Registration windows per token label carried from an edited source batch. */
+    windows?: Partial<Record<string, bigint>>;
+  },
 ): Promise<PresetResolution> {
   const chain = chainDisplayName(chainId);
   const targets = rolloutTargets(chainId);
@@ -269,6 +303,7 @@ export async function resolvePreset(
         targets.hook,
         poolHook,
         probe,
+        windows[probe.label] ?? PRESET_TWAP_WINDOW,
       );
       if (!pool) continue;
       notes.push(...pool.notes);
@@ -324,12 +359,11 @@ export function mapTerminalToken(
 
 /**
  * How "Same on every chain" rebuilds a per-chain step: pool parameters come
- * from the target chain's live pool and the hook target from its registry. A
- * pool step after a mirrored move to the current hook is resolved from the
- * target chain's own pools, so its kind and price can differ from the source.
+ * from the target chain's live pool, the hook target from its registry, and a
+ * pool initialization (chain-specific price) is refused outright.
  */
 export function stepResolverFor(clientFor: (chainId: number) => PresetReadClient): StepResolver {
-  return async (step, chainId, projectId, prior = []) => {
+  return async (step, chainId, projectId) => {
     const client = clientFor(chainId);
     const pid = BigInt(projectId);
     if (step.kind === "setHookFor" || step.kind === "setTerminalFor") {
@@ -349,28 +383,6 @@ export function stepResolverFor(clientFor: (chainId: number) => PresetReadClient
     const hook = await currentHookOf(client, chainId, pid);
     if (!hook) return null;
     const read = isAddressEqual(token, NATIVE_TOKEN) ? zeroAddress : token;
-    const targets = rolloutTargets(chainId);
-    const poolHook = rolloutAddress("JBUniswapV4Hook", chainId);
-    const migrating =
-      (step.kind === "setPoolFor" || step.kind === "initializePoolFor") &&
-      !!targets &&
-      !isAddressEqual(hook, targets.hook) &&
-      prior.some(
-        (earlier) =>
-          earlier.kind === "setHookFor" &&
-          typeof earlier.values.hook === "string" &&
-          isAddressEqual(earlier.values.hook, targets.hook),
-      );
-    if (migrating) {
-      if (!poolHook) return null;
-      const label = isAddressEqual(token, NATIVE_TOKEN) ? "Native" : "USDC";
-      const pool = await poolStepOn(client, chainId, pid, hook, targets!.hook, poolHook, {
-        label,
-        read,
-        write: token,
-      });
-      return pool && pool.kind !== "skip" ? { kind: pool.kind, values: pool.values } : null;
-    }
     if (step.kind === "initializePoolFor") return null;
     const window = await twapWindowOn(client, hook, pid, read);
     if (window <= 0n) return null;
@@ -394,5 +406,78 @@ export function stepResolverFor(clientFor: (chainId: number) => PresetReadClient
       };
     }
     return null;
+  };
+}
+
+const POOL_KINDS: readonly string[] = ["setPoolFor", "initializePoolFor"];
+
+/**
+ * "Same on every chain" for a batch: its move to the current hook (that selection, the pool
+ * registrations after it and the gateway selection) is resolved as the whole preset from the
+ * destination's own state and token probes, carrying each pool's chosen window; every other step
+ * mirrors through `mirrorBatch`. Mirrored in juicebox-money's `mirrorPresetBatch`.
+ */
+export async function mirrorPresetBatch(
+  steps: readonly BatchStep[],
+  fromChainId: number,
+  target: { chainId: number; projectId: number },
+  client: PresetReadClient,
+  resolve: StepResolver,
+): Promise<Awaited<ReturnType<typeof mirrorBatch>>> {
+  const source = steps.filter((step) => step.chainId === fromChainId);
+  const from = rolloutTargets(fromChainId);
+  const hookAt = from
+    ? source.findIndex(
+        (step) =>
+          step.kind === "setHookFor" &&
+          typeof step.values.hook === "string" &&
+          isAddressEqual(step.values.hook, from.hook),
+      )
+    : -1;
+  if (hookAt < 0) return mirrorBatch(source, fromChainId, target, resolve);
+  const usdc = USDC_ADDRESSES[fromChainId as keyof typeof USDC_ADDRESSES];
+  const windows: Partial<Record<string, bigint>> = {};
+  const migration = source.map((step, index) => {
+    if (index === hookAt) return true;
+    if (step.kind === "setTerminalFor") {
+      return (
+        typeof step.values.terminal === "string" &&
+        isAddressEqual(step.values.terminal, from!.terminal)
+      );
+    }
+    if (index < hookAt || !POOL_KINDS.includes(step.kind)) return false;
+    const token = step.values.terminalToken as Address;
+    const label = isAddressEqual(token, NATIVE_TOKEN)
+      ? "Native"
+      : usdc && isAddressEqual(token, usdc)
+        ? "USDC"
+        : null;
+    if (label) windows[label] = step.values.twapWindow as bigint;
+    return true;
+  });
+  // ponytail: other steps keep their side of the migration; reorder by hand in the tray if needed.
+  const [before, after, preset] = await Promise.all([
+    mirrorBatch(
+      source.filter((_, index) => index < hookAt && !migration[index]),
+      fromChainId,
+      target,
+      resolve,
+    ),
+    mirrorBatch(
+      source.filter((_, index) => index > hookAt && !migration[index]),
+      fromChainId,
+      target,
+      resolve,
+    ),
+    resolvePreset(SAFE_BATCH_PRESETS[0]!, { ...target, client, windows }),
+  ]);
+  const label = SAFE_BATCH_PRESETS[0]!.title;
+  return {
+    steps: [...before.steps, ...(preset.status === "ready" ? preset.steps : []), ...after.steps],
+    skipped: [
+      ...before.skipped,
+      ...(preset.status === "ready" ? [] : [{ label, reason: preset.message }]),
+      ...after.skipped,
+    ],
   };
 }
