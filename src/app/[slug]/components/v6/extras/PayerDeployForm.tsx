@@ -3,7 +3,7 @@
 import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
-import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/CopyButton";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -742,24 +742,5 @@ function PerChainOverrides({
         ))}
       </div>
     </details>
-  );
-}
-
-function CopyButton({ value }: { value: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className="h-6 px-2 text-[11px]"
-      onClick={() => {
-        void navigator.clipboard.writeText(value);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1400);
-      }}
-    >
-      {copied ? "Copied" : "Copy"}
-    </Button>
   );
 }

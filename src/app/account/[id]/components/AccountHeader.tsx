@@ -14,8 +14,9 @@ export function AccountHeader({ address, ensName }: { address: Address; ensName?
   const { data: reverseName } = useEnsName(address, { enabled: !ensName });
   const displayName = ensName ?? reverseName ?? undefined;
 
-  const { address: viewed } = useViewedAccount();
-  const isSelf = !!viewed && viewed.toLowerCase() === address.toLowerCase();
+  // Only the connected wallet counts: viewing an account does not make it yours.
+  const { connectedAddress } = useViewedAccount();
+  const isSelf = connectedAddress?.toLowerCase() === address.toLowerCase();
 
   const { viewAs, setViewAs, clearViewAs } = useViewAs();
   const viewingThisAccount = viewAs?.toLowerCase() === address.toLowerCase();

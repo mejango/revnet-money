@@ -2,6 +2,7 @@
 
 import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
+import { CopyButton } from "@/components/CopyButton";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import {
@@ -108,11 +109,14 @@ export function PayerAddressList({
                       </TableCell>
                       <TableCell className="px-3 py-3 align-top">
                         {isAddress(row.address) ? (
-                          <EthereumAddress
-                            address={row.address as Address}
-                            short
-                            chain={chain?.chain}
-                          />
+                          <span className="inline-flex items-center gap-2">
+                            <EthereumAddress
+                              address={row.address as Address}
+                              short
+                              chain={chain?.chain}
+                            />
+                            <CopyButton value={row.address} />
+                          </span>
                         ) : (
                           <span className="font-mono text-xs">{row.address}</span>
                         )}

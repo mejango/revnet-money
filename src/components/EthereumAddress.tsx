@@ -28,7 +28,8 @@ export function EthereumAddress({
 }) {
   const { data } = useEnsName(address, { enabled: withEnsName });
   const formattedAddress = short ? formatEthAddress(address) : address;
-  const ensName = data as string | undefined;
+  // A disabled query still returns another component's cached lookup.
+  const ensName = withEnsName === false ? undefined : (data as string | undefined);
 
   const renderValue = ensName ?? formattedAddress;
 
