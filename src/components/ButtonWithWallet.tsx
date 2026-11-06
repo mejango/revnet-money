@@ -32,6 +32,9 @@ const ButtonWithWallet = React.forwardRef<
       return (
         <WalletConnectButton
           {...props}
+          // Connecting is always available: the form's state gates the action, not the sign-in.
+          disabled={false}
+          loading={false}
           onClick={undefined}
           label={connectWalletText ?? "Connect Wallet"}
         />
