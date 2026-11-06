@@ -112,11 +112,14 @@ function sanitizeStage(value: unknown): StageData {
     }),
     stageStart: numericText(stage.stageStart) || "0",
     stageStartCuts: numericText(stage.stageStartCuts) || undefined,
+    // null is a passed start still waiting for a new date, which validation holds.
     futureStartTimestamp:
-      Number.isSafeInteger(Number(stage.futureStartTimestamp)) &&
-      Number(stage.futureStartTimestamp) > 0
-        ? Number(stage.futureStartTimestamp)
-        : undefined,
+      stage.futureStartTimestamp === null
+        ? null
+        : Number.isSafeInteger(Number(stage.futureStartTimestamp)) &&
+            Number(stage.futureStartTimestamp) > 0
+          ? Number(stage.futureStartTimestamp)
+          : undefined,
   };
 }
 

@@ -90,8 +90,8 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
         ? undefined
         : latest.operators.find((entry) => entry.address && !isDisabled(entry.address))?.address;
       const seed = latest.controlsEnabled
-        ? typedAddresses.current.get(Number(chainId)) ||
-          shown ||
+        ? shown ||
+          typedAddresses.current.get(Number(chainId)) ||
           (isDisabled(latest.fromStage) ? "" : latest.fromStage)
         : PERMANENTLY_DISABLED_OPERATOR;
       // Keep whatever was typed, unless the answer above contradicts it.
