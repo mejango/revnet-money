@@ -20,10 +20,11 @@ import {
   composeBatch,
   contractAddressOn,
   describeStep,
+  mirrorBatch,
   useSafeBatches,
   type BatchStep,
 } from "@/lib/safe-batch";
-import { mirrorPresetBatch, stepResolverFor } from "@/lib/safe-batch-presets";
+import { stepResolverFor } from "@/lib/safe-batch-presets";
 import { multiSendCallsOf, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
   hasSafeService,
@@ -154,13 +155,7 @@ export function SafeBatchTray({
       const skipped: string[] = [];
       for (const row of rows) {
         if (row.chainId === source.chainId) continue;
-        const result = await mirrorPresetBatch(
-          steps,
-          source.chainId,
-          row,
-          publicClientFor(row.chainId),
-          resolve,
-        );
+        const result = await mirrorBatch(steps, source.chainId, row, resolve);
         if (result.steps.length) {
           addStepsToBatch(result.steps);
           mirrored.push(`${result.steps.length} to ${chainName(row.chainId)}`);

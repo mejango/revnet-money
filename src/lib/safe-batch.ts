@@ -185,7 +185,8 @@ export function contractAddressOn(contract: ContractName, chainId: number): Addr
 
 /**
  * A step's identity in its chain's batch. A pool registration is one per terminal token whatever
- * its operation, so a re-mirrored `setPoolFor` replaces a queued `initializePoolFor` and back.
+ * its operation: Native and USDC registrations don't replace each other, and a later `setPoolFor`
+ * replaces a queued `initializePoolFor` for the same token.
  */
 export function stepKey(step: Pick<BatchStep, "kind" | "to" | "values">): string {
   if (step.kind === "setPoolFor" || step.kind === "initializePoolFor") {

@@ -1,9 +1,9 @@
 import { migratedPoolKey, type V4PoolKey } from "@/lib/buyback-pool-migration";
 import { rolloutAddress, rolloutTargets } from "@/lib/protocol-rollout";
-import { buildStep, mirrorBatch, upsertStep, type BatchStep } from "@/lib/safe-batch";
+import { buildStep, mirrorBatch, upsertStep } from "@/lib/safe-batch";
 import {
   mapTerminalToken,
-  mirrorPresetBatch,
+  MIGRATION_MIRROR_LINE,
   resolvePreset,
   SAFE_BATCH_PRESETS,
   stepResolverFor,
@@ -379,18 +379,31 @@ describe("mirroring per-chain steps", () => {
     );
     expect(reordered.steps).toEqual([]);
     expect(reordered.skipped).toHaveLength(1);
+    // A deployed destination is refused too: the preset resolves each chain from its own state.
     const available = await mirrorBatch(
-      migration.steps,
+      [
+        ...migration.steps,
+        buildStep({
+          kind: "setOperatorOf",
+          chainId: 84532,
+          projectId: 2,
+          values: { operator: OLD_TERMINAL },
+        }),
+      ],
       84532,
       { chainId: 11155111, projectId: 2 },
       resolver,
     );
-    expect(available.steps.map((step) => step.kind)).toEqual([
-      "setHookFor",
-      "setPoolFor",
-      "setTerminalFor",
+    expect(available.skipped.map((item) => item.reason)).toEqual([
+      MIGRATION_MIRROR_LINE,
+      "The preceding buyback hook selection could not be resolved on Sepolia.",
+      MIGRATION_MIRROR_LINE,
     ]);
-    expect(available.skipped).toEqual([]);
+    expect(MIGRATION_MIRROR_LINE).toBe(
+      'Use the "Move to buyback 2.0.0 + gateway" preset; it resolves every chain at once.',
+    );
+    // A step that is not part of the move still mirrors as before.
+    expect(available.steps.map((step) => step.kind)).toEqual(["setOperatorOf"]);
   });
 
   it("refuses an existing new pool priced more than 1% off the old pool's TWAP", async () => {
@@ -496,96 +509,29 @@ describe("mirroring per-chain steps", () => {
   });
 });
 
-describe("mirroring the migration preset", () => {
-  const pools = { [zeroAddress]: { twap: 1_800n, fee: 3_000, tickSpacing: 60 } };
-  const sepoliaPoolHook = rolloutAddress("JBUniswapV4Hook", 11155111)!;
-  const OLD_SLOT = slotOf(oldNativeKey(3_000, 60));
-  const NEW_SLOT = slotOf(migratedPoolKey(oldNativeKey(3_000, 60), sepoliaPoolHook));
-  const sourceBatch = async (sourcePools: Pools = pools) => {
-    const migration = await resolvePreset(preset, {
+describe("queued pool registrations", () => {
+  const pool = (kind: "setPoolFor" | "initializePoolFor", terminalToken: Address) =>
+    buildStep({
+      kind,
       chainId: 84532,
       projectId: 2,
-      client: stubClient({ pools: sourcePools, prices: BOTH_POOLS_PRICED }),
-    });
-    if (migration.status !== "ready") throw new Error(migration.message);
-    return migration.steps;
-  };
-  const mirror = (steps: BatchStep[], destination: PresetReadClient) =>
-    mirrorPresetBatch(
-      steps,
-      84532,
-      { chainId: 11155111, projectId: 2 },
-      destination,
-      stepResolverFor(() => destination),
-    );
-
-  it("opens the destination's uninitialized pool at its own TWAP", async () => {
-    const steps = await sourceBatch();
-    expect(steps[1]!.kind).toBe("setPoolFor");
-    const mirrored = await mirror(
-      steps,
-      stubClient({ pools, prices: { [OLD_SLOT]: OLD_PRICE }, meanTick: 200 }),
-    );
-    expect(mirrored.skipped).toEqual([]);
-    expect(mirrored.steps.map((step) => step.kind)).toEqual([
-      "setHookFor",
-      "initializePoolFor",
-      "setTerminalFor",
-    ]);
-    expect(mirrored.steps[1]!.values.sqrtPriceX96).toBe(uniswapV4SqrtPriceX96AtTick(200));
-  });
-
-  it("skips a destination that is already migrated", async () => {
-    const mirrored = await mirror(
-      await sourceBatch(),
-      stubClient({ hookOf: targets.hook, terminalOf: targets.terminal }),
-    );
-    expect(mirrored.steps).toEqual([]);
-    expect(mirrored.skipped).toEqual([
-      {
-        label: preset.title,
-        reason: "Nothing to do on Sepolia: already on the current hook and gateway.",
+      values: {
+        fee: 10_000n,
+        tickSpacing: 200n,
+        twapWindow: 1_800n,
+        terminalToken,
+        ...(kind === "initializePoolFor" ? { sqrtPriceX96: OLD_PRICE } : {}),
       },
-    ]);
-  });
-
-  it("includes pools only the destination has", async () => {
-    const steps = await sourceBatch({});
-    expect(steps.map((step) => step.kind)).toEqual(["setHookFor", "setTerminalFor"]);
-    const mirrored = await mirror(steps, stubClient({ pools, prices: { [OLD_SLOT]: OLD_PRICE } }));
-    expect(mirrored.steps.map((step) => step.kind)).toEqual([
-      "setHookFor",
-      "initializePoolFor",
-      "setTerminalFor",
-    ]);
-  });
-
-  it("keeps a window the operator edited on the source", async () => {
-    const steps = await sourceBatch();
-    const edited = buildStep({
-      kind: "setPoolFor",
-      chainId: 84532,
-      projectId: 2,
-      values: { ...steps[1]!.values, twapWindow: 3_600n },
     });
-    const mirrored = await mirror(
-      [steps[0]!, edited, steps[2]!],
-      stubClient({ pools, prices: { [OLD_SLOT]: OLD_PRICE, [NEW_SLOT]: OLD_PRICE } }),
-    );
-    expect(mirrored.steps[1]!.kind).toBe("setPoolFor");
-    expect(mirrored.steps[1]!.values.twapWindow).toBe(3_600n);
-  });
 
-  it("re-mirroring after the pool opened elsewhere leaves one registration", async () => {
-    const steps = await sourceBatch();
-    const first = await mirror(steps, stubClient({ pools, prices: { [OLD_SLOT]: OLD_PRICE } }));
-    const again = await mirror(
-      steps,
-      stubClient({ pools, prices: { [OLD_SLOT]: OLD_PRICE, [NEW_SLOT]: OLD_PRICE } }),
-    );
-    expect(first.steps[1]!.kind).toBe("initializePoolFor");
-    expect(again.steps[1]!.kind).toBe("setPoolFor");
-    const queued = again.steps.reduce(upsertStep, first.steps);
-    expect(queued.map((step) => step.kind)).toEqual(["setHookFor", "setPoolFor", "setTerminalFor"]);
+  it("keeps one registration per terminal token, whatever its operation", () => {
+    const usdc = USDC_ADDRESSES[84532] as Address;
+    const queued = [pool("setPoolFor", usdc), pool("setPoolFor", NATIVE_TOKEN)].reduce(upsertStep, [
+      pool("initializePoolFor", NATIVE_TOKEN),
+    ]);
+    expect(queued.map((step) => [step.kind, step.values.terminalToken])).toEqual([
+      ["setPoolFor", NATIVE_TOKEN],
+      ["setPoolFor", usdc],
+    ]);
   });
 });

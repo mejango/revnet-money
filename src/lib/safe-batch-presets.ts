@@ -11,7 +11,6 @@ import { rolloutAddress, rolloutTargets } from "@/lib/protocol-rollout";
 import {
   buildStep,
   contractAddressOn,
-  mirrorBatch,
   type BatchStep,
   type BatchStepValues,
   type StepResolver,
@@ -155,8 +154,8 @@ async function poolStepOn(
   targetHook: Address,
   poolHook: Address,
   probe: TokenProbe,
-  twapWindow: bigint,
 ): Promise<PoolStep | null> {
+  const twapWindow = PRESET_TWAP_WINDOW;
   const oldWindow = await twapWindowOn(client, currentHook, pid, probe.read);
   if (oldWindow <= 0n) return null;
   const carried = await twapWindowOn(client, targetHook, pid, probe.read);
@@ -230,18 +229,7 @@ async function poolStepOn(
  */
 export async function resolvePreset(
   preset: SafeBatchPreset,
-  {
-    chainId,
-    projectId,
-    client,
-    windows = {},
-  }: {
-    chainId: number;
-    projectId: number;
-    client: PresetReadClient;
-    /** Registration windows per token label carried from an edited source batch. */
-    windows?: Partial<Record<string, bigint>>;
-  },
+  { chainId, projectId, client }: { chainId: number; projectId: number; client: PresetReadClient },
 ): Promise<PresetResolution> {
   const chain = chainDisplayName(chainId);
   const targets = rolloutTargets(chainId);
@@ -303,7 +291,6 @@ export async function resolvePreset(
         targets.hook,
         poolHook,
         probe,
-        windows[probe.label] ?? PRESET_TWAP_WINDOW,
       );
       if (!pool) continue;
       notes.push(...pool.notes);
@@ -357,6 +344,9 @@ export function mapTerminalToken(
   return null;
 }
 
+/** Shared with juicebox-money: a migration step is never mirrored. */
+export const MIGRATION_MIRROR_LINE = `Use the "${SAFE_BATCH_PRESETS[0]!.title}" preset; it resolves every chain at once.`;
+
 /**
  * How "Same on every chain" rebuilds a per-chain step: pool parameters come
  * from the target chain's live pool, the hook target from its registry, and a
@@ -374,16 +364,16 @@ export function stepResolverFor(clientFor: (chainId: number) => PresetReadClient
       const selected = step.values[key];
       // Custom selections require an explicit edit on each target network.
       if (typeof selected !== "string" || !isAddressEqual(selected, source[key])) return null;
-      if (!(await hasCode(client, target[key]))) return null;
-      if (!(await selectionAllowed(client, chainId, key, target[key]))) return null;
-      return { values: { ...step.values, [key]: target[key] } };
+      // The move to the rollout targets is resolved per chain by its preset, never copied; the
+      // pool registrations after this selection are dropped with it.
+      throw new Error(MIGRATION_MIRROR_LINE);
     }
+    if (step.kind === "initializePoolFor") return null;
     const token = mapTerminalToken(step.values.terminalToken as Address, step.chainId, chainId);
     if (!token) return null;
     const hook = await currentHookOf(client, chainId, pid);
     if (!hook) return null;
     const read = isAddressEqual(token, NATIVE_TOKEN) ? zeroAddress : token;
-    if (step.kind === "initializePoolFor") return null;
     const window = await twapWindowOn(client, hook, pid, read);
     if (window <= 0n) return null;
     if (step.kind === "setTwapWindowOf") {
@@ -406,78 +396,5 @@ export function stepResolverFor(clientFor: (chainId: number) => PresetReadClient
       };
     }
     return null;
-  };
-}
-
-const POOL_KINDS: readonly string[] = ["setPoolFor", "initializePoolFor"];
-
-/**
- * "Same on every chain" for a batch: its move to the current hook (that selection, the pool
- * registrations after it and the gateway selection) is resolved as the whole preset from the
- * destination's own state and token probes, carrying each pool's chosen window; every other step
- * mirrors through `mirrorBatch`. Mirrored in juicebox-money's `mirrorPresetBatch`.
- */
-export async function mirrorPresetBatch(
-  steps: readonly BatchStep[],
-  fromChainId: number,
-  target: { chainId: number; projectId: number },
-  client: PresetReadClient,
-  resolve: StepResolver,
-): Promise<Awaited<ReturnType<typeof mirrorBatch>>> {
-  const source = steps.filter((step) => step.chainId === fromChainId);
-  const from = rolloutTargets(fromChainId);
-  const hookAt = from
-    ? source.findIndex(
-        (step) =>
-          step.kind === "setHookFor" &&
-          typeof step.values.hook === "string" &&
-          isAddressEqual(step.values.hook, from.hook),
-      )
-    : -1;
-  if (hookAt < 0) return mirrorBatch(source, fromChainId, target, resolve);
-  const usdc = USDC_ADDRESSES[fromChainId as keyof typeof USDC_ADDRESSES];
-  const windows: Partial<Record<string, bigint>> = {};
-  const migration = source.map((step, index) => {
-    if (index === hookAt) return true;
-    if (step.kind === "setTerminalFor") {
-      return (
-        typeof step.values.terminal === "string" &&
-        isAddressEqual(step.values.terminal, from!.terminal)
-      );
-    }
-    if (index < hookAt || !POOL_KINDS.includes(step.kind)) return false;
-    const token = step.values.terminalToken as Address;
-    const label = isAddressEqual(token, NATIVE_TOKEN)
-      ? "Native"
-      : usdc && isAddressEqual(token, usdc)
-        ? "USDC"
-        : null;
-    if (label) windows[label] = step.values.twapWindow as bigint;
-    return true;
-  });
-  // ponytail: other steps keep their side of the migration; reorder by hand in the tray if needed.
-  const [before, after, preset] = await Promise.all([
-    mirrorBatch(
-      source.filter((_, index) => index < hookAt && !migration[index]),
-      fromChainId,
-      target,
-      resolve,
-    ),
-    mirrorBatch(
-      source.filter((_, index) => index > hookAt && !migration[index]),
-      fromChainId,
-      target,
-      resolve,
-    ),
-    resolvePreset(SAFE_BATCH_PRESETS[0]!, { ...target, client, windows }),
-  ]);
-  const label = SAFE_BATCH_PRESETS[0]!.title;
-  return {
-    steps: [...before.steps, ...(preset.status === "ready" ? preset.steps : []), ...after.steps],
-    skipped: [
-      ...before.skipped,
-      ...(preset.status === "ready" ? [] : [{ label, reason: preset.message }]),
-      ...after.skipped,
-    ],
   };
 }
