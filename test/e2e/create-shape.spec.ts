@@ -140,7 +140,11 @@ test("production create surface stays visible and contained", async ({ page }) =
   expect(cutToggleBox).not.toBeNull();
   expect(cutPercentageBox).not.toBeNull();
   expect(cutFrequencyBox).not.toBeNull();
-  expect(cutLabelBox!.y).toBeGreaterThanOrEqual(enabledSuffixBox!.y + enabledSuffixBox!.height);
+  // The cut row sits beside the issuance field when it fits and wraps below it otherwise.
+  const cutClearsSuffix =
+    cutLabelBox!.y >= enabledSuffixBox!.y + enabledSuffixBox!.height ||
+    cutLabelBox!.x >= enabledSuffixBox!.x + enabledSuffixBox!.width;
+  expect(cutClearsSuffix).toBe(true);
   expect(cutPercentageBox!.x - (cutToggleBox!.x + cutToggleBox!.width)).toBeGreaterThanOrEqual(7);
   expect(cutFrequencyBox!.x + cutFrequencyBox!.width).toBeLessThanOrEqual(
     dialogBox!.x + dialogBox!.width - 8,
