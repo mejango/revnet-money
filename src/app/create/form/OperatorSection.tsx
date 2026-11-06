@@ -46,15 +46,33 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
   const entryFor = (chainId: JBChainId) =>
     operators.find((entry) => Number(entry.chainId) === Number(chainId));
 
-  const latestRef = useRef({ operators, sortedChains, setFieldValue, fromStage, controlsEnabled });
-  latestRef.current = { operators, sortedChains, setFieldValue, fromStage, controlsEnabled };
+  // One operator for the whole revnet is the common case, so the per-chain rows are opt-in —
+  // the same affordance a split beneficiary uses. They open by themselves when the addresses
+  // already differ, which is how an imported draft with per-chain operators arrives.
+  const distinctAddresses = new Set(
+    sortedChains.map((chainId) => entryFor(chainId)?.address?.trim().toLowerCase() ?? ""),
+  );
+  const [perChain, setPerChain] = useState(() => distinctAddresses.size > 1);
 
-  // An imported draft arrives after mount, so the initial answer above can be the wrong one.
-  useEffect(() => {
-    if (operators.length > 0 && !operators.every((entry) => isDisabled(entry.address))) {
-      setControlsEnabled(true);
-    }
-  }, [operators]);
+  // What was typed before the controls were turned off, for when they are turned back on.
+  const typedAddresses = useRef(new Map<number, string>());
+
+  const latestRef = useRef({
+    operators,
+    sortedChains,
+    setFieldValue,
+    fromStage,
+    controlsEnabled,
+    perChain,
+  });
+  latestRef.current = {
+    operators,
+    sortedChains,
+    setFieldValue,
+    fromStage,
+    controlsEnabled,
+    perChain,
+  };
 
   // The rows mirror the chains that are actually selected: one entry each, no more. Anything
   // else is a validation error the reader cannot see, since only selected chains are rendered —
@@ -67,10 +85,14 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
       const existing = latest.operators.find(
         (entry) => Number(entry.chainId) === Number(chainId),
       )?.address;
+      // The single field speaks for every chain, so a chain added under it takes its address.
+      const shown = latest.perChain
+        ? undefined
+        : latest.operators.find((entry) => entry.address && !isDisabled(entry.address))?.address;
       const seed = latest.controlsEnabled
-        ? isDisabled(latest.fromStage)
-          ? ""
-          : latest.fromStage
+        ? typedAddresses.current.get(Number(chainId)) ||
+          shown ||
+          (isDisabled(latest.fromStage) ? "" : latest.fromStage)
         : PERMANENTLY_DISABLED_OPERATOR;
       // Keep whatever was typed, unless the answer above contradicts it.
       const keep =
@@ -86,14 +108,6 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
       );
     if (!unchanged) latest.setFieldValue("operator", next);
   }, [values.chainIds, controlsEnabled, operators]);
-
-  // One operator for the whole revnet is the common case, so the per-chain rows are opt-in —
-  // the same affordance a split beneficiary uses. They open by themselves when the addresses
-  // already differ, which is how an imported draft with per-chain operators arrives.
-  const distinctAddresses = new Set(
-    sortedChains.map((chainId) => entryFor(chainId)?.address?.trim().toLowerCase() ?? ""),
-  );
-  const [perChain, setPerChain] = useState(() => distinctAddresses.size > 1);
 
   const setEveryAddress = (address: string) => {
     setFieldValue(
@@ -112,6 +126,11 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
   };
 
   const answerControls = (enabled: boolean) => {
+    if (!enabled) {
+      typedAddresses.current = new Map(
+        operators.map((entry) => [Number(entry.chainId), entry.address]),
+      );
+    }
     setControlsEnabled(enabled);
     if (values.stages.length > 0 && !enabled) {
       setFieldValue("stages.0.initialOperator", PERMANENTLY_DISABLED_OPERATOR);
@@ -191,7 +210,13 @@ export function OperatorSection({ disabled = false }: { disabled?: boolean }) {
                   id="perChainOperator"
                   checked={perChain}
                   disabled={disabled}
-                  onChange={(event) => setPerChain(event.target.checked)}
+                  onChange={(event) => {
+                    setPerChain(event.target.checked);
+                    // The single field shows one address, so no other may stay behind it.
+                    if (!event.target.checked) {
+                      setEveryAddress(entryFor(sortedChains[0])?.address ?? "");
+                    }
+                  }}
                 />
               </label>
             ) : null}
