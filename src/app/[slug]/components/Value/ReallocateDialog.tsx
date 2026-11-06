@@ -1,5 +1,6 @@
 import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { ChainLogo } from "@/components/ChainLogo";
 import { TxProgress } from "@/components/ui/TxProgress";
 import {
   Dialog,
@@ -12,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { loanNumberOf } from "@/lib/loanTransactions";
 import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
@@ -157,7 +159,7 @@ export function ReallocateDialog({
     ? [
         {
           label: "Loan",
-          value: `#${selectedLoan?.id} on ${chainDisplayName(Number(cashOutChainId) as JBChainId)}`,
+          value: `#${selectedLoan ? loanNumberOf(selectedLoan.id) : ""} on ${chainDisplayName(Number(cashOutChainId) as JBChainId)}`,
           note: "The remaining debt gets a new loan number",
         },
         {
@@ -215,11 +217,18 @@ export function ReallocateDialog({
               </div>
               <div>
                 <span className="text-zinc-600">Loan number to replace:</span>
-                <div className="font-medium">{selectedLoan?.id}</div>
+                <div className="font-medium">
+                  {selectedLoan ? loanNumberOf(selectedLoan.id).toString() : null}
+                </div>
               </div>
               <div>
                 <span className="text-zinc-600">Network:</span>
-                <div className="font-medium">{selectedLoan?.chainId}</div>
+                {selectedLoan ? (
+                  <div className="flex items-center gap-2 font-medium">
+                    <ChainLogo chainId={selectedLoan.chainId as JBChainId} />
+                    <span>{chainDisplayName(selectedLoan.chainId as JBChainId)}</span>
+                  </div>
+                ) : null}
               </div>
             </div>
           </div>

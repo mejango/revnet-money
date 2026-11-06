@@ -31,6 +31,7 @@ import {
   useReviewedAction,
   type ReviewedCall,
 } from "@/hooks/useReviewedAction";
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import {
   cashOutExecutionErrorMessage,
@@ -95,6 +96,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const [slippageBps, setSlippageBps] = useState(100);
 
   const { address } = useAccount();
+  // Estimates read for the account on screen; the send below stays with the connected wallet.
+  const { address: viewedAddress } = useViewedAccount();
   const { data: balances } = useSuckersUserTokenBalance();
   const [cashOutChainId, setCashOutChainId] = useState<string>();
   const cashOutableBalances = balances?.filter((balance) => balance.balance.value > 0n) ?? [];
@@ -163,9 +166,14 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   // Use project token decimals, not base token decimals
   const projectTokenDecimals = token?.data?.decimals || JB_TOKEN_DECIMALS;
 
-  const redeemAmountBN = redeemAmount
-    ? JBProjectToken.parse(redeemAmount, projectTokenDecimals).value
-    : 0n;
+  const redeemAmountBN = (() => {
+    if (!redeemAmount) return 0n;
+    try {
+      return JBProjectToken.parse(redeemAmount, projectTokenDecimals).value;
+    } catch {
+      return 0n;
+    }
+  })();
 
   const sale = useReviewedAction();
   const [hash, setHash] = useState<`0x${string}`>();
@@ -213,7 +221,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   } = useCashOutRoute({
     chainId: activeCashOutChainId ? (Number(activeCashOutChainId) as JBChainId) : undefined,
     projectId: redeemAmountBN ? effectiveProjectId : undefined,
-    holder: address,
+    holder: viewedAddress,
     cashOutCount: redeemAmountBN || undefined,
     tokenToReclaim: tokenToReceive as `0x${string}` | undefined,
     terminal: cashOutTerminal,
@@ -238,19 +246,20 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
       }),
   });
   const { data: claimedBalance, refetch: refetchClaimedBalance } = useQuery({
-    queryKey: ["cashOutClaimedBalance", selectedChainId, projectTokenAddress, address],
-    enabled: !!publicClient && !!projectTokenAddress && !!address,
+    queryKey: ["cashOutClaimedBalance", selectedChainId, projectTokenAddress, viewedAddress],
+    enabled: !!publicClient && !!projectTokenAddress && !!viewedAddress,
     queryFn: () =>
       publicClient!.readContract({
         address: projectTokenAddress!,
         abi: erc20Abi,
         functionName: "balanceOf",
-        args: [address!],
+        args: [viewedAddress!],
       }),
   });
   const { data: directSell, isFetching: directSellLoading } = useQuery({
     queryKey: [
       "directCashOutSell",
+      viewedAddress,
       selectedChainId,
       effectiveProjectId.toString(),
       redeemAmountBN.toString(),
@@ -675,7 +684,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     </div>
                   </div>
 
-                  {redeemAmount && activeCashOutChainId && !valid ? (
+                  {activeCashOutChainId && redeemAmountBN > balance.value ? (
                     <div className="text-red-500 mt-4">
                       Not enough {tokenSymbol} on{" "}
                       {chainDisplayName(Number(activeCashOutChainId) as JBChainId)}
@@ -738,13 +747,20 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
             {valid && pairLine ? (
               <p className="self-center text-sm text-zinc-600">{pairLine}</p>
             ) : null}
+            {!activeCashOutChainId ? (
+              <p className="self-center text-sm text-zinc-600">Choose a network.</p>
+            ) : redeemAmountBN === 0n ? (
+              <p className="self-center text-sm text-zinc-600">Enter an amount.</p>
+            ) : null}
             {!isSuccess ? (
               <ButtonWithWallet
                 targetChainId={selectedSucker?.peerChainId}
                 loading={
-                  loading || (valid && (isQuoteFetching || directSellLoading || pairPending))
+                  loading ||
+                  (valid &&
+                    (isQuoteFetching || directSellLoading || pairPending || !tokenToReceive))
                 }
-                disabled={valid && (!cashOutRoute || !pairVerified)}
+                disabled={!valid || !cashOutRoute || !pairVerified}
                 onClick={() => {
                   setError(null);
                   // Pin the reviewed chain: a peer balance arriving later must not unselect it.

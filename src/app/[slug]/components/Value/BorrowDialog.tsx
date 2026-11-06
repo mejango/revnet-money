@@ -93,6 +93,8 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
     loanSourceLine,
     loanSourceBlocked,
     loanSourcePending,
+    borrowQuote,
+    borrowQuoteError,
   } = borrowDialog;
 
   // ===== PHASE 3: DYNAMIC TOKEN SYMBOL =====
@@ -169,6 +171,16 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
       borrowStatus,
     );
   const statusText = BORROW_STATUS_TEXT[borrowStatus];
+  const amountEntered = !!collateralAmount && Number(collateralAmount) > 0;
+  const blockedLine = !cashOutChainId
+    ? "Choose a network."
+    : !amountEntered
+      ? "Enter an amount."
+      : borrowQuoteError
+        ? "Couldn't read the loan quote. Try again."
+        : borrowQuote !== undefined && minimumBorrowAmountPreview === undefined
+          ? `Nothing can be borrowed on ${chainDisplayName(Number(cashOutChainId) as JBChainId)} right now.`
+          : null;
   const adjusting =
     !!internalSelectedLoan && !!collateralAmount && !isNaN(Number(collateralAmount));
   const loanContext =
@@ -409,6 +421,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
             {loanSourceLine && !review ? (
               <p className="text-sm text-zinc-600">{loanSourceLine}</p>
             ) : null}
+            {blockedLine ? <p className="text-sm text-zinc-600">{blockedLine}</p> : null}
           </div>
           {/* Single borrow button for both reallocation and standard borrowing */}
           <ButtonWithWallet

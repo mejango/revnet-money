@@ -320,7 +320,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         : undefined,
   });
 
-  const { data: estimatedBorrowFromInputOnly } = useBorrowableAmountFrom({
+  const { data: estimatedBorrowFromInputOnly, isError: inputQuoteError } = useBorrowableAmountFrom({
     address: revLoansContractAddress,
     chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
     args:
@@ -431,7 +431,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     ? parseUnits(collateralAmount, projectTokenDecimals)
     : 0n;
   const newLoanCollateral = collateralCountToTransfer + collateralCountToAdd;
-  const { data: newLoanBorrowableAmount } = useBorrowableAmountFrom({
+  const { data: newLoanBorrowableAmount, isError: newLoanQuoteError } = useBorrowableAmountFrom({
     address: revLoansContractAddress,
     chainId: cashOutChainId ? (Number(cashOutChainId) as JBChainId) : undefined,
     args:
@@ -445,11 +445,12 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         : undefined,
   });
 
+  const borrowQuote = internalSelectedLoan ? newLoanBorrowableAmount : estimatedBorrowFromInputOnly;
+  const borrowQuoteError = internalSelectedLoan ? newLoanQuoteError : inputQuoteError;
   const minimumBorrowAmountPreview = (() => {
-    const quote = internalSelectedLoan ? newLoanBorrowableAmount : estimatedBorrowFromInputOnly;
-    if (quote === undefined || quote <= 0n) return undefined;
+    if (borrowQuote === undefined || borrowQuote <= 0n) return undefined;
     try {
-      return minimumBorrowAmount(quote);
+      return minimumBorrowAmount(borrowQuote);
     } catch {
       return undefined;
     }
@@ -1047,6 +1048,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
     selectedChainTokenConfig,
     tokenConfigForChain,
     /** One line when the onchain loan token can't be read; the loan stays off. */
+    borrowQuote,
+    borrowQuoteError,
     loanSourceLine,
     loanSourceBlocked,
     loanSourcePending: !!loanSourceArgs && loanSourceQuery.isPending && !loanSourceQuery.isError,
