@@ -1,6 +1,7 @@
 "use client";
 
 import { refreshProjectDisplay } from "@/app/[slug]/invalidateProjectDisplay";
+import { chainDisplayName } from "@/app/constants";
 
 import { runSequentialWrites } from "@/app/[slug]/components/v6/operator/operatorLib";
 import { FieldGroup } from "@/app/create/form/Fields";
@@ -55,7 +56,7 @@ import { useSafeConnection } from "@/lib/safe-connector";
 import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
 import { formatHexEther, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { JB_CHAINS, JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk-core";
+import { JBChainId, jbControllerAbi, JBCoreContracts } from "@bananapus/nana-sdk-core";
 import { gasWithHeadroom, type ReviewedCall } from "@bananapus/nana-sdk-core/review";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -490,7 +491,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
     { label: "Name", value: reviewed?.name ?? "", strong: true },
     { label: "On", value: chainNames },
     ...destinations.map(({ source, metadataUri }) => ({
-      label: `Project ${source.projectId} on ${JB_CHAINS[source.chainId as JBChainId]?.name ?? source.chainId}`,
+      label: `Project ${source.projectId} on ${chainDisplayName(source.chainId)}`,
       value: metadataUri,
       mono: true,
     })),
@@ -529,9 +530,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
     }
   };
 
-  const chainNames = projects
-    .map((project) => JB_CHAINS[project.chainId as JBChainId]?.name ?? String(project.chainId))
-    .join(", ");
+  const chainNames = projects.map((project) => chainDisplayName(project.chainId)).join(", ");
   const relayFee = selectedPayment ? `${formatHexEther(selectedPayment.amount)} ETH` : null;
 
   return (
@@ -732,12 +731,12 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
               relayed
                 ? [
                     ...projects.map((project) => ({
-                      title: `Sign the authorization on ${JB_CHAINS[project.chainId as JBChainId]?.name ?? project.chainId}`,
+                      title: `Sign the authorization on ${chainDisplayName(project.chainId)}`,
                     })),
                     { title: relayFee ? `Pay ${relayFee} to relay` : "Pay to relay" },
                   ]
                 : projects.map((project) => ({
-                    title: `Save changes on ${JB_CHAINS[project.chainId as JBChainId]?.name ?? project.chainId}`,
+                    title: `Save changes on ${chainDisplayName(project.chainId)}`,
                   }))
             }
             activeIndex={

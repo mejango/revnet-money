@@ -1,6 +1,6 @@
 "use client";
 
-import { USDC_DECIMALS } from "@/app/constants";
+import { chainDisplayName, USDC_DECIMALS } from "@/app/constants";
 import { GetFunds } from "@/components/GetFunds";
 import { ViewAsDialog } from "@/components/ViewAsDialog";
 import { useEnsName } from "@/hooks/ens/useEnsName";
@@ -427,7 +427,9 @@ export function WalletButton() {
                 <ProjectWalletBalances address={viewAs} />
               ) : (
                 <>
-                  <div className="mb-1.5">{chain?.name ?? "Unsupported network"}</div>
+                  <div className="mb-1.5">
+                    {chain ? chainDisplayName(chain.id) : "Unsupported network"}
+                  </div>
                   <dl className="space-y-1">
                     <BalanceRow label={balance?.symbol ?? "Native"} value={formattedBalance} />
                     <BalanceRow label="USDC" value={formattedUsdcBalance} />
@@ -532,7 +534,9 @@ export function WalletButton() {
               <ProjectWalletBalances address={address} />
             ) : (
               <>
-                <div className="mb-1.5">{chain?.name ?? "Unsupported network"}</div>
+                <div className="mb-1.5">
+                  {chain ? chainDisplayName(chain.id) : "Unsupported network"}
+                </div>
                 <dl className="space-y-1">
                   <BalanceRow label={balance?.symbol ?? "Native"} value={formattedBalance} />
                   <BalanceRow label="USDC" value={formattedUsdcBalance} />

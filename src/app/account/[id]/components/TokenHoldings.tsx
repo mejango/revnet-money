@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { ProjectLink } from "@/components/ProjectLink";
 import { SkeletonLines } from "@/components/ui/skeleton";
@@ -151,7 +152,7 @@ export function TokenHoldings({ address }: { address: Address }) {
                       >
                         <span className="flex items-center gap-2 text-xs text-zinc-500">
                           <ChainLogo chainId={row.chainId as JBChainId} width={16} height={16} />
-                          {JB_CHAINS[row.chainId as JBChainId]?.name ?? `Chain ${row.chainId}`}
+                          {chainDisplayName(row.chainId)}
                         </span>
                         <span className="text-right">
                           <span className="tabular-nums text-zinc-800">

@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +22,7 @@ import {
   ReviewRefusal,
   useReviewedAction,
 } from "@/hooks/useReviewedAction";
-import { jb721TiersHookAbi, JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
+import { jb721TiersHookAbi, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { isAddress, zeroAddress, type PublicClient } from "viem";
@@ -69,7 +70,7 @@ export function MintItemModal({
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
   const maxQuantity = Math.max(0, Math.min(50, remaining));
   const busy = phase === "checking" || phase === "sending" || phase === "confirming";
-  const chainName = JB_CHAINS[chainId]?.name ?? "this chain";
+  const chainName = chainDisplayName(chainId);
   const context = [
     {
       label: "Mints",
@@ -209,8 +210,7 @@ export function MintItemModal({
         <DialogHeader>
           <DialogTitle>Mint {itemName} without payment</DialogTitle>
           <DialogDescription>
-            Send inventory from item #{tierId} on {JB_CHAINS[chainId]?.name ?? "this chain"} to a
-            beneficiary.
+            Send inventory from item #{tierId} on {chainDisplayName(chainId)} to a beneficiary.
           </DialogDescription>
         </DialogHeader>
 

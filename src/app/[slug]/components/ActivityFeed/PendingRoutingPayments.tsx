@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { LoadingText } from "@/components/ui/LoadingText";
 import { TxError } from "@/components/ui/TxError";
@@ -23,7 +24,7 @@ import {
 } from "@/lib/pending-router-calls";
 import { formatTransactionMessage, formatWalletError } from "@/lib/utils";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
-import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
+import { type JBChainId } from "@bananapus/nana-sdk-core";
 import { safeQueueUrl } from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -476,7 +477,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
                 </p>
                 <p className="text-xs text-zinc-600">
                   To {projectName(indexed.chainId, indexed.projectId)} on{" "}
-                  {JB_CHAINS[indexed.chainId as JBChainId]?.name ?? indexed.chainId}
+                  {chainDisplayName(indexed.chainId)}
                 </p>
                 {!result ? (
                   <p className="mt-1 text-xs text-zinc-500">
@@ -601,9 +602,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
               <SummaryRow label="Amount">
                 <span className="break-all">{payment.amountLabel}</span>
               </SummaryRow>
-              <SummaryRow label="On">
-                {JB_CHAINS[payment.chainId as JBChainId]?.name ?? payment.chainId}
-              </SummaryRow>
+              <SummaryRow label="On">{chainDisplayName(payment.chainId)}</SummaryRow>
               <SummaryRow label="To">{projectName(payment.chainId, payment.projectId)}</SummaryRow>
               <SummaryRow label="Source">
                 {projectName(payment.chainId, payment.sourceProjectId)}
@@ -627,9 +626,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
               <SummaryRow label="Amount">
                 <span className="break-all">{payment.amountLabel}</span>
               </SummaryRow>
-              <SummaryRow label="On">
-                {JB_CHAINS[payment.indexed.chainId as JBChainId]?.name}
-              </SummaryRow>
+              <SummaryRow label="On">{chainDisplayName(payment.indexed.chainId)}</SummaryRow>
               <SummaryRow label="To">
                 {projectName(payment.indexed.chainId, payment.indexed.projectId)}
               </SummaryRow>

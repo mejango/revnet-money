@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
@@ -19,7 +20,7 @@ import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { reviewClosed } from "@/lib/review-refusal";
 import { etherscanLink, formatWalletError } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import { buildDeployProjectPayerTx, projectPayerFromDeployLogs } from "@bananapus/nana-sdk-core/v6";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -168,7 +169,7 @@ export function PayerDeployForm({
     const trimmedMetadata = metadata.trim() || "0x";
     const calls: Omit<ReviewedDeploy["calls"][number], "directory">[] = [];
     for (const row of selectedRows) {
-      const chainName = JB_CHAINS[row.chainId]?.name ?? row.chainId;
+      const chainName = chainDisplayName(row.chainId);
       let beneficiaryAddress: Address = zeroAddress;
       if (!originalPayer) {
         const raw = beneficiaryByChain[row.chainId]?.trim() || beneficiary;
@@ -220,7 +221,7 @@ export function PayerDeployForm({
           });
           if (!isAddress(directory) || directory === zeroAddress) {
             throw new Error(
-              `Could not verify the payer factory on ${JB_CHAINS[call.chainId]?.name ?? call.chainId}.`,
+              `Could not verify the payer factory on ${chainDisplayName(call.chainId)}.`,
             );
           }
           return { ...call, directory };
@@ -243,7 +244,7 @@ export function PayerDeployForm({
             : "Pays the project and mints its tokens",
         },
         ...review.calls.map((call) => ({
-          label: String(JB_CHAINS[call.chainId]?.name ?? call.chainId),
+          label: String(chainDisplayName(call.chainId)),
           value: `Project #${call.projectId}`,
           lines: [
             ...(review.addToBalance
@@ -598,7 +599,7 @@ export function PayerDeployForm({
                     }}
                   />
                   <ChainLogo chainId={row.chainId} width={16} height={16} />
-                  {JB_CHAINS[row.chainId]?.name ?? row.chainId}
+                  {chainDisplayName(row.chainId)}
                 </label>
               ))}
             </div>
@@ -610,7 +611,7 @@ export function PayerDeployForm({
               {duplicates
                 .map(
                   (row) =>
-                    `${JB_CHAINS[row.chainId as JBChainId]?.name ?? row.chainId} ${row.address.slice(0, 6)}…${row.address.slice(-4)}`,
+                    `${chainDisplayName(row.chainId)} ${row.address.slice(0, 6)}…${row.address.slice(-4)}`,
                 )
                 .join(", ")}
               . Anyone can pay it directly. Deploying again makes another address that works the
@@ -646,7 +647,7 @@ export function PayerDeployForm({
               title="Confirm payer address"
               steps={review.calls.map((call) => ({
                 key: String(call.chainId),
-                title: `Deploy on ${JB_CHAINS[call.chainId]?.name ?? call.chainId}`,
+                title: `Deploy on ${chainDisplayName(call.chainId)}`,
               }))}
               activeIndex={busy ? deployed.length : -1}
               stepsIntro={
@@ -727,11 +728,11 @@ function PerChainOverrides({
           <div key={row.chainId} className="flex items-center gap-2">
             <span className="flex items-center gap-1.5 text-xs w-36 shrink-0">
               <ChainLogo chainId={row.chainId} width={14} height={14} />
-              {JB_CHAINS[row.chainId]?.name ?? row.chainId}
+              {chainDisplayName(row.chainId)}
             </span>
             <Input
               className="h-8 border-melon-300 bg-melon-25 text-xs"
-              aria-label={`${label} on ${JB_CHAINS[row.chainId]?.name ?? row.chainId}`}
+              aria-label={`${label} on ${chainDisplayName(row.chainId)}`}
               value={values[row.chainId] ?? ""}
               onChange={(e) => onChange({ ...values, [row.chainId]: e.target.value })}
               disabled={disabled}

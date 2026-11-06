@@ -77,15 +77,15 @@ describe("useSuckers over an indexer seed", () => {
     mocks.resolveSuckers.mockReturnValue(new Promise((done) => (resolve = done)));
     const { result } = renderHook(() => useSuckers(), { wrapper: wrapper() });
 
-    expect(result.current.data).toEqual([HOME, INDEXED_PEER]);
+    expect(result.current.data).toEqual([INDEXED_PEER, HOME]);
     expect(result.current.isVerified).toBe(false);
     expect(result.current.verifiedPairs).toEqual([HOME]);
     await waitFor(() => expect(mocks.resolveSuckers).toHaveBeenCalledTimes(1));
 
     resolve([HOME, ONCHAIN_PEER]);
     await waitFor(() => expect(result.current.isVerified).toBe(true));
-    expect(result.current.data).toEqual([HOME, ONCHAIN_PEER]);
-    expect(result.current.verifiedPairs).toEqual([HOME, ONCHAIN_PEER]);
+    expect(result.current.data).toEqual([ONCHAIN_PEER, HOME]);
+    expect(result.current.verifiedPairs).toEqual([ONCHAIN_PEER, HOME]);
   });
 
   it("keeps the seed for display but no peer writable when the registry read fails", async () => {
@@ -93,7 +93,7 @@ describe("useSuckers over an indexer seed", () => {
     const { result } = renderHook(() => useSuckers(), { wrapper: wrapper() });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(result.current.data).toEqual([HOME, INDEXED_PEER]);
+    expect(result.current.data).toEqual([INDEXED_PEER, HOME]);
     expect(result.current.isVerified).toBe(false);
     expect(result.current.verifiedPairs).toEqual([HOME]);
   });

@@ -1,7 +1,7 @@
 "use client";
 
 import { publicClientFor } from "@/app/[slug]/components/v6/operator/operatorLib";
-import { MAINNET_CHAIN_IDS } from "@/app/constants";
+import { chainDisplayName, MAINNET_CHAIN_IDS } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { ProjectLink } from "@/components/ProjectLink";
@@ -34,7 +34,6 @@ function ProjectCard({
   safePolicy?: SafePolicy;
 }) {
   const slug = slugFor(project.chainId, project.projectId);
-  const chain = JB_CHAINS[project.chainId as JBChainId]?.chain;
   const body = (
     <div className="flex items-center gap-3 py-3">
       <ChainLogo chainId={project.chainId as JBChainId} width={16} height={16} standalone />
@@ -57,7 +56,7 @@ function ProjectCard({
           </span>
         ) : null}
       </div>
-      <span className="text-xs text-zinc-500">{chain?.name ?? `Chain ${project.chainId}`}</span>
+      <span className="text-xs text-zinc-500">{chainDisplayName(project.chainId)}</span>
     </div>
   );
   if (!slug) return body;

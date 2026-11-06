@@ -12,8 +12,8 @@
 //
 // Pair derivation and the probe itself live in the SDK; only the user-facing
 // copy and the fail-closed policy are local.
+import { chainDisplayName } from "@/app/constants";
 import {
-  JB_CHAINS,
   JBChainId,
   JBCoreContracts,
   jbV6ContractAddress,
@@ -100,7 +100,7 @@ export async function assertLaunchFeedsReachable({
   const pairs = requiredFeedPairs(contexts, baseCurrency);
   if (pairs.length === 0) return;
 
-  const chainName = JB_CHAINS[chainId]?.name ?? `chain ${chainId}`;
+  const chainName = chainDisplayName(chainId);
   if (!jbV6ContractAddress[JBCoreContracts.JBPrices][chainId]) {
     throw new Error(
       `No price contract is known on ${chainName}, so this token combination can't be verified. Remove ${chainName} or launch with a single accepted token.`,

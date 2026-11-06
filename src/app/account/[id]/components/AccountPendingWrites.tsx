@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import {
   checkRelayrSession,
   discardRelayrSession,
@@ -7,7 +8,6 @@ import {
   retireCheckedRelayrSession,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
-import type { JBChainId } from "@/lib/nana/types";
 import { canCheckRelayrBundle, canCheckRelayrSignatures } from "@/lib/relayr-activity";
 import {
   dismissTransactionActivity,
@@ -17,7 +17,6 @@ import {
 import { formatTransactionMessage } from "@/lib/utils";
 import { SUPPORTED_CHAINS } from "@/lib/wagmiTransports";
 import { writeHolds } from "@/lib/write-hold";
-import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import {
   checkedItLabel,
   SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
@@ -162,8 +161,7 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
         <ul className="mt-2 space-y-0.5">
           {activity.chainStates.map((state) => (
             <li key={state.chainId} className="text-xs text-zinc-500">
-              {JB_CHAINS[state.chainId as JBChainId]?.name ?? `Chain ${state.chainId}`}:{" "}
-              {state.status}
+              {chainDisplayName(state.chainId)}: {state.status}
             </li>
           ))}
         </ul>
