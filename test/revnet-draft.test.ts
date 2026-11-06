@@ -63,6 +63,12 @@ describe("Revnet .jb drafts", () => {
     expect(twice.stages[0].futureStartTimestamp).toBeNull();
   });
 
+  it("keeps every shop item a draft holds", () => {
+    const items = Array.from({ length: 65 }, (_, index) => ({ name: `Item ${index}`, price: "1" }));
+    const parsed = parseRevnetDraft(JSON.stringify({ name: "A", stages: [{}], store: { items } }));
+    expect(parsed.store?.items).toHaveLength(65);
+  });
+
   it("uses a stable .jb filename", () => {
     expect(revnetDraftFileName("My Useful Revnet!")).toBe("my-useful-revnet.jb");
     expect(revnetDraftFileName("")).toBe("revnet.jb");

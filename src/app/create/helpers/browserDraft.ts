@@ -22,7 +22,10 @@ const authored = (values: RevnetFormData) =>
   });
 
 export function saveBrowserDraft(values: RevnetFormData): void {
-  if (authored(values) === authored(DEFAULT_FORM_DATA)) return;
+  if (authored(values) === authored(DEFAULT_FORM_DATA)) {
+    clearBrowserDraft();
+    return;
+  }
   try {
     window.localStorage.setItem(
       STORAGE_KEY,

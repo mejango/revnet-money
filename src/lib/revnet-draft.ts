@@ -145,7 +145,7 @@ function sanitizeStore(value: unknown): RevnetFormData["store"] {
       const name = text(category.name, 64);
       return Number.isSafeInteger(id) && id > 0 && name ? [{ id, name }] : [];
     }),
-    items: items.slice(0, 64).map((entry) => {
+    items: items.map((entry) => {
       const item = (entry ?? {}) as Record<string, unknown>;
       const splits = Array.isArray(item.splits) ? item.splits : [];
       const perChainSupply = (item.perChainSupply ?? {}) as Record<string, unknown>;

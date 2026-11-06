@@ -214,13 +214,15 @@ function DraftControls({
             <button
               type="button"
               className={draftButtonClassName}
-              onClick={() =>
+              onClick={() => {
+                // Read again: a start can pass while this offer sits open.
+                const draft = readBrowserDraft() ?? offer;
                 load(
-                  offer.values,
+                  draft.values,
                   "Draft restored. Review every section before launch.",
-                  offer.mediaMissing,
-                )
-              }
+                  draft.mediaMissing,
+                );
+              }}
             >
               Restore draft
             </button>

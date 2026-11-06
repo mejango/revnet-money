@@ -245,6 +245,31 @@ describe("the browser draft", () => {
     expect(screen.getByText(/Draft restored/u)).toBeInTheDocument();
   });
 
+  it("forgets a field that was typed and then erased", async () => {
+    const first = render(<CreateForm />);
+    fireEvent.change(nameField(), { target: { value: "Gone" } });
+    await waitFor(() => expect(Object.keys(window.localStorage)).toHaveLength(1));
+    fireEvent.change(nameField(), { target: { value: "" } });
+    await waitFor(() => expect(Object.keys(window.localStorage)).toHaveLength(0));
+    first.unmount();
+  });
+
+  it("holds a start that passed while the restore offer sat open", async () => {
+    const start = Math.floor(Date.now() / 1000) + 60;
+    const first = render(<CreateForm />);
+    await importDraft(
+      revDraft({ stages: [{ ...revDraft().stages[0], futureStartTimestamp: start }] }),
+    );
+    first.unmount();
+
+    render(<CreateForm />);
+    const restore = await screen.findByRole("button", { name: "Restore draft" });
+    const later = vi.spyOn(Date, "now").mockReturnValue((start + 60) * 1000);
+    fireEvent.click(restore);
+    later.mockRestore();
+    expect(formValues().stages[0].futureStartTimestamp).toBeNull();
+  });
+
   it("forgets the draft when discarded", async () => {
     const first = render(<CreateForm />);
     await importDraft(revDraft());
