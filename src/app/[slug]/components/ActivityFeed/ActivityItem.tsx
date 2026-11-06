@@ -422,7 +422,7 @@ export function ActivityItemRow({
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
             <EtherscanLink type="tx" value={event.txHash} chain={chain}>
-              <DateRelative timestamp={event.timestamp} />
+              <DateRelative timestamp={event.timestamp} insideLink />
             </EtherscanLink>
             {event.chains ? (
               <span className="isolate inline-flex items-center">
