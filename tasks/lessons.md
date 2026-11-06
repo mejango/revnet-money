@@ -61,3 +61,7 @@
 
 ## 2026-11-05 Same widget, same layout across clients
 - When restyling a header tooltip or breakdown in one client, first open the equivalent in the other client and copy its layout. jango picked jbm's stacked per-chain layout (title line, chain icon and name, token amount over USD, divider, All chains) over a fresh column grid built in revnet. Diverging designs cost a second round; parity is the default, not a follow-up.
+
+## 2026-11-06 — Cash out tax is a value, not a percentage
+- Correction: a UX review proposed rendering the cash out tax as "10%" to match a chart. The tax is a 0 to 1 value and is never a percentage; any percentage is a derived output of the curve formula.
+- Rule: render the tax as its 0 to 1 value everywhere, and when two surfaces disagree, check which one states the protocol's own unit before picking the fix.
