@@ -629,6 +629,34 @@ input[type="range"]::-moz-range-thumb {
   display: none;
 }
 
+/* Scrollable tables: an edge shadow appears on whichever side has more content, and the bar stays
+   visible where the platform would otherwise hide it. The melon-50 covers scroll with the
+   content, so the table itself stays transparent. */
+.table-scroll {
+  background:
+    linear-gradient(to right, #ebfaf1 40%, transparent) left / 3rem 100% no-repeat local,
+    linear-gradient(to left, #ebfaf1 40%, transparent) right / 3rem 100% no-repeat local,
+    linear-gradient(to right, rgb(0 0 0 / 0.16), transparent) left / 0.875rem 100% no-repeat scroll,
+    linear-gradient(to left, rgb(0 0 0 / 0.16), transparent) right / 0.875rem 100% no-repeat scroll,
+    #ebfaf1;
+}
+.table-scroll table,
+.table-scroll table > tbody {
+  background: transparent;
+}
+.table-scroll::-webkit-scrollbar {
+  height: 8px;
+  width: 8px;
+}
+.table-scroll::-webkit-scrollbar-thumb {
+  background: rgb(0 0 0 / 0.25);
+}
+@supports not selector(::-webkit-scrollbar) {
+  .table-scroll {
+    scrollbar-width: thin;
+  }
+}
+
 /* Fixed-width dots signal progress without shifting text or repeating announcements. */
 .loading-dots {
   display: inline-block;

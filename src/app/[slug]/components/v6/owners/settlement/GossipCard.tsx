@@ -298,7 +298,7 @@ export function GossipCard({ chains }: { chains: ChainProject[] }) {
               <ChainLogo chainId={view.chainId} width={16} height={16} />
               {chainName(view.chainId)} knows
             </div>
-            <div className="-mx-4 mt-2 overflow-x-auto">
+            <div className="table-scroll -mx-4 mt-2 overflow-x-auto">
               <table className="w-full min-w-[900px]">
                 <thead className="bg-melon-100">
                   <tr className="border-b border-zinc-100">
