@@ -200,7 +200,7 @@ export async function GET(req: Request) {
   const balanceLabel = formatProjectPreviewBalance(items);
   const message =
     totalUsd !== null
-      ? `${totalUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD • ${balanceLabel}`
+      ? `${totalUsd.toLocaleString("en-US", { maximumFractionDigits: 0 })} USD, ${balanceLabel}`
       : balanceLabel;
   const color = badgeColor(totalUsd);
   if (searchParams.get("format") === "endpoint") {

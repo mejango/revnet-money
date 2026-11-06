@@ -58,7 +58,7 @@ describe("shields badge", () => {
 
     // No USD rates indexed: USDC cannot be converted into ETH, so it is left out and named.
     expect(body).toMatchObject({
-      message: "37 USD • 0.01 ETH + 20.00 USDC",
+      message: "37 USD, 0.01 ETH + 20.00 USDC",
       tvlUsd: 37,
       tvlBalance: 0.01,
       denomination: "ETH",
@@ -118,7 +118,7 @@ describe("shields badge", () => {
     expect(body).toEqual({
       schemaVersion: 1,
       label: "Breadfruit",
-      message: "3,000 USD • 1.5 ETH",
+      message: "3,000 USD, 1.5 ETH",
       color: "green",
       cacheSeconds: 3600,
     });
@@ -282,7 +282,7 @@ it("converts same-address custom assets on different chains through their own US
   const body = await badge([row(1, 1n, 1n), row(8453, 2n, 10n)], "21000000000000000000");
   expect(body.tvlBalance).toBe(21);
   expect(body.chains.map((chain: { balance: number }) => chain.balance)).toEqual([1, 20]);
-  expect(body.message).toBe("21 USD • 1 XYZ + 2 XYZ");
+  expect(body.message).toBe("21 USD, 1 XYZ + 2 XYZ");
 });
 
 it("keeps unread treasury amounts unknown rather than returning a partial or zero total", async () => {
