@@ -52,8 +52,8 @@ async function fetchDiscoverProjects(): Promise<RevnetProject[]> {
 
 export default function Page() {
   const [search, setSearch] = useState("");
-  const [searchResults, setSearchResults] = useState<RevnetProject[]>([]);
-  const [searching, setSearching] = useState(false);
+  // `projects` is null when that query's search failed.
+  const [answer, setAnswer] = useState<{ query: string; projects: RevnetProject[] | null }>();
   const {
     data: projects = [],
     isLoading: projectsLoading,
@@ -64,46 +64,38 @@ export default function Page() {
     staleTime: 5 * 60_000,
   });
   const trimmedSearch = search.trim();
+  const searchable = trimmedSearch.length >= 2 || /^\d+$/u.test(trimmedSearch);
 
   useEffect(() => {
-    if (!trimmedSearch) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
-    if (trimmedSearch.length < 2 && !/^\d+$/u.test(trimmedSearch)) {
-      setSearchResults([]);
-      setSearching(false);
-      return;
-    }
+    if (!searchable) return;
 
     const controller = new AbortController();
     const timeout = setTimeout(async () => {
-      setSearching(true);
+      let found: RevnetProject[] | null = null;
       try {
         const response = await fetch(
           `/api/search-projects?q=${encodeURIComponent(trimmedSearch)}`,
           { signal: controller.signal },
         );
-        if (!response.ok) return;
-        const body = (await response.json()) as {
-          projects?: RevnetProject[];
-        };
-        setSearchResults(body.projects ?? []);
+        if (response.ok) {
+          const body = (await response.json()) as { projects?: RevnetProject[] };
+          found = body.projects ?? [];
+        }
       } catch {
-        if (!controller.signal.aborted) setSearchResults([]);
-      } finally {
-        if (!controller.signal.aborted) setSearching(false);
+        // Stays null: a failed search is not an empty one.
       }
+      if (!controller.signal.aborted) setAnswer({ query: trimmedSearch, projects: found });
     }, 250);
 
     return () => {
       clearTimeout(timeout);
       controller.abort();
     };
-  }, [trimmedSearch]);
+  }, [searchable, trimmedSearch]);
 
-  const displayedProjects = trimmedSearch ? searchResults : projects;
+  const searching = searchable && answer?.query !== trimmedSearch;
+  const unavailable = searchable ? !searching && !answer?.projects : projectsError;
+  const displayedProjects = searchable ? (answer?.projects ?? []) : projects;
 
   return (
     <div className="container mt-40 pr-[1.5rem] pl-[1.5rem] sm:pr-[2rem] sm:pl-[2rem] sm:px-8">
@@ -150,9 +142,9 @@ export default function Page() {
             />
           </label>
         </div>
-        {projectsLoading && !trimmedSearch ? (
+        {projectsLoading && !searchable ? (
           <DiscoverGridSkeleton />
-        ) : projectsError ? (
+        ) : unavailable ? (
           <div className="border border-zinc-200 bg-melon-50 p-5 text-sm text-zinc-600">
             Projects are temporarily unavailable. Try again in a moment.
           </div>
@@ -185,7 +177,7 @@ export default function Page() {
                 <p className="text-zinc-600 text-sm line-clamp-2">
                   {p.projectTagline || "No description available."}
                 </p>
-                {trimmedSearch && (
+                {searchable && (
                   <p className="mt-2 text-xs text-zinc-500">
                     {p.ticker ? `$${p.ticker} | ` : ""}
                     {(p.chainIds ?? [p.chainId ?? 1])
