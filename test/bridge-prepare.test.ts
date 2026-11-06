@@ -1,6 +1,7 @@
 import {
   buildProtectedBridgePrepareTx,
   cashOutProtocolFee,
+  bridgeReclaimMinimum,
   protectedOutputFloor,
   quoteBridgePrepare,
   slippagePercentToBps,
@@ -106,6 +107,10 @@ describe("protected bridge preparation", () => {
     expect(protectedOutputFloor(1_001n, 100n)).toBe(990n);
     expect(() => slippagePercentToBps("1.234")).toThrow(/at most two decimal places/u);
     expect(() => slippagePercentToBps("5.01")).toThrow(/cannot exceed 5%/u);
+    expect(bridgeReclaimMinimum(0n, 100n)).toBe(0n);
+    expect(bridgeReclaimMinimum(1n, 100n)).toBe(1n);
+    expect(bridgeReclaimMinimum(1_001n, 100n)).toBe(990n);
+    expect(() => bridgeReclaimMinimum(0n, 10_000n)).toThrow(/less than 100%/u);
     expect(() => protectedOutputFloor(0n, 100n)).toThrow(/no backing/u);
     expect(() => protectedOutputFloor(1_000n, 10_000n)).toThrow(/less than 100%/u);
     expect(() => protectedOutputFloor(1n, 100n)).toThrow(/rounds to zero/u);
@@ -134,7 +139,7 @@ describe("protected bridge preparation", () => {
         token: TOKEN,
       }),
     ).toThrow(/include project tokens/u);
-    expect(() =>
+    expect(
       buildProtectedBridgePrepareTx({
         chainId: 1,
         sucker: SUCKER,
@@ -142,8 +147,8 @@ describe("protected bridge preparation", () => {
         beneficiary: BENEFICIARY,
         minTokensReclaimed: 0n,
         token: TOKEN,
-      }),
-    ).toThrow(/nonzero/u);
+      }).args[2],
+    ).toBe(0n);
   });
 
   it("quotes with the same sucker caller context and current three-argument feeless lookup", async () => {

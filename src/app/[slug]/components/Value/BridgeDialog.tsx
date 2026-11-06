@@ -62,6 +62,8 @@ interface Props {
   projects: Array<Pick<Project, "projectId" | "chainId" | "token">>;
 }
 
+const NO_FUNDING_MOVES = "None. The same tokens arrive, with no funding.";
+
 export function BridgeDialog(props: PropsWithChildren<Props>) {
   const { children, projects } = props;
   const sourceChains = useMemo(() => projects.map((p) => p.chainId as JBChainId), [projects]);
@@ -262,7 +264,10 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
             },
             {
               label: "Minimum funding moved",
-              value: `At least ${formatUnits(prepareQuote.data.minTokensReclaimed, prepareQuote.data.tokenDecimals)} ${backingTokenSymbol}`,
+              value:
+                prepareQuote.data.minTokensReclaimed === 0n
+                  ? NO_FUNDING_MOVES
+                  : `At least ${formatUnits(prepareQuote.data.minTokensReclaimed, prepareQuote.data.tokenDecimals)} ${backingTokenSymbol}`,
             },
           ]
         : [],
@@ -646,11 +651,17 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                   </span>
                   <span className="text-zinc-600">Minimum funding moved</span>
                   <span className="font-medium sm:text-right">
-                    {formatUnits(
-                      prepareQuote.data.minTokensReclaimed,
-                      prepareQuote.data.tokenDecimals,
-                    )}{" "}
-                    {backingTokenSymbol}
+                    {prepareQuote.data.minTokensReclaimed === 0n ? (
+                      NO_FUNDING_MOVES
+                    ) : (
+                      <>
+                        {formatUnits(
+                          prepareQuote.data.minTokensReclaimed,
+                          prepareQuote.data.tokenDecimals,
+                        )}{" "}
+                        {backingTokenSymbol}
+                      </>
+                    )}
                   </span>
                 </div>
               ) : (
