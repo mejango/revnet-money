@@ -14,7 +14,7 @@ description: Launch, check, pay into, cash out of, and borrow from revnets on re
 
 # Revnet
 
-${REVNET_ONE_LINER} revnet.money runs revnets on Juicebox V6 across Ethereum, Optimism, Base, and Arbitrum.
+${REVNET_ONE_LINER} revnet.money runs revnets on Juicebox V6 across Ethereum, Base, Arbitrum, and Optimism.
 
 ## Tools
 

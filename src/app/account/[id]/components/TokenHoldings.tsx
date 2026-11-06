@@ -1,6 +1,6 @@
 "use client";
 
-import { chainDisplayName } from "@/app/constants";
+import { chainDisplayName, chainSortIndex } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { ProjectLink } from "@/components/ProjectLink";
 import { SkeletonLines } from "@/components/ui/skeleton";
@@ -65,7 +65,7 @@ export function groupHoldings(rows: HoldingRow[]): HoldingGroup[] {
   return [...groups.values()]
     .map((group) => ({
       ...group,
-      rows: [...group.rows].sort((a, b) => a.chainId - b.chainId),
+      rows: [...group.rows].sort((a, b) => chainSortIndex(a.chainId) - chainSortIndex(b.chainId)),
     }))
     .sort((a, b) => (b.total > a.total ? 1 : b.total < a.total ? -1 : 0));
 }

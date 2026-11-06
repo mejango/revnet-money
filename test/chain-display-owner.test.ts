@@ -3,7 +3,7 @@ import { normalizeSuckerPairs } from "@/lib/nana/suckers";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 
-const CANONICAL = [1, 10, 8453, 42161];
+const CANONICAL = [1, 8453, 42161, 10];
 
 describe("one owner for chain names and order", () => {
   it("never renders the SDK's wallet-facing chain name directly", () => {

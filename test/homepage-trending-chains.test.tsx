@@ -79,7 +79,7 @@ describe("homepage composite Trending chain icons", () => {
       within(row)
         .getAllByRole("img")
         .map((image) => image.getAttribute("aria-label")),
-    ).toEqual(["Ethereum", "Optimism", "Base", "Arbitrum"]);
+    ).toEqual(["Ethereum", "Base", "Arbitrum", "Optimism"]);
     expect(row).toHaveTextContent("1Composite revnetRecentPayments: 22Volume: 0.3118 ETH");
     expect(mocks.group).toHaveBeenCalledWith("group", 8453, 7);
   });

@@ -71,7 +71,7 @@ describe("owners All-card participants", () => {
       { address: "0xa", chainId: 10, balance: "1" },
       { address: "0xa", chainId: 1, balance: "1" },
     ];
-    expect(aggregateParticipants(rows)[0].chains).toEqual([1, 10, 8453]);
+    expect(aggregateParticipants(rows)[0].chains).toEqual([1, 8453, 10]);
   });
 
   it("skips null rows", () => {

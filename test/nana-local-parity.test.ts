@@ -66,9 +66,9 @@ describe("local Nana V6 parity", () => {
     );
     expect(pairs).toEqual([
       { peerChainId: 1, projectId: 5n },
+      { peerChainId: 8453, projectId: 9n },
       current,
       { peerChainId: 10, projectId: 999n },
-      { peerChainId: 8453, projectId: 9n },
     ]);
   });
 });

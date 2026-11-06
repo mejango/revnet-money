@@ -371,7 +371,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Chains",
-        text: "Ethereum, Optimism, Base, Arbitrum, plus Sepolia and the three L2 Sepolias. The SDK's SUPPORTED_CHAINS and JB_CHAINS carry the list.",
+        text: "Ethereum, Base, Arbitrum, Optimism, plus Sepolia and the three L2 Sepolias. The SDK's SUPPORTED_CHAINS and JB_CHAINS carry the list.",
       },
       {
         key: "Source",

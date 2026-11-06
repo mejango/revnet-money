@@ -143,9 +143,9 @@ export function SecuredReserves({ data }: { data: HomepageReserves }) {
           <span
             role="img"
             className="inline-flex items-center gap-1"
-            aria-label="Ethereum, Arbitrum, Base, and Optimism"
+            aria-label="Ethereum, Base, Arbitrum, and Optimism"
           >
-            {([1, 42161, 8453, 10] as const).map((chainId) => (
+            {([1, 8453, 42161, 10] as const).map((chainId) => (
               <ChainLogo key={chainId} chainId={chainId as JBChainId} width={14} height={14} />
             ))}
           </span>
