@@ -1,10 +1,11 @@
 "use client";
 
-import { EthereumAddress, ensAvatarUrlForAddress } from "@/components/EthereumAddress";
+import { EthereumAddress } from "@/components/EthereumAddress";
 import { Button } from "@/components/ui/button";
 import { useEnsName } from "@/hooks/ens/useEnsName";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { mainnet } from "@/lib/chains";
+import { ensAvatarUrlForAddress } from "@/lib/ensAvatarUrl";
 import { useViewAs } from "@/lib/view-as";
 import Image from "next/image";
 import { type Address } from "viem";

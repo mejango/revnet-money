@@ -48,6 +48,90 @@ beforeEach(() => {
   stubSearchApi();
 });
 
+const PROJECT = {
+  projectId: 3,
+  chainId: 1,
+  chainIds: [1, 8453],
+  suckerGroupId: "group-3",
+  name: "Revnet",
+  ticker: "$REV",
+  logoUri: "ipfs://bafkreihz5xk2crdko5mllpxbfa443m2o6pmzcmbg5b3uvif6ho4x45z674",
+};
+
+describe("search results presentation", () => {
+  it("identifies a revnet row by logo, name, ticker and chains", async () => {
+    stubSearchApi([PROJECT]);
+    render(<RevnetSearch />);
+    await typeQuery("rev");
+
+    const row = screen.getByRole("button", { name: /Revnet/ });
+    expect(row.querySelector("[data-search-result-logo]")).not.toBeNull();
+    expect(row).toHaveTextContent("Revnet");
+    expect(row).toHaveTextContent("REV");
+    expect(row).not.toHaveTextContent("$REV");
+  });
+
+  it("keeps a tile in the logo's place for a revnet without one", async () => {
+    stubSearchApi([{ ...PROJECT, logoUri: null }]);
+    render(<RevnetSearch />);
+    await typeQuery("rev");
+
+    const row = screen.getByRole("button", { name: /Revnet/ });
+    expect(row.querySelector("img[data-search-result-logo]")).toBeNull();
+    expect(row.querySelector("[data-search-result-logo]")).not.toBeNull();
+  });
+
+  it("shows an avatar beside an account row", async () => {
+    render(<RevnetSearch />);
+    await typeQuery(ADDRESS);
+
+    expect(
+      screen
+        .getByRole("button", { name: /View account/ })
+        .querySelector("[data-search-result-logo]"),
+    ).not.toBeNull();
+  });
+});
+
+describe("search Escape", () => {
+  it("closes the list and keeps the query, so Enter still opens the first result", async () => {
+    stubSearchApi([PROJECT]);
+    render(<RevnetSearch />);
+    await typeQuery("rev");
+    const input = screen.getByRole("searchbox");
+
+    // Native search fields clear on Escape unless the key's default is prevented.
+    expect(fireEvent.keyDown(input, { key: "Escape" })).toBe(false);
+    expect(screen.queryByRole("button", { name: /Revnet/ })).not.toBeInTheDocument();
+    expect(input).toHaveValue("rev");
+
+    fireEvent.submit(screen.getByRole("search"));
+    expect(mocks.push).toHaveBeenCalledWith("/eth:3");
+  });
+
+  it("leaves a second Escape to the native clear", async () => {
+    stubSearchApi([PROJECT]);
+    render(<RevnetSearch />);
+    await typeQuery("rev");
+    const input = screen.getByRole("searchbox");
+
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(fireEvent.keyDown(input, { key: "Escape" })).toBe(true);
+  });
+
+  it("returns focus to the field when pressed on a result row", async () => {
+    stubSearchApi([PROJECT]);
+    render(<RevnetSearch />);
+    await typeQuery("rev");
+    const row = screen.getByRole("button", { name: /Revnet/ });
+    row.focus();
+
+    fireEvent.keyDown(row, { key: "Escape" });
+    expect(screen.getByRole("searchbox")).toHaveFocus();
+    expect(screen.queryByRole("button", { name: /Revnet/ })).not.toBeInTheDocument();
+  });
+});
+
 describe("search:account — RevnetSearch account routing", () => {
   it("enables the server-rendered search only after hydration can retain input and handle submission", async () => {
     const container = document.createElement("div");

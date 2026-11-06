@@ -4,6 +4,7 @@ import { ProjectContentSkeleton } from "@/components/loading/LoadingSkeletons";
 import { useSearchParams, useSelectedLayoutSegment } from "next/navigation";
 import { ReactNode, Suspense, useEffect, useState } from "react";
 import { ProjectMenu } from "./ProjectMenu";
+import { PROJECT_SECTIONS_ID } from "./projectSections";
 
 export function ResponsiveProjectLayout({
   sidebar,
@@ -65,8 +66,10 @@ export function ResponsiveProjectLayout({
         ) : null}
 
         <div
+          id={PROJECT_SECTIONS_ID}
+          tabIndex={-1}
           data-project-layout="menu"
-          className="order-2 mt-2 min-[801px]:order-none min-[801px]:mt-0"
+          className="order-2 mt-2 outline-none min-[801px]:order-none min-[801px]:mt-0"
         >
           <ProjectMenu
             mobileActivityActive={activityActive}

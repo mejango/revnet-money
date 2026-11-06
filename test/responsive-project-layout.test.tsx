@@ -1,3 +1,4 @@
+import { PROJECT_SECTIONS_ID } from "@/app/[slug]/components/projectSections";
 import { ResponsiveProjectLayout } from "@/app/[slug]/components/ResponsiveProjectLayout";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { startTransition, use, useState } from "react";
@@ -40,6 +41,19 @@ beforeEach(() => {
     "matchMedia",
     vi.fn(() => ({ matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() })),
   );
+});
+
+describe("project skip target", () => {
+  it("gives the skip link a focusable target at the section tabs", () => {
+    render(
+      <ResponsiveProjectLayout sidebar={null} activity={null}>
+        <h2>Content</h2>
+      </ResponsiveProjectLayout>,
+    );
+    const target = document.getElementById(PROJECT_SECTIONS_ID);
+    expect(target).toHaveAttribute("tabindex", "-1");
+    expect(target).toContainElement(screen.getByRole("navigation", { name: "Project tabs" }));
+  });
 });
 
 describe("project content loading boundary", () => {
