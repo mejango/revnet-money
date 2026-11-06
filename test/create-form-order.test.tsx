@@ -100,7 +100,7 @@ describe("create form section order", () => {
     // "Look" (name, ticker, logo, about, socials) has no chain-dependent
     // field, so it leads. Everything from the chain picker down does.
     const environment = screen.getByLabelText("Deployment environment");
-    const chain = screen.getByRole("checkbox", { name: "Ethereum" });
+    const chain = screen.getByRole("checkbox", { name: "Sepolia" });
     const reserveAsset = screen.getByRole("checkbox", { name: "Custom token" });
     const terms = screen.getByRole("heading", { name: "3. Terms" });
 

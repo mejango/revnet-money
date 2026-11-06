@@ -1,7 +1,6 @@
 import { DateTimeField } from "@/components/ui/DateTimeField";
 import { useFormContext } from "@/lib/forms";
 import { timestampToLocalDateTimeInput } from "@/lib/time-zone";
-import { useState } from "react";
 import {
   getCurrentStageDuration,
   getStageCutFrequencySeconds,
@@ -16,7 +15,7 @@ interface StartTimeFieldProps {
 
 export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
   const { values, setFieldValue } = useFormContext<StageData>();
-  const [useFutureStart, setUseFutureStart] = useState(Boolean(values.futureStartTimestamp));
+  const useFutureStart = values.futureStartTimestamp !== undefined;
 
   if (stageIdx === 0) {
     return (
@@ -29,12 +28,9 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
           <input
             type="checkbox"
             checked={useFutureStart}
-            onChange={(e) => {
-              setUseFutureStart(e.target.checked);
-              if (!e.target.checked) {
-                setFieldValue("futureStartTimestamp", undefined);
-              }
-            }}
+            onChange={(e) =>
+              setFieldValue("futureStartTimestamp", e.target.checked ? null : undefined)
+            }
             className="size-4"
           />
           <span className="text-md text-zinc-600">Start the revnet in the future</span>
@@ -49,8 +45,10 @@ export function StartTimeField({ stageIdx, stages }: StartTimeFieldProps) {
                   : ""
               }
               onChange={(value) => {
-                const timestamp = Math.floor(new Date(value).getTime() / 1000);
-                setFieldValue("futureStartTimestamp", timestamp);
+                setFieldValue(
+                  "futureStartTimestamp",
+                  value ? Math.floor(new Date(value).getTime() / 1000) : null,
+                );
               }}
               ariaLabel="Revnet start date and time"
               inputClassName="h-11 w-full border-2 border-melon-300 bg-melon-25 px-3 text-md hover:border-melon-400 focus:border-melon-600 focus:ring-0"

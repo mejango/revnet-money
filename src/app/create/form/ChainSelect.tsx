@@ -16,9 +16,14 @@ import {
 import { useCreateForm } from "./useCreateForm";
 
 export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
-  const [environment, setEnvironment] = useState("production");
-
   const { values, setFieldValue } = useCreateForm();
+
+  // A loaded draft on test chains has to open on them, or they would deploy unseen.
+  const [environment, setEnvironment] = useState(() =>
+    values.chainIds.some((chainId) => TESTNET_CHAIN_IDS.includes(chainId))
+      ? "testing"
+      : "production",
+  );
 
   // A revnet has to launch somewhere, so the form opens with one chain already chosen rather
   // than in a state it cannot act on. Ethereum leads MAINNET_CHAIN_IDS.
@@ -104,7 +109,7 @@ export function ChainSelect({ disabled = false }: { disabled?: boolean }) {
             setFieldValue("operator", pruned.operator);
             setFieldValue("stages", pruned.stages);
           }}
-          defaultValue="production"
+          defaultValue={environment}
           disabled={disabled}
         >
           <SelectTrigger
