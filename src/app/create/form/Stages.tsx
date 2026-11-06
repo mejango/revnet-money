@@ -8,6 +8,7 @@ import {
   X as XIcon,
 } from "@/components/ui/icons";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { formatShortDateTime } from "@/lib/date";
 import { FieldArray } from "@/lib/forms";
 import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
@@ -128,6 +129,18 @@ export function Stages({ disabled = false }: { disabled?: boolean }) {
                             `${duration} days`
                           )}
                         </dd>
+                        {stage.futureStartTimestamp !== undefined && index === 0 ? (
+                          <>
+                            <dt className="font-medium">Starts</dt>
+                            <dd>
+                              {stage.futureStartTimestamp === null ? (
+                                <span className="text-red-700">Choose a start date and time</span>
+                              ) : (
+                                formatShortDateTime(stage.futureStartTimestamp * 1000)
+                              )}
+                            </dd>
+                          </>
+                        ) : null}
                         <dt className="font-medium">Tokens per payment</dt>
                         <dd>
                           {getResolvedIssuance(stage, index, values.stages)}{" "}
