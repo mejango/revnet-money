@@ -10,15 +10,17 @@ import {
 } from "@/lib/bendystraw/operations";
 import {
   UNISWAP_V4_INITIALIZE_TOPIC,
+  uniswapV4PoolStateSlot,
   uniswapV4SqrtPriceX96AtTick,
 } from "@bananapus/nana-sdk-core/v6";
-import { zeroAddress } from "viem";
+import { encodeAbiParameters, keccak256, numberToHex, zeroAddress, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   query: vi.fn(),
   getBlockNumber: vi.fn(),
   getLogs: vi.fn(),
+  readContract: vi.fn(),
   request: vi.fn(),
   client: vi.fn(),
 }));
@@ -41,6 +43,51 @@ function range(overrides = {}) {
     liquidity: "1000000000000000000",
     ...overrides,
   };
+}
+
+/** PoolManager storage for these ranges, laid out as v4-core's StateLibrary reads it. */
+function poolStorage(ranges: { tickLower: number; tickUpper: number; liquidity: bigint }[]) {
+  const stateSlot = BigInt(uniswapV4PoolStateSlot(pool.poolId));
+  const slotOf = (key: number, offset: bigint) =>
+    keccak256(
+      encodeAbiParameters(
+        [{ type: "int256" }, { type: "uint256" }],
+        [BigInt(key), stateSlot + offset],
+      ),
+    );
+  const nets = new Map<number, bigint>();
+  for (const { tickLower, tickUpper, liquidity } of ranges) {
+    nets.set(tickLower, (nets.get(tickLower) ?? 0n) + liquidity);
+    nets.set(tickUpper, (nets.get(tickUpper) ?? 0n) - liquidity);
+  }
+  const words = new Map<number, bigint>();
+  const storage = new Map<Hex, Hex>();
+  for (const [tick, net] of nets) {
+    const compressed = Math.floor(tick / pool.key.tickSpacing);
+    const word = compressed >> 8;
+    words.set(word, (words.get(word) ?? 0n) | (1n << BigInt(compressed & 0xff)));
+    storage.set(slotOf(tick, 4n), numberToHex(BigInt.asUintN(128, net) << 128n, { size: 32 }));
+  }
+  for (const [word, bits] of words) {
+    storage.set(slotOf(word, 5n), numberToHex(bits, { size: 32 }));
+  }
+  mocks.readContract.mockImplementation(async ({ args: [slots] }: { args: [Hex[]] }) =>
+    slots.map((slot) => storage.get(slot) ?? numberToHex(0n, { size: 32 })),
+  );
+}
+
+function refuseWideLogRanges() {
+  const refuse = (from: bigint, to: bigint) => {
+    if (to - from >= 500n) throw Object.assign(new Error("RPC request failed"), { code: -32005 });
+  };
+  mocks.getLogs.mockImplementation(async ({ fromBlock, toBlock }) => {
+    refuse(fromBlock, toBlock);
+    return [];
+  });
+  mocks.request.mockImplementation(async ({ params: [{ fromBlock, toBlock }] }) => {
+    refuse(BigInt(fromBlock), BigInt(toBlock));
+    return [{ topics: [UNISWAP_V4_INITIALIZE_TOPIC], blockNumber: 1n }];
+  });
 }
 
 function position(tokenId = 1, overrides = {}) {
@@ -86,6 +133,7 @@ beforeEach(() => {
       : [{ blockNumber: 2n, args: { tickLower: -120, tickUpper: 120, liquidityDelta: 9n } }],
   );
   mocks.request.mockResolvedValue([{ topics: [UNISWAP_V4_INITIALIZE_TOPIC], blockNumber: 1n }]);
+  poolStorage([{ tickLower: -120, tickUpper: 120, liquidity: 9n }]);
 });
 
 describe("indexed pool composition", () => {
@@ -153,11 +201,11 @@ describe("indexed pool composition", () => {
     ["negative liquidity", () => ({ totalCount: 1, items: [range({ liquidity: "-1" })] })],
     ["missing count", () => ({ items: [range()] })],
     ["duplicate ranges", () => ({ totalCount: 2, items: [range(), range()] })],
-  ])("uses complete RPC history for %s", async (_name, response) => {
+  ])("reads live pool state for %s", async (_name, response) => {
     mocks.query.mockResolvedValue({ buybackPoolRanges: response() });
     const composition = await fetchPoolComposition(pool);
-    expect(composition?.ranges).toEqual([{ tickLower: -120, tickUpper: 120, liquidity: 9n }]);
-    expect(mocks.getLogs).toHaveBeenCalledTimes(2);
+    expect(composition.ranges).toEqual([{ tickLower: -120, tickUpper: 120, liquidity: 9n }]);
+    expect(mocks.getLogs).not.toHaveBeenCalled();
   });
 
   it.each(["truncated", "changed"])(
@@ -168,9 +216,65 @@ describe("indexed pool composition", () => {
         .mockResolvedValueOnce({
           buybackPoolRanges: { totalCount: kind === "changed" ? 1 : 2, items: [] },
         });
-      expect((await fetchPoolComposition(pool))?.ranges[0].liquidity).toBe(9n);
+      expect((await fetchPoolComposition(pool)).ranges[0].liquidity).toBe(9n);
     },
   );
+});
+
+describe("pool composition without an index", () => {
+  beforeEach(() => {
+    mocks.query.mockResolvedValue({ buybackPoolRanges: { totalCount: 0, items: [] } });
+    refuseWideLogRanges();
+  });
+
+  it("nets overlapping ranges across negative and positive ticks at one pinned block", async () => {
+    poolStorage([
+      { tickLower: -180_000, tickUpper: 60, liquidity: 5n },
+      { tickLower: -60, tickUpper: 180_000, liquidity: 7n },
+    ]);
+    const composition = await fetchPoolComposition(pool);
+    expect(composition.ranges).toEqual([
+      { tickLower: -180_000, tickUpper: -60, liquidity: 5n },
+      { tickLower: -60, tickUpper: 60, liquidity: 12n },
+      { tickLower: 60, tickUpper: 180_000, liquidity: 7n },
+    ]);
+    expect(mocks.readContract.mock.calls.every(([call]) => call.blockNumber === 100n)).toBe(true);
+  });
+
+  it("reports an empty pool as no reserves instead of failing", async () => {
+    poolStorage([]);
+    await expect(fetchPoolComposition(pool)).resolves.toEqual({
+      pairAmount: 0n,
+      tokenAmount: 0n,
+      ranges: [],
+    });
+  });
+
+  it("stays under Center's request size on the narrowest tick spacing", async () => {
+    pool.key = { ...pool.key, tickSpacing: 1 };
+    poolStorage([{ tickLower: -1, tickUpper: 1, liquidity: 3n }]);
+    const composition = await fetchPoolComposition(pool);
+    expect(composition.ranges).toEqual([{ tickLower: -1, tickUpper: 1, liquidity: 3n }]);
+    const sizes = mocks.readContract.mock.calls.map(([call]) => call.args[0].length);
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(1_000);
+  });
+
+  it("rejects tick state that does not net to zero", async () => {
+    poolStorage([{ tickLower: -60, tickUpper: 60, liquidity: 3n }]);
+    const read = mocks.readContract.getMockImplementation()!;
+    mocks.readContract.mockImplementation(async (call) => {
+      const values: Hex[] = await read(call);
+      return values.map((value, index) =>
+        index === 0 && BigInt(value) >> 128n ? numberToHex(1n << 128n, { size: 32 }) : value,
+      );
+    });
+    await expect(fetchPoolComposition(pool)).rejects.toThrow();
+  });
+
+  it("lets a failed state read surface so the card can offer a retry", async () => {
+    mocks.readContract.mockRejectedValue(new Error("RPC down"));
+    await expect(fetchPoolComposition(pool)).rejects.toThrow("RPC down");
+  });
 });
 
 describe("indexed LP ownership", () => {
@@ -230,4 +334,24 @@ describe("indexed LP ownership", () => {
       expect(mocks.request).toHaveBeenCalledOnce();
     },
   );
+
+  it("walks history in windows the RPC accepts, including a later revisit", async () => {
+    mocks.query.mockResolvedValue({ buybackPoolPositions: { totalCount: 0, items: [] } });
+    refuseWideLogRanges();
+    mocks.getBlockNumber.mockResolvedValue(5_000n);
+    await expect(readPoolLpPositions(pool)).resolves.toEqual([]);
+
+    mocks.getBlockNumber.mockResolvedValue(9_000n);
+    await expect(readPoolLpPositions(pool)).resolves.toEqual([]);
+    expect(mocks.request.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it("knows an empty pool has no positions without walking its history", async () => {
+    mocks.query.mockResolvedValue({ buybackPoolPositions: { totalCount: 0, items: [] } });
+    poolStorage([]);
+    refuseWideLogRanges();
+    await expect(readPoolLpPositions(pool)).resolves.toEqual([]);
+    await expect(readUserLpPositions(pool, owner)).resolves.toEqual([]);
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
 });

@@ -231,6 +231,30 @@ function tickPrice(pool: PoolSnapshot, tick: number): number {
  * The positions come from the index where it has them and the onchain scan
  * otherwise, which is why this can render before the depth chart resolves.
  */
+function PoolReadFailed({
+  line,
+  retrying,
+  onRetry,
+}: {
+  line: string;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <p className="mt-2 text-sm text-zinc-500" role="status">
+      {line}{" "}
+      <button
+        type="button"
+        className="underline disabled:opacity-50"
+        disabled={retrying}
+        onClick={onRetry}
+      >
+        {retrying ? "Retrying…" : "Retry"}
+      </button>
+    </p>
+  );
+}
+
 function LiquidityProviders({ pool, tokenSymbol }: { pool: PoolSnapshot; tokenSymbol: string }) {
   const positions = useQuery({
     queryKey: ["revnetPoolLpProviders", pool.chainId, pool.poolId],
@@ -266,6 +290,15 @@ function LiquidityProviders({ pool, tokenSymbol }: { pool: PoolSnapshot; tokenSy
 
   if (positions.isLoading) {
     return <p className="mt-2 text-sm text-zinc-400">Reading liquidity providers…</p>;
+  }
+  if (positions.isError) {
+    return (
+      <PoolReadFailed
+        line="Could not load the providers."
+        retrying={positions.isFetching}
+        onRetry={() => void positions.refetch()}
+      />
+    );
   }
   if (!owners.length) return null;
 
@@ -572,7 +605,13 @@ export function LiquidityVisualization({
   );
 }
 
-function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
+export function LiquidityChainRow({
+  state,
+  tokenSymbol,
+}: {
+  state: AmmChainState;
+  tokenSymbol: string;
+}) {
   const { pool } = state;
   const compositionQuery = useQuery({
     queryKey: ["v6PoolComposition", state.chainId, pool?.poolId],
@@ -580,7 +619,7 @@ function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; token
     staleTime: 60_000,
     queryFn: () => fetchPoolComposition(pool!),
   });
-  const composition = compositionQuery.data ?? null;
+  const composition = compositionQuery.data;
   return (
     <div className="border-b border-zinc-50 py-3 last:border-b-0">
       <div className="flex items-center gap-2 text-sm font-medium text-zinc-900">
@@ -596,19 +635,21 @@ function LiquidityChainRow({ state, tokenSymbol }: { state: AmmChainState; token
           {/* The provider table has its own (fast) source; only the depth
               bands wait on the composition. */}
           <LiquidityProviders pool={pool} tokenSymbol={tokenSymbol} />
-          {compositionQuery.isLoading ? (
-            <SkeletonLines lines={3} className="mt-2" />
-          ) : composition == null ? (
-            <p className="mt-2 text-sm text-zinc-400">
-              The RPC could not return the complete pool history, so liquidity is unavailable.
-            </p>
-          ) : (
+          {composition ? (
             <LiquidityVisualization
               pool={pool}
               composition={composition}
               tokenSymbol={tokenSymbol}
               reference={state.reference}
             />
+          ) : compositionQuery.isError ? (
+            <PoolReadFailed
+              line="Could not load the reserves."
+              retrying={compositionQuery.isFetching}
+              onRetry={() => void compositionQuery.refetch()}
+            />
+          ) : (
+            <SkeletonLines lines={3} className="mt-2" />
           )}
         </>
       )}
