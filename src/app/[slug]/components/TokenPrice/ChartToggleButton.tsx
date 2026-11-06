@@ -28,6 +28,7 @@ export function ChartToggleButton({
 
   return (
     <button
+      aria-pressed={isActive}
       data-project-navigation="local"
       onClick={() => navigate(onClick)}
       disabled={disabled}

@@ -4,7 +4,7 @@ import { decodeProjectRouteSlug } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 import Link, { useLinkStatus } from "next/link";
 import { useParams, useRouter, useSelectedLayoutSegment } from "next/navigation";
-import { PropsWithChildren, useId, useState, useTransition } from "react";
+import { PropsWithChildren, useEffect, useId, useRef, useState, useTransition } from "react";
 import { useProjectNavigation } from "../ProjectRouteContext";
 import { ProjectOverflowIcon, ProjectTabIcon } from "./ProjectTabIcon";
 
@@ -20,6 +20,18 @@ export function ProjectMenu({
   const [aliasPending, startAliasTransition] = useTransition();
   const navigate = useProjectNavigation();
   const router = useRouter();
+  const segment = useSelectedLayoutSegment();
+  const tabRow = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    const row = tabRow.current;
+    const active = row?.querySelector('[aria-current="page"]');
+    if (!row || !active) return;
+    const rowBox = row.getBoundingClientRect();
+    const box = active.getBoundingClientRect();
+    if (box.left >= rowBox.left && box.right <= rowBox.right) return;
+    // Only the row moves: scrollIntoView would also scroll the page to the tabs.
+    row.scrollLeft += box.left + box.width / 2 - (rowBox.left + rowBox.width / 2);
+  }, [segment, mobileActivityActive]);
   const aliasNavigation: AliasNavigation = {
     pendingHref: aliasPending ? pendingAliasHref : null,
     navigate: (route, onSelect) => {
@@ -38,6 +50,7 @@ export function ProjectMenu({
   return (
     <div className="flex border-b border-zinc-200">
       <ul
+        ref={tabRow}
         data-project-tab-scroll
         className="scrollbar-none flex min-w-0 flex-1 touch-pan-x gap-4 overflow-x-auto overflow-y-hidden overscroll-x-contain sm:gap-6"
       >
@@ -82,6 +95,13 @@ export function ProjectMenu({
           <ProjectTabIcon label="Shop" />
           Shop
         </MenuOption>
+        <li className="flex shrink-0 items-start">
+          <MoreProjectOptions
+            forceInactive={mobileActivityActive}
+            expanded={overflowExpanded}
+            onToggle={() => setOverflowExpanded((current) => !current)}
+          />
+        </li>
         {overflowExpanded ? (
           <>
             <MenuOption
@@ -104,13 +124,6 @@ export function ProjectMenu({
             </MenuOption>
           </>
         ) : null}
-        <li className="flex shrink-0 items-start">
-          <MoreProjectOptions
-            forceInactive={mobileActivityActive}
-            expanded={overflowExpanded}
-            onToggle={() => setOverflowExpanded((current) => !current)}
-          />
-        </li>
       </ul>
     </div>
   );
@@ -137,6 +150,7 @@ function MoreProjectOptions({
       type="button"
       aria-label={`More project sections${active ? `, current: ${active.label}` : ""}`}
       aria-expanded={expanded}
+      aria-current={active && !expanded ? "page" : undefined}
       onClick={onToggle}
       className={cn(
         "-mb-px flex min-h-11 min-w-11 shrink-0 items-center justify-center border-b-2 px-3 pb-2 text-2xl leading-none transition-all",
@@ -180,6 +194,7 @@ function MobileActivityOption({
     <li className="flex items-start min-[801px]:hidden">
       <button
         type="button"
+        aria-current={active ? "page" : undefined}
         data-project-navigation="local"
         onClick={() => {
           onIntent();
@@ -237,6 +252,7 @@ function MenuOption({
       <Link
         href={route}
         aria-labelledby={labelId}
+        aria-current={isSelected ? "page" : undefined}
         prefetch={isMutableHandle ? false : undefined}
         onNavigate={
           isMutableHandle

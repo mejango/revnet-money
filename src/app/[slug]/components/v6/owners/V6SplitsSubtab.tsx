@@ -205,11 +205,18 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
             variant={selectedStageIdx === idx ? "tab-selected" : "bottomline"}
             className={twJoin("text-md text-zinc-400", selectedStageIdx === idx && "text-inherit")}
             key={String(ruleset.id)}
+            aria-pressed={selectedStageIdx === idx}
             onClick={() => setSelectedStageIdx(idx)}
           >
             Stage {idx + 1}
             {idx === currentStageIdx && (
-              <span className="rounded-full h-2 w-2 bg-orange-400 border-[2px] border-orange-200 ml-1" />
+              <>
+                <span
+                  aria-hidden
+                  className="rounded-full h-2 w-2 bg-orange-400 border-[2px] border-orange-200 ml-1"
+                />
+                <span className="sr-only">, current stage</span>
+              </>
             )}
           </Button>
         ))}
