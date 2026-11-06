@@ -1,5 +1,6 @@
 "use client";
 
+import { formatPriceValue } from "@/lib/number";
 import dynamic from "next/dynamic";
 
 import { ParticipantsPieChart } from "@/app/[slug]/owners/components/ParticipantsPieChart";
@@ -127,9 +128,7 @@ function bandLabel(
 }
 
 function formatPrice(price: number): string {
-  if (!isFinite(price) || price <= 0) return "—";
-  if (price < 0.0001) return price.toExponential(2);
-  return Intl.NumberFormat("en", { maximumFractionDigits: price >= 1 ? 4 : 8 }).format(price);
+  return isFinite(price) && price > 0 ? formatPriceValue(price) : "—";
 }
 
 function MarketChainRow({
@@ -982,7 +981,7 @@ export function AddLiquidityForm({
       <div className="flex items-center justify-between gap-3">
         <div className="text-xs font-medium text-zinc-600">Add liquidity</div>
         <span className="text-[11px] text-zinc-400">
-          Current ~{pool.price?.toPrecision(6) ?? "—"} {pool.pair.symbol}/{tokenSymbol}
+          Current ~{formatPrice(pool.price ?? NaN)} {pool.pair.symbol}/{tokenSymbol}
         </span>
       </div>
       <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
