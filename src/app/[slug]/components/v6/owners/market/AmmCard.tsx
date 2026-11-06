@@ -21,6 +21,7 @@ import { ErrorNote } from "@/components/ui/TxError";
 import { TxProgress } from "@/components/ui/TxProgress";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useReviewedAction } from "@/hooks/useReviewedAction";
+import { liquidityMovePlan, poolSqrtPriceX96 } from "@/lib/buyback-pool-migration";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { cachedQuery } from "@/lib/query-persist";
 import {
@@ -76,14 +77,17 @@ import {
   prepareMarketLiquidity,
   prepareRemoveLiquidity,
   readLpPositionFees,
+  readMovableLpPositions,
   readPoolLpPositions,
   readUserLpPositions,
+  refreshPoolAndPosition,
   refreshUserLpPosition,
   reverifyAddLiquidity,
   reverifyMarketLiquidity,
   type AddLiquidityPlan,
   type MarketLiquidityPlan,
   type MarketSides,
+  type MovableLpPosition,
   type PoolComposition,
   type PoolSnapshot,
   type PositionGroup,
@@ -1236,6 +1240,9 @@ export function LiquidityManager({
         </p>
       ) : (
         <>
+          {pooled.map((state) => (
+            <MovableLiquidity key={state.chainId} state={state} tokenSymbol={tokenSymbol} />
+          ))}
           {allEmpty ? (
             <p className="mt-1 text-xs text-zinc-400">
               No positions owned by this wallet on any chain.
@@ -1271,6 +1278,208 @@ export function LiquidityManager({
           <div ref={setPanelHost} className="min-w-0" />
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * The wallet's positions still in a pool the project's buyback has left, each moved into the
+ * current pool by one reviewed `modifyLiquidities`.
+ */
+function MovableLiquidity({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
+  const { address } = useAccount();
+  const wagmiConfig = useConfig();
+  const chainId = Number(state.chainId);
+  const pool = state.pool;
+  const positionManager = POSITION_MANAGER_BY_CHAIN[chainId];
+  const client = usePublicClient({ chainId }) as PublicClient | undefined;
+  const move = useReviewedAction();
+  const [reviewed, setReviewed] = useState<{
+    movable: MovableLpPosition;
+    plan: ReturnType<typeof liquidityMovePlan>;
+    account: Address;
+  } | null>(null);
+  const [refreshing, setRefreshing] = useState<bigint | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const movable = useQuery({
+    queryKey: ["revnetMovableLpPositions", state.chainId, pool?.poolId, address?.toLowerCase()],
+    enabled: Boolean(pool && positionManager && address),
+    retry: 0,
+    staleTime: 30_000,
+    queryFn: () => readMovableLpPositions(pool!, address!),
+  });
+  if (!pool || !positionManager || !address || !client) return null;
+  if (!movable.data?.length && move.phase !== "done") return null;
+
+  const beginReview = async ({ from, position }: MovableLpPosition) => {
+    setError(null);
+    move.reset();
+    setRefreshing(position.tokenId);
+    try {
+      const [fresh, toSqrtPriceX96] = await Promise.all([
+        refreshPoolAndPosition(from, position.tokenId, address),
+        poolSqrtPriceX96(client, chainId, pool.key),
+      ]);
+      setReviewed({
+        movable: { from: fresh.pool, position: fresh.position },
+        plan: liquidityMovePlan({
+          tokenId: fresh.position.tokenId,
+          liquidity: fresh.position.liquidity,
+          tickLower: fresh.position.tickLower,
+          tickUpper: fresh.position.tickUpper,
+          to: pool.key,
+          fromSqrtPriceX96: fresh.pool.sqrtP,
+          toSqrtPriceX96,
+          owner: address,
+        }),
+        account: address,
+      });
+    } catch (cause) {
+      setError(txMessage(cause, "Could not read this position."));
+    } finally {
+      setRefreshing(null);
+    }
+  };
+
+  const pairMinimum = (plan: ReturnType<typeof liquidityMovePlan>) =>
+    pool.pairIsC0 ? plan.amount0Minimum : plan.amount1Minimum;
+  const tokenMinimum = (plan: ReturnType<typeof liquidityMovePlan>) =>
+    pool.pairIsC0 ? plan.amount1Minimum : plan.amount0Minimum;
+  const moveContext = reviewed
+    ? [
+        {
+          label: "Position",
+          value: `#${reviewed.movable.position.tokenId.toString()} on ${chainName(state.chainId)}`,
+        },
+        {
+          label: "Moves into the new pool",
+          value: `~${fmtUnits(reviewed.movable.position.tokenAmount, 18)} ${tokenSymbol} + ${fmtUnits(reviewed.movable.position.pairAmount, pool.pair.decimals)} ${pool.pair.symbol}, same band`,
+          strong: true,
+        },
+        {
+          label: "Enforced onchain",
+          value: `At least ${fmtUnits(tokenMinimum(reviewed.plan), 18)} ${tokenSymbol} + ${fmtUnits(pairMinimum(reviewed.plan), pool.pair.decimals)} ${pool.pair.symbol} out of the old pool; leftovers and fees come back to you`,
+        },
+      ]
+    : [];
+
+  const send = async () => {
+    if (!reviewed) return;
+    if (reviewed.account.toLowerCase() !== address.toLowerCase()) {
+      setReviewed(null);
+      setError(ACCOUNT_CHANGED);
+      return;
+    }
+    setError(null);
+    setMoving(true);
+    try {
+      const { movable: target, plan, account } = reviewed;
+      const result = requireProposedOrDone(
+        await move.run({
+          account,
+          title: "Review liquidity move",
+          description:
+            "Burn this position in the old pool and open the same band in the new pool. The reviewed minimums are enforced onchain.",
+          confirmLabel: "Agree & move liquidity",
+          context: moveContext,
+          calls: [
+            reviewedCall(
+              {
+                chainId,
+                address: positionManager,
+                abi: POSITION_MANAGER_ABI,
+                functionName: "modifyLiquidities",
+                args: [plan.unlockData, lpDeadline(isSafeConnection(wagmiConfig))],
+              },
+              {
+                intent: liquidityIntent({
+                  chainId,
+                  pool: target.from.poolId,
+                  positions: [target.position.tokenId],
+                }),
+              },
+            ),
+          ],
+          reverify: async () => {
+            const fresh = await refreshUserLpPosition(
+              target.from,
+              target.position.tokenId,
+              account,
+            );
+            if (fresh.liquidity < target.position.liquidity)
+              throw new ReviewRefusal("This position changed. Review it again before moving it.");
+          },
+        }),
+      );
+      if (result.status === "done") {
+        setReviewed(null);
+        void movable.refetch();
+      }
+    } catch (cause) {
+      if (reviewClosed(cause)) setReviewed(null);
+      else setError(txMessage(cause, "Could not move this position."));
+    } finally {
+      setMoving(false);
+    }
+  };
+
+  const busy = move.busy || moving || move.phase === "receipt";
+  return (
+    <div className="mt-2 space-y-1">
+      {(movable.data ?? []).map(({ from, position }) => (
+        <div
+          key={position.tokenId.toString()}
+          className="flex flex-wrap items-center justify-between gap-2 border border-zinc-200 px-2 py-1.5 text-xs"
+        >
+          <span className="inline-flex items-center gap-1.5">
+            <ChainLogo chainId={state.chainId} width={14} height={14} />
+            Position #{position.tokenId.toString()} is still in the old pool.
+          </span>
+          <button
+            type="button"
+            className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
+            disabled={busy || refreshing !== null}
+            onClick={() => void beginReview({ from, position })}
+          >
+            {refreshing === position.tokenId ? "Refreshing…" : "Move to new pool"}
+          </button>
+        </div>
+      ))}
+      {move.phase === "done" ? (
+        <p className="text-xs text-green-700">Liquidity moved to the new pool.</p>
+      ) : null}
+      {move.phase === "proposed" ? (
+        <p className="text-xs text-zinc-600">
+          Move proposed to Safe. The table updates once it executes.
+        </p>
+      ) : null}
+      {error && !reviewed ? <ErrorNote message={error} /> : null}
+      {reviewed || refreshing !== null ? (
+        <TxProgress
+          open
+          onClose={() => {
+            setReviewed(null);
+            if (!busy) move.reset();
+          }}
+          title="Confirm move"
+          preparing={!reviewed}
+          status={
+            !reviewed ? "Reading the live position…" : busy ? "Waiting for confirmation…" : null
+          }
+          steps={[
+            {
+              title: "Move the position",
+              detail: "Burns it in the old pool and opens the same band in the new one.",
+            },
+          ]}
+          activeIndex={busy ? 0 : -1}
+          start={() => void send()}
+          busy={busy}
+          error={error}
+          rows={moveContext}
+        />
+      ) : null}
     </div>
   );
 }

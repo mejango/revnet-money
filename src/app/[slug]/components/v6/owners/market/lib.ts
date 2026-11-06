@@ -3,7 +3,8 @@ import {
   IndexedLpPositionsOperation,
   IndexedPoolRangesOperation,
 } from "@/lib/bendystraw/operations";
-import { rolloutChain } from "@/lib/protocol-rollout";
+import { migratedPoolKey, poolSqrtPriceX96, retiredPoolHooks } from "@/lib/buyback-pool-migration";
+import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import { ReviewRefusal } from "@/lib/review-refusal";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
@@ -1064,6 +1065,48 @@ export async function refreshUserLpPosition(
   account: Address,
 ): Promise<UserLpPosition> {
   return (await refreshPoolAndPosition(pool, tokenId, account)).position;
+}
+
+export interface MovableLpPosition {
+  /** The retired pool the position sits in. */
+  from: PoolSnapshot;
+  position: UserLpPosition;
+}
+
+/**
+ * The wallet's positions in the pools the project's buyback used before its current V4 hook.
+ * Mirrored in juicebox-money's market reads.
+ */
+export async function readMovableLpPositions(
+  pool: PoolSnapshot,
+  account: Address,
+): Promise<MovableLpPosition[]> {
+  const chainId = Number(pool.chainId);
+  const retired = retiredPoolHooks(
+    pool.key.hooks,
+    rolloutAddress("JBUniswapV4Hook", chainId),
+    rolloutChain(chainId)?.history.JBUniswapV4Hook,
+  );
+  const client = getViemPublicClient(pool.chainId) as PublicClient;
+  const found = await Promise.all(
+    retired.map(async (hooks) => {
+      const key = migratedPoolKey(pool.key, hooks);
+      const sqrtP = await poolSqrtPriceX96(client, chainId, key);
+      if (sqrtP === 0n) return [];
+      const from: PoolSnapshot = {
+        ...pool,
+        key,
+        poolId: uniswapV4PoolId(key),
+        sqrtP,
+        price: uniswapV4PriceFromSqrtPriceX96(sqrtP, pool.pairIsC0, pool.pair.decimals),
+      };
+      const positions = await readUserLpPositions(from, account);
+      return positions
+        .filter((position) => position.liquidity > 0n)
+        .map((position) => ({ from, position }));
+    }),
+  );
+  return found.flat();
 }
 
 /** An EOA reviews and signs in one sitting, so 20 minutes covers the round trip. */
