@@ -7,8 +7,8 @@ test("the 404 page's Return Home link loads the home page", async ({ page }) => 
   await installBrowserBoundary(page);
   const response = await page.goto("/no-such-page/x/y", { waitUntil: "domcontentloaded" });
   expect(response?.status()).toBe(404);
-  await expect(page.getByRole("heading", { name: "Revnet Not Found" })).toBeVisible();
-  await page.getByRole("button", { name: "Return Home" }).click();
+  await expect(page.getByRole("heading", { name: "Not found", level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: "Return Home" }).click();
   await expect(page).toHaveURL(/127\.0\.0\.1:\d+\/$/u);
   await expect(page.getByRole("region", { name: "Markee advertisement" })).toBeVisible();
 });

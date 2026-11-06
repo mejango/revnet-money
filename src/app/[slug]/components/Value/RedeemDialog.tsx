@@ -754,6 +754,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
             ) : null}
             {!isSuccess ? (
               <ButtonWithWallet
+                connectWhileDisabled
                 targetChainId={selectedSucker?.peerChainId}
                 loading={
                   loading ||

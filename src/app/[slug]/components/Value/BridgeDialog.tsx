@@ -697,6 +697,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
               ) : null}
             </div>
             <ButtonWithWallet
+              connectWhileDisabled
               targetChainId={sourceChainId}
               loading={gate.pending}
               disabled={

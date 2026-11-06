@@ -15,10 +15,19 @@ const ButtonWithWallet = React.forwardRef<
     children: React.ReactNode;
     /** Kept for callers; the label is always the children now. */
     forceChildren?: boolean;
+    /** Keep sign-in available while the form's own state would disable the action. */
+    connectWhileDisabled?: boolean;
   } & ButtonProps
 >(
   (
-    { children, connectWalletText, targetChainId, forceChildren: _forceChildren, ...props },
+    {
+      children,
+      connectWalletText,
+      targetChainId,
+      forceChildren: _forceChildren,
+      connectWhileDisabled,
+      ...props
+    },
     ref,
   ) => {
     const jbChainId = useJBChainId();
@@ -32,9 +41,7 @@ const ButtonWithWallet = React.forwardRef<
       return (
         <WalletConnectButton
           {...props}
-          // Connecting is always available: the form's state gates the action, not the sign-in.
-          disabled={false}
-          loading={false}
+          {...(connectWhileDisabled ? { disabled: false, loading: false } : {})}
           onClick={undefined}
           label={connectWalletText ?? "Connect Wallet"}
         />

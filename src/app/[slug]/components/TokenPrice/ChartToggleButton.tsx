@@ -57,7 +57,7 @@ export function ChartToggleButton({
         style={isActive ? { backgroundColor: `var(${colorVar})` } : undefined}
       />
       {note ? <ConceptTerm note={note}>{label}</ConceptTerm> : label}
-      {value ? <span className="font-normal tabular-nums text-zinc-500">{value}</span> : null}
+      {value ? <span className="font-normal tabular-nums text-zinc-600">{value}</span> : null}
     </button>
   );
 }

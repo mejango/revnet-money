@@ -1,7 +1,7 @@
 import {
+  bridgeReclaimMinimum,
   buildProtectedBridgePrepareTx,
   cashOutProtocolFee,
-  bridgeReclaimMinimum,
   protectedOutputFloor,
   quoteBridgePrepare,
   slippagePercentToBps,

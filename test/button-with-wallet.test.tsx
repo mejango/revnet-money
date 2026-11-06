@@ -25,9 +25,14 @@ describe("ButtonWithWallet", () => {
     mocks.requestSignIn.mockClear();
   });
 
-  it("keeps Connect Wallet clickable whatever the form's state", () => {
+  it("keeps the form's disabled state by default", () => {
+    render(<ButtonWithWallet disabled>Take over</ButtonWithWallet>);
+    expect(screen.getByRole("button", { name: "Connect Wallet" })).toBeDisabled();
+  });
+
+  it("keeps Connect Wallet clickable in the dialogs that ask for it", () => {
     render(
-      <ButtonWithWallet disabled loading>
+      <ButtonWithWallet connectWhileDisabled disabled loading>
         Cash out
       </ButtonWithWallet>,
     );

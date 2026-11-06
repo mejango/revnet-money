@@ -425,6 +425,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           </div>
           {/* Single borrow button for both reallocation and standard borrowing */}
           <ButtonWithWallet
+            connectWhileDisabled
             targetChainId={Number(cashOutChainId) as JBChainId}
             loading={loading || (loanSourcePending && !!collateralAmount)}
             disabled={
