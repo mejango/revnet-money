@@ -1,6 +1,7 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
+import { EthereumAddress } from "@/components/EthereumAddress";
 import EtherscanLink from "@/components/EtherscanLink";
 import { ImageWithFallback, IpfsImage } from "@/components/IpfsImage";
 import { ProjectLink } from "@/components/ProjectLink";
@@ -25,8 +26,12 @@ import { formatTokenSymbol } from "@/lib/utils";
 import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 import Link from "next/link";
 import { Suspense, use, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { Address } from "viem";
 import { participantCountSummary } from "../v6/owners/accounts/participantsAggregate";
 import { TvlDatum } from "./TvlDatum";
+
+const OPERATOR_LINK_CLASS =
+  "ml-1 inline-flex min-h-11 min-w-0 items-center break-all font-medium text-zinc-900 sm:min-h-0";
 
 interface Props {
   isRevnet: boolean;
@@ -273,13 +278,23 @@ export function Header(props: Props) {
                         <span className="text-zinc-500">Operator:</span>
                         {operator ? (
                           <>
-                            <EtherscanLink
-                              value={operator.address}
-                              chain={chainId ? JB_CHAINS[chainId]?.chain : undefined}
-                              className="ml-1 inline-flex min-h-11 min-w-0 items-center break-all font-medium text-zinc-900 sm:min-h-0"
-                            >
-                              {operator.displayName}
-                            </EtherscanLink>
+                            {operator.displayName || !operator.address ? (
+                              <EtherscanLink
+                                value={operator.address}
+                                chain={chainId ? JB_CHAINS[chainId]?.chain : undefined}
+                                className={OPERATOR_LINK_CLASS}
+                              >
+                                {operator.displayName}
+                              </EtherscanLink>
+                            ) : (
+                              <EthereumAddress
+                                address={operator.address as Address}
+                                short
+                                withEnsName
+                                chain={chainId ? JB_CHAINS[chainId]?.chain : undefined}
+                                className={OPERATOR_LINK_CLASS}
+                              />
+                            )}
                             {operator.address && chainId ? (
                               <SafeBadge address={operator.address} chainId={Number(chainId)} />
                             ) : null}
