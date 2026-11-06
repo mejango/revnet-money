@@ -118,7 +118,8 @@ describe("original pending router calls", () => {
     ];
     mocks.query.mockImplementation(async (_operation, variables) => {
       const items = incoming.filter(
-        (payment) => payment.projectId === variables.projectId && payment.gateway === variables.gateway,
+        (payment) =>
+          payment.projectId === variables.projectId && payment.gateway === variables.gateway,
       );
       return { routerPendingCalls: { items, totalCount: items.length } };
     });

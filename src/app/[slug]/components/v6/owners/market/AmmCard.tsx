@@ -21,7 +21,11 @@ import { ErrorNote } from "@/components/ui/TxError";
 import { TxProgress } from "@/components/ui/TxProgress";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useReviewedAction } from "@/hooks/useReviewedAction";
-import { liquidityMovePlan, poolSqrtPriceX96 } from "@/lib/buyback-pool-migration";
+import {
+  liquidityMovePlan,
+  poolSqrtPriceX96,
+  readMovablePosition,
+} from "@/lib/buyback-pool-migration";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { cachedQuery } from "@/lib/query-persist";
 import {
@@ -1317,17 +1321,16 @@ function MovableLiquidity({ state, tokenSymbol }: { state: AmmChainState; tokenS
     move.reset();
     setRefreshing(position.tokenId);
     try {
-      const [fresh, toSqrtPriceX96] = await Promise.all([
+      // The plan comes from the PositionManager's own state, never the index.
+      const [fresh, onchain, toSqrtPriceX96] = await Promise.all([
         refreshPoolAndPosition(from, position.tokenId, address),
+        readMovablePosition(client, positionManager, position.tokenId, from.key, address),
         poolSqrtPriceX96(client, chainId, pool.key),
       ]);
       setReviewed({
-        movable: { from: fresh.pool, position: fresh.position },
+        movable: { from: fresh.pool, position: { ...fresh.position, ...onchain } },
         plan: liquidityMovePlan({
-          tokenId: fresh.position.tokenId,
-          liquidity: fresh.position.liquidity,
-          tickLower: fresh.position.tickLower,
-          tickUpper: fresh.position.tickUpper,
+          ...onchain,
           to: pool.key,
           fromSqrtPriceX96: fresh.pool.sqrtP,
           toSqrtPriceX96,
@@ -1402,12 +1405,14 @@ function MovableLiquidity({ state, tokenSymbol }: { state: AmmChainState; tokenS
             ),
           ],
           reverify: async () => {
-            const fresh = await refreshUserLpPosition(
-              target.from,
+            const fresh = await readMovablePosition(
+              client,
+              positionManager,
               target.position.tokenId,
+              target.from.key,
               account,
             );
-            if (fresh.liquidity < target.position.liquidity)
+            if (fresh.liquidity !== target.position.liquidity)
               throw new ReviewRefusal("This position changed. Review it again before moving it.");
           },
         }),

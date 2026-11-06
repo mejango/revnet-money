@@ -9,7 +9,11 @@ import {
   type PresetReadClient,
 } from "@/lib/safe-batch-presets";
 import { NATIVE_TOKEN, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
-import { uniswapV4PoolId, uniswapV4PoolStateSlot } from "@bananapus/nana-sdk-core/v6";
+import {
+  uniswapV4PoolId,
+  uniswapV4PoolStateSlot,
+  uniswapV4SqrtPriceX96AtTick,
+} from "@bananapus/nana-sdk-core/v6";
 import { getAddress, zeroAddress, type Address } from "viem";
 import { describe, expect, it, vi } from "vitest";
 
@@ -60,6 +64,8 @@ function stubClient({
   carried = {},
   allowed = true,
   prices = {},
+  coverage = 1_800,
+  meanTick = 0,
 }: {
   deployed?: Address[];
   allowed?: boolean;
@@ -71,6 +77,10 @@ function stubClient({
   carried?: Partial<Record<string, bigint>>;
   /** Live sqrtPriceX96 per pool key; any other pool is uninitialized. */
   prices?: Record<string, bigint>;
+  /** The old V4 hook's oldest retained observation, in seconds; 0 when it holds none. */
+  coverage?: number;
+  /** The old pool's mean tick over the observed window. */
+  meanTick?: number;
 }): PresetReadClient {
   const lower = (value: unknown) => String(value).toLowerCase();
   return {
@@ -109,6 +119,15 @@ function stubClient({
         }
         case "extsload":
           return word(prices[lower(args?.[0])] ?? 0n);
+        case "observationCoverageOf":
+          return coverage;
+        case "observe": {
+          const [period] = args?.[1] as number[];
+          return [
+            [0n, BigInt(meanTick * period!)],
+            [0n, 0n],
+          ];
+        }
         default:
           throw new Error(`unexpected read ${functionName}`);
       }
@@ -239,7 +258,7 @@ describe("Move to buyback 2.0.0 + gateway", () => {
     ]);
     expect(result.notes).toEqual([
       "Native pool: the old window was the deployer default (48h); 30 minutes will be stored.",
-      "Native pool: starts at the old price with no TWAP history; LPs move their own liquidity.",
+      "Native pool: starts at the old pool's 30-minute average price with no TWAP history; LPs move their own liquidity.",
     ]);
   });
 
@@ -298,7 +317,7 @@ describe("Move to buyback 2.0.0 + gateway", () => {
     });
     expect(result.notes).toEqual([
       "USDC pool: the old window was 900s; 30 minutes will be stored.",
-      "USDC pool: starts at the old price with no TWAP history; LPs move their own liquidity.",
+      "USDC pool: starts at the old pool's 30-minute average price with no TWAP history; LPs move their own liquidity.",
     ]);
   });
 
@@ -336,8 +355,15 @@ describe("mirroring per-chain steps", () => {
       }),
     });
     if (migration.status !== "ready") throw new Error(migration.message);
+    const sepoliaPoolHook = rolloutAddress("JBUniswapV4Hook", 11155111)!;
     const resolver = stepResolverFor(() =>
-      stubClient({ pools: { [zeroAddress]: { twap: 900n, fee: 3000, tickSpacing: 60 } } }),
+      stubClient({
+        pools: { [zeroAddress]: { twap: 900n, fee: 3000, tickSpacing: 60 } },
+        prices: {
+          [slotOf(oldNativeKey(3_000, 60))]: OLD_PRICE,
+          [slotOf(migratedPoolKey(oldNativeKey(3_000, 60), sepoliaPoolHook))]: OLD_PRICE,
+        },
+      }),
     );
     for (const chainId of [1, 10, 8453, 42161, 11155420]) {
       const result = await mirrorBatch(migration.steps, 84532, { chainId, projectId: 2 }, resolver);
@@ -364,6 +390,62 @@ describe("mirroring per-chain steps", () => {
       "setTerminalFor",
     ]);
     expect(available.skipped).toEqual([]);
+  });
+
+  it("resolves a mirrored pool step from the destination's own pools", async () => {
+    const pools = { [zeroAddress]: { twap: 1_800n, fee: 3_000, tickSpacing: 60 } };
+    const migration = await resolvePreset(preset, {
+      chainId: 84532,
+      projectId: 2,
+      client: stubClient({ pools, prices: BOTH_POOLS_PRICED }),
+    });
+    if (migration.status !== "ready") throw new Error(migration.message);
+    expect(migration.steps[1]!.kind).toBe("setPoolFor");
+    // The destination's new pool is not open: it opens there at that chain's own old-pool TWAP.
+    const destination = stubClient({
+      pools,
+      prices: { [slotOf(oldNativeKey(3_000, 60))]: OLD_PRICE },
+      meanTick: 200,
+    });
+    const mirrored = await mirrorBatch(
+      migration.steps,
+      84532,
+      { chainId: 11155111, projectId: 2 },
+      stepResolverFor(() => destination),
+    );
+    expect(mirrored.skipped).toEqual([]);
+    expect(mirrored.steps.map((step) => step.kind)).toEqual([
+      "setHookFor",
+      "initializePoolFor",
+      "setTerminalFor",
+    ]);
+    expect(mirrored.steps[1]!.values.sqrtPriceX96).toBe(uniswapV4SqrtPriceX96AtTick(200));
+  });
+
+  it("opens at spot, and says so, only when the old pool holds no observations", async () => {
+    const client = stubClient({
+      pools: { [zeroAddress]: { twap: 1_800n, fee: 10_000, tickSpacing: 200 } },
+      prices: { [slotOf(oldNativeKey(10_000, 200))]: NEW_PRICE },
+      coverage: 0,
+    });
+    const result = await resolvePreset(preset, { chainId: 84532, projectId: 2, client });
+    if (result.status !== "ready") throw new Error(result.message);
+    expect(result.steps[1]!.values.sqrtPriceX96).toBe(NEW_PRICE);
+    expect(result.notes).toEqual([
+      "Native pool: the old pool has no price history, so it starts at the old spot price; LPs move their own liquidity.",
+    ]);
+  });
+
+  it("initializes at the TWAP over the covered window, not the spot price", async () => {
+    const client = stubClient({
+      pools: { [zeroAddress]: { twap: 1_800n, fee: 10_000, tickSpacing: 200 } },
+      prices: { [slotOf(oldNativeKey(10_000, 200))]: NEW_PRICE },
+      coverage: 600,
+      meanTick: -7,
+    });
+    const result = await resolvePreset(preset, { chainId: 84532, projectId: 2, client });
+    if (result.status !== "ready") throw new Error(result.message);
+    expect(result.steps[1]!.values.sqrtPriceX96).toBe(uniswapV4SqrtPriceX96AtTick(-7));
   });
 
   it("maps USDC to the target chain's USDC and leaves native alone", () => {

@@ -47,7 +47,7 @@ for (const [id, alias] of Object.entries(chainNames)) {
     "JBUniswapV4Hook",
   ]) {
     const retired = [];
-    for (let artifact; (artifact = read(alias, `${name}_deprecated${retired.length || ""}`)); )
+    for (let artifact; (artifact = read(alias, `${name}_deprecated${retired.length || ""}`));)
       retired.push(executedDeploymentAddress(artifact, id, name));
     history[name] = Object.fromEntries(
       retired.map((address, i) => [i === retired.length - 1 ? "previous" : `v${i + 1}`, address]),

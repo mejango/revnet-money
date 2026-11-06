@@ -336,7 +336,9 @@ export type StepResolver = (
   step: BatchStep,
   chainId: number,
   projectId: number,
-) => Promise<{ to?: Address; values: BatchStepValues } | null>;
+  /** The steps already mirrored onto the target chain. */
+  prior?: readonly BatchStep[],
+) => Promise<{ kind?: BatchStepKind; to?: Address; values: BatchStepValues } | null>;
 
 /**
  * Rebuild one chain's steps for another chain: same values, the kind's
@@ -378,7 +380,7 @@ export async function mirrorBatch(
     }
     try {
       if (definition.perChain) {
-        const resolved = await resolve(step, target.chainId, target.projectId);
+        const resolved = await resolve(step, target.chainId, target.projectId, mirrored);
         if (!resolved) {
           if (step.kind === "setHookFor") hookSelectionSkipped = true;
           skipped.push({
@@ -389,7 +391,7 @@ export async function mirrorBatch(
         }
         mirrored.push(
           buildStep({
-            kind: step.kind,
+            kind: resolved.kind ?? step.kind,
             chainId: target.chainId,
             projectId: target.projectId,
             values: resolved.values,
