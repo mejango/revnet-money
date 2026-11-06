@@ -11,6 +11,7 @@ type RevnetProject = {
   name?: string | null;
   projectTagline?: string | null;
 };
+import { chainDisplayName } from "@/app/constants";
 import { DiscoverGridSkeleton } from "@/components/loading/LoadingSkeletons";
 import { ProjectLink } from "@/components/ProjectLink";
 import { Button } from "@/components/ui/button";
@@ -26,13 +27,6 @@ const CHAIN_SLUGS: Record<number, string> = {
   10: "op",
   8453: "base",
   42161: "arb",
-};
-
-const CHAIN_NAMES: Record<number, string> = {
-  1: "Ethereum",
-  10: "Optimism",
-  8453: "Base",
-  42161: "Arbitrum",
 };
 
 async function fetchDiscoverProjects(): Promise<RevnetProject[]> {
@@ -189,7 +183,7 @@ export default function Page() {
                   <p className="mt-2 text-xs text-zinc-500">
                     {p.ticker ? `$${p.ticker} | ` : ""}
                     {(p.chainIds ?? [p.chainId ?? 1])
-                      .map((chainId) => CHAIN_NAMES[chainId] ?? `Chain ${chainId}`)
+                      .map((chainId) => chainDisplayName(chainId))
                       .join(", ")}
                   </p>
                 )}

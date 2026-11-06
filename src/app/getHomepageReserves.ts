@@ -45,7 +45,7 @@ export type HomepageReserves = {
   feePoints: ReservePoint[] | null;
 };
 
-const RESERVE_CHAIN_IDS = [1, 42161, 8453, 10] as const;
+const RESERVE_CHAIN_IDS = [1, 8453, 42161, 10] as const;
 
 function downsample(points: ReservePoint[]): ReservePoint[] {
   const stride = Math.max(1, Math.ceil(points.length / 48));

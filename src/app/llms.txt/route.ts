@@ -15,8 +15,8 @@ const LLMS_TXT = `# Revnet
 
 > Tokenized incentives backed by a balance sheet, on a schedule fixed at launch.
 > An operator can manage details but cannot change the schedule or withdraw the
-> balance. This site runs revnets on Juicebox V6 across Ethereum, Optimism, Base,
-> and Arbitrum, reading the contracts and Bendystraw, an index of their records.
+> balance. This site runs revnets on Juicebox V6 across Ethereum, Base, Arbitrum,
+> and Optimism, reading the contracts and Bendystraw, an index of their records.
 
 ## URL grammar
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { StickyRecipient } from "@/components/sticky/StickyRecipient";
@@ -211,7 +212,7 @@ export function TierDetailModal({
                   ? "Sold out"
                   : tier.unlimited
                     ? "Unlimited inventory"
-                    : `${tier.remaining.toLocaleString("en-US")} left on ${JB_CHAINS[chainId]?.name ?? "this chain"}`}
+                    : `${tier.remaining.toLocaleString("en-US")} left on ${chainDisplayName(chainId)}`}
               </span>
             </div>
 
@@ -250,7 +251,7 @@ export function TierDetailModal({
                     >
                       <span className="inline-flex items-center gap-1.5 text-zinc-600">
                         <ChainLogo chainId={row.chainId} width={15} height={15} />
-                        {JB_CHAINS[row.chainId]?.name ?? `Chain ${row.chainId}`}
+                        {chainDisplayName(row.chainId)}
                       </span>
                       <span className="tabular-nums text-zinc-900">
                         {row.state === "missing"

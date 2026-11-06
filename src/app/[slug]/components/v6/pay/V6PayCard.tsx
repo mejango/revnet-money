@@ -34,7 +34,6 @@ import {
 import { heldLineOf } from "@/lib/write-hold";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
-  JB_CHAINS,
   JBChainId,
   JBCoreContracts,
   jbMultiTerminalAbi,
@@ -99,7 +98,7 @@ function payChainName(chainId: JBChainId): string {
     84532: "Base Sep",
     421614: "Arb Sep",
   };
-  return compactNames[chainId] ?? JB_CHAINS[chainId]?.name ?? String(chainId);
+  return compactNames[chainId] ?? chainDisplayName(chainId);
 }
 
 /**
@@ -1489,7 +1488,7 @@ export function V6PayCard() {
           buying it is the very thing the button now offers. */}
       {insufficientBalance && selected && !payWithDollars ? (
         <p className="mt-2 text-xs text-red-600">
-          You don&apos;t have enough {selected.symbol} on {JB_CHAINS[chainId]?.name}.
+          You don&apos;t have enough {selected.symbol} on {chainDisplayName(chainId)}.
         </p>
       ) : null}
       {pairLine ? <p className="mt-2 text-sm text-zinc-600">{pairLine}</p> : null}

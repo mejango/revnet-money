@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
@@ -102,7 +103,7 @@ export function PayerAddressList({
                       <TableCell className="whitespace-nowrap px-3 py-3 align-top">
                         <span className="flex items-center gap-2">
                           <ChainLogo chainId={chainId} width={16} height={16} />
-                          {chain?.name ?? row.chainId}
+                          {chainDisplayName(row.chainId)}
                         </span>
                       </TableCell>
                       <TableCell className="px-3 py-3 align-top">

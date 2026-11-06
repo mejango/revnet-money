@@ -799,7 +799,7 @@ export function AddStageDialog({
                           step={5}
                           name="priceFloorTaxIntensity"
                           className="h-2 w-full cursor-pointer appearance-none bg-gray-200 px-0 accent-teal-500"
-                          aria-label="Cash-out tax percentage"
+                          aria-label="Cash-out tax"
                         />
                       </div>
                     </div>

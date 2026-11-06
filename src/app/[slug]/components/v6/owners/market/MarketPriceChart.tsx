@@ -9,7 +9,7 @@ import {
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useHydrated } from "@/hooks/useHydrated";
 import { formatClock, formatMonthDay, formatMonthYear, formatShortDateTime } from "@/lib/date";
-import { formatDecimals } from "@/lib/number";
+import { formatDecimals, formatPriceValue } from "@/lib/number";
 import { smoothPriceSeries } from "@/lib/priceSeries";
 import { cachedQuery } from "@/lib/query-persist";
 import { cn } from "@/lib/utils";
@@ -40,9 +40,7 @@ const RANGES = [
 const LINE = "var(--chart-4)";
 
 function formatPrice(price: number): string {
-  if (!isFinite(price) || price <= 0) return "—";
-  if (price < 0.0001) return price.toExponential(2);
-  return Intl.NumberFormat("en", { maximumFractionDigits: price >= 1 ? 4 : 8 }).format(price);
+  return isFinite(price) && price > 0 ? formatPriceValue(price) : "—";
 }
 
 function formatTick(timestamp: number, span: number): string {

@@ -16,7 +16,7 @@ import { RangeOption, RangeSelector } from "@/components/ui/range-selector";
 import { formatClock, formatMonthDay, formatMonthYear } from "@/lib/date";
 import { shouldShowCashOutAsymptote } from "@/lib/minimumCashOutPrice";
 import { useJBTokenContext } from "@/lib/nana/project";
-import { formatDecimals } from "@/lib/number";
+import { formatPriceValue } from "@/lib/number";
 import { bucketPoolReserves } from "@/lib/priceSeries";
 import { cachedQuery } from "@/lib/query-persist";
 import { parseTimeRange, TimeRange } from "@/lib/timeRange";
@@ -252,6 +252,11 @@ export function TokenPriceChart({
         ? "ETH"
         : (tokenSymbol ?? "the base currency");
 
+  const latestPrice = (key: "issuancePrice" | "ammPrice" | "floorPrice") => {
+    const point = [...chartData].reverse().find((entry) => entry[key] !== undefined);
+    return point ? `${formatPriceValue(point[key] as number)} ${axisSymbol}` : undefined;
+  };
+
   // An always-on methodological caveat, not a problem — so it sits behind an (!) rather than
   // as a banner. The two notices below it stay inline on purpose: those say data is MISSING or
   // a source is DOWN, which the reader has to see without hovering anything.
@@ -272,6 +277,7 @@ export function TokenPriceChart({
             active={showIssuance}
             colorVar="--chart-2"
             note={priceConcept("issuance", { baseSymbol: axisSymbol })}
+            value={latestPrice("issuancePrice")}
             onClick={() => setShowIssuance(!showIssuance)}
           />
           <ChartToggleButton
@@ -280,6 +286,7 @@ export function TokenPriceChart({
             disabled={!hasFloorData}
             colorVar="--chart-3"
             note={priceConcept("cashOut", { baseSymbol: axisSymbol })}
+            value={latestPrice("floorPrice")}
             onClick={() => setShowFloor(!showFloor)}
           />
           {hasPool && (
@@ -288,6 +295,7 @@ export function TokenPriceChart({
               active={showAmm}
               disabled={!hasAmmData}
               colorVar="--chart-4"
+              value={latestPrice("ammPrice")}
               note={
                 priceConcept("pool", { baseSymbol: axisSymbol }) +
                 (reserveBars.length
@@ -326,12 +334,11 @@ export function TokenPriceChart({
           ariaLabel={`${tokenSymbol} price history`}
           description={`Issuance, ${marketPriceView === "smooth" ? "time-weighted pool" : "every post-trade pool"}, and cash out prices for ${tokenSymbol} over the selected ${range} range.${showCashOutAsymptote ? " The dotted line is the cash-out asymptote." : ""}`}
           className="mt-2 aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
-          showYTickLabels={false}
-          margin={{ left: 1, right: 20, top: 24, bottom: 36 }}
+          margin={{ left: 72, right: 20, top: 24, bottom: 36 }}
           xDomain={[firstTimestamp ?? 0, lastTimestamp ?? 1]}
           yDomain={[0, maxVisiblePrice > 0 ? maxVisiblePrice * 1.1 : 1]}
           formatXTick={(timestamp) => formatXAxis(timestamp, range)}
-          formatYTick={(value) => formatDecimals(value, 6)}
+          formatYTick={formatPriceValue}
           referenceLines={referenceLines}
           bars={reserveBars}
           tooltip={({ datum, series }) => (
@@ -340,6 +347,7 @@ export function TokenPriceChart({
               series={series}
               baseTokenSymbol={tokenSymbol}
               baseTokenDecimals={tokenDecimals}
+              priceSymbol={axisSymbol}
               range={range}
               poolReserves={showAmm ? (data?.poolReserves ?? []) : []}
               projectTokenSymbol={projectTokenSymbol}

@@ -555,7 +555,7 @@ function TokenEditDialog({
       ? [
           {
             label: "Relay fee",
-            value: `${formatHexEther(selectedPayment.amount)} ETH on ${JB_CHAINS[selectedPayment.chain as JBChainId]?.name ?? selectedPayment.chain}`,
+            value: `${formatHexEther(selectedPayment.amount)} ETH on ${chainDisplayName(selectedPayment.chain)}`,
           },
         ]
       : []),

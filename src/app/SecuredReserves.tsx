@@ -1,7 +1,8 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
-import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
+import { type JBChainId } from "@bananapus/nana-sdk-core";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { HomepageReserves } from "./getHomepageReserves";
@@ -88,7 +89,7 @@ export function SecuredReserves({ data }: { data: HomepageReserves }) {
                     className={`block py-1.5 ${index ? "border-t border-teal-100" : ""}`}
                   >
                     <span className="block font-medium text-zinc-900">
-                      {JB_CHAINS[chain.chainId as JBChainId]?.name ?? `Chain ${chain.chainId}`}
+                      {chainDisplayName(chain.chainId)}
                     </span>
                     {hasReserves ? (
                       <>
@@ -142,9 +143,9 @@ export function SecuredReserves({ data }: { data: HomepageReserves }) {
           <span
             role="img"
             className="inline-flex items-center gap-1"
-            aria-label="Ethereum, Arbitrum, Base, and Optimism"
+            aria-label="Ethereum, Base, Arbitrum, and Optimism"
           >
-            {([1, 42161, 8453, 10] as const).map((chainId) => (
+            {([1, 8453, 42161, 10] as const).map((chainId) => (
               <ChainLogo key={chainId} chainId={chainId as JBChainId} width={14} height={14} />
             ))}
           </span>

@@ -1,9 +1,11 @@
 "use client";
 
+import { chainDisplayName, chainSortIndex } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import EtherscanLink from "@/components/EtherscanLink";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import { TokenAmount } from "@/components/TokenAmount";
 import { Check } from "@/components/ui/icons";
 import {
   Table,
@@ -22,18 +24,17 @@ import { matchesProjectRef, projectRefsWhere } from "@/lib/bendystraw/projectRef
 import { formatShortDateTime } from "@/lib/date";
 import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import type { JBChainId } from "@/lib/nana/types";
-import { commaNumber } from "@/lib/number";
 import { formatTokenSymbol } from "@/lib/utils";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { formatUnits, JB_CHAINS, JBCoreContracts } from "@bananapus/nana-sdk-core";
+import { JB_CHAINS, JBCoreContracts } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
-import { OwnerDistributionBatchButton } from "../../../owners/components/OwnerDistributionBatchButton";
 import {
   autoIssuanceKey,
   prepareAutoIssuance,
 } from "../../../owners/components/ownerDistributionBatch";
+import { OwnerDistributionBatchButton } from "../../../owners/components/OwnerDistributionBatchButton";
 import { ProjectItem } from "../shared";
 
 /**
@@ -106,10 +107,13 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
         ...row,
         stage: stageIdx >= 0 ? stageIdx + 1 : undefined,
         startsAt: stageIdx >= 0 ? Number(rulesets[stageIdx].start) : undefined,
-        distributedTxn: distributed ? distributed.id.split("-")[1] : undefined,
+        distributedTxn: distributed?.txHash,
       };
     })
-    .sort((a, b) => (a.stage ?? 99) - (b.stage ?? 99) || a.chainId - b.chainId);
+    .sort(
+      (a, b) =>
+        (a.stage ?? 99) - (b.stage ?? 99) || chainSortIndex(a.chainId) - chainSortIndex(b.chainId),
+    );
 
   const loading = stored.isLoading || issued.isLoading || rulesetReads.isLoading;
   const unavailable = stored.isError || issued.isError || rulesetReads.isError;
@@ -175,7 +179,7 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
       ) : rows.length === 0 ? (
         <p className="text-center text-zinc-400">No auto issuances</p>
       ) : null}
-      <div className="mb-4 max-h-96 overflow-auto">
+      <div className="mb-4">
         <div className="flex flex-col">
           <Table className="min-w-max">
             <TableHeader>
@@ -205,7 +209,7 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
                     />
                   </TableCell>
                   <TableCell className="whitespace-nowrap tabular-nums">
-                    {commaNumber(formatUnits(BigInt(row.count), 18))} {tokenSymbol}
+                    <TokenAmount value={BigInt(row.count)} decimals={18} symbol={tokenSymbol} />
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
                     {row.startsAt ? formatShortDateTime(row.startsAt * 1000) : "—"}
@@ -225,7 +229,7 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
                       <label className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          aria-label={`Distribute on ${JB_CHAINS[row.chainId as JBChainId]?.name ?? row.chainId}, project ${row.projectId}, stage ${row.stageId}, to ${row.beneficiary}`}
+                          aria-label={`Distribute on ${chainDisplayName(row.chainId)}, project ${row.projectId}, stage ${row.stageId}, to ${row.beneficiary}`}
                           disabled={row.startsAt === undefined || row.startsAt > now}
                           checked={
                             row.startsAt !== undefined &&

@@ -9,6 +9,7 @@ import {
   optimismSepolia,
   sepolia,
 } from "@/lib/chains";
+import { formatPriceValue } from "@/lib/number";
 import { etherscanLink } from "@/lib/utils";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
@@ -99,7 +100,7 @@ export function fmtUnits(value: bigint, decimals: number): string {
   if (!isFinite(n)) return formatUnits(value, decimals);
   let out: string;
   if (n === 0) out = "0";
-  else if (n < 0.0001) out = n.toExponential(2);
+  else if (n < 0.0001) out = formatPriceValue(n);
   else if (n >= 1_000_000)
     out = Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 2 }).format(n);
   else out = Intl.NumberFormat("en", { maximumFractionDigits: n >= 1 ? 4 : 6 }).format(n);

@@ -110,9 +110,15 @@ export function formatEthAddress(
 /**
  * Return percentage of numerator / denominator (e.g. 69 for 69%)
  */
-export function formatPortion(numerator: bigint, denominator: bigint) {
+function formatPortion(numerator: bigint, denominator: bigint) {
   if (numerator === 0n || denominator === 0n) return 0;
   return parseFloat(((numerator * 100000n) / denominator).toString()) / 1000;
+}
+
+/** A holder's share for display: a real share below the 0.001% resolution never reads as nothing. */
+export function formatShare(numerator: bigint, denominator: bigint): string {
+  const portion = formatPortion(numerator, denominator);
+  return portion === 0 && numerator > 0n && denominator > 0n ? "<0.001%" : `${portion}%`;
 }
 
 /** Return a token ticker without a legacy leading dollar sign. */

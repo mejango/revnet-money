@@ -24,13 +24,13 @@ export const REVNET_CASHOUT_FEE_PERCENT = 0.025;
  */
 const chainSortOrder = new Map<JBChainId, number>([
   [mainnet.id, 0],
-  [optimism.id, 1],
-  [base.id, 2],
-  [arbitrum.id, 3],
+  [base.id, 1],
+  [arbitrum.id, 2],
+  [optimism.id, 3],
   [sepolia.id, 4],
-  [optimismSepolia.id, 5],
-  [baseSepolia.id, 6],
-  [arbitrumSepolia.id, 7],
+  [baseSepolia.id, 5],
+  [arbitrumSepolia.id, 6],
+  [optimismSepolia.id, 7],
 ]);
 
 /**

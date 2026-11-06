@@ -1,6 +1,6 @@
 "use client";
 
-import { chainSortIndex } from "@/app/constants";
+import { chainDisplayName, chainSortIndex } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { ProjectLink } from "@/components/ProjectLink";
@@ -55,14 +55,14 @@ export function OtherInfoPanel({ projects }: { projects: ProjectItem[] }) {
                   <TableCell className="whitespace-nowrap px-3 py-3">
                     <span className="flex items-center gap-2">
                       <ChainLogo chainId={chainId} width={16} height={16} />
-                      {chain.name}
+                      {chainDisplayName(chainId)}
                     </span>
                   </TableCell>
                   <TableCell className="whitespace-nowrap px-3 py-3">
                     <ProjectLink
                       href={`/${chain.slug}:${p.projectId}`}
                       className="underline hover:text-black/70"
-                      title={`Open #${p.projectId} on ${chain.name}`}
+                      title={`Open #${p.projectId} on ${chainDisplayName(chainId)}`}
                     >
                       #{p.projectId}
                     </ProjectLink>

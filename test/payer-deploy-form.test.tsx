@@ -135,7 +135,7 @@ describe("multichain deployment form", () => {
     fireEvent.change(screen.getByLabelText("Default beneficiary"), {
       target: { value: beneficiary },
     });
-    fireEvent.change(screen.getByLabelText("beneficiary on Arbitrum One"), {
+    fireEvent.change(screen.getByLabelText("beneficiary on Arbitrum"), {
       target: { value: peerBeneficiary },
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Editable" }));
@@ -188,7 +188,7 @@ describe("multichain deployment form", () => {
 
   it("retains a single selected chain and immutable original-payer defaults", async () => {
     setup();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Arbitrum One" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Arbitrum" }));
     fireEvent.click(screen.getByRole("button", { name: "Deploy payer address" }));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
     expect(mocks.runBatch.mock.calls[0][0].calls).toMatchObject([
@@ -237,7 +237,7 @@ describe("multichain deployment form", () => {
     });
     mocks.getTransactionReceipt.mockRejectedValue(new Error("Temporary display RPC failure"));
     setup();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Arbitrum One" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Arbitrum" }));
     fireEvent.click(screen.getByRole("button", { name: "Deploy payer address" }));
     const link = await screen.findByRole("link", { name: "Verified deployment transaction" });
     expect(link.getAttribute("href")).toContain(hash);

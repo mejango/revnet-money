@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { TxError } from "@/components/ui/TxError";
 import { TxProgress } from "@/components/ui/TxProgress";
@@ -8,7 +9,7 @@ import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { type GroupWriteTarget, useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { reviewClosed } from "@/lib/review-refusal";
 import { formatWalletError } from "@/lib/utils";
-import { formatUnits, JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
+import { formatUnits, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import type { DistributionSnapshot } from "./ownerDistributionBatch";
@@ -61,7 +62,7 @@ export function OwnerDistributionBatchButton({
         ]
       : []),
     ...(snapshots ?? []).map((row) => ({
-      label: `${JB_CHAINS[row.chainId]?.name ?? row.chainId}, project ${String(row.projectId)}`,
+      label: `${chainDisplayName(row.chainId)}, project ${String(row.projectId)}`,
       value: `${formatUnits(row.amount, 18)} ${tokenSymbol}`,
       strong: true,
       lines: row.details.map((detail) => `${detail.label}: ${detail.value}`),
@@ -166,7 +167,7 @@ export function OwnerDistributionBatchButton({
           onClose={() => setOpen(false)}
           title={`Confirm ${label.toLowerCase()}`}
           steps={(snapshots ?? []).map((row) => ({
-            title: `Project ${row.projectId} on ${JB_CHAINS[row.chainId]?.name ?? row.chainId}`,
+            title: `Project ${row.projectId} on ${chainDisplayName(row.chainId)}`,
             detail: `${formatUnits(row.amount, 18)} ${tokenSymbol}`,
           }))}
           stepsIntro="Review every selected transaction. Confirmed steps are retained if execution takes more than one round."
