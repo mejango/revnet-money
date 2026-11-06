@@ -156,7 +156,7 @@ export function ProjectDiagnosticsProvider({
                   <h3 className="font-semibold">Onchain deployment</h3>
                   <p className="mb-3 text-zinc-500">
                     {report.deployment.checkedBlock
-                      ? `Block ${report.deployment.checkedBlock} · `
+                      ? `Block ${report.deployment.checkedBlock}. `
                       : ""}
                     Checked {report.deployment.checkedAt}
                   </p>

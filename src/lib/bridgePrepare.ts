@@ -105,7 +105,7 @@ export { cashOutProtocolFee };
 
 /** Derive a minimum output using floor rounding, and refuse a zero floor. */
 export function protectedOutputFloor(amount: bigint, slippageBps: bigint) {
-  if (amount <= 0n) throw new Error("The live quote has no backing to protect.");
+  if (amount <= 0n) throw new Error("These tokens have no balance behind them on this chain, so they can't be moved from here.");
   if (slippageBps < 0n || slippageBps >= BASIS_POINTS) {
     throw new Error("Slippage must be at least 0% and less than 100%.");
   }

@@ -83,7 +83,7 @@ export function V6ClaimCreditsDialog({
                 />
                 <ChainLogo chainId={row.chainId} width={16} height={16} />
                 <span>
-                  {chainDisplayName(row.chainId)} · project {String(row.projectId)}
+                  {chainDisplayName(row.chainId)}, project {String(row.projectId)}
                 </span>
                 <span className="tabular-nums">
                   {formatUnits(row.credit, JB_TOKEN_DECIMALS, { fractionDigits: 4 })} credits
