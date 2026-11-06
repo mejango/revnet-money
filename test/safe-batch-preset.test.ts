@@ -1,4 +1,5 @@
-import { rolloutTargets } from "@/lib/protocol-rollout";
+import { migratedPoolKey, type V4PoolKey } from "@/lib/buyback-pool-migration";
+import { rolloutAddress, rolloutTargets } from "@/lib/protocol-rollout";
 import { buildStep, mirrorBatch } from "@/lib/safe-batch";
 import {
   mapTerminalToken,
@@ -8,6 +9,7 @@ import {
   type PresetReadClient,
 } from "@/lib/safe-batch-presets";
 import { NATIVE_TOKEN, USDC_ADDRESSES } from "@bananapus/nana-sdk-core";
+import { uniswapV4PoolId, uniswapV4PoolStateSlot } from "@bananapus/nana-sdk-core/v6";
 import { getAddress, zeroAddress, type Address } from "viem";
 import { describe, expect, it, vi } from "vitest";
 
@@ -25,11 +27,29 @@ vi.mock("@/lib/protocol-rollout", async (importOriginal) => {
 
 const preset = SAFE_BATCH_PRESETS[0]!;
 const targets = rolloutTargets(84532)!;
-const OLD_HOOK = getAddress("0x77bee1ad2ac0ace98a9b5b58d75685c8b4d94948");
+const OLD_HOOK = getAddress("0xb222da5a71e8fb89a5a38b7c920eab5dfbc74b91");
+const POOL_HOOK = rolloutAddress("JBUniswapV4Hook", 84532)!;
+const OLD_PRICE = 79_228_162_514_264_337_593_543_950_336n;
+const NEW_PRICE = 2n * OLD_PRICE;
 const OLD_TERMINAL = "0x5555555555555555555555555555555555555555" as Address;
 const BASE_USDC = USDC_ADDRESSES[8453] as Address;
 
 type Pools = Partial<Record<string, { twap: bigint; fee: number; tickSpacing: number }>>;
+
+/** The PoolManager slot0 word for a key, as `extsload` returns it. */
+function slotOf(key: V4PoolKey): string {
+  return uniswapV4PoolStateSlot(uniswapV4PoolId(key)).toLowerCase();
+}
+/** The key the stub's current hook reports for a native pool. */
+function oldNativeKey(fee: number, tickSpacing: number): V4PoolKey {
+  return { currency0: zeroAddress, currency1: zeroAddress, fee, tickSpacing, hooks: OLD_HOOK };
+}
+/** A 3000/60 native pool live on both the old and the new V4 hook. */
+const BOTH_POOLS_PRICED = {
+  [slotOf(oldNativeKey(3_000, 60))]: OLD_PRICE,
+  [slotOf(migratedPoolKey(oldNativeKey(3_000, 60), POOL_HOOK))]: OLD_PRICE,
+};
+const word = (price: bigint) => `0x${price.toString(16).padStart(64, "0")}`;
 
 /** A fake chain: which targets have code, the project's current hook/terminal, and its pools per hook. */
 function stubClient({
@@ -39,6 +59,7 @@ function stubClient({
   pools = {},
   carried = {},
   allowed = true,
+  prices = {},
 }: {
   deployed?: Address[];
   allowed?: boolean;
@@ -48,6 +69,8 @@ function stubClient({
   pools?: Pools;
   /** TWAP windows already registered on the target hook. */
   carried?: Partial<Record<string, bigint>>;
+  /** Live sqrtPriceX96 per pool key; any other pool is uninitialized. */
+  prices?: Record<string, bigint>;
 }): PresetReadClient {
   const lower = (value: unknown) => String(value).toLowerCase();
   return {
@@ -84,6 +107,8 @@ function stubClient({
             hooks: address,
           };
         }
+        case "extsload":
+          return word(prices[lower(args?.[0])] ?? 0n);
         default:
           throw new Error(`unexpected read ${functionName}`);
       }
@@ -91,7 +116,7 @@ function stubClient({
   } as unknown as PresetReadClient;
 }
 
-describe("Move to buyback 1.4.0 + gateway", () => {
+describe("Move to buyback 2.0.0 + gateway", () => {
   it("is unavailable where either target has no code", async () => {
     const client = stubClient({ deployed: [targets.hook] });
     await expect(resolvePreset(preset, { chainId: 84532, projectId: 6, client })).resolves.toEqual({
@@ -162,7 +187,10 @@ describe("Move to buyback 1.4.0 + gateway", () => {
     const migration = await resolvePreset(preset, {
       chainId: 84532,
       projectId: 2,
-      client: stubClient({ pools: { [zeroAddress]: { twap: 900n, fee: 3000, tickSpacing: 60 } } }),
+      client: stubClient({
+        pools: { [zeroAddress]: { twap: 900n, fee: 3000, tickSpacing: 60 } },
+        prices: BOTH_POOLS_PRICED,
+      }),
     });
     if (migration.status !== "ready") throw new Error(migration.message);
     const mirrored = await mirrorBatch(
@@ -183,9 +211,46 @@ describe("Move to buyback 1.4.0 + gateway", () => {
     });
   });
 
-  it("carries a native pool onto the new hook, defaulting the deployer's 48h window to 30 minutes", async () => {
+  it("opens the native pool on the new V4 hook at the old pool's price", async () => {
+    const oldKey = oldNativeKey(10_000, 200);
     const client = stubClient({
       pools: { [zeroAddress]: { twap: 172_800n, fee: 10_000, tickSpacing: 200 } },
+      prices: { [slotOf(oldKey)]: OLD_PRICE },
+    });
+    const result = await resolvePreset(preset, { chainId: 84532, projectId: 2, client });
+    if (result.status !== "ready") throw new Error(result.message);
+    expect(result.steps.map((step) => step.kind)).toEqual([
+      "setHookFor",
+      "initializePoolFor",
+      "setTerminalFor",
+    ]);
+    expect(result.steps[1]!.values).toEqual({
+      fee: 10_000n,
+      tickSpacing: 200n,
+      twapWindow: 1_800n,
+      terminalToken: NATIVE_TOKEN,
+      sqrtPriceX96: OLD_PRICE,
+    });
+    // Pinned in juicebox-money's preset test too: co-signers on either client must sign identical calldata.
+    expect(result.steps.map((step) => step.data)).toEqual([
+      "0x779b0290000000000000000000000000000000000000000000000000000000000000000200000000000000000000000080717f09461a3fb08364fe8c5259220f7d06e0af",
+      "0x49e303830000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000271000000000000000000000000000000000000000000000000000000000000000c80000000000000000000000000000000000000000000000000000000000000708000000000000000000000000000000000000000000000000000000000000eeee0000000000000000000000000000000000000001000000000000000000000000",
+      "0xf3e37d010000000000000000000000000000000000000000000000000000000000000002000000000000000000000000e2c259b2fcfd2d57ebcda9b3d2d10bdb1b2cd977",
+    ]);
+    expect(result.notes).toEqual([
+      "Native pool: the old window was the deployer default (48h); 30 minutes will be stored.",
+      "Native pool: starts at the old price with no TWAP history; LPs move their own liquidity.",
+    ]);
+  });
+
+  it("registers a new pool that already exists instead of initializing it at another price", async () => {
+    const oldKey = oldNativeKey(10_000, 200);
+    const client = stubClient({
+      pools: { [zeroAddress]: { twap: 1_800n, fee: 10_000, tickSpacing: 200 } },
+      prices: {
+        [slotOf(oldKey)]: OLD_PRICE,
+        [slotOf(migratedPoolKey(oldKey, POOL_HOOK))]: NEW_PRICE,
+      },
     });
     const result = await resolvePreset(preset, { chainId: 84532, projectId: 2, client });
     if (result.status !== "ready") throw new Error(result.message);
@@ -200,13 +265,18 @@ describe("Move to buyback 1.4.0 + gateway", () => {
       twapWindow: 1_800n,
       terminalToken: NATIVE_TOKEN,
     });
-    expect(result.steps.map((step) => step.data)).toEqual([
-      "0x779b02900000000000000000000000000000000000000000000000000000000000000002000000000000000000000000b222da5a71e8fb89a5a38b7c920eab5dfbc74b91",
-      "0x345c42130000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000271000000000000000000000000000000000000000000000000000000000000000c80000000000000000000000000000000000000000000000000000000000000708000000000000000000000000000000000000000000000000000000000000eeee",
-      "0xf3e37d0100000000000000000000000000000000000000000000000000000000000000020000000000000000000000004a56aef5b6a5b9742abb02ca67c5a85ba183d901",
-    ]);
+    expect(result.notes).toEqual([]);
+  });
+
+  it("carries nothing from an old pool with no price", async () => {
+    const client = stubClient({
+      pools: { [zeroAddress]: { twap: 1_800n, fee: 10_000, tickSpacing: 200 } },
+    });
+    const result = await resolvePreset(preset, { chainId: 84532, projectId: 2, client });
+    if (result.status !== "ready") throw new Error(result.message);
+    expect(result.steps.map((step) => step.kind)).toEqual(["setHookFor", "setTerminalFor"]);
     expect(result.notes).toEqual([
-      "Native pool: the old window was the deployer default (48h); 30 minutes will be stored.",
+      "Native pool has no price to carry; set it up on the new hook directly.",
     ]);
   });
 
@@ -215,6 +285,7 @@ describe("Move to buyback 1.4.0 + gateway", () => {
       pools: {
         [USDC_ADDRESSES[84532].toLowerCase()]: { twap: 900n, fee: 10_000, tickSpacing: 200 },
       },
+      prices: { [slotOf(oldNativeKey(10_000, 200))]: OLD_PRICE },
     });
     const result = await resolvePreset(preset, { chainId: 84532, projectId: 6, client });
     if (result.status !== "ready") throw new Error(result.message);
@@ -223,9 +294,11 @@ describe("Move to buyback 1.4.0 + gateway", () => {
       tickSpacing: 200n,
       twapWindow: 1_800n,
       terminalToken: USDC_ADDRESSES[84532],
+      sqrtPriceX96: OLD_PRICE,
     });
     expect(result.notes).toEqual([
       "USDC pool: the old window was 900s; 30 minutes will be stored.",
+      "USDC pool: starts at the old price with no TWAP history; LPs move their own liquidity.",
     ]);
   });
 
@@ -257,7 +330,10 @@ describe("mirroring per-chain steps", () => {
     const migration = await resolvePreset(preset, {
       chainId: 84532,
       projectId: 2,
-      client: stubClient({ pools: { [zeroAddress]: { twap: 900n, fee: 3000, tickSpacing: 60 } } }),
+      client: stubClient({
+        pools: { [zeroAddress]: { twap: 900n, fee: 3000, tickSpacing: 60 } },
+        prices: BOTH_POOLS_PRICED,
+      }),
     });
     if (migration.status !== "ready") throw new Error(migration.message);
     const resolver = stepResolverFor(() =>

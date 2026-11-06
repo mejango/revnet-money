@@ -175,6 +175,7 @@ async function resolveRouterTerminal(row: ChainProjectRow): Promise<Address | nu
   }
   const deployments = [
     rolloutAddress("JBRouterTerminalGateway", row.chainId),
+    ...Object.values(rolloutChain(row.chainId)?.history.JBRouterTerminalGateway ?? {}),
     direct,
     ...Object.values(rolloutChain(row.chainId)?.history.JBRouterTerminal ?? {}),
   ];

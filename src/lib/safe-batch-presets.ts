@@ -1,5 +1,11 @@
 import { chainDisplayName } from "@/app/constants";
-import { rolloutTargets } from "@/lib/protocol-rollout";
+import {
+  migratedPoolKey,
+  poolMove,
+  poolSqrtPriceX96,
+  type V4PoolKey,
+} from "@/lib/buyback-pool-migration";
+import { rolloutAddress, rolloutTargets } from "@/lib/protocol-rollout";
 import {
   buildStep,
   contractAddressOn,
@@ -25,10 +31,10 @@ export type SafeBatchPreset = {
 
 export const SAFE_BATCH_PRESETS: readonly SafeBatchPreset[] = [
   {
-    id: "buyback-1-4-0-gateway",
-    title: "Move to buyback 1.4.0 + gateway",
+    id: "buyback-2-0-0-gateway",
+    title: "Move to buyback 2.0.0 + gateway",
     description:
-      "Points the project at the current buyback hook and router gateway, carrying its live pool onto the new hook.",
+      "Points the project at the current buyback hook and router gateway, and opens its pool on the new hook at the old pool's price.",
     steps: ["setHookFor", "setPoolFor", "setTerminalFor"],
   },
 ];
@@ -166,6 +172,7 @@ export async function resolvePreset(
   const notes: string[] = [];
 
   const currentHook = await currentHookOf(client, chainId, pid);
+  const poolHook = rolloutAddress("JBUniswapV4Hook", chainId);
   const onTargetHook = !!currentHook && isAddressEqual(currentHook, targets.hook);
   if (preset.steps.includes("setHookFor") && !onTargetHook) {
     steps.push(
@@ -187,17 +194,31 @@ export async function resolvePreset(
         notes.push(`${probe.label} pool is already registered on the new hook.`);
         continue;
       }
-      const key = await client.readContract({
+      const oldKey = (await client.readContract({
         address: currentHook,
         abi: jbBuybackHookAbi,
         functionName: "poolKeyOf",
         args: [pid, probe.read],
-      });
+      })) as V4PoolKey;
+      if (!poolHook) {
+        return { status: "unavailable", message: `The current V4 hook is not recorded on ${chain}.` };
+      }
+      const newKey = migratedPoolKey(oldKey, poolHook);
+      const [oldPrice, newPrice] = await Promise.all([
+        poolSqrtPriceX96(client, chainId, oldKey),
+        poolSqrtPriceX96(client, chainId, newKey),
+      ]);
+      const move = poolMove(oldPrice, newPrice);
+      if (move.kind === "none") {
+        notes.push(`${probe.label} pool has no price to carry; set it up on the new hook directly.`);
+        continue;
+      }
       const values: BatchStepValues = {
-        fee: BigInt(key.fee),
-        tickSpacing: BigInt(key.tickSpacing),
+        fee: BigInt(newKey.fee),
+        tickSpacing: BigInt(newKey.tickSpacing),
         twapWindow: PRESET_TWAP_WINDOW,
         terminalToken: probe.write,
+        ...(move.kind === "initializePoolFor" ? { sqrtPriceX96: move.sqrtPriceX96 } : {}),
       };
       if (oldWindow === MAX_TWAP_WINDOW) {
         notes.push(
@@ -208,7 +229,10 @@ export async function resolvePreset(
           `${probe.label} pool: the old window was ${oldWindow}s; 30 minutes will be stored.`,
         );
       }
-      steps.push(buildStep({ kind: "setPoolFor", chainId, projectId, values }));
+      if (move.kind === "initializePoolFor") {
+        notes.push(`${probe.label} pool: starts at the old price with no TWAP history; LPs move their own liquidity.`);
+      }
+      steps.push(buildStep({ kind: move.kind, chainId, projectId, values }));
     }
   }
 

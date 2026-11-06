@@ -164,6 +164,12 @@ const DEPENDENCIES: readonly {
     message:
       "Set the buyback hook before registering its pool. setPoolFor registers on the project's current hook.",
   },
+  {
+    kind: "initializePoolFor",
+    after: "setHookFor",
+    message:
+      "Set the buyback hook before opening its pool. initializePoolFor registers on the project's current hook.",
+  },
 ];
 
 /** A v6 contract's address on a chain, or undefined where it isn't deployed. */
