@@ -1725,3 +1725,4 @@ Source: decisions jango recorded on the review page (41 Fix, q12 Skip). Evidence
 - [ ] Rendered desktop and 390px checks
 - [ ] Parity pass against juicebox-money
 - [ ] Open PR, leave merge to jango
+- [ ] Then run the same UX pass on juicebox.money and publish a review page for jango
