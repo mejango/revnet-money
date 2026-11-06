@@ -827,7 +827,7 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
     query: `query V6AutoIssueEvents($where: autoIssueEventFilter, $limit: Int, $offset: Int) {
       autoIssueEvents(where: $where, limit: $limit, offset: $offset) {
         totalCount
-        items { id chainId projectId version stageId beneficiary count }
+        items { id chainId projectId version stageId beneficiary count txHash }
       }
     }`,
   },

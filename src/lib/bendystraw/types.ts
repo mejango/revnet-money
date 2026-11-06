@@ -763,6 +763,7 @@ export type V6AutoIssueEventsQuery = {
       stageId: string;
       beneficiary: string;
       count: string;
+      txHash: string;
     }>;
   };
 };
