@@ -1546,7 +1546,7 @@ Source: decisions jango recorded on the review page (41 Fix, q12 Skip). Evidence
 
 ## Plan refinement
 
-- **Objective:** Fix all 41 issues jango marked Fix on live revnet.money behavior, honouring each note, with no wallet-write regressions. q12 stays skipped because the terminal puts no length cap on a memo.
+- **Objective:** Fix all 41 issues jango marked Fix on live revnet.money behavior, honouring each note, with no wallet-write regressions. q12 stays skipped by jango's choice. The terminal has no memo cap and the gateway only stops retaining above 4096 bytes, but the client silently cuts notes at 256 characters, which jango has been told.
 - **System fit:** Outcome is a trustworthy anonymous and holder experience. Owners are the revnet client components plus shared formatters and chain constants; juice-sdk is touched only if a rule already lives there. Wallet write authority and contracts are unaffected. Learning goes to tasks/lessons.md and the parity check to sibling clients.
 - **Reuse and simplicity:** Grep first and reuse the existing formatter, chain constants, skeletons and table container. Copy juicebox-money search presentation for b01. New shared owners only when a rule has several copies, moving every caller.
 - **Evidence and unknowns:** Walk evidence is anonymous and live; connected-wallet behavior is untested, so b08 must be reasoned from source. b04 and b06 root causes are unknown until read against live RPC and metadata. Local dev may not show real Bendystraw data.
@@ -1599,7 +1599,7 @@ Source: decisions jango recorded on the review page (41 Fix, q12 Skip). Evidence
   - Where: Shop inventory. Findings: F-042-1, F-046-1, F-041-2
 - [ ] **q05** Divide Voting units by 1e18 before display
   - Where: shop/TierDetailModal.tsx. Findings: F-042-3
-  - NOTE: jango: check with contracts. Checked: JB721TiersHookStore.sol:693 returns custom units when flagged, else the tier price. So units equal to price format with the price decimals, otherwise show the raw custom number. Do not blindly divide by 1e18.
+  - NOTE: jango: check with contracts. Checked: JB721TiersHookStore.sol:693 returns custom units (uint32) when flagged, else the tier price, and the read exposes no flag. Hide the row when units equal the price, show the raw custom number otherwise.
 - [ ] **b10** Balance reads $0.00 when the price fails (ONLY: pay-card half (red Payments are off during pending reads))
   - What: On one load the ETH price failed and the header read "$0.00 balance" for a revnet holding 0.346 ETH. Only a hover tooltip says No USD price. It was intermittent and recovered minutes later. Similarly, a cold load of Artizen shows a disabled Pay card with a red "Payments are off" for about 5 seconds before everything resolves.
   - Likely fix: Show the ETH balance when the USD price is missing, and show loading instead of an error while reads are pending.
