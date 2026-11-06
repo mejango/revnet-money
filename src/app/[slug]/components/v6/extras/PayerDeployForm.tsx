@@ -18,6 +18,7 @@ import { useMultichainBatch } from "@/hooks/useMultichainBatch";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
 import { reviewClosed } from "@/lib/review-refusal";
 import { etherscanLink, formatWalletError } from "@/lib/utils";
+import { MEMO_MAX_LENGTH } from "@/lib/v6/pay";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 import { buildDeployProjectPayerTx, projectPayerFromDeployLogs } from "@bananapus/nana-sdk-core/v6";
@@ -33,6 +34,7 @@ import {
 } from "viem";
 import { useAccount } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
+import { MemoCount } from "../pay/MemoCount";
 import { ChainProjectRow, PayerRow } from "./projectPayers";
 
 type DeployedPayer = { chainId: JBChainId; payer: Address | null; txHash: `0x${string}` };
@@ -486,13 +488,15 @@ export function PayerDeployForm({
               className="border-melon-300 bg-melon-25"
               value={memo}
               onChange={(e) => {
-                setMemo(e.target.value.slice(0, 256));
+                setMemo(e.target.value.slice(0, MEMO_MAX_LENGTH));
                 invalidate();
               }}
               disabled={busy}
               placeholder="optional memo attached to payments"
               aria-label="Default memo"
+              maxLength={MEMO_MAX_LENGTH}
             />
+            <MemoCount length={memo.length} className="mt-1 block text-right" />
           </div>
         </div>
       </section>
