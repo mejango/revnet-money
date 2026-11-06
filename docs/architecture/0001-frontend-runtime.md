@@ -75,7 +75,7 @@ Public build configuration is validated before compilation. Runtime secrets are
 validated at process start. Per-chain RPC inputs are provider-neutral,
 comma-separated fallback lists; no vendor credential is committed. Contract
 deployments remain pinned to deploy-all-v6 commit
-`a6ab40c5806b52ff4cb21f9eaefe275e621796f9`.
+`8ff50c28f7f4e4a8f98fdd8f680a6e2ddd2323d1`.
 
 ## Consequences
 
