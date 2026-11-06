@@ -555,4 +555,14 @@ describe("queued pool registrations", () => {
     await resolveAt(NEW_PRICE);
     expect(readBatch(84532, 2).map((step) => step.kind)).toEqual(["setHookFor", "setTerminalFor"]);
   });
+
+  it("removes a queued registration of a pool the current hook already holds", async () => {
+    window.localStorage.clear();
+    addStepsToBatch([pool("setPoolFor", NATIVE_TOKEN)]);
+    const client = stubClient({ hookOf: targets.hook, carried: { [zeroAddress]: 1_800n } });
+    const result = await resolvePreset(preset, { chainId: 84532, projectId: 2, client });
+    if (result.status !== "ready") throw new Error(result.message);
+    addStepsToBatch(result.steps, result.dropped);
+    expect(readBatch(84532, 2).map((step) => step.kind)).toEqual(["setTerminalFor"]);
+  });
 });

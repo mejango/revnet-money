@@ -282,7 +282,8 @@ export async function resolvePreset(
     );
   }
 
-  if (preset.steps.includes("setPoolFor") && currentHook && !onTargetHook) {
+  // Probed on the target hook too, so a queued registration of a pool it already holds is dropped.
+  if (preset.steps.includes("setPoolFor") && currentHook) {
     if (!poolHook) {
       return { status: "unavailable", message: `The current V4 hook is not recorded on ${chain}.` };
     }

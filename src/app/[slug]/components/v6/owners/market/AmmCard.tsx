@@ -1220,18 +1220,21 @@ export function LiquidityManager({
   );
   // Per-chain scan outcomes reported up by the row groups, so the aggregate
   // empty state is knowable without lifting each chain's queries out of them.
-  const [scan, setScan] = useState<Record<number, number | "loading" | "error">>({});
+  const [scan, setScan] = useState<Record<string, number | "loading" | "error">>({});
   // The edit/remove panels portal here, BELOW the scroll wrapper — inside the
   // table they'd inherit its full scrollable width and get cut off.
   const [panelHost, setPanelHost] = useState<HTMLDivElement | null>(null);
-  const onStatus = useCallback((chainId: number, status: number | "loading" | "error") => {
-    setScan((current) =>
-      current[chainId] === status ? current : { ...current, [chainId]: status },
-    );
+  const onStatus = useCallback((key: number | string, status: number | "loading" | "error") => {
+    setScan((current) => (current[key] === status ? current : { ...current, [key]: status }));
   }, []);
 
   if (!pooled.length) return null;
-  const allEmpty = pooled.length > 0 && pooled.every((state) => scan[Number(state.chainId)] === 0);
+  // Empty only when every scan, the retired-pool one included, answered with nothing.
+  const allEmpty =
+    pooled.length > 0 &&
+    pooled.every(
+      (state) => scan[Number(state.chainId)] === 0 && scan[`retired:${state.chainId}`] === 0,
+    );
 
   return (
     // min-w-0: as a grid item of the dialog panel this must be allowed to
@@ -1245,7 +1248,12 @@ export function LiquidityManager({
       ) : (
         <>
           {pooled.map((state) => (
-            <MovableLiquidity key={state.chainId} state={state} tokenSymbol={tokenSymbol} />
+            <MovableLiquidity
+              key={state.chainId}
+              state={state}
+              tokenSymbol={tokenSymbol}
+              onStatus={onStatus}
+            />
           ))}
           {allEmpty ? (
             <p className="mt-1 text-xs text-zinc-400">
@@ -1290,7 +1298,15 @@ export function LiquidityManager({
  * The wallet's positions still in a pool the project's buyback has left, each moved into the
  * current pool by one reviewed `modifyLiquidities`.
  */
-function MovableLiquidity({ state, tokenSymbol }: { state: AmmChainState; tokenSymbol: string }) {
+function MovableLiquidity({
+  state,
+  tokenSymbol,
+  onStatus,
+}: {
+  state: AmmChainState;
+  tokenSymbol: string;
+  onStatus: (key: string, status: number | "loading" | "error") => void;
+}) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
   const chainId = Number(state.chainId);
@@ -1313,6 +1329,13 @@ function MovableLiquidity({ state, tokenSymbol }: { state: AmmChainState; tokenS
     staleTime: 30_000,
     queryFn: () => readMovableLpPositions(pool!, address!),
   });
+  const enabled = Boolean(pool && positionManager && address);
+  useEffect(() => {
+    onStatus(
+      `retired:${state.chainId}`,
+      !enabled ? 0 : movable.isError ? "error" : (movable.data?.length ?? "loading"),
+    );
+  }, [state.chainId, onStatus, enabled, movable.isError, movable.data?.length]);
   if (!pool || !positionManager || !address || !client) return null;
   // A failed scan is not "nothing to move".
   if (movable.isError) {
@@ -1513,7 +1536,7 @@ function ChainPositionRows({
 }: {
   state: AmmChainState;
   tokenSymbol: string;
-  onStatus: (chainId: number, status: number | "loading" | "error") => void;
+  onStatus: (key: number, status: number | "loading" | "error") => void;
   /** Where the edit/remove panels render, below the table's scroll wrapper. */
   panelHost: HTMLDivElement | null;
 }) {
