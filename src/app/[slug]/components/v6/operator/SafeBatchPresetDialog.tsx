@@ -18,6 +18,8 @@ import { useState } from "react";
 import { chainName, publicClientFor, type ChainProjectRow } from "./operatorLib";
 
 const DIGITS = /^\d+$/;
+const isPoolStep = (step: BatchStep) =>
+  step.kind === "setPoolFor" || step.kind === "initializePoolFor";
 const MIN_TWAP_WINDOW = 300n;
 
 type Resolved = { row: ChainProjectRow; result: PresetResolution };
@@ -75,7 +77,7 @@ export function SafeBatchPresetDialog({
     ready.flatMap(({ result }) =>
       result.steps.map((step) => {
         const edited = windows[windowKey(step)];
-        if (step.kind !== "setPoolFor" || edited === undefined) return step;
+        if (!isPoolStep(step) || edited === undefined) return step;
         if (!DIGITS.test(edited)) {
           throw new Error(`${chainName(step.chainId)}: enter the TWAP window in whole seconds.`);
         }
@@ -100,7 +102,10 @@ export function SafeBatchPresetDialog({
     setError(null);
     try {
       const steps = stagedSteps();
-      const chains = addStepsToBatch(steps);
+      const chains = addStepsToBatch(
+        steps,
+        ready.flatMap(({ result }) => result.dropped),
+      );
       toast({
         title: "Added to the batch",
         description: `Added to the batch for ${chains.map(chainName).join(", ")}.`,
@@ -150,7 +155,7 @@ export function SafeBatchPresetDialog({
                         <span className="text-zinc-500">{index + 1}.</span>
                         <span className="font-medium text-zinc-900">{step.label}</span>
                         <span className="text-zinc-500">{describeStep(step)}</span>
-                        {step.kind === "setPoolFor" ? (
+                        {isPoolStep(step) ? (
                           <label className="flex items-center gap-1">
                             <span className="text-zinc-500">TWAP window (s)</span>
                             <Input

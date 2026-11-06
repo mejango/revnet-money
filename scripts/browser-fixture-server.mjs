@@ -254,6 +254,14 @@ const pendingRoutingRows = [
     },
   };
 });
+const gatewayGenerations = new Set(
+  [
+    routerDeployments.contracts.JBRouterTerminalGateway,
+    ...Object.values(routerDeployments.history.JBRouterTerminalGateway ?? {}),
+  ]
+    .filter(Boolean)
+    .map((address) => address.toLowerCase()),
+);
 const knownTerminalProbes = new Set(
   [
     addresses.terminal,
@@ -261,6 +269,7 @@ const knownTerminalProbes = new Set(
     routerDeployments.contracts.JBRouterTerminalGateway,
     routerDeployments.contracts.JBRouterTerminal,
     ...Object.values(routerDeployments.history.JBRouterTerminal),
+    ...gatewayGenerations,
   ]
     .filter(Boolean)
     .map((address) => address.toLowerCase()),
@@ -895,10 +904,15 @@ const graphqlHandlers = {
     };
   },
   RouterPendingCalls(variables) {
+    // The app reads every gateway generation; retired ones hold nothing here.
+    requireFixture(
+      gatewayGenerations.has(variables.gateway),
+      `RouterPendingCalls gateway=${variables.gateway}`,
+    );
     requireExactVariables("RouterPendingCalls", variables, {
       chainId,
       projectId,
-      gateway: addresses.routerGateway.toLowerCase(),
+      gateway: variables.gateway,
       limit: 100,
       offset: 0,
     });

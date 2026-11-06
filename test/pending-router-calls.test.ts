@@ -35,7 +35,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({ query: vi.fn() }));
 vi.mock("@/lib/bendystraw/client", () => ({ queryBendystrawFromBrowser: mocks.query }));
-const gateway = "0x4a56aef5b6a5b9742abb02ca67c5a85ba183d901" as Address;
+const gateway = "0xe2c259b2fcfd2d57ebcda9b3d2d10bdb1b2cd977" as Address;
 const account = "0x0000000000000000000000000000000000000001" as Address;
 const id = `0x${"1".repeat(64)}` as Hex;
 const call = {
@@ -117,7 +117,10 @@ describe("original pending router calls", () => {
       { ...item, sourceProjectId: 9, pendingCallId: `0x${"2".repeat(64)}` },
     ];
     mocks.query.mockImplementation(async (_operation, variables) => {
-      const items = incoming.filter((payment) => payment.projectId === variables.projectId);
+      const items = incoming.filter(
+        (payment) =>
+          payment.projectId === variables.projectId && payment.gateway === variables.gateway,
+      );
       return { routerPendingCalls: { items, totalCount: items.length } };
     });
     expect(await readIndexedPendingRouterCalls({ chainId: 1, projectId: 1, version: 6 })).toEqual(
@@ -161,6 +164,11 @@ describe("original pending router calls", () => {
     expect(mocks.query.mock.calls.every((args) => args[1].offset === 0)).toBe(true);
   });
   it("loads every destination-project page, rejects truncation and cross-project results", async () => {
+    const original = rollout.rolloutChain(1)!;
+    vi.spyOn(rollout, "rolloutChain").mockReturnValue({
+      ...original,
+      history: { ...original.history, JBRouterTerminalGateway: {} },
+    });
     mocks.query
       .mockResolvedValueOnce({ routerPendingCalls: { items: [item], totalCount: 2 } })
       .mockResolvedValueOnce({

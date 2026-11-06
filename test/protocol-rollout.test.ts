@@ -9,6 +9,7 @@ import {
 import { routerGatewayAbi } from "@/lib/router-gateway-abi";
 import { mirrorBatch } from "@/lib/safe-batch";
 import {
+  MIGRATION_MIRROR_LINE,
   resolvePreset,
   SAFE_BATCH_PRESETS,
   stepResolverFor,
@@ -36,7 +37,7 @@ function client(terminal: Address, attached = true) {
 
 describe("canonical router rollout", () => {
   it.each([1, 10, 8453, 42161])(
-    "prepares and mirrors the executed mainnet migration on chain %s",
+    "prepares the executed mainnet migration on chain %s from its own state, never by mirroring",
     async (destination) => {
       const reader = {
         getCode: vi.fn(async () => "0x6001"),
@@ -58,12 +59,21 @@ describe("canonical router rollout", () => {
         { chainId: destination, projectId: 2 },
         stepResolverFor(() => reader),
       );
-      expect(mirrored.skipped).toEqual([]);
-      expect(mirrored.steps.map((step) => [step.kind, step.values])).toEqual([
+      expect(mirrored.steps).toEqual([]);
+      expect(mirrored.skipped.map((item) => item.reason)).toEqual([
+        MIGRATION_MIRROR_LINE,
+        MIGRATION_MIRROR_LINE,
+      ]);
+      const own = await resolvePreset(SAFE_BATCH_PRESETS[0]!, {
+        chainId: destination,
+        projectId: 2,
+        client: reader,
+      });
+      if (own.status !== "ready") throw new Error(own.message);
+      expect(own.steps.map((step) => [step.kind, step.values])).toEqual([
         ["setHookFor", { hook: rolloutAddress("JBBuybackHook", destination) }],
         ["setTerminalFor", { terminal: rolloutAddress("JBRouterTerminalGateway", destination) }],
       ]);
-      expect(mirrored.steps.every((step) => step.chainId === destination)).toBe(true);
     },
   );
   it("derives readiness from each chain's canonical records, allowing data-only activation", () => {

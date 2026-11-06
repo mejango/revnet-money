@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
     status: "ready" as const,
     steps: [] as unknown[],
     notes: [] as string[],
+    dropped: [] as unknown[],
   },
 }));
 
@@ -287,7 +288,7 @@ describe("SafeBatchTray", () => {
     mocks.preset.steps = [hookStep(), poolStep(), terminalStep()];
     render(<SafeBatchTray rows={ROWS} fallbackProject={ROWS[0]} />);
     fireEvent.click(screen.getByRole("button", { name: "Start from a preset" }));
-    const dialog = await screen.findByRole("dialog", { name: "Move to buyback 1.4.0 + gateway" });
+    const dialog = await screen.findByRole("dialog", { name: "Move to buyback 2.0.0 + gateway" });
     expect(dialog.textContent).toContain("Set buyback pool");
 
     const windowInput = screen.getByRole("textbox", {

@@ -160,6 +160,13 @@
           2
         ],
         [
+          "reviewed-action-hook",
+          "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
+          "MovableLiquidity",
+          "useReviewedAction",
+          1
+        ],
+        [
           "reviewed-action",
           "src/app/[slug]/components/v6/owners/market/AmmCard.tsx",
           "execute",

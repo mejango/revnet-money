@@ -53,6 +53,8 @@ const account = `0x${"1".repeat(40)}`;
 // Read-status and recovery UX measures learn 354.1, audit 357.1 and account 425.1 KiB.
 // Round only these ceilings up; aggregate 2761.7/2762 and referenced 915.3/922 remain within limits.
 // CI measures operator just above 677 KiB; round that ceiling up without changing aggregate limits.
+// Buyback 2.0.0 rollout (move preset, LP move, gateway history) measures project 584.9, terms 583.8,
+// shop 591.1 and extras 600.7 KiB; round only those ceilings up.
 // node-forge 1.4.3 (Para SDK security patch, lazy wallet chunk): all client JS measures 2764.9 KiB; round only that ceiling up.
 const routes = [
   { route: "/", path: "/", kib: 394 },
@@ -61,12 +63,12 @@ const routes = [
   { route: "/audit", path: "/audit", kib: 358 },
   { route: "/discover", path: "/discover", kib: 340 },
   { route: "/create", path: "/create", kib: 554 },
-  { route: "/[slug]", path: "/eth:1", kib: 583 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 582 },
+  { route: "/[slug]", path: "/eth:1", kib: 585 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 584 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 589 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 599 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 592 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 601 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 426 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 415 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
