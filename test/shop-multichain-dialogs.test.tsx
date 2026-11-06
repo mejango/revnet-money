@@ -18,7 +18,10 @@ const mocks = vi.hoisted(() => ({
   saved: false,
   destinations: [] as unknown[],
 }));
-vi.mock("wagmi", () => ({ useAccount: () => ({ address: `0x${"22".repeat(20)}` }) }));
+vi.mock("wagmi", () => ({
+  useAccount: () => ({ address: `0x${"22".repeat(20)}` }),
+  usePublicClient: () => undefined,
+}));
 vi.mock("@/hooks/useMultichainBatch", () => ({
   useMultichainBatch: () => ({
     runBatch: mocks.runBatch,

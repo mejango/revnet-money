@@ -259,7 +259,7 @@ async function ProjectLayoutContent({
           projects={projects}
         >
           <ProjectDiagnosticsProvider chainId={chainId} projectId={projectId}>
-            <ShopCartProvider>
+            <ShopCartProvider scope={project.suckerGroupId || `${chainId}:${projectId}`}>
               <div id="project-top">
                 <Nav wide skipTo={isRevnet ? PROJECT_SECTIONS_ID : undefined} />
               </div>

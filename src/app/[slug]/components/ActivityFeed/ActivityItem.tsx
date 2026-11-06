@@ -253,7 +253,14 @@ function ItemMintBullets({
   const tier = shop.data?.tiers.find((entry) => entry.id === item.tierId);
   const media = useTierMedia(
     chainId,
-    tier && shop.data ? { hook: shop.data.hook, tiers: [tier] } : null,
+    tier && shop.data
+      ? {
+          hook: shop.data.hook,
+          store: shop.data.store,
+          tiers: [tier],
+          hasResolver: shop.data.tiers.some((entry) => entry.resolvedUri),
+        }
+      : null,
   );
   const name = media.data[item.tierId]?.name;
   const split =

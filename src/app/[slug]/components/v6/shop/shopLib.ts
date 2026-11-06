@@ -1,5 +1,6 @@
 "use client";
 
+import { chainRevert } from "@/lib/contract-revert";
 import { cidFromIpfsUri, ipfsUriToAppUrl } from "@/lib/ipfs";
 import { readAllProjectRulesets } from "@/lib/nana/rulesets";
 import { decodeRulesetMetadata } from "@/lib/utils";
@@ -407,9 +408,23 @@ export interface TierMediaSource {
  */
 export function useTierMedia(
   chainId: JBChainId | undefined,
-  shop: { hook: Address; tiers: TierMediaSource[] } | null | undefined,
+  shop:
+    | {
+        hook: Address;
+        /** With `hasResolver`, lets a tier read the resolver for details its digest lacks. */
+        store?: Address;
+        tiers: TierMediaSource[];
+        /** For a caller passing a subset of tiers; otherwise read off the tiers themselves. */
+        hasResolver?: boolean;
+      }
+    | null
+    | undefined,
 ) {
+  const publicClient = usePublicClient({ chainId });
   const tiers = shop?.tiers ?? [];
+  const store = shop?.store;
+  const hasResolver =
+    !!store && !!publicClient && (shop?.hasResolver ?? tiers.some((tier) => tier.resolvedUri));
   return useQueries({
     queries: tiers.map((tier) => ({
       queryKey: [
@@ -419,10 +434,25 @@ export function useTierMedia(
         tier.id,
         tier.encodedIpfsUri,
         tier.resolvedUri,
+        hasResolver,
       ],
       enabled: !!shop,
       staleTime: Infinity,
-      queryFn: () => resolveTierMedia(tier),
+      queryFn: () =>
+        resolveTierMedia(
+          tier,
+          hasResolver
+            ? () =>
+                (publicClient as PublicClient)
+                  .readContract({
+                    address: store!,
+                    abi: jb721TiersHookStoreAbi,
+                    functionName: "tiersOf",
+                    args: [shop!.hook, [], true, BigInt(tier.id), 1n],
+                  })
+                  .then((resolved) => resolved[0]?.resolvedUri ?? "")
+            : undefined,
+        ),
     })),
     combine: (results) => ({
       data: Object.fromEntries(
@@ -441,9 +471,23 @@ export function useTierMedia(
 }
 
 /** Missing metadata stays empty; failed reads remain retryable without blocking inventory. */
-export async function resolveTierMedia(tier: TierMediaSource): Promise<TierMedia> {
+export async function resolveTierMedia(
+  tier: TierMediaSource,
+  readResolvedUri?: () => Promise<string>,
+): Promise<TierMedia> {
   const resolved = tier.resolvedUri ? parseTierMetadataJson(tier.resolvedUri) : null;
   if (resolved && Object.keys(resolved).length > 0) return tierDisplayMetadata(resolved);
+
+  // A digest can address bare artwork with no name, so a shop's resolver answers first. Only a
+  // revert means it has nothing for this tier; a failed read stays retryable.
+  if (readResolvedUri) {
+    const uri = await readResolvedUri().catch((error: unknown) => {
+      if (chainRevert(error)) return "";
+      throw new Error("Item details could not be loaded. Try again.");
+    });
+    const read = uri ? parseTierMetadataJson(uri) : null;
+    if (read && Object.keys(read).length > 0) return tierDisplayMetadata(read);
+  }
 
   if (!tier.encodedIpfsUri || tier.encodedIpfsUri === ZERO_BYTES32) return {};
   const candidates = decodeEncodedIpfsUriCandidates(tier.encodedIpfsUri);
@@ -497,6 +541,14 @@ export function discountLabel(discountPercent: number): string {
 /** Localized shop-price label in the shop's pricing units. */
 export function formatShopAmount(value: bigint, decimals: number): string {
   return formatPayAmount(value, decimals);
+}
+
+/**
+ * A tier's custom voting units, or null when it votes by price. JB721TiersHookStore reports the
+ * price as the units unless custom units are stored, and the read has no flag for which.
+ */
+export function customVotingUnits(tier: Pick<ShopTier, "price" | "votingUnits">): bigint | null {
+  return tier.votingUnits > 0n && tier.votingUnits !== tier.price ? tier.votingUnits : null;
 }
 
 export function tierDisplayName(media: TierMedia | undefined, tierId: number): string {

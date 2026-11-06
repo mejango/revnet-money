@@ -106,6 +106,9 @@ export function tierMediaImageUrl(image: unknown): string | undefined {
   return sdkTierMediaImageUrl(image, APP_IPFS_GATEWAY);
 }
 
+/** The longest payment note these forms send. */
+export const MEMO_MAX_LENGTH = 256;
+
 /** "3d 4h" / "2h 10m" / "5m" countdown label for a ruleset that hasn't started. */
 export function formatStartCountdown(secs: number): string {
   if (secs <= 0) return "moments";

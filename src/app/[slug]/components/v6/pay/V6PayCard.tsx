@@ -28,6 +28,7 @@ import {
   formatPayAmount,
   formatStartCountdown,
   isNativePayToken,
+  MEMO_MAX_LENGTH,
   payTokenKey,
   V6PayMode,
 } from "@/lib/v6/pay";
@@ -37,6 +38,7 @@ import {
   JBChainId,
   JBCoreContracts,
   jbMultiTerminalAbi,
+  jbPricesAbi,
   jbRouterTerminalRegistryAbi,
   jbV6ContractAddress,
 } from "@bananapus/nana-sdk-core";
@@ -68,11 +70,14 @@ import {
 import { useAccount, usePublicClient } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
 import { useShopCart } from "../ShopCartContext";
+import { MemoCount } from "./MemoCount";
 import {
   buyableAsset,
   defaultsToDollars,
   payButtonAction,
   payPanelLayoutClasses,
+  pickedTokenIndex,
+  tokensForDollars,
 } from "./payCardLayout";
 import { TextSelect } from "./TextSelect";
 import {
@@ -175,6 +180,9 @@ export function V6PayCard() {
   // The (address+route) identity of the user's pick, so a background refetch or
   // chain switch remaps the index to the same token rather than clobbering it.
   const selectedKeyRef = useRef<string | null>(null);
+  const selectedSymbolRef = useRef("");
+  /** A picked token the current chain does not accept, until the payer moves on. */
+  const [droppedToken, setDroppedToken] = useState<string | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedAmount(amount), 400);
@@ -201,10 +209,17 @@ export function V6PayCard() {
       return;
     }
     const key = selectedKeyRef.current;
-    const idx = key ? tokens.findIndex((t) => payTokenKey(t) === key) : -1;
+    const idx = key ? pickedTokenIndex(tokens, key, selectedSymbolRef.current, payTokenKey) : -1;
     if (idx >= 0) {
       if (idx !== tokenIndex) setTokenIndex(idx);
+      selectedKeyRef.current = payTokenKey(tokens[idx]);
     } else {
+      // The digits typed were for the dropped token.
+      if (key) {
+        setDroppedToken(selectedSymbolRef.current);
+        setAmount("");
+        setDebouncedAmount("");
+      }
       selectedKeyRef.current = null;
       setTokenTouched(false);
       setTokenIndex(0);
@@ -256,6 +271,37 @@ export function V6PayCard() {
     [cart.items, chainId, shop],
   );
   const cartCount = chainCartItems.reduce((sum, i) => sum + i.quantity, 0);
+  // Dollars are what the amount means only while nothing in a cart sets it in tokens.
+  const amountIsDollars = payWithDollars && cartCount === 0;
+  const otherChainCart = useMemo(() => {
+    const counts = new Map<number, number>();
+    for (const item of cart.items) {
+      if (item.chainId !== Number(chainId))
+        counts.set(item.chainId, (counts.get(item.chainId) ?? 0) + item.quantity);
+    }
+    return chainOptions.flatMap((option) => {
+      const count = counts.get(Number(option.peerChainId));
+      return count ? [{ chainId: option.peerChainId, count }] : [];
+    })[0];
+  }, [cart.items, chainId, chainOptions]);
+
+  // The digits on screen stop meaning what they meant when their unit changes or the cart that
+  // set them empties. A cart that remains sets its own total below.
+  const previousCartCount = useRef(cartCount);
+  useEffect(() => {
+    const hadItems = previousCartCount.current > 0;
+    previousCartCount.current = cartCount;
+    if (hadItems && cartCount === 0) {
+      setAmount("");
+      setDebouncedAmount("");
+    }
+  }, [cartCount]);
+  useEffect(() => {
+    if (cartCount > 0) return;
+    setAmount("");
+    setDebouncedAmount("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payWithDollars]);
 
   // Clamp stale cart quantities against live per-chain supply; drop dead tiers.
   useEffect(() => {
@@ -305,6 +351,7 @@ export function V6PayCard() {
     if (!preferred) return;
     setTokenIndex(preferred.index);
     selectedKeyRef.current = payTokenKey(preferred.token);
+    selectedSymbolRef.current = preferred.token.symbol;
     setTokenTouched(true);
   }, [cartCount, shopRoutesLoading, shopMatchesToken, supportedShopTokenIndexes, tokens, shop]);
 
@@ -415,8 +462,18 @@ export function V6PayCard() {
       address ?? zeroAddress,
       slippageBps ?? null,
     ],
-    enabled: !!publicClient && !!selected && mode === "pay" && (amountRaw > 0n || cartCount > 0),
-    placeholderData: (previous) => previous,
+    enabled:
+      !!publicClient &&
+      !!selected &&
+      mode === "pay" &&
+      !amountIsDollars &&
+      (amountRaw > 0n || cartCount > 0),
+    // A different amount's quote is a dimmed hint; another token's or chain's is no hint at all.
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[1] === chainId &&
+      previousQuery?.queryKey[4] === (selected ? payTokenKey(selected) : "")
+        ? previous
+        : undefined,
     retry: false,
     queryFn: async () => {
       const client = publicClient as PublicClient;
@@ -477,6 +534,50 @@ export function V6PayCard() {
   // The preview is an estimate; the minimum is what the terminal enforces.
   const previewIsEstimate = !!preview && preview.minReturned < preview.beneficiaryTokenCount;
 
+  // ---- What typed dollars would buy ----
+  // Display only, and kept out of the query above: nothing sends this quote. Paying with dollars
+  // buys the token first, and the payment after that gets its own quote and review.
+  const { data: tokensPerDollar, isLoading: dollarPriceLoading } = useQuery({
+    queryKey: ["v6PayTokensPerDollar", chainId, projectId.toString(), selected?.currency],
+    enabled: !!publicClient && !!selected && amountIsDollars && mode === "pay" && amountRaw > 0n,
+    staleTime: 60_000,
+    retry: 1,
+    queryFn: () =>
+      (publicClient as PublicClient).readContract({
+        address: jbV6ContractAddress[JBCoreContracts.JBPrices][chainId],
+        abi: jbPricesAbi,
+        functionName: "pricePerUnitOf",
+        args: [projectId, BigInt(selected!.currency), BigInt(BASE_CURRENCY_USD), BigInt(decimals)],
+      }),
+  });
+  const dollarsInToken =
+    amountIsDollars && tokensPerDollar ? tokensForDollars(debouncedAmount, tokensPerDollar) : 0n;
+  const { data: dollarQuote, isFetching: dollarQuoteLoading } = useQuery({
+    queryKey: [
+      "v6PayDollarQuote",
+      chainId,
+      surface?.terminals?.join(",") ?? null,
+      projectId.toString(),
+      selected ? payTokenKey(selected) : "",
+      dollarsInToken.toString(),
+      address ?? zeroAddress,
+    ],
+    enabled: !!publicClient && !!selected && mode === "pay" && dollarsInToken > 0n,
+    retry: false,
+    queryFn: async () => {
+      const route = await resolveBestV6PayRoute({
+        attachedTerminals: surface?.terminals,
+        client: publicClient as PublicClient,
+        chainId,
+        projectId,
+        token: selected!.token,
+        amount: dollarsInToken,
+        beneficiary: address ?? zeroAddress,
+      });
+      return route?.preview ?? null;
+    },
+  });
+
   // ---- Wallet balance ----
   // Every accepted token, not only the selected one: whether this wallet can pay AT ALL is what
   // decides the default choice below, and one token's balance cannot answer that.
@@ -511,11 +612,6 @@ export function V6PayCard() {
   // A wallet with nothing in it cannot pay in any of these tokens, so the menu opens on "$"
   // rather than on a token the payer would have to go and acquire first. Their own choice wins
   // the moment they make one.
-  useEffect(() => {
-    if (tokenTouched) return;
-    setPayWithDollars(holdsNothing);
-  }, [holdsNothing, tokenTouched]);
-
   // Offered from inside the token menu: buying the token is a way of getting
   // one, so it belongs where the token is chosen.
   const { requestSignIn } = useParaAuth();
@@ -527,6 +623,12 @@ export function V6PayCard() {
     balance: walletBalance,
     decimals: selected?.decimals,
   });
+
+  // Never dollars where they cannot buy anything: Pay would open a purchase that does nothing.
+  useEffect(() => {
+    if (selected && !onRamp.supported) setPayWithDollars(false);
+    else if (!tokenTouched) setPayWithDollars(holdsNothing);
+  }, [holdsNothing, tokenTouched, onRamp.supported, selected]);
 
   // Add-to-balance has no on-chain minimum-output field, so a router swap
   // can't be bounded — refuse it; only direct tokens top up.
@@ -1007,6 +1109,7 @@ export function V6PayCard() {
     if (busy) return;
     const next = chainOptions.find((s) => Number(s.peerChainId) === Number(value));
     if (!next) return;
+    setDroppedToken(null);
     setSelectedSucker(next);
     if (confirmOpen) {
       setPrepared(null);
@@ -1065,10 +1168,22 @@ export function V6PayCard() {
   });
   const showPayReceipt =
     mode === "pay" &&
-    (cartCount > 0 ||
-      (amountRaw > 0n &&
-        !previewError &&
-        (previewLoading || (!!preview && preview.beneficiaryTokenCount > 0n))));
+    (amountIsDollars
+      ? dollarPriceLoading ||
+        dollarQuoteLoading ||
+        (dollarsInToken > 0n && !!dollarQuote && dollarQuote.beneficiaryTokenCount > 0n)
+      : cartCount > 0 ||
+        (amountRaw > 0n &&
+          !previewError &&
+          (previewLoading || (!!preview && preview.beneficiaryTokenCount > 0n))));
+  // What the receipt reads, and whether it still answers what is typed.
+  const receipt = amountIsDollars ? dollarQuote : preview;
+  const receiptPending =
+    amount !== debouncedAmount ||
+    (amountIsDollars
+      ? dollarPriceLoading || dollarQuoteLoading
+      : previewLoading || previewIsPrevious);
+  const receiptPendingClass = receiptPending ? "opacity-40" : "";
 
   return (
     <div>
@@ -1154,10 +1269,10 @@ export function V6PayCard() {
                 inputMode="decimal"
                 // Dollars are shown with their sign and stored without it: everything
                 // downstream — the preview, the amount sent to the provider — parses a number.
-                value={payWithDollars && amount ? `$${amount}` : amount}
+                value={amountIsDollars && amount ? `$${amount}` : amount}
                 onChange={(e) => setAmount(e.target.value.replace(/^\$/, ""))}
                 disabled={busy}
-                placeholder={payWithDollars ? "$0.00" : "0.00"}
+                placeholder={amountIsDollars ? "$0.00" : "0.00"}
                 aria-label="Amount"
                 className="col-start-1 row-start-2 min-h-11 border-0 bg-transparent pl-0 pr-3 pt-1 pb-0 text-zinc-900 text-2xl w-full placeholder:text-zinc-400 focus:ring-0 focus:outline-none sm:leading-6 disabled:opacity-60"
               />
@@ -1170,9 +1285,15 @@ export function V6PayCard() {
                   }
                   onChange={(value) => {
                     setTokenTouched(true);
+                    setDroppedToken(null);
                     if (value === BUY_OPTION) {
                       // Selecting dollars buys nothing yet. The payer types what they want to
                       // spend first, and Pay explains the swap they are about to make.
+                      // The token being bought stays picked, or the token effect undoes this.
+                      if (selected) {
+                        selectedKeyRef.current = payTokenKey(selected);
+                        selectedSymbolRef.current = selected.symbol;
+                      }
                       setPayWithDollars(true);
                       return;
                     }
@@ -1180,7 +1301,10 @@ export function V6PayCard() {
                     const i = Number(value);
                     setTokenIndex(i);
                     const picked = tokens[i];
-                    if (picked) selectedKeyRef.current = payTokenKey(picked);
+                    if (picked) {
+                      selectedKeyRef.current = payTokenKey(picked);
+                      selectedSymbolRef.current = picked.symbol;
+                    }
                     setTokenTouched(true);
                   }}
                   disabled={busy}
@@ -1234,27 +1358,29 @@ export function V6PayCard() {
             {showPayReceipt ? (
               <div className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2.5">
                 <p className="text-sm text-zinc-500">
-                  {previewIsEstimate ? "You get about" : "You get"}
+                  {previewIsEstimate || amountIsDollars ? "You get about" : "You get"}
                 </p>
-                {preview && preview.beneficiaryTokenCount > 0n ? (
+                {receipt && receipt.beneficiaryTokenCount > 0n ? (
                   <p
                     aria-live="polite"
-                    aria-busy={previewLoading}
-                    className={`text-xl font-semibold transition-colors ${
-                      previewLoading || previewIsPrevious ? "text-zinc-400" : "text-zinc-900"
-                    }`}
+                    aria-busy={receiptPending}
+                    className={`text-xl font-semibold text-zinc-900 transition-opacity ${receiptPendingClass}`}
                   >
-                    {formatPayAmount(preview.beneficiaryTokenCount, 18)} {projectTokenLabel}
+                    {formatPayAmount(receipt.beneficiaryTokenCount, 18)} {projectTokenLabel}
                   </p>
-                ) : amountRaw > 0n && previewLoading ? (
+                ) : amountRaw > 0n && receiptPending ? (
                   <Skeleton
                     className="mt-1 h-5 w-24"
                     role="status"
                     aria-label="Calculating token return"
                   />
                 ) : null}
-                {previewIsEstimate ? (
-                  <p className="text-xs text-zinc-500">
+                {amountIsDollars ? (
+                  <p className={`text-xs text-zinc-500 ${receiptPendingClass}`}>
+                    Before card or bank fees
+                  </p>
+                ) : previewIsEstimate ? (
+                  <p className={`text-xs text-zinc-500 ${receiptPendingClass}`}>
                     At least {formatPayAmount(preview.minReturned, 18)} {projectTokenLabel}
                   </p>
                 ) : null}
@@ -1367,9 +1493,9 @@ export function V6PayCard() {
                   </div>
                 ) : null}
 
-                {preview && preview.reservedTokenCount > 0n ? (
-                  <p className="mt-1.5 text-xs font-medium text-zinc-500">
-                    Other recipients get {formatPayAmount(preview.reservedTokenCount, 18)}{" "}
+                {receipt && receipt.reservedTokenCount > 0n ? (
+                  <p className={`mt-1.5 text-xs font-medium text-zinc-500 ${receiptPendingClass}`}>
+                    Other recipients get {formatPayAmount(receipt.reservedTokenCount, 18)}{" "}
                     {projectTokenLabel}
                   </p>
                 ) : null}
@@ -1381,6 +1507,7 @@ export function V6PayCard() {
             ) : null}
 
             {mode === "pay" &&
+            !amountIsDollars &&
             previewFailure instanceof PaySwapQuoteFailedError &&
             (amountRaw > 0n || cartCount > 0) ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-600">
@@ -1407,7 +1534,10 @@ export function V6PayCard() {
                   </>
                 )}
               </p>
-            ) : mode === "pay" && previewError && (amountRaw > 0n || cartCount > 0) ? (
+            ) : mode === "pay" &&
+              !amountIsDollars &&
+              previewError &&
+              (amountRaw > 0n || cartCount > 0) ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-red-600">
                 Couldn&apos;t check what you will receive. Try again once the preview loads.
               </p>
@@ -1455,10 +1585,15 @@ export function V6PayCard() {
             <textarea
               rows={1}
               value={memo}
-              onChange={(e) => setMemo(e.target.value.slice(0, 256))}
+              onChange={(e) => setMemo(e.target.value.slice(0, MEMO_MAX_LENGTH))}
+              maxLength={MEMO_MAX_LENGTH}
               disabled={busy}
               placeholder="Add a note"
               className="flex min-h-14 w-full border border-melon-600 bg-white px-3 py-1.5 text-md ring-offset-white placeholder:text-zinc-500 focus:border-melon-600 focus:ring-0 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+            />
+            <MemoCount
+              length={memo.length}
+              className="pointer-events-none absolute bottom-1 right-5 bg-white px-1"
             />
           </div>
           <div className="relative flex h-14 w-[150px] shrink-0 items-start border-y border-r border-melon-600">
@@ -1492,9 +1627,32 @@ export function V6PayCard() {
         </p>
       ) : null}
       {pairLine ? <p className="mt-2 text-sm text-zinc-600">{pairLine}</p> : null}
-      {surfaceError ? (
+      {droppedToken ? (
+        <p className="mt-2 text-sm text-zinc-600" role="status">
+          {droppedToken} isn&apos;t accepted on {chainDisplayName(chainId)}.
+        </p>
+      ) : null}
+      {otherChainCart && mode === "pay" ? (
+        <p className="mt-2 text-sm text-zinc-600" role="status">
+          {otherChainCart.count} item{otherChainCart.count === 1 ? "" : "s"} in your{" "}
+          {chainDisplayName(otherChainCart.chainId)} cart.{" "}
+          <button
+            type="button"
+            className="underline disabled:opacity-50"
+            disabled={busy}
+            onClick={() => switchChain(String(otherChainCart.chainId))}
+          >
+            Switch
+          </button>
+        </p>
+      ) : null}
+      {/* A failed read being read again is still loading: the verdict waits for its answer. */}
+      {surfaceError && !surfaceFetching ? (
         <p className="mt-2 text-sm text-red-600">
-          Couldn&apos;t verify this project&apos;s accepted tokens. Payments are off.
+          Couldn&apos;t verify this project&apos;s accepted tokens. Payments are off.{" "}
+          <button type="button" className="underline" onClick={() => void refetchSurface()}>
+            Try again
+          </button>
         </p>
       ) : null}
       {surface?.routingUnavailable ? (
@@ -1546,7 +1704,9 @@ export function V6PayCard() {
                 // Everything needed to embed it is still here and tested (`display: "embed"`,
                 // `recordOnRampPurchase`). Ask Para to allowlist this origin on their MoonPay
                 // key and this call is one argument from being a frame again.
-                onRamp.buy({ fiatQuantity: amount.trim() || undefined });
+                onRamp.buy(
+                  amountIsDollars ? { fiatQuantity: amount.trim() || undefined } : undefined,
+                );
               }}
             >
               Buy {buyableLabel}
