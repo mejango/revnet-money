@@ -1,7 +1,6 @@
 "use client";
 
 import { ChainLogo } from "@/components/ChainLogo";
-import { ImageWithFallback, IpfsImage } from "@/components/IpfsImage";
 import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -9,9 +8,23 @@ import { ensAvatarUrlForAddress } from "@/lib/ensAvatarUrl";
 import type { JBChainId } from "@/lib/nana/types";
 import { rememberProjectNavigation } from "@/lib/project-navigation";
 import { formatEthAddress } from "@/lib/utils";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Address, isAddress } from "viem";
+
+// The field is on every page, while results exist only after typing. Their image code carries the
+// CID parser, which pages without project images would otherwise load for nothing.
+const ResultLogoPlaceholder = () => (
+  <span data-search-result-logo className="size-8 shrink-0 bg-teal-100" />
+);
+const IpfsImage = dynamic(() => import("@/components/IpfsImage").then((m) => m.IpfsImage), {
+  loading: ResultLogoPlaceholder,
+});
+const ImageWithFallback = dynamic(
+  () => import("@/components/IpfsImage").then((m) => m.ImageWithFallback),
+  { loading: ResultLogoPlaceholder },
+);
 
 type SearchResult = {
   projectId: number;
@@ -371,9 +384,7 @@ export function RevnetSearch({
                       width={32}
                       height={32}
                       className="size-8 shrink-0 object-cover"
-                      fallback={
-                        <span data-search-result-logo className="size-8 shrink-0 bg-teal-100" />
-                      }
+                      fallback={<ResultLogoPlaceholder />}
                     />
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium text-zinc-900">

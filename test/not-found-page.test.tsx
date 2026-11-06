@@ -13,9 +13,9 @@ function renderAt(pathname: string) {
 }
 
 describe("not-found page", () => {
-  it("keeps the site nav, one h1 and one link home, and names the page", () => {
+  it("keeps the site nav, one h1 and one link home, and names the page", async () => {
     renderAt("/nope");
-    expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeInTheDocument();
+    expect(await screen.findByRole("navigation", { name: "Main navigation" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Not found");
     expect(screen.getByRole("link", { name: "Return Home" })).toHaveAttribute("href", "/");
     expect(screen.queryByRole("button")).not.toBeInTheDocument();

@@ -1,7 +1,13 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
+
+// Every route's bundle carries the root not-found module, so the nav it needs loads on demand.
+export const NotFoundNav = dynamic(() =>
+  import("@/components/layout/Nav").then((module) => module.Nav),
+);
 
 function messageFor(pathname: string) {
   let path = pathname;
