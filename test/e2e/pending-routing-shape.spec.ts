@@ -32,13 +32,23 @@ test("pending routing shows ready, cooldown, and final attempts above activity",
       await route.fallback();
       return;
     }
+    const current = protocolRollout.chains["1"].contracts.JBRouterTerminalGateway.toLowerCase();
     expect(body.variables).toEqual({
       chainId: 1,
       projectId: 1,
-      gateway: protocolRollout.chains["1"].contracts.JBRouterTerminalGateway.toLowerCase(),
+      gateway: body.variables.gateway,
       limit: 100,
       offset: 0,
     });
+    // Every gateway generation is read; only the current one holds these payments.
+    if (body.variables.gateway !== current) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ data: { routerPendingCalls: { items: [], totalCount: 0 } } }),
+      });
+      return;
+    }
     pendingReads += 1;
     await route.fulfill({
       status: 200,
