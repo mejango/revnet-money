@@ -53,6 +53,7 @@ const account = `0x${"1".repeat(40)}`;
 // Read-status and recovery UX measures learn 354.1, audit 357.1 and account 425.1 KiB.
 // Round only these ceilings up; aggregate 2761.7/2762 and referenced 915.3/922 remain within limits.
 // CI measures operator just above 677 KiB; round that ceiling up without changing aggregate limits.
+// node-forge 1.4.3 (Para SDK security patch, lazy wallet chunk): all client JS measures 2764.9 KiB; round only that ceiling up.
 const routes = [
   { route: "/", path: "/", kib: 394 },
   { route: "/learn", path: "/learn", kib: 355 },
@@ -231,7 +232,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // The same artifact measures 2757.6 KiB total, +3.6 KiB (0.13%) over the previous ceiling.
 // The same frozen acquisition-fix artifact measures2759.3 KiB, +1.7 KiB over the prior artifact.
 // Explicit homepage availability and permission retry: measured 2760.4 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2762);
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2765);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
