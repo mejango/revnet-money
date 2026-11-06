@@ -11,7 +11,9 @@ import { rolloutAddress, rolloutTargets } from "@/lib/protocol-rollout";
 import {
   buildStep,
   contractAddressOn,
+  stepKey,
   type BatchStep,
+  type BatchStepRef,
   type BatchStepValues,
   type StepResolver,
 } from "@/lib/safe-batch";
@@ -52,7 +54,8 @@ const PRESET_TWAP_WINDOW = 1_800n;
 export type PresetResolution =
   | { status: "unavailable"; message: string }
   | { status: "nothing"; message: string }
-  | { status: "ready"; steps: BatchStep[]; notes: string[] };
+  /** `dropped`: queued pool registrations this resolution refuses, removed when it is added. */
+  | { status: "ready"; steps: BatchStep[]; notes: string[]; dropped: BatchStepRef[] };
 
 export type PresetReadClient = Pick<PublicClient, "getCode" | "readContract">;
 
@@ -263,6 +266,7 @@ export async function resolvePreset(
   const pid = BigInt(projectId);
   const steps: BatchStep[] = [];
   const notes: string[] = [];
+  const dropped: BatchStepRef[] = [];
 
   const currentHook = await currentHookOf(client, chainId, pid);
   const poolHook = rolloutAddress("JBUniswapV4Hook", chainId);
@@ -296,6 +300,10 @@ export async function resolvePreset(
       notes.push(...pool.notes);
       if (pool.kind !== "skip") {
         steps.push(buildStep({ kind: pool.kind, chainId, projectId, values: pool.values }));
+      } else {
+        const to = contractAddressOn("JBBuybackHookRegistry", chainId)!;
+        const values = { terminalToken: probe.write };
+        dropped.push({ chainId, projectId, id: stepKey({ kind: "setPoolFor", to, values }) });
       }
     }
   }
@@ -328,7 +336,7 @@ export async function resolvePreset(
       message: `Nothing to do on ${chain}: already on the current hook and gateway.`,
     };
   }
-  return { status: "ready", steps, notes };
+  return { status: "ready", steps, notes, dropped };
 }
 
 /** The same token class on another chain: native stays native, USDC becomes that chain's USDC. */

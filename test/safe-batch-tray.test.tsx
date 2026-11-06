@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
     status: "ready" as const,
     steps: [] as unknown[],
     notes: [] as string[],
+    dropped: [] as unknown[],
   },
 }));
 

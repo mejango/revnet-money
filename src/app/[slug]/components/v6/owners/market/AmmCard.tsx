@@ -1314,6 +1314,17 @@ function MovableLiquidity({ state, tokenSymbol }: { state: AmmChainState; tokenS
     queryFn: () => readMovableLpPositions(pool!, address!),
   });
   if (!pool || !positionManager || !address || !client) return null;
+  // A failed scan is not "nothing to move".
+  if (movable.isError) {
+    return (
+      <p role="status" className="mt-2 text-xs text-red-600">
+        Could not check for liquidity left in the old pool.{" "}
+        <button type="button" className="underline" onClick={() => void movable.refetch()}>
+          Retry
+        </button>
+      </p>
+    );
+  }
   if (!movable.data?.length && move.phase !== "done") return null;
 
   const beginReview = async ({ from, position }: MovableLpPosition) => {

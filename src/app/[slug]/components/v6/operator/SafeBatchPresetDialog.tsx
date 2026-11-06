@@ -102,7 +102,10 @@ export function SafeBatchPresetDialog({
     setError(null);
     try {
       const steps = stagedSteps();
-      const chains = addStepsToBatch(steps);
+      const chains = addStepsToBatch(
+        steps,
+        ready.flatMap(({ result }) => result.dropped),
+      );
       toast({
         title: "Added to the batch",
         description: `Added to the batch for ${chains.map(chainName).join(", ")}.`,

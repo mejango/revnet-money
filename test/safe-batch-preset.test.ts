@@ -1,6 +1,6 @@
 import { migratedPoolKey, type V4PoolKey } from "@/lib/buyback-pool-migration";
 import { rolloutAddress, rolloutTargets } from "@/lib/protocol-rollout";
-import { buildStep, mirrorBatch, upsertStep } from "@/lib/safe-batch";
+import { addStepsToBatch, buildStep, mirrorBatch, readBatch, upsertStep } from "@/lib/safe-batch";
 import {
   mapTerminalToken,
   MIGRATION_MIRROR_LINE,
@@ -533,5 +533,26 @@ describe("queued pool registrations", () => {
       ["setPoolFor", NATIVE_TOKEN],
       ["setPoolFor", usdc],
     ]);
+  });
+
+  it("removes a queued registration that a fresh resolution refuses", async () => {
+    window.localStorage.clear();
+    const oldKey = oldNativeKey(10_000, 200);
+    const resolveAt = async (newPrice: bigint) => {
+      const client = stubClient({
+        pools: { [zeroAddress]: { twap: 1_800n, fee: 10_000, tickSpacing: 200 } },
+        prices: {
+          [slotOf(oldKey)]: OLD_PRICE,
+          [slotOf(migratedPoolKey(oldKey, POOL_HOOK))]: newPrice,
+        },
+      });
+      const result = await resolvePreset(preset, { chainId: 84532, projectId: 2, client });
+      if (result.status !== "ready") throw new Error(result.message);
+      addStepsToBatch(result.steps, result.dropped);
+    };
+    await resolveAt(OLD_PRICE);
+    expect(readBatch(84532, 2).map((step) => step.kind)).toContain("setPoolFor");
+    await resolveAt(NEW_PRICE);
+    expect(readBatch(84532, 2).map((step) => step.kind)).toEqual(["setHookFor", "setTerminalFor"]);
   });
 });

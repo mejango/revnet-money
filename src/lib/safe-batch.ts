@@ -539,15 +539,23 @@ export function clearBatch(chainId: number, projectId: number): void {
 }
 
 /** Upsert steps into their chains' trays. Returns the chain ids touched. */
-export function addStepsToBatch(steps: readonly BatchStep[]): number[] {
+/** A queued step's identity in one chain's batch. */
+export type BatchStepRef = Pick<BatchStep, "chainId" | "projectId" | "id">;
+
+/** Upserts `steps` and removes queued `dropped` steps, which a fresh resolution no longer allows. */
+export function addStepsToBatch(
+  steps: readonly BatchStep[],
+  dropped: readonly BatchStepRef[] = [],
+): number[] {
   const byChain = new Map<string, BatchStep[]>();
-  for (const step of steps) {
-    const key = `${step.chainId}:${step.projectId}`;
-    byChain.set(key, [...(byChain.get(key) ?? []), step]);
-  }
+  for (const step of [...steps, ...dropped]) byChain.set(`${step.chainId}:${step.projectId}`, []);
+  for (const step of steps) byChain.get(`${step.chainId}:${step.projectId}`)!.push(step);
   for (const [key, added] of byChain) {
     const [chainId, projectId] = key.split(":").map(Number) as [number, number];
-    let next = readBatch(chainId, projectId);
+    const gone = new Set(
+      dropped.filter((ref) => `${ref.chainId}:${ref.projectId}` === key).map((ref) => ref.id),
+    );
+    let next = readBatch(chainId, projectId).filter((step) => !gone.has(step.id));
     for (const step of added) next = upsertStep(next, step);
     writeBatch(chainId, projectId, next);
   }
