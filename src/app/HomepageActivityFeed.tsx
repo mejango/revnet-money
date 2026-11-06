@@ -182,9 +182,6 @@ export function HomepageActivityFeed({
               </ProjectLink>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2 text-xs text-zinc-500">
-                  <span className="shrink-0 whitespace-nowrap">
-                    <DateRelative timestamp={event.timestamp} />
-                  </span>
                   <div className="flex min-w-0 items-center gap-2">
                     {activity.baseAmount ? (
                       <span className="truncate" title={activity.exactAmount}>
@@ -202,22 +199,27 @@ export function HomepageActivityFeed({
                         out
                       </span>
                     ) : null}
-                    <span className="shrink-0">
-                      <ChainLogo chainId={chainId} width={14} height={14} />
-                    </span>
                   </div>
+                  <span className="shrink-0">
+                    <ChainLogo chainId={chainId} width={14} height={14} />
+                  </span>
                 </div>
-                <ProjectLink
-                  href={href}
-                  projectHint={{
-                    name,
-                    logoUri: project.logoUri ?? null,
-                    tagline: project.projectTagline ?? null,
-                  }}
-                  className="mt-1 block truncate text-sm font-medium text-teal-700 hover:underline"
-                >
-                  {name}
-                </ProjectLink>
+                <div className="mt-1 flex items-baseline justify-between gap-2">
+                  <ProjectLink
+                    href={href}
+                    projectHint={{
+                      name,
+                      logoUri: project.logoUri ?? null,
+                      tagline: project.projectTagline ?? null,
+                    }}
+                    className="block min-w-0 truncate text-sm font-medium text-teal-700 hover:underline"
+                  >
+                    {name}
+                  </ProjectLink>
+                  <span className="shrink-0 whitespace-nowrap text-xs text-zinc-500">
+                    <DateRelative timestamp={event.timestamp} />
+                  </span>
+                </div>
                 <div className="mt-1 line-clamp-2 text-sm">
                   {explorer ? (
                     <a
