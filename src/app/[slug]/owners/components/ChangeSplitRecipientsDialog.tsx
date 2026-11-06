@@ -103,10 +103,12 @@ type Props = {
   initialChainId: JBChainId;
   splitLimit?: string;
   triggerVariant?: "default" | "outline" | "secondary";
+  /** For a panel that would otherwise sit empty when the account can't edit. */
+  deniedNote?: string;
 };
 
 export function ChangeSplitRecipientsDialog(props: Props) {
-  const { stageIdx, initialChainId, splitLimit, triggerVariant = "outline" } = props;
+  const { stageIdx, initialChainId, splitLimit, triggerVariant = "outline", deniedNote } = props;
   const [open, setOpen] = useState(false);
   const [reviewing, setReviewing] = useState<ChainFormData[] | null>(null);
   // A multi-chain change stopped at a Safe proposal: nothing more to send from here.
@@ -300,7 +302,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
   const chainNameOf = (chainId: JBChainId) => chainDisplayName(chainId);
 
   if (!hasPermission("SET_SPLIT_GROUPS")) {
-    return <PermissionStatus {...permissions} />;
+    return <PermissionStatus {...permissions} deniedNote={deniedNote} />;
   }
 
   return (

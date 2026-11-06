@@ -470,4 +470,33 @@ describe("split editor permission availability", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByRole("button", { name: "Retry permissions" })).toBeNull();
   });
+
+  it("states who can edit when a panel asks and the account is verified to lack the permission", () => {
+    state.permissionGranted = false;
+    render(
+      <ChangeSplitRecipientsDialog
+        stageIdx={0}
+        initialChainId={8453}
+        deniedNote="Connect an account with this permission to change recipients."
+      />,
+    );
+    expect(
+      screen.getByText("Connect an account with this permission to change recipients."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Change split recipients" })).toBeNull();
+  });
+
+  it("does not state the denial while the permission read is pending or failed", () => {
+    state.permissionGranted = false;
+    state.permissionLoading = true;
+    const dialog = (
+      <ChangeSplitRecipientsDialog stageIdx={0} initialChainId={8453} deniedNote="Denied." />
+    );
+    const { rerender } = render(dialog);
+    expect(screen.queryByText("Denied.")).toBeNull();
+    state.permissionLoading = false;
+    state.permissionError = true;
+    rerender(dialog);
+    expect(screen.queryByText("Denied.")).toBeNull();
+  });
 });

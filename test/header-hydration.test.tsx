@@ -10,6 +10,7 @@ import { renderToString } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 
 vi.mock("@/lib/nana/project", () => ({
+  useChain: () => undefined,
   useJBChainId: () => 1,
   useJBProject: () => ({ chainId: 1, projectId: 1n }),
   useJBProjectMetadataContext: () => ({ metadata: { data: { name: "Fixture Revnet" } } }),
@@ -21,6 +22,7 @@ vi.mock("@/lib/bendystraw/client", () => ({
   queryBendystrawFromBrowser: () => new Promise(() => {}),
 }));
 vi.mock("@/components/SafeBadge", () => ({ SafeBadge: () => null }));
+vi.mock("@/hooks/ens/useEnsName", () => ({ useEnsName: () => ({ data: null }) }));
 vi.mock("@/components/IpfsImage", () => ({ ImageWithFallback: () => null, IpfsImage: () => null }));
 vi.mock("@/components/ProjectLink", () => ({
   ProjectLink: ({ children }: { children: ReactNode }) => <a>{children}</a>,
@@ -60,6 +62,40 @@ const cachedTreasury = [
     ],
   },
 ];
+
+it("names the operator by address when it has no profile", async () => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  const address = "0xbb96a6d3d251dfda76f96d1650f9cfd53b41c8d1";
+  const known = Object.assign(Promise.resolve({ address }), {
+    status: "fulfilled",
+    value: { address },
+  });
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TooltipProvider>
+          <Suspense>
+            <Header isRevnet operatorPromise={known} projects={projects} createdAt={0} />
+          </Suspense>
+        </TooltipProvider>
+      </QueryClientProvider>,
+    );
+  });
+  expect(container).toHaveTextContent("Operator:");
+  expect(container.querySelector(`a[href$="${address}"]`)).toHaveTextContent(/^0xbb96\.\.\.c8d1$/i);
+  await act(async () => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+});
 
 it.each([
   ["treasury", 2, "ready"],

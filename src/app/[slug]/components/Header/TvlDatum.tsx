@@ -147,7 +147,11 @@ export function TvlDatum({ projects }: Props) {
   const rows = chainResults.flatMap((result) => result.rows);
   const treasury = treasuryUsdTotal(chainResults, projects.length);
   const loading = hydrated ? query.isLoading : projects.length > 0;
-  const total = loading ? "…" : treasury == null ? "—" : formatUsd18(treasury.usd);
+  const total = loading
+    ? "…"
+    : treasury == null || treasury.unpriced.length
+      ? "—"
+      : formatUsd18(treasury.usd);
 
   return (
     <Tooltip>
@@ -157,7 +161,11 @@ export function TvlDatum({ projects }: Props) {
           <span className="text-zinc-500">balance</span>
         </span>
       </TooltipTrigger>
-      <TooltipContent className="w-80 max-w-[calc(100vw-2rem)] p-3 text-xs">
+      <TooltipContent
+        side="bottom"
+        align="start"
+        className="w-80 max-w-[calc(100vw-2rem)] p-3 text-xs"
+      >
         <p className="mb-2 font-medium uppercase tracking-wide text-zinc-500">Balance by chain</p>
         <div className="space-y-2">
           {rows.map((row) => (

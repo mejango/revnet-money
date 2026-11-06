@@ -273,7 +273,8 @@ const TooltipContent = React.forwardRef<HTMLDivElement, TooltipContentProps>(
   ) => {
     const context = useTooltip("TooltipContent");
     const isMobile = useIsMobile();
-    const side = isMobile ? "top" : (requestedSide ?? "top");
+    const side =
+      requestedSide === "bottom" ? "bottom" : isMobile ? "top" : (requestedSide ?? "top");
     const portal = useTooltipPortal(context.open);
     const localRef = React.useRef<HTMLDivElement>(null);
     const ref = composeRefs(forwardedRef, localRef);

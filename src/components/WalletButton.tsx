@@ -129,7 +129,11 @@ function ProjectWalletBalances({ address }: { address: `0x${string}` }) {
   return (
     <>
       <div className="mb-1.5">
-        {pairs.length ? `Across ${pairs.length} project chains` : "Across project chains"}
+        {pairs.length === 1
+          ? "On 1 project chain"
+          : pairs.length
+            ? `Across ${pairs.length} project chains`
+            : "Across project chains"}
       </div>
       <dl className="space-y-1">
         <BalanceRow
