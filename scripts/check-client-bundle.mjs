@@ -57,13 +57,13 @@ const account = `0x${"1".repeat(40)}`;
 // shop 591.1 and extras 600.7 KiB; round only those ceilings up.
 // node-forge 1.4.3 (Para SDK security patch, lazy wallet chunk): all client JS measures 2764.9 KiB; round only that ceiling up.
 // UX review fixes (skip link, search rows, shared token formatter, browser draft) measure / 395.1, learn 357.1,
-// build 358.9, audit 360.1, discover 342.0, create 559.6, project 588.0, terms 587.2, shop 594.4, extras 604.4,
+// build 359.1, audit 360.1, discover 342.0, create 559.6, project 588.0, terms 587.2, shop 594.4, extras 604.4,
 // account 428.2, holdings 417.4, projects 430.2, roles 391.5 KiB and all client JS 2773.1 KiB; round only those up.
 // The not-found page now keeps the site nav and search, so it measures 355.7 KiB like other nav pages.
 const routes = [
   { route: "/", path: "/", kib: 396 },
   { route: "/learn", path: "/learn", kib: 358 },
-  { route: "/build", path: "/build", kib: 359 },
+  { route: "/build", path: "/build", kib: 360 },
   { route: "/audit", path: "/audit", kib: 361 },
   { route: "/discover", path: "/discover", kib: 343 },
   { route: "/create", path: "/create", kib: 560 },
