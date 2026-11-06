@@ -8,6 +8,8 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("wagmi", () => ({ usePublicClient: () => undefined }));
+
 const CID = "QmWxEUm7YCv5oDP1sssMErUrh5AYTxU2hnLCraFEH6BqdQ";
 const HOOK = "0x0000000000000000000000000000000000000001" as const;
 const EMPTY = `0x${"0".repeat(64)}` as const;

@@ -269,13 +269,13 @@ export function InventorySection({
           <button
             type="button"
             onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-            className="mt-4 flex w-full items-center justify-between gap-3 bg-teal-500 px-4 py-3 text-sm font-medium text-melon-950 hover:bg-teal-600"
+            className="sticky bottom-0 z-10 mt-4 flex w-full items-center justify-between gap-3 bg-teal-500 px-4 py-3 text-sm font-medium text-melon-950 hover:bg-teal-600"
           >
-            <span>
-              {count} item{count === 1 ? "" : "s"} selected —{" "}
-              {formatShopAmount(total, shop.pricing.decimals)} {shop.pricing.symbol}
+            <span className="truncate">
+              {count} item{count === 1 ? "" : "s"}, {formatShopAmount(total, shop.pricing.decimals)}{" "}
+              {shop.pricing.symbol}
             </span>
-            <span>Check out in the Pay card →</span>
+            <span className="shrink-0 whitespace-nowrap">Check out →</span>
           </button>
         ) : null}
       </section>
@@ -537,9 +537,9 @@ function TierCard({
           )}
         </div>
 
-        {tier.reserveFrequency > 0 || tier.votingUnits > 0n ? (
+        {tier.reserveFrequency > 0 ? (
           <p className="mt-1 text-[11px] text-zinc-400">
-            {tier.reserveFrequency > 0 ? `1 of every ${tier.reserveFrequency} reserved` : null}
+            1 of every {tier.reserveFrequency} reserved
           </p>
         ) : null}
       </div>

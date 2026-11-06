@@ -21,6 +21,7 @@ import { useConfig, useReadContract } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { ProjectItem } from "../shared";
 import {
+  customVotingUnits,
   describeTransferSchedule,
   discountLabel,
   formatShopAmount,
@@ -283,7 +284,7 @@ export function TierDetailModal({
               {tier.reserveFrequency > 0 ? (
                 <Fact label="Items set aside" value={`1 per ${tier.reserveFrequency} sold`} />
               ) : null}
-              {tier.votingUnits > 0n ? (
+              {customVotingUnits(tier) !== null ? (
                 <Fact label="Voting units" value={tier.votingUnits.toLocaleString("en-US")} />
               ) : null}
             </dl>
