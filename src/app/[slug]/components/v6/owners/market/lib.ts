@@ -57,7 +57,7 @@ import {
   formatUnits,
   Hex,
   isAddress,
-  parseAbiItem,
+  keccak256,
   PublicClient,
   toFunctionSelector,
   zeroAddress,
@@ -105,6 +105,13 @@ const EXTSLOAD_ABI = [
     stateMutability: "view",
     inputs: [{ name: "slot", type: "bytes32" }],
     outputs: [{ type: "bytes32" }],
+  },
+  {
+    type: "function",
+    name: "extsload",
+    stateMutability: "view",
+    inputs: [{ name: "slots", type: "bytes32[]" }],
+    outputs: [{ type: "bytes32[]" }],
   },
 ] as const;
 
@@ -393,19 +400,17 @@ export async function readPoolSnapshot(
   };
 }
 
-// ── Pool composition via net ModifyLiquidity deltas ───────────────────────────
+// ── Pool composition ──────────────────────────────────────────────────────────
 
-const INIT_EVENT = parseAbiItem(
-  "event Initialize(bytes32 indexed id, address indexed currency0, address indexed currency1, uint24 fee, int24 tickSpacing, address hooks, uint160 sqrtPriceX96, int24 tick)",
-);
-const MODIFY_EVENT = parseAbiItem(
-  "event ModifyLiquidity(bytes32 indexed id, address indexed sender, int24 tickLower, int24 tickUpper, int256 liquidityDelta, bytes32 salt)",
-);
+// Center answers -32005 for an eth_getLogs span of 500 blocks or more, on every chain.
+const SCAN_WINDOW = 500n;
+const SCAN_MAX_WINDOWS = 80;
 
-const SCAN_WINDOW = 45_000n;
-const SCAN_BATCH = 8;
-const SCAN_MAX_WINDOWS = 80; // ~3.6M blocks back before giving up
-const SCAN_REORG_OVERLAP = 128n;
+// Pool.State field offsets, from v4-core's StateLibrary.
+const POOL_TICKS_OFFSET = 4n;
+const POOL_TICK_BITMAP_OFFSET = 5n;
+// Center answers 413 to a call of about 7,000 slots.
+const EXTSLOAD_BATCH = 1_000;
 
 interface PoolLiquidityRange {
   tickLower: number;
@@ -421,66 +426,89 @@ export interface PoolComposition {
   ranges: PoolLiquidityRange[];
 }
 
-interface PoolLiquidityEvent {
-  key: string;
-  blockNumber: bigint;
-  tickLower: number;
-  tickUpper: number;
-  delta: bigint;
-}
-
-interface PoolHistoryCache {
-  initializeBlock: bigint;
-  throughBlock: bigint;
-  events: PoolLiquidityEvent[];
-}
-
-const compositionCache = new Map<string, PoolHistoryCache>();
-
-async function modifyLogsInRange(
+async function extsloadSlots(
   client: PublicClient,
   pool: PoolSnapshot,
-  fromBlock: bigint,
-  toBlock: bigint,
-): Promise<PoolLiquidityEvent[]> {
-  if (fromBlock > toBlock) return [];
-  const logs = await client.getLogs({
-    address: pool.poolManager,
-    event: MODIFY_EVENT,
-    args: { id: pool.poolId },
-    fromBlock,
-    toBlock,
-  });
-  return logs.map((log, index) => ({
-    key: `${log.transactionHash ?? log.blockHash ?? log.blockNumber}:${log.logIndex ?? index}`,
-    blockNumber: log.blockNumber ?? 0n,
-    tickLower: Number(log.args.tickLower),
-    tickUpper: Number(log.args.tickUpper),
-    delta: log.args.liquidityDelta ?? 0n,
-  }));
-}
-
-async function scanKnownPoolRange(
-  client: PublicClient,
-  pool: PoolSnapshot,
-  fromBlock: bigint,
-  toBlock: bigint,
-): Promise<PoolLiquidityEvent[]> {
-  const events: PoolLiquidityEvent[] = [];
-  let cursor = fromBlock;
-  while (cursor <= toBlock) {
-    const spans: { lo: bigint; hi: bigint }[] = [];
-    for (let n = 0; n < SCAN_BATCH && cursor <= toBlock; n++) {
-      const hi = cursor + SCAN_WINDOW - 1n > toBlock ? toBlock : cursor + SCAN_WINDOW - 1n;
-      spans.push({ lo: cursor, hi });
-      cursor = hi + 1n;
-    }
-    const batches = await Promise.all(
-      spans.map(({ lo, hi }) => modifyLogsInRange(client, pool, lo, hi)),
-    );
-    for (const batch of batches) events.push(...batch);
+  slots: Hex[],
+  blockNumber: bigint,
+): Promise<Hex[]> {
+  const batches: Hex[][] = [];
+  for (let index = 0; index < slots.length; index += EXTSLOAD_BATCH) {
+    batches.push(slots.slice(index, index + EXTSLOAD_BATCH));
   }
-  return events;
+  const values = await Promise.all(
+    batches.map((batch) =>
+      client.readContract({
+        address: pool.poolManager,
+        abi: EXTSLOAD_ABI,
+        functionName: "extsload",
+        args: [batch],
+        blockNumber,
+      }),
+    ),
+  );
+  return values.flat() as Hex[];
+}
+
+/**
+ * The pool's liquidity per price band, from PoolManager's tick bitmap and
+ * liquidityNet at one block. Covers every sender, and its cost does not grow
+ * with the pool's age. Bands are split at every initialized tick, so they are
+ * not individual positions.
+ */
+async function readPoolTickRanges(
+  client: PublicClient,
+  pool: PoolSnapshot,
+): Promise<PoolLiquidityRange[]> {
+  const blockNumber = await client.getBlockNumber();
+  const spacing = pool.key.tickSpacing;
+  const stateSlot = BigInt(uniswapV4PoolStateSlot(pool.poolId));
+  const mappingSlot = (key: number, offset: bigint) =>
+    keccak256(
+      encodeAbiParameters(
+        [{ type: "int256" }, { type: "uint256" }],
+        [BigInt(key), stateSlot + offset],
+      ),
+    );
+
+  const firstWord = Math.floor(-UNISWAP_V4_MAX_TICK / spacing) >> 8;
+  const lastWord = Math.floor(UNISWAP_V4_MAX_TICK / spacing) >> 8;
+  const wordCount = lastWord - firstWord + 1;
+  const words = await extsloadSlots(
+    client,
+    pool,
+    Array.from({ length: wordCount }, (_, index) =>
+      mappingSlot(firstWord + index, POOL_TICK_BITMAP_OFFSET),
+    ),
+    blockNumber,
+  );
+
+  const ticks: number[] = [];
+  words.forEach((word, index) => {
+    const bits = BigInt(word);
+    if (bits === 0n) return;
+    for (let bit = 0; bit < 256; bit += 1) {
+      if ((bits >> BigInt(bit)) & 1n) ticks.push(((firstWord + index) * 256 + bit) * spacing);
+    }
+  });
+  if (!ticks.length) return [];
+
+  const infos = await extsloadSlots(
+    client,
+    pool,
+    ticks.map((tick) => mappingSlot(tick, POOL_TICKS_OFFSET)),
+    blockNumber,
+  );
+  const ranges: PoolLiquidityRange[] = [];
+  let liquidity = 0n;
+  ticks.forEach((tick, index) => {
+    liquidity += BigInt.asIntN(128, BigInt(infos[index]) >> 128n);
+    if (index + 1 < ticks.length) {
+      ranges.push({ tickLower: tick, tickUpper: ticks[index + 1], liquidity });
+    }
+  });
+  if (liquidity !== 0n) throw new Error("Pool tick state does not net to zero.");
+  return ranges;
 }
 
 /** Value the pool's live ranges at its current price. */
@@ -615,117 +643,14 @@ async function readIndexedPoolComposition(pool: PoolSnapshot): Promise<PoolCompo
 
 /**
  * Current reserves from indexed PositionManager ranges, valued at the live
- * price. If unavailable, reconstruct every ModifyLiquidity delta (all senders)
- * back to Initialize. Null when the RPC cannot return complete history.
+ * price, or from live tick state when the index has nothing for this pool.
+ * Throws when the state read fails.
  */
-export async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComposition | null> {
+export async function fetchPoolComposition(pool: PoolSnapshot): Promise<PoolComposition> {
   const indexed = await readIndexedPoolComposition(pool);
   if (indexed) return indexed;
-
   const client = getViemPublicClient(pool.chainId) as PublicClient;
-  const cacheKey = `${pool.chainId}:${pool.poolId}`;
-  const latest = await client.getBlockNumber();
-  let cached = compositionCache.get(cacheKey);
-  if (cached && latest < cached.throughBlock) {
-    compositionCache.delete(cacheKey);
-    cached = undefined;
-  }
-
-  let initializeBlock: bigint | null = cached?.initializeBlock ?? null;
-  let events: PoolLiquidityEvent[] = [];
-  if (cached) {
-    const overlapStart =
-      cached.throughBlock > SCAN_REORG_OVERLAP
-        ? cached.throughBlock - SCAN_REORG_OVERLAP + 1n
-        : cached.initializeBlock;
-    const fromBlock = overlapStart < cached.initializeBlock ? cached.initializeBlock : overlapStart;
-    events = cached.events.filter((event) => event.blockNumber < fromBlock);
-    events.push(...(await scanKnownPoolRange(client, pool, fromBlock, latest)));
-  } else {
-    // A pool-id-filtered Initialize lookup is normally one cheap request and
-    // gives an authoritative lower bound for every subsequent range scan.
-    try {
-      const inits = await client.getLogs({
-        address: pool.poolManager,
-        event: INIT_EVENT,
-        args: { id: pool.poolId },
-        fromBlock: 0n,
-        toBlock: latest,
-      });
-      initializeBlock = inits.reduce<bigint | null>((earliest, log) => {
-        const block = log.blockNumber;
-        if (block == null) return earliest;
-        return earliest == null || block < earliest ? block : earliest;
-      }, null);
-    } catch {
-      initializeBlock = null;
-    }
-
-    if (initializeBlock != null) {
-      events = await scanKnownPoolRange(client, pool, initializeBlock, latest);
-    } else {
-      // Range-limited RPC fallback: walk backwards in parallel batches until
-      // the Initialize event proves that the collected history is complete.
-      let cursor = latest;
-      let windows = 0;
-      while (initializeBlock == null && cursor >= 0n && windows < SCAN_MAX_WINDOWS) {
-        const spans: { lo: bigint; hi: bigint }[] = [];
-        for (let n = 0; n < SCAN_BATCH && cursor >= 0n && windows < SCAN_MAX_WINDOWS; n++) {
-          const hi = cursor;
-          const lo = hi >= SCAN_WINDOW ? hi - SCAN_WINDOW + 1n : 0n;
-          spans.push({ lo, hi });
-          cursor = lo === 0n ? -1n : lo - 1n;
-          windows++;
-        }
-        const results = await Promise.all(
-          spans.map(async ({ lo, hi }) => {
-            const [inits, mods] = await Promise.all([
-              client.getLogs({
-                address: pool.poolManager,
-                event: INIT_EVENT,
-                args: { id: pool.poolId },
-                fromBlock: lo,
-                toBlock: hi,
-              }),
-              modifyLogsInRange(client, pool, lo, hi),
-            ]);
-            return { inits, mods };
-          }),
-        );
-        for (const result of results) {
-          events.push(...result.mods);
-          for (const log of result.inits) {
-            const block = log.blockNumber;
-            if (block != null && (initializeBlock == null || block < initializeBlock)) {
-              initializeBlock = block;
-            }
-          }
-        }
-      }
-    }
-  }
-  if (initializeBlock == null) return null; // incomplete history — never show an invented composition
-
-  const uniqueEvents = new Map(events.map((event) => [event.key, event]));
-  events = [...uniqueEvents.values()].sort(
-    (a, b) => Number(a.blockNumber - b.blockNumber) || a.key.localeCompare(b.key),
-  );
-  compositionCache.set(cacheKey, { initializeBlock, throughBlock: latest, events });
-
-  const ranges = new Map<string, { tickLower: number; tickUpper: number; liquidity: bigint }>();
-  for (const event of events) {
-    const key = `${event.tickLower}:${event.tickUpper}`;
-    const entry = ranges.get(key) ?? {
-      tickLower: event.tickLower,
-      tickUpper: event.tickUpper,
-      liquidity: 0n,
-    };
-    entry.liquidity += event.delta;
-    ranges.set(key, entry);
-  }
-
-  const value = compositionFromRanges(pool, [...ranges.values()]);
-  return value;
+  return compositionFromRanges(pool, await readPoolTickRanges(client, pool));
 }
 
 // ── Wallet LP positions + full-exit removal ─────────────────────────────────
@@ -803,6 +728,8 @@ async function poolPositionTokenIds(
   const latest = await client.getBlockNumber();
   const cacheKey = `${pool.chainId}:${pool.poolId.toLowerCase()}:${positionManager.toLowerCase()}`;
   const cached = poolHistoryCache.get(cacheKey);
+  // A position with liquidity always has initialized ticks.
+  if (!cached && !(await readPoolTickRanges(client, pool)).length) return [];
 
   const ids = new Map<string, bigint>(cached?.ids);
   let initializeBlock = cached?.initializeBlock ?? null;
@@ -823,7 +750,10 @@ async function poolPositionTokenIds(
     // Known pool: only the blocks added since the last scan are unseen. A short
     // overlap keeps a shallow reorg from dropping a position.
     const from = cached.throughBlock > 16n ? cached.throughBlock - 16n : 0n;
-    if (latest >= from) absorb(await rawPoolLogs(client, pool, from, latest));
+    for (let start = from; start <= latest; start += SCAN_WINDOW) {
+      const end = start + SCAN_WINDOW - 1n;
+      absorb(await rawPoolLogs(client, pool, start, end < latest ? end : latest));
+    }
   } else {
     // Cold pool: walk back toward Initialize, several windows per round trip.
     // Sequential windows made this a minute-long wait on a pool a few hundred

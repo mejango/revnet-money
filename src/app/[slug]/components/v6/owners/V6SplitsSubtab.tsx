@@ -5,6 +5,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
 import { StickyRecipient } from "@/components/sticky/StickyRecipient";
+import { TokenAmount } from "@/components/TokenAmount";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -175,6 +176,9 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
     }),
   );
 
+  // The balance reads can only start once the controller reads have landed.
+  const pendingLoading = controllerReads.isLoading || pendingReads.isLoading;
+
   if (!hydrated) return <TableSkeleton rows={4} columns={3} />;
 
   return (
@@ -205,11 +209,18 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
             variant={selectedStageIdx === idx ? "tab-selected" : "bottomline"}
             className={twJoin("text-md text-zinc-400", selectedStageIdx === idx && "text-inherit")}
             key={String(ruleset.id)}
+            aria-pressed={selectedStageIdx === idx}
             onClick={() => setSelectedStageIdx(idx)}
           >
             Stage {idx + 1}
             {idx === currentStageIdx && (
-              <span className="rounded-full h-2 w-2 bg-orange-400 border-[2px] border-orange-200 ml-1" />
+              <>
+                <span
+                  aria-hidden
+                  className="rounded-full h-2 w-2 bg-orange-400 border-[2px] border-orange-200 ml-1"
+                />
+                <span className="sr-only">, current stage</span>
+              </>
             )}
           </Button>
         ))}
@@ -227,6 +238,7 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
           projectId: BigInt(project.projectId),
           pending: pendingByProject.get(`${project.chainId}:${project.projectId}`),
         }))}
+        pendingLoading={pendingLoading}
         tokenSymbol={tokenSymbol}
         onSuccess={() => {
           void pendingReads.refetch();
@@ -248,7 +260,7 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                 <ChainLogo chainId={c.chainId} />
                 {chainDisplayName(c.chainId)}
               </div>
-              <div className="overflow-auto">
+              <div>
                 <div>
                   <Table>
                     <TableHeader>
@@ -332,20 +344,21 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                                 )}
                               </TableCell>
                               <TableCell>
-                                {pending !== undefined
-                                  ? // THIS split's share of the chain's pending reserved
-                                    // balance — the column previously repeated the chain
-                                    // total on every row, so each looked like the whole.
-                                    `${Number(
-                                      formatUnits(
-                                        (pending * BigInt(split.percent)) /
-                                          BigInt(SPLITS_TOTAL_PERCENT),
-                                        18,
-                                      ),
-                                    ).toLocaleString("en-US", {
-                                      maximumFractionDigits: 2,
-                                    })} ${tokenSymbol}`
-                                  : "—"}
+                                {pending !== undefined ? (
+                                  // THIS split's share of the chain's pending reserved balance.
+                                  <TokenAmount
+                                    value={
+                                      (pending * BigInt(split.percent)) /
+                                      BigInt(SPLITS_TOTAL_PERCENT)
+                                    }
+                                    decimals={18}
+                                    symbol={tokenSymbol}
+                                  />
+                                ) : pendingLoading ? (
+                                  <Skeleton className="h-3 w-20" />
+                                ) : (
+                                  "—"
+                                )}
                               </TableCell>
                             </TableRow>
                           );

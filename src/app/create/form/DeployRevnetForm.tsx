@@ -1,10 +1,17 @@
+import { formatShortDateTime } from "@/lib/date";
 import { useFormContext } from "@/lib/forms";
 import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
 import { parseRevnetDraft } from "@/lib/revnet-draft";
 import Image from "next/image";
 import Link from "next/link";
-import { useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { GoToProjectButton } from "../buttons/GoToProjectButton";
+import {
+  clearBrowserDraft,
+  readBrowserDraft,
+  saveBrowserDraft,
+  type BrowserDraft,
+} from "../helpers/browserDraft";
 import type { QuotedStageStart } from "../helpers/staleQuote";
 import { useTestData } from "../helpers/useTestData";
 import type { RevnetFormData } from "../types";
@@ -38,8 +45,13 @@ export function DeployRevnetForm({
   /** Rebuilds the deploy request and quote with a fresh shared timestamp. */
   rebuildStaleQuote?: (stale: RelayrPostBundleResponse) => Promise<RelayrPostBundleResponse>;
 }) {
+  // Sections hold answers derived from the values they open with, so replacing the whole form
+  // reopens them rather than leaving them to catch up.
+  const [loadedForm, setLoadedForm] = useState(0);
+  const reopenSections = useCallback(() => setLoadedForm((count) => count + 1), []);
+
   // Type `testdata` into the console to fill the form (development builds only).
-  useTestData();
+  useTestData(reopenSections);
 
   const validBundle = !!relayrResponse?.bundle_uuid;
   const disabled = validBundle;
@@ -72,22 +84,28 @@ export function DeployRevnetForm({
             .
           </p>
         </div>
-        <DraftImport disabled={disabled} />
+        <DraftControls
+          disabled={disabled}
+          launchSubmitted={!!directDeployment}
+          onLoaded={reopenSections}
+        />
       </div>
-      {/* "Look" carries no chain-dependent field, so it leads. Settlement
+      <Fragment key={loadedForm}>
+        {/* "Look" carries no chain-dependent field, so it leads. Settlement
           (chains + reserve asset) comes next: every chain-dependent input
           below specializes per selected chain at the point of input. */}
-      <ProjectDetails disabled={disabled} />
-      <Divider />
-      <SettlementSection disabled={disabled} />
-      <Divider />
-      <Stages disabled={disabled} />
-      <Divider />
-      <StoreSection disabled={disabled} />
-      <Divider />
-      <OperatorSection disabled={disabled} />
-      <Divider />
-      <DeploySection validBundle={validBundle} disabled={disabled} />
+        <ProjectDetails disabled={disabled} />
+        <Divider />
+        <SettlementSection disabled={disabled} />
+        <Divider />
+        <Stages disabled={disabled} />
+        <Divider />
+        <StoreSection disabled={disabled} />
+        <Divider />
+        <OperatorSection disabled={disabled} />
+        <Divider />
+        <DeploySection validBundle={validBundle} disabled={disabled} />
+      </Fragment>
       {relayrResponse && (
         <QuoteResponse
           relayrResponse={relayrResponse}
@@ -109,10 +127,52 @@ export function DeployRevnetForm({
   );
 }
 
-function DraftImport({ disabled }: { disabled: boolean }) {
+const draftButtonClassName =
+  "rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50";
+
+function DraftControls({
+  disabled,
+  launchSubmitted,
+  onLoaded,
+}: {
+  disabled: boolean;
+  launchSubmitted: boolean;
+  onLoaded: () => void;
+}) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const { setValues } = useFormContext<RevnetFormData>();
+  const { values, setValues } = useFormContext<RevnetFormData>();
   const [status, setStatus] = useState("");
+  // Read after mount, since the server has no browser storage. Nothing reaches the form until the
+  // reader restores it, and an unanswered offer is not overwritten.
+  const [storageRead, setStorageRead] = useState(false);
+  const [offer, setOffer] = useState<BrowserDraft>();
+
+  useEffect(() => {
+    setOffer(readBrowserDraft());
+    setStorageRead(true);
+  }, []);
+
+  useEffect(() => {
+    if (launchSubmitted) clearBrowserDraft();
+    else if (storageRead && !offer && !disabled) saveBrowserDraft(values);
+  }, [disabled, launchSubmitted, offer, storageRead, values]);
+
+  const load = (next: RevnetFormData, loaded: string, mediaMissing = false) => {
+    setValues(next);
+    onLoaded();
+    setOffer(undefined);
+    setStatus(
+      [
+        loaded,
+        next.stages[0]?.futureStartTimestamp === null
+          ? "The saved start time has passed, so choose a new one."
+          : "",
+        mediaMissing ? "Add item media again." : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+    );
+  };
 
   return (
     <div className="flex flex-col items-end gap-1">
@@ -127,8 +187,10 @@ function DraftImport({ disabled }: { disabled: boolean }) {
           event.target.value = "";
           if (!file) return;
           try {
-            setValues(parseRevnetDraft(await file.text()));
-            setStatus("Draft imported. Review every section before launch.");
+            load(
+              parseRevnetDraft(await file.text()),
+              "Draft imported. Review every section before launch.",
+            );
           } catch (error) {
             setStatus(error instanceof Error ? error.message : "Could not import that draft.");
           }
@@ -136,12 +198,47 @@ function DraftImport({ disabled }: { disabled: boolean }) {
       />
       <button
         type="button"
-        className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50"
+        className={draftButtonClassName}
         disabled={disabled}
         onClick={() => inputRef.current?.click()}
       >
         Import .jb
       </button>
+      {offer && !disabled ? (
+        <div className="mt-2 flex flex-col items-end gap-2">
+          <p className="max-w-sm text-right text-xs text-zinc-600">
+            Draft saved in this browser
+            {offer.savedAt ? ` on ${formatShortDateTime(offer.savedAt)}` : ""}.
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className={draftButtonClassName}
+              onClick={() => {
+                // Read again: a start can pass while this offer sits open.
+                const draft = readBrowserDraft() ?? offer;
+                load(
+                  draft.values,
+                  "Draft restored. Review every section before launch.",
+                  draft.mediaMissing,
+                );
+              }}
+            >
+              Restore draft
+            </button>
+            <button
+              type="button"
+              className={draftButtonClassName}
+              onClick={() => {
+                clearBrowserDraft();
+                setOffer(undefined);
+              }}
+            >
+              Discard draft
+            </button>
+          </div>
+        </div>
+      ) : null}
       {status ? <p className="max-w-sm text-right text-xs text-zinc-600">{status}</p> : null}
     </div>
   );

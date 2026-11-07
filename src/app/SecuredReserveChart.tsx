@@ -1,7 +1,8 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
-import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
+import { type JBChainId } from "@bananapus/nana-sdk-core";
 import { useMemo, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type { HomepageReserves } from "./getHomepageReserves";
 
@@ -98,10 +99,7 @@ export function SecuredReserveChart({
                 {hovered.chains.map((chain) => (
                   <span key={chain.chainId} className="inline-flex items-center gap-1 tabular-nums">
                     <ChainLogo chainId={chain.chainId as JBChainId} width={11} height={11} />
-                    <span className="sr-only">
-                      {JB_CHAINS[chain.chainId as JBChainId]?.name ?? "Chain " + chain.chainId}
-                      :{" "}
-                    </span>
+                    <span className="sr-only">{chainDisplayName(chain.chainId)}: </span>
                     <span className="text-zinc-700">{usd(chain.valueUsd)}</span>
                   </span>
                 ))}

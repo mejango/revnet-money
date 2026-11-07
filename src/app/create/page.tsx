@@ -37,6 +37,7 @@ import {
   LaunchedNotice,
   LaunchHeldNotice,
 } from "./form/LaunchedNotice";
+import { clearBrowserDraft } from "./helpers/browserDraft";
 import { createSchema } from "./helpers/createSchema";
 import { bridgeableReserveAssets, verifyCustomReserveAsset } from "./helpers/customReserveAsset";
 import { assertLaunchFeedsReachable } from "./helpers/feedReachability";
@@ -138,7 +139,10 @@ export default function Page() {
     let live = true;
     void followLaunch(attempt, saved.outcome, saved.retire).then((next) => {
       if (!live) return;
-      if (next?.kind === "launched") setLaunched(next);
+      if (next?.kind === "launched") {
+        setLaunched(next);
+        clearBrowserDraft();
+      }
       setShown(next?.kind === "launched" ? undefined : next);
       if (!next || next.kind === "launched") {
         ended.current.add(attempt.key);

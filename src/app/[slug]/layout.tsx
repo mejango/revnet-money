@@ -15,6 +15,7 @@ import { Header } from "./components/Header/Header";
 import { NewProjectNotice } from "./components/NewProjectNotice";
 import { PayCard } from "./components/PayCard/PayCard";
 import { ProjectDataNotice, ProjectDiagnosticsProvider } from "./components/ProjectDiagnostics";
+import { PROJECT_SECTIONS_ID } from "./components/projectSections";
 import { ResponsiveProjectLayout } from "./components/ResponsiveProjectLayout";
 import { ShopCartProvider } from "./components/v6/ShopCartContext";
 import { getProject } from "./getProject";
@@ -258,9 +259,9 @@ async function ProjectLayoutContent({
           projects={projects}
         >
           <ProjectDiagnosticsProvider chainId={chainId} projectId={projectId}>
-            <ShopCartProvider>
+            <ShopCartProvider scope={project.suckerGroupId || `${chainId}:${projectId}`}>
               <div id="project-top">
-                <Nav wide />
+                <Nav wide skipTo={isRevnet ? PROJECT_SECTIONS_ID : undefined} />
               </div>
 
               {degraded && (

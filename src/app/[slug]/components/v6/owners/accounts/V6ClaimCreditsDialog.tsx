@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import {
   Dialog,
@@ -13,7 +14,6 @@ import { useJBContractContext } from "@/lib/nana/project";
 import { wagmiConfig } from "@/lib/wagmiConfig";
 import {
   formatUnits,
-  JB_CHAINS,
   JB_TOKEN_DECIMALS,
   JBCoreContracts,
   type JBChainId,
@@ -79,11 +79,11 @@ export function V6ClaimCreditsDialog({
                   onChange={(event) =>
                     setSelection((previous) => ({ ...previous, [key]: event.target.checked }))
                   }
-                  aria-label={`Claim on ${JB_CHAINS[row.chainId]?.name ?? row.chainId}, project ${row.projectId}`}
+                  aria-label={`Claim on ${chainDisplayName(row.chainId)}, project ${row.projectId}`}
                 />
                 <ChainLogo chainId={row.chainId} width={16} height={16} />
                 <span>
-                  {JB_CHAINS[row.chainId]?.name ?? row.chainId} · project {String(row.projectId)}
+                  {chainDisplayName(row.chainId)}, project {String(row.projectId)}
                 </span>
                 <span className="tabular-nums">
                   {formatUnits(row.credit, JB_TOKEN_DECIMALS, { fractionDigits: 4 })} credits

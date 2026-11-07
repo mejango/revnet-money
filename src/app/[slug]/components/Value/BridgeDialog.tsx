@@ -32,6 +32,7 @@ import {
   useReviewedAction,
 } from "@/hooks/useReviewedAction";
 import { useSuckerPairs } from "@/hooks/useSuckerPairs";
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import type { Project } from "@/lib/bendystraw/types";
 import {
   buildProtectedBridgePrepareTx,
@@ -61,6 +62,8 @@ interface Props {
   projects: Array<Pick<Project, "projectId" | "chainId" | "token">>;
 }
 
+const NO_FUNDING_MOVES = "None. The same tokens arrive, with no funding.";
+
 export function BridgeDialog(props: PropsWithChildren<Props>) {
   const { children, projects } = props;
   const sourceChains = useMemo(() => projects.map((p) => p.chainId as JBChainId), [projects]);
@@ -80,6 +83,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { address } = useAccount();
+  // Estimates read for the account on screen; the send below stays with the connected wallet.
+  const { address: viewedAddress } = useViewedAccount();
   const router = useRouter();
   const publicClient = usePublicClient({ chainId: sourceChainId });
   const destinationClient = usePublicClient({ chainId: targetChainId });
@@ -146,7 +151,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       targetChainId,
       targetProject?.projectId,
       suckerPair?.remote,
-      address,
+      viewedAddress,
       amountValue?.toString(),
       terminalToken,
       slippageBps?.toString(),
@@ -156,7 +161,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       !!destinationClient &&
       !!targetChainId &&
       !!targetProject &&
-      !!address &&
+      !!viewedAddress &&
       !!suckerPair &&
       amountValue !== undefined &&
       !!terminalToken &&
@@ -167,7 +172,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         !destinationClient ||
         !targetChainId ||
         !targetProject ||
-        !address ||
+        !viewedAddress ||
         !suckerPair ||
         amountValue === undefined ||
         !terminalToken
@@ -183,7 +188,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         projectTokenCount: amountValue,
         terminalToken,
         slippageBps,
-        beneficiary: address,
+        beneficiary: viewedAddress,
         destinationClient,
         destinationChainId: targetChainId,
         destinationProjectId: BigInt(targetProject.projectId),
@@ -195,11 +200,12 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
     retry: 1,
   });
 
+  // A project can hold more than one active sucker to the same chain.
   const targetChains = useMemo(
     () =>
-      suckerPairs
-        .map((s) => Number(s.remoteChainId))
-        .filter((id) => id !== sourceChainId) as JBChainId[],
+      [...new Set(suckerPairs.map((s) => Number(s.remoteChainId)))].filter(
+        (id) => id !== sourceChainId,
+      ) as JBChainId[],
     [sourceChainId, suckerPairs],
   );
 
@@ -258,7 +264,10 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
             },
             {
               label: "Minimum funding moved",
-              value: `At least ${formatUnits(prepareQuote.data.minTokensReclaimed, prepareQuote.data.tokenDecimals)} ${backingTokenSymbol}`,
+              value:
+                prepareQuote.data.minTokensReclaimed === 0n
+                  ? NO_FUNDING_MOVES
+                  : `At least ${formatUnits(prepareQuote.data.minTokensReclaimed, prepareQuote.data.tokenDecimals)} ${backingTokenSymbol}`,
             },
           ]
         : [],
@@ -472,7 +481,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
             void reviewMove();
           }}
         >
-          <fieldset className="grid grid-cols-2 gap-4">
+          <fieldset className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <Label htmlFor="sourceChainId" className="text-zinc-900">
                 From network
@@ -539,26 +548,24 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
-                  {targetChains
-                    .filter((chainId) => chainId !== sourceChainId)
-                    .map((chainId) => {
-                      return (
-                        <SelectItem
-                          value={chainId.toString()}
-                          key={chainId}
-                          className="[&>*:last-child]:flex [&>*:last-child]:w-full"
-                        >
-                          <div className="flex items-center gap-2 grow">
-                            <ChainLogo chainId={chainId as JBChainId} />
-                            {chainDisplayName(chainId as JBChainId)}
-                          </div>
-                          <span className="shrink-0 pl-2">
-                            {balances?.find((b) => b.chainId === chainId)?.balance.format(2)}{" "}
-                            {tokenSymbol}
-                          </span>
-                        </SelectItem>
-                      );
-                    })}
+                  {targetChains.map((chainId) => {
+                    return (
+                      <SelectItem
+                        value={chainId.toString()}
+                        key={chainId}
+                        className="[&>*:last-child]:flex [&>*:last-child]:w-full"
+                      >
+                        <div className="flex items-center gap-2 grow">
+                          <ChainLogo chainId={chainId as JBChainId} />
+                          {chainDisplayName(chainId as JBChainId)}
+                        </div>
+                        <span className="shrink-0 pl-2">
+                          {balances?.find((b) => b.chainId === chainId)?.balance.format(2)}{" "}
+                          {tokenSymbol}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -575,6 +582,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                   disabled={isDisabled}
                   autoComplete="off"
                   type="text"
+                  className="pr-20"
                 />
                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 z-10">
                   <span className="text-zinc-500 sm:text-md">{tokenSymbol}</span>
@@ -624,7 +632,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
               </p>
             </div>
             <div
-              className="col-span-2 rounded-md border border-zinc-200 bg-zinc-50 p-3 text-sm"
+              className="rounded-md border sm:col-span-2 border-zinc-200 bg-zinc-50 p-3 text-sm"
               aria-live="polite"
             >
               {prepareQuote.isPending && prepareQuote.fetchStatus === "fetching" ? (
@@ -643,11 +651,17 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                   </span>
                   <span className="text-zinc-600">Minimum funding moved</span>
                   <span className="font-medium sm:text-right">
-                    {formatUnits(
-                      prepareQuote.data.minTokensReclaimed,
-                      prepareQuote.data.tokenDecimals,
-                    )}{" "}
-                    {backingTokenSymbol}
+                    {prepareQuote.data.minTokensReclaimed === 0n ? (
+                      NO_FUNDING_MOVES
+                    ) : (
+                      <>
+                        {formatUnits(
+                          prepareQuote.data.minTokensReclaimed,
+                          prepareQuote.data.tokenDecimals,
+                        )}{" "}
+                        {backingTokenSymbol}
+                      </>
+                    )}
                   </span>
                 </div>
               ) : (
@@ -656,7 +670,11 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                     ? prepareQuote.error.message
                     : slippageBps === undefined
                       ? "Enter an allowed decrease from 0% to 5%."
-                      : "Choose both networks and an amount to see the minimum funding moved."}
+                      : !targetChainId || amountValue === undefined
+                        ? "Choose both networks and an amount to see the minimum funding moved."
+                        : !viewedAddress
+                          ? "Connect a wallet to see the minimum funding moved."
+                          : "Couldn't estimate a move between these networks."}
                 </span>
               )}
             </div>
@@ -674,8 +692,12 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                 "First step confirmed. Close this window and use the transaction table to finish the move."}
               {isSafeResultUnconfirmed && SAFE_PROPOSAL_UNCONFIRMED_LINE}
               {gate.line}
+              {amountValue !== undefined && !isBalanceLoading && amountValue > balance.value ? (
+                <p>{`Not enough ${tokenSymbol} on ${chainDisplayName(sourceChainId)}`}</p>
+              ) : null}
             </div>
             <ButtonWithWallet
+              connectWhileDisabled
               targetChainId={sourceChainId}
               loading={gate.pending}
               disabled={

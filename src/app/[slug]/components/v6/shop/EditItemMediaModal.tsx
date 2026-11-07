@@ -23,7 +23,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useAccount } from "wagmi";
 import type { ProjectItem } from "../shared";
-import { tierDisplayName, type ShopTier, type TierMedia } from "./shopLib";
+import {
+  categoryLabel,
+  tierDisplayName,
+  useTierMedia,
+  type ShopInventory,
+  type ShopTier,
+  type TierMedia,
+} from "./shopLib";
 import { pinMediaEdits, readMediaEditSource } from "./shopMediaEdit";
 import { useShopDestinations } from "./useShopDestinations";
 
@@ -208,11 +215,7 @@ export function EditItemMediaModal({
                         }
                       >
                         <option value="">Choose an item…</option>
-                        {destination.shop.tiers.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            Item #{item.id}, category {item.category}
-                          </option>
-                        ))}
+                        <ItemOptions chainId={destination.chainId} shop={destination.shop} />
                       </select>
                     ) : null}
                   </div>
@@ -306,4 +309,14 @@ export function EditItemMediaModal({
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Could not update item media.";
+}
+
+/** A chain's items by the names shoppers know them by. */
+function ItemOptions({ chainId, shop }: { chainId: JBChainId; shop: ShopInventory }) {
+  const { data: media } = useTierMedia(chainId, shop);
+  return shop.tiers.map((item) => (
+    <option key={item.id} value={item.id}>
+      {tierDisplayName(media[item.id], item.id)}, {categoryLabel(item.category, shop.tiers, media)}
+    </option>
+  ));
 }

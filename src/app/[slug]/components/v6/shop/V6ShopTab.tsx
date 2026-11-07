@@ -1,6 +1,7 @@
 "use client";
 
 import { ShopInventorySkeleton } from "@/components/loading/LoadingSkeletons";
+import { useHydrated } from "@/hooks/useHydrated";
 import { useJBChainId, useJBContractContext } from "@/lib/nana/project";
 import { projectViewHref } from "@/lib/projectSubtabNavigation";
 import { cn } from "@/lib/utils";
@@ -62,10 +63,12 @@ function ShopTabInner({ projects }: { projects: ProjectItem[] }) {
   const shopQuery = useShopInventory(chainId, projectId);
   const media = useTierMedia(chainId, shopQuery.data);
   const mediaById = media.data;
+  // The Pay card can fill this query before this boundary hydrates, so match the server first.
+  const hydrated = useHydrated();
 
   if (!chainId) return null;
 
-  if (shopQuery.isLoading) {
+  if (!hydrated || shopQuery.isLoading) {
     return <ShopInventorySkeleton />;
   }
   if (shopQuery.isError) {

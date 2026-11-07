@@ -3,6 +3,7 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
+import { TokenAmount } from "@/components/TokenAmount";
 import { ConceptTerm } from "@/components/ui/ConceptTerm";
 import {
   Table,
@@ -18,12 +19,10 @@ import { useLoanToken } from "@/hooks/useLoanToken";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { currentOutstandingLoanFee } from "@/lib/loanFees";
 import { useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
-import { commaNumber } from "@/lib/number";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 import { formatTokenSymbol } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useState } from "react";
-import { formatUnits } from "viem";
 import type { SelectedLoan } from "../../Value/hooks/useBorrowDialog";
 import { LoanDetailsTable } from "../../Value/LoansDetailsTable";
 import { ReallocateDialog } from "../../Value/ReallocateDialog";
@@ -59,26 +58,34 @@ function AllLoanRow({
         <EthereumAddress address={loan.owner as `0x${string}`} short withEnsName />
       </TableCell>
       <TableCell className="whitespace-nowrap tabular-nums">
-        {source
-          ? `${commaNumber(formatUnits(BigInt(loan.borrowAmount), source.decimals))} ${source.symbol}`
-          : pending
-            ? "…"
-            : "Unavailable"}
+        {source ? (
+          <TokenAmount
+            value={BigInt(loan.borrowAmount)}
+            decimals={source.decimals}
+            symbol={source.symbol}
+          />
+        ) : pending ? (
+          "…"
+        ) : (
+          "Unavailable"
+        )}
       </TableCell>
       <TableCell className="whitespace-nowrap tabular-nums">
-        {commaNumber(formatUnits(BigInt(loan.collateral), 18))} {tokenSymbol}
+        <TokenAmount value={BigInt(loan.collateral)} decimals={18} symbol={tokenSymbol} />
       </TableCell>
       <TableCell className="whitespace-nowrap tabular-nums">
         {loan.prepaidFeePercent / 10}%
       </TableCell>
       <TableCell className="whitespace-nowrap tabular-nums">
-        {fee === null
-          ? "Expired"
-          : source
-            ? `${commaNumber(formatUnits(fee, source.decimals))} ${source.symbol}`
-            : pending
-              ? "…"
-              : "Unavailable"}
+        {fee === null ? (
+          "Expired"
+        ) : source ? (
+          <TokenAmount value={fee} decimals={source.decimals} symbol={source.symbol} />
+        ) : pending ? (
+          "…"
+        ) : (
+          "Unavailable"
+        )}
       </TableCell>
       <TableCell className="whitespace-nowrap">
         {new Date(loan.createdAt * 1000).toLocaleDateString()}
@@ -109,19 +116,19 @@ function AllLoansCard({ projects, tokenSymbol }: { projects: ProjectItem[]; toke
       ) : rows.length === 0 ? (
         <div className="text-zinc-500">No active loans found.</div>
       ) : (
-        <div className="mb-4 max-h-96 w-full max-w-full min-w-0 overflow-auto">
+        <div className="mb-4 w-full max-w-full min-w-0">
           <div className="flex min-w-0 flex-col">
-            <Table className="min-w-max">
+            <Table containerClassName="max-h-96">
               <TableHeader>
                 <TableRow>
                   <TableHead className="whitespace-nowrap">Network</TableHead>
                   <TableHead className="whitespace-nowrap">Borrower</TableHead>
                   <TableHead className="whitespace-nowrap">Borrowed</TableHead>
-                  <TableHead className="whitespace-nowrap">Tokens backing loan</TableHead>
+                  <TableHead>Tokens backing loan</TableHead>
                   <TableHead className="whitespace-nowrap">
                     <ConceptTerm note={PROTOCOL_CONCEPTS.prepaidFee}>Prepaid fee</ConceptTerm>
                   </TableHead>
-                  <TableHead className="whitespace-nowrap">Current repayment fee</TableHead>
+                  <TableHead>Current repayment fee</TableHead>
                   <TableHead className="whitespace-nowrap">Opened</TableHead>
                 </TableRow>
               </TableHeader>

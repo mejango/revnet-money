@@ -1,7 +1,8 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
 import { getPublicClient } from "wagmi/actions";
 import { customReserveCoversChains, verifyCustomReserveAsset } from "../helpers/customReserveAsset";
@@ -61,7 +62,7 @@ export function ReserveAssetFields({ disabled = false }: { disabled?: boolean })
         setLookup({
           kind: "success",
           message: `${verified.symbol} | ${verified.decimals} decimals | verified on ${chainIds
-            .map((chainId) => JB_CHAINS[chainId]?.name ?? chainId)
+            .map((chainId) => chainDisplayName(chainId))
             .join(", ")}`,
         });
       } catch (error) {

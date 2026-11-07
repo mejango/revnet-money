@@ -1,6 +1,6 @@
 "use client";
 
-import { USDC_DECIMALS } from "@/app/constants";
+import { chainDisplayName, USDC_DECIMALS } from "@/app/constants";
 import { GetFunds } from "@/components/GetFunds";
 import { ViewAsDialog } from "@/components/ViewAsDialog";
 import { useEnsName } from "@/hooks/ens/useEnsName";
@@ -129,7 +129,11 @@ function ProjectWalletBalances({ address }: { address: `0x${string}` }) {
   return (
     <>
       <div className="mb-1.5">
-        {pairs.length ? `Across ${pairs.length} project chains` : "Across project chains"}
+        {pairs.length === 1
+          ? "On 1 project chain"
+          : pairs.length
+            ? `Across ${pairs.length} project chains`
+            : "Across project chains"}
       </div>
       <dl className="space-y-1">
         <BalanceRow
@@ -427,7 +431,9 @@ export function WalletButton() {
                 <ProjectWalletBalances address={viewAs} />
               ) : (
                 <>
-                  <div className="mb-1.5">{chain?.name ?? "Unsupported network"}</div>
+                  <div className="mb-1.5">
+                    {chain ? chainDisplayName(chain.id) : "Unsupported network"}
+                  </div>
                   <dl className="space-y-1">
                     <BalanceRow label={balance?.symbol ?? "Native"} value={formattedBalance} />
                     <BalanceRow label="USDC" value={formattedUsdcBalance} />
@@ -532,7 +538,9 @@ export function WalletButton() {
               <ProjectWalletBalances address={address} />
             ) : (
               <>
-                <div className="mb-1.5">{chain?.name ?? "Unsupported network"}</div>
+                <div className="mb-1.5">
+                  {chain ? chainDisplayName(chain.id) : "Unsupported network"}
+                </div>
                 <dl className="space-y-1">
                   <BalanceRow label={balance?.symbol ?? "Native"} value={formattedBalance} />
                   <BalanceRow label="USDC" value={formattedUsdcBalance} />

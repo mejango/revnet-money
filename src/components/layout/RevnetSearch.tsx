@@ -3,12 +3,28 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
 import { useHydrated } from "@/hooks/useHydrated";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { ensAvatarUrlForAddress } from "@/lib/ensAvatarUrl";
 import type { JBChainId } from "@/lib/nana/types";
 import { rememberProjectNavigation } from "@/lib/project-navigation";
 import { formatEthAddress } from "@/lib/utils";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Address, isAddress } from "viem";
+
+// The field is on every page, while results exist only after typing. Their image code carries the
+// CID parser, which pages without project images would otherwise load for nothing.
+const ResultLogoPlaceholder = () => (
+  <span data-search-result-logo className="size-8 shrink-0 bg-teal-100" />
+);
+const IpfsImage = dynamic(() => import("@/components/IpfsImage").then((m) => m.IpfsImage), {
+  loading: ResultLogoPlaceholder,
+});
+const ImageWithFallback = dynamic(
+  () => import("@/components/IpfsImage").then((m) => m.ImageWithFallback),
+  { loading: ResultLogoPlaceholder },
+);
 
 type SearchResult = {
   projectId: number;
@@ -86,7 +102,9 @@ export function RevnetSearch({
   // The server form has no search action yet. Typing before its handlers attach
   // can lose the controlled value or submit back to the current project URL.
   const hydrated = useHydrated();
+  const compact = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [open, setOpen] = useState(false);
@@ -190,6 +208,10 @@ export function RevnetSearch({
     if (hasAccountRow || isHandleQuery) setOpen(true);
   }, [hasAccountRow, isHandleQuery]);
 
+  useEffect(() => {
+    if (autoFocus && hydrated) inputRef.current?.focus();
+  }, [autoFocus, hydrated]);
+
   const goToResult = (result: SearchResult) => {
     rememberProjectNavigation(resultHref(result), {
       name: result.name ?? `Project ${result.projectId}`,
@@ -220,6 +242,14 @@ export function RevnetSearch({
     <div
       ref={containerRef}
       className="relative min-w-0 w-full"
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || !open) return;
+        // A search field's native Escape would also clear the query.
+        event.preventDefault();
+        // Focus first: the field's focus handler reopens the list.
+        inputRef.current?.focus();
+        setOpen(false);
+      }}
       onFocusCapture={() => onFocusChange?.(true)}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
@@ -267,18 +297,15 @@ export function RevnetSearch({
             <Magnifier />
           </span>
           <input
+            ref={inputRef}
             type="search"
             disabled={!hydrated}
-            autoFocus={autoFocus}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onFocus={() => {
               if (results.length > 0 || searching || hasAccountRow || isHandleQuery) setOpen(true);
             }}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") setOpen(false);
-            }}
-            placeholder="Search revnets"
+            placeholder={compact ? "Search" : "Search revnets"}
             className="min-h-12 w-full border border-zinc-200 bg-white py-2 pl-11 pr-3 text-base text-zinc-900 placeholder:text-zinc-400 outline-none transition focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
           />
         </label>
@@ -302,14 +329,30 @@ export function RevnetSearch({
             <button
               type="button"
               onClick={() => goToAccount(accountResult)}
-              className="block w-full px-4 py-3 text-left hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+              className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
             >
-              <span className="block truncate font-medium">
-                {accountResult.name ?? formatEthAddress(accountResult.address)}
-              </span>
-              <span className="block truncate text-xs text-zinc-600">
-                {accountResult.name ? `${formatEthAddress(accountResult.address)} | ` : ""}
-                View account
+              <ImageWithFallback
+                data-search-result-logo
+                src={ensAvatarUrlForAddress(accountResult.address, { size: 32 })}
+                alt=""
+                width={32}
+                height={32}
+                className="size-8 shrink-0 rounded-full"
+                fallback={
+                  <span
+                    data-search-result-logo
+                    className="size-8 shrink-0 rounded-full bg-teal-600"
+                  />
+                }
+              />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-zinc-900">
+                  {accountResult.name ?? formatEthAddress(accountResult.address)}
+                </span>
+                <span className="block truncate text-xs text-zinc-600">
+                  {accountResult.name ? `${formatEthAddress(accountResult.address)} | ` : ""}
+                  View account
+                </span>
               </span>
             </button>
           ) : ensResolving ? (
@@ -332,24 +375,35 @@ export function RevnetSearch({
                   <button
                     type="button"
                     onClick={() => goToResult(result)}
-                    className="block w-full px-4 py-3 text-left hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-teal-500"
                   >
-                    <span className="block truncate font-medium">
-                      {result.name ?? `Project ${result.projectId}`}
-                    </span>
-                    <span className="flex items-center gap-1 text-xs text-zinc-600">
-                      {result.ticker ? <span>{result.ticker.replace(/^\$+/, "")}</span> : null}
-                      {(result.chainIds.length ? result.chainIds : [result.chainId]).map(
-                        (chainId) => (
-                          <ChainLogo
-                            key={chainId}
-                            chainId={chainId as JBChainId}
-                            width={14}
-                            height={14}
-                            standalone
-                          />
-                        ),
-                      )}
+                    <IpfsImage
+                      data-search-result-logo
+                      src={result.logoUri}
+                      alt=""
+                      width={32}
+                      height={32}
+                      className="size-8 shrink-0 object-cover"
+                      fallback={<ResultLogoPlaceholder />}
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-zinc-900">
+                        {result.name ?? `Project ${result.projectId}`}
+                      </span>
+                      <span className="flex items-center gap-1 text-xs text-zinc-600">
+                        {result.ticker ? <span>{result.ticker.replace(/^\$+/, "")}</span> : null}
+                        {(result.chainIds.length ? result.chainIds : [result.chainId]).map(
+                          (chainId) => (
+                            <ChainLogo
+                              key={chainId}
+                              chainId={chainId as JBChainId}
+                              width={14}
+                              height={14}
+                              standalone
+                            />
+                          ),
+                        )}
+                      </span>
                     </span>
                   </button>
                 </li>

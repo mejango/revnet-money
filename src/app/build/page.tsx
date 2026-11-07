@@ -133,7 +133,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       ],
     },
     paragraphs: [
-      "Issuance is the tokens created per ETH or USD paid; later stages can inherit it. An issuance cut lowers it on a schedule (default 10% every 30 days). The cash out tax sets how much of a cash out stays behind (the form offers 0–80% in steps of 5, default 20%; contracts allow anything below 100%). The split sends a share of new tokens to contributors. On Juicebox the same idea is called reserved tokens, and the contract field is splitPercent. Auto issuance sets aside fixed amounts to claim without paying.",
+      "Issuance is the tokens created per ETH or USD paid; later stages can inherit it. An issuance cut lowers it on a schedule (default 10% every 30 days). The cash out tax sets how much of a cash out stays behind (a value from 0 to 1: the form offers 0 to 0.8 in steps of 0.05, default 0.2; contracts allow anything below 1). The split sends a share of new tokens to contributors. On Juicebox the same idea is called reserved tokens, and the contract field is splitPercent. Auto issuance sets aside fixed amounts to claim without paying.",
     ],
     note: "Stage starts must increase, a split above 0% needs a recipient, and issuance cuts should be at least a day apart. The form sets the first start ten minutes after you prepare the launch; you can pick a later time. If the launch executes after that start, cash outs and loans lock for seven days.",
     links: [
@@ -371,7 +371,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Chains",
-        text: "Ethereum, Optimism, Base, Arbitrum, plus Sepolia and the three L2 Sepolias. The SDK's SUPPORTED_CHAINS and JB_CHAINS carry the list.",
+        text: "Ethereum, Base, Arbitrum, Optimism, plus Sepolia and the three L2 Sepolias. The SDK's SUPPORTED_CHAINS and JB_CHAINS carry the list.",
       },
       {
         key: "Source",
@@ -789,8 +789,8 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         text: "a registered sucker cashes out on the source chain with no tax and no launch lock, against local backing only, so bridge accounting works. A holder who receives the tokens on the destination gets neither exemption.",
       },
       {
-        key: "Fees at 0% tax",
-        text: "a 0% cash out tax removes the Revnet fee, but a Juicebox fee can still apply to balance that arrived through payouts that had not paid one.",
+        key: "Fees at a tax of 0",
+        text: "a cash out tax of 0 removes the Revnet fee, but a Juicebox fee can still apply to balance that arrived through payouts that had not paid one.",
       },
       {
         key: "The configuration hash",
@@ -821,7 +821,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Cash outs",
-        text: "the terminal or hook enforces the same minimum the confirmation shows, including at 0% tax.",
+        text: "the terminal or hook enforces the same minimum the confirmation shows, including at a tax of 0.",
       },
       {
         key: "Loans",

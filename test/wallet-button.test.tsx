@@ -389,6 +389,32 @@ describe("local wallet controls", () => {
     },
   );
 
+  it.each([
+    [[1], "On 1 project chain"],
+    [[1, 8453], "Across 2 project chains"],
+  ])("counts the project chains %j in the wallet menu", async (chainIds, heading) => {
+    wallet.account.mockReturnValue({
+      address: "0x1234567890abcdef1234567890abcdef12345678",
+      chain: { id: 1, name: "Ethereum" },
+      isConnected: true,
+    });
+    wallet.project.mockReturnValue({});
+    wallet.suckers.mockReturnValue({
+      data: chainIds.map((peerChainId) => ({ peerChainId, projectId: 1n })),
+      isLoading: true,
+      isVerified: false,
+    });
+    wallet.suckerBalances.mockReturnValue({ data: [], isLoading: true, isComplete: false });
+    wallet.tokenContext.mockReturnValue({ token: { isLoading: true, data: undefined } });
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <WalletButton />
+      </QueryClientProvider>,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: /0x1234.*5678/i }));
+    expect(await screen.findByText(heading)).toBeInTheDocument();
+  });
+
   describe("the project token balance", () => {
     const address = "0x1234567890abcdef1234567890abcdef12345678";
 

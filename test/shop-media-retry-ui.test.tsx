@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
     ],
   },
 }));
+vi.mock("wagmi", () => ({ usePublicClient: () => undefined }));
 vi.mock("@/lib/nana/project", () => ({
   useJBChainId: () => 1,
   useJBContractContext: () => ({ projectId: 1n }),

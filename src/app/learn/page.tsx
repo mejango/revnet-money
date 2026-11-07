@@ -112,16 +112,16 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       {
         label: "Example schedule",
         description:
-          "Illustrative schedule: stage one starts on day zero, issues 1,000 tokens per ETH before a 30% split, cuts issuance by 10% every 30 days, and has a 20% cash out tax. Stage two starts on day 365, inherits the rate, cuts it by 5% every 90 days, and uses a 10% split and 50% tax. Stage three starts on day 1,825 with no new issuance and a 50% tax.",
+          "Illustrative schedule: stage one starts on day zero, issues 1,000 tokens per ETH before a 30% split, cuts issuance by 10% every 30 days, and has a cash out tax of 0.2. Stage two starts on day 365, inherits the rate, cuts it by 5% every 90 days, and uses a 10% split and a tax of 0.5. Stage three starts on day 1,825 with no new issuance and a tax of 0.5.",
         lines: [
           "  STAGE 1  day 0      1,000 tokens per ETH, cut 10% every 30 days",
-          "                      split 30% to contributors, cash out tax 20%",
+          "                      split 30% to contributors, cash out tax 0.2",
           "",
           "  STAGE 2  day 365    rate carries over, cut 5% every 90 days",
-          "                      split 10%, cash out tax 50%",
+          "                      split 10%, cash out tax 0.5",
           "",
           "  STAGE 3  day 1,825  issuance stops",
-          "                      split 0%, cash out tax 50%, forever",
+          "                      split 0%, cash out tax 0.5, forever",
         ],
       },
     ],
@@ -211,21 +211,21 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     summary:
       "When you cash out, you return tokens to the revnet and receive a share of its balance sheet. The returned tokens are burned. The cash out tax leaves part of your share behind for everyone who stays.",
     paragraphs: [
-      "Return 10% of the supply at a 0% tax and you get 10% of the balance sheet. Raise the tax and you get less, though not as much less as the rate suggests, because the formula also weighs how much of the supply you return.",
+      "Return 10% of the supply at a tax of 0 and you get 10% of the balance sheet. Raise the tax and you get less, though not as much less as the rate suggests, because the formula also weighs how much of the supply you return.",
       "Bigger cash outs get more per token. Splitting one cash out into several smaller ones returns less in total, and costs more gas. The tax is set per stage, so later stages can leave more or less behind. Fees, loans, and market routes change the final amount, so check the quote.",
     ],
     diagrams: [
       {
         label: "Worked example before fees",
         description:
-          "With a balance of 100 ETH and a cash out of 10% of total supply, a 0% tax returns 10 ETH, 20% returns 8.2 ETH, 50% returns 5.5 ETH, and 80% returns 2.8 ETH, before fees. Multiply balance by the share, then by one minus the tax plus the tax times the share. Use 0.1 for a 10% share and 0.2 for a 20% tax.",
+          "With a balance of 100 ETH and a cash out of 10% of total supply, a tax of 0 returns 10 ETH, 0.2 returns 8.2 ETH, 0.5 returns 5.5 ETH, and 0.8 returns 2.8 ETH, before fees. Multiply balance by the share, then by one minus the tax plus the tax times the share. Use 0.1 for a 10% share.",
         lines: [
           "  balance 100 ETH, you hold 10% of the supply",
           "",
-          "  tax  0%  → cash out returns 10.0 ETH",
-          "  tax 20%  → cash out returns  8.2 ETH   (1.8 ETH stays)",
-          "  tax 50%  → cash out returns  5.5 ETH   (4.5 ETH stays)",
-          "  tax 80%  → cash out returns  2.8 ETH   (7.2 ETH stays)",
+          "  tax 0    → cash out returns 10.0 ETH",
+          "  tax 0.2  → cash out returns  8.2 ETH   (1.8 ETH stays)",
+          "  tax 0.5  → cash out returns  5.5 ETH   (4.5 ETH stays)",
+          "  tax 0.8  → cash out returns  2.8 ETH   (7.2 ETH stays)",
           "",
           "  returned = balance × share × ((1 − tax) + tax × share)",
         ],
@@ -309,7 +309,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       { key: "Launch", text: "a creation fee on each chain, up to 0.001 ETH." },
       {
         key: "Cash outs",
-        text: "with a cash out tax above 0%, 2.5% of the money you receive goes to JBP6. REV receives a fee worth 2.5% of the tokens you return.",
+        text: "with a cash out tax above 0, 2.5% of the money you receive goes to JBP6. REV receives a fee worth 2.5% of the tokens you return.",
       },
       {
         key: "Loans",

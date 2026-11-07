@@ -123,24 +123,13 @@ export function AddStageDialog({
   const baseCurrencySymbol = customReserve ? reserveAssetSymbol : baseCurrency;
 
   // Move enableCut state to top level
-  const [enableCut, setEnableCut] = useState(
-    Boolean(
-      initialValues &&
-      (Number(initialValues.priceCeilingIncreasePercentage) !== 0 ||
-        Number(initialValues.priceCeilingIncreaseFrequency) !== 0),
-    ),
-  );
+  const [enableCut, setEnableCut] = useState(() => cutControlsFrom(initialValues).enabled);
   const [uiCutPercentage, setUiCutPercentage] = useState(
-    initialValues && Number(initialValues.priceCeilingIncreasePercentage) !== 0
-      ? Number(initialValues.priceCeilingIncreasePercentage)
-      : 10,
+    () => cutControlsFrom(initialValues).percentage,
   );
   const [uiCutFrequency, setUiCutFrequency] = useState(
-    initialValues && Number(initialValues.priceCeilingIncreaseFrequency) !== 0
-      ? Number(initialValues.priceCeilingIncreaseFrequency)
-      : 30,
+    () => cutControlsFrom(initialValues).frequency,
   );
-  const [hasUserSetCut, setHasUserSetCut] = useState(false);
 
   // Discrete values matching your radio options
   const steps = ["no tax", "light", "medium", "heavy", "extreme"];
@@ -152,6 +141,10 @@ export function AddStageDialog({
         // (Re)start the buffers from the parent's current state on every open.
         if (nextOpen) {
           setDraftBaseCurrency(issuanceBaseCurrency);
+          const cut = cutControlsFrom(initialValues);
+          setEnableCut(cut.enabled);
+          setUiCutPercentage(cut.percentage);
+          setUiCutFrequency(cut.frequency);
         }
         setOpen(nextOpen);
       }}
@@ -198,18 +191,9 @@ export function AddStageDialog({
             }}
           >
             {({ values, isValid, errors, setFieldValue, submitCount }) => {
-              // Handler for checkbox toggle
+              // Unchecking only hides the fields, so their values come back with the checkbox.
               const handleCutToggle = (e: React.ChangeEvent<HTMLInputElement>) => {
-                const checked = e.target.checked;
-                setEnableCut(checked);
-                if (checked) {
-                  if (!hasUserSetCut) {
-                    setUiCutPercentage(10);
-                    setUiCutFrequency(30);
-                  }
-                  // else: keep last user-entered values
-                }
-                // Do not reset values on uncheck, just hide the fields
+                setEnableCut(e.target.checked);
               };
 
               // Expand a split to per-chain beneficiaries (seeded with the
@@ -350,10 +334,7 @@ export function AddStageDialog({
                                   step="any"
                                   className="h-9 w-14 border-2 border-melon-300 bg-melon-25 pr-6 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
                                   value={String(uiCutPercentage)}
-                                  onChange={(e) => {
-                                    setUiCutPercentage(Number(e.target.value));
-                                    setHasUserSetCut(true);
-                                  }}
+                                  onChange={(e) => setUiCutPercentage(Number(e.target.value))}
                                   required
                                 />
                                 <span className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none">
@@ -371,10 +352,7 @@ export function AddStageDialog({
                                     step="any"
                                     className="h-9 w-25 border-2 border-melon-300 bg-melon-25 pr-10 pl-2 hover:border-melon-400 focus:border-melon-600 focus:ring-0"
                                     value={String(uiCutFrequency)}
-                                    onChange={(e) => {
-                                      setUiCutFrequency(Number(e.target.value));
-                                      setHasUserSetCut(true);
-                                    }}
+                                    onChange={(e) => setUiCutFrequency(Number(e.target.value))}
                                     required
                                   />
                                   <span className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none">
@@ -799,7 +777,7 @@ export function AddStageDialog({
                           step={5}
                           name="priceFloorTaxIntensity"
                           className="h-2 w-full cursor-pointer appearance-none bg-gray-200 px-0 accent-teal-500"
-                          aria-label="Cash-out tax percentage"
+                          aria-label="Cash-out tax"
                         />
                       </div>
                     </div>
@@ -841,12 +819,6 @@ export function AddStageDialog({
 
                   <DialogFooter>
                     <div className="flex w-full flex-col items-end gap-3">
-                      <Button
-                        type="submit"
-                        className="bg-teal-500 text-melon-950 hover:bg-teal-600"
-                      >
-                        Save stage
-                      </Button>
                       {submitCount > 0 && !isValid ? (
                         <div
                           className="w-full border-l-2 border-red-500 pl-3 text-left"
@@ -860,6 +832,12 @@ export function AddStageDialog({
                           </p>
                         </div>
                       ) : null}
+                      <Button
+                        type="submit"
+                        className="bg-teal-500 text-melon-950 hover:bg-teal-600"
+                      >
+                        Save stage
+                      </Button>
                     </div>
                   </DialogFooter>
                 </Form>
@@ -870,6 +848,17 @@ export function AddStageDialog({
       </DialogContent>
     </Dialog>
   );
+}
+
+/** The cut controls for a stage being edited, or the off state a new stage opens with. */
+function cutControlsFrom(stage?: StageData) {
+  const percentage = Number(stage?.priceCeilingIncreasePercentage) || 0;
+  const frequency = Number(stage?.priceCeilingIncreaseFrequency) || 0;
+  return {
+    enabled: percentage !== 0 || frequency !== 0,
+    percentage: percentage || 10,
+    frequency: frequency || 30,
+  };
 }
 
 function getDefaultStageData(stageIdx: number, stages: StageData[]) {

@@ -56,24 +56,28 @@ const account = `0x${"1".repeat(40)}`;
 // Buyback 2.0.0 rollout (move preset, LP move, gateway history) measures project 584.9, terms 583.8,
 // shop 591.1 and extras 600.7 KiB; round only those ceilings up.
 // node-forge 1.4.3 (Para SDK security patch, lazy wallet chunk): all client JS measures 2764.9 KiB; round only that ceiling up.
+// UX review fixes (skip link, search rows, shared token formatter, browser draft) measure / 395.1, learn 357.1,
+// build 359.1, audit 360.1, discover 342.0, create 559.6, project 588.0, terms 587.2, shop 594.4, extras 604.4,
+// account 428.2, holdings 417.4, projects 430.2, roles 391.5 KiB and all client JS 2773.1 KiB; round only those up.
+// The not-found page now keeps the site nav and search, so it measures 355.7 KiB like other nav pages.
 const routes = [
-  { route: "/", path: "/", kib: 394 },
-  { route: "/learn", path: "/learn", kib: 355 },
-  { route: "/build", path: "/build", kib: 356 },
-  { route: "/audit", path: "/audit", kib: 358 },
-  { route: "/discover", path: "/discover", kib: 340 },
-  { route: "/create", path: "/create", kib: 554 },
-  { route: "/[slug]", path: "/eth:1", kib: 585 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 584 },
+  { route: "/", path: "/", kib: 396 },
+  { route: "/learn", path: "/learn", kib: 358 },
+  { route: "/build", path: "/build", kib: 360 },
+  { route: "/audit", path: "/audit", kib: 361 },
+  { route: "/discover", path: "/discover", kib: 343 },
+  { route: "/create", path: "/create", kib: 560 },
+  { route: "/[slug]", path: "/eth:1", kib: 589 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 588 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 592 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 601 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 426 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 415 },
-  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 429 },
-  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 389 },
-  { route: "/_not-found", path: "/no-such-page/x/y", kib: 300, status: 404 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 595 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 605 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 429 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 418 },
+  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 431 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 392 },
+  { route: "/_not-found", path: "/no-such-page/x/y", kib: 356, status: 404 },
 ];
 // Next renders its global error page only when the root layout itself throws; no URL reaches it.
 const unmeasuredRoutes = new Set(["/_global-error"]);
@@ -234,7 +238,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // The same artifact measures 2757.6 KiB total, +3.6 KiB (0.13%) over the previous ceiling.
 // The same frozen acquisition-fix artifact measures2759.3 KiB, +1.7 KiB over the prior artifact.
 // Explicit homepage availability and permission retry: measured 2760.4 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2765);
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2774);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");

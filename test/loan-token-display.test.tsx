@@ -89,7 +89,7 @@ afterEach(() => {
 describe("loan source display", () => {
   it("shows native source principal and fees in native units on a USDC-primary revnet", () => {
     show(<V6LoansSubtab projects={mocks.projects} />);
-    expect(screen.getByText("1 ETH")).toBeTruthy();
+    expect(screen.getAllByText("1 ETH").length).toBeGreaterThan(0);
     expect(screen.getByText("0.1 ETH")).toBeTruthy();
     expect(screen.queryByText(/1,000,000,000,000/)).toBeNull();
     expect(mocks.reads).not.toHaveBeenCalled();
@@ -155,7 +155,7 @@ describe("loan source display", () => {
         onReallocateLoan={refinance}
       />,
     );
-    expect(screen.getByText("1.0000 ETH")).toBeTruthy();
+    expect(screen.getAllByText("1 ETH").length).toBeGreaterThan(0);
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Repay" }) as HTMLButtonElement).disabled).toBe(
         false,
@@ -164,7 +164,10 @@ describe("loan source display", () => {
     expect(
       mocks.quotes.mock.calls.some(([args]) => args.args?.[2] === 18n && args.args?.[3] === 61166n),
     ).toBe(true);
-    expect(screen.getByText("1.000000 ETH")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Repay" }).closest("td")?.className).toContain(
+      "sticky",
+    );
+    expect(screen.getAllByText("1 ETH")[1]).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Repay" }));
     expect(select).toHaveBeenCalledWith("1", 1, 10);
     fireEvent.click(screen.getByRole("button", { name: "Refinance" }));
@@ -198,7 +201,7 @@ describe("loan source display", () => {
     expect(mocks.quotes.mock.calls.every(([args]) => args.args === undefined)).toBe(true);
     const row = screen.getByRole("button", { name: "Repay" }).closest("tr")!;
     expect(within(row).getByText("Unavailable")).toBeTruthy();
-    expect(within(row).queryByText("0.000000 ETH")).toBeNull();
+    expect(within(row).queryByText("0 ETH")).toBeNull();
     expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
   });
 });

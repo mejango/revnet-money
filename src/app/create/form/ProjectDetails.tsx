@@ -5,7 +5,7 @@ import { MarkdownFieldGroup } from "./MarkdownFieldGroup";
 import { useCreateForm } from "./useCreateForm";
 
 export function ProjectDetails({ disabled = false }: { disabled?: boolean }) {
-  const { setFieldValue } = useCreateForm();
+  const { values, setFieldValue } = useCreateForm();
 
   return (
     <>
@@ -39,6 +39,7 @@ export function ProjectDetails({ disabled = false }: { disabled?: boolean }) {
             </label>
             <IpfsImageUploader
               className="mb-0"
+              currentUri={values.logoUri}
               onUploadSuccess={(cid) => {
                 setFieldValue("logoUri", ipfsUri(cid));
               }}

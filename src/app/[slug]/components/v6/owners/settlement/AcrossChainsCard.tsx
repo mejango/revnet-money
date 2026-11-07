@@ -46,7 +46,11 @@ export function AcrossChainsCard({
       <p className="text-sm text-zinc-500 mt-1">
         A project can settle funds on many chains, and holders can move funds between them.
       </p>
-      <div className={!isLoading && !isError && data ? "-mx-4 mt-3 overflow-x-auto" : "mt-3"}>
+      <div
+        className={
+          !isLoading && !isError && data ? "table-scroll -mx-4 mt-3 overflow-x-auto" : "mt-3"
+        }
+      >
         {isLoading ? (
           <TableSkeleton rows={Math.max(chains.length, 2)} columns={4} />
         ) : isError || !data ? (

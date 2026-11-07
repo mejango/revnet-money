@@ -103,16 +103,29 @@ export async function verifyBridgePrepareDestination(
  */
 export { cashOutProtocolFee };
 
-/** Derive a minimum output using floor rounding, and refuse a zero floor. */
-export function protectedOutputFloor(amount: bigint, slippageBps: bigint) {
-  if (amount <= 0n) throw new Error("The live quote has no backing to protect.");
+function floorAfterSlippage(amount: bigint, slippageBps: bigint) {
   if (slippageBps < 0n || slippageBps >= BASIS_POINTS) {
     throw new Error("Slippage must be at least 0% and less than 100%.");
   }
+  return (amount * (BASIS_POINTS - slippageBps)) / BASIS_POINTS;
+}
 
-  const floor = (amount * (BASIS_POINTS - slippageBps)) / BASIS_POINTS;
+/** Derive a minimum output using floor rounding, and refuse a zero floor. */
+export function protectedOutputFloor(amount: bigint, slippageBps: bigint) {
+  if (amount <= 0n) throw new Error("The live quote has no backing to protect.");
+  const floor = floorAfterSlippage(amount, slippageBps);
   if (floor <= 0n) throw new Error("The protected minimum rounds to zero.");
   return floor;
+}
+
+/**
+ * A move's minimum. A chain with no surplus still moves the tokens, with no backing, because
+ * `JBSucker.prepare` burns them here and mints the same count on the peer whatever is reclaimed.
+ * Any real quote keeps a nonzero minimum, so it is never sent unprotected.
+ */
+export function bridgeReclaimMinimum(amount: bigint, slippageBps: bigint) {
+  const floor = floorAfterSlippage(amount, slippageBps);
+  return amount > 0n && floor === 0n ? 1n : floor;
 }
 
 /** Parse a user-entered percentage without allowing unsafe or ambiguous input. */
@@ -193,7 +206,7 @@ export async function quoteBridgePrepare(
   return {
     grossReclaimAmount,
     netReclaimAmount,
-    minTokensReclaimed: protectedOutputFloor(netReclaimAmount, slippageBps),
+    minTokensReclaimed: bridgeReclaimMinimum(netReclaimAmount, slippageBps),
     tokenDecimals: accountingContext.decimals,
   };
 }
@@ -214,8 +227,8 @@ export function buildProtectedBridgePrepareTx({
   token: Address;
 }) {
   if (projectTokenCount <= 0n) throw new Error("A bridge movement must include project tokens.");
-  if (minTokensReclaimed <= 0n) {
-    throw new Error("A bridge movement must protect a nonzero backing-token minimum.");
+  if (minTokensReclaimed < 0n) {
+    throw new Error("A bridge movement's minimum cannot be negative.");
   }
 
   return buildBridgePrepareTx({

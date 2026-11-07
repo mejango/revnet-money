@@ -102,6 +102,22 @@ beforeEach(() => {
 });
 
 describe("extend to another chain over sucker-group rows", () => {
+  it("mentions bridging only when there are chains to bridge between", () => {
+    const { rerender } = render(<SuckerExtensionCard rows={[{ chainId: 1, projectId: 4 }]} />);
+    expect(screen.getByText(/runs on 1 chain: /)).not.toHaveTextContent("Suckers bridge");
+    rerender(
+      <SuckerExtensionCard
+        rows={[
+          { chainId: 1, projectId: 4 },
+          { chainId: 8453, projectId: 9 },
+        ]}
+      />,
+    );
+    expect(screen.getByText(/runs on 2 chains: /)).toHaveTextContent(
+      "Suckers bridge its token between them.",
+    );
+  });
+
   it("wallet-action:operator-writes will not deploy suckers for a row the registry does not list", async () => {
     groupGateState.unverified = ["1:4"];
     render(<SuckerExtensionCard rows={[{ chainId: 1, projectId: 4 }]} />);

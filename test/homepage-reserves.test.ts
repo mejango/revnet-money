@@ -156,8 +156,8 @@ describe("homepage reserves", () => {
     expect(reserves.passedThroughUsd).toBe(3070);
     expect(reserves.chains).toEqual([
       { chainId: 1, eth: 1, usdc: 100, otherAssets: [] },
-      { chainId: 42161, eth: 0, usdc: 0, otherAssets: [] },
       { chainId: 8453, eth: 0, usdc: 50, otherAssets: [] },
+      { chainId: 42161, eth: 0, usdc: 0, otherAssets: [] },
       { chainId: 10, eth: 0, usdc: 0, otherAssets: [] },
     ]);
     expect(reserves.points?.at(-1)).toEqual({
@@ -165,8 +165,8 @@ describe("homepage reserves", () => {
       valueUsd: 2150,
       chains: [
         { chainId: 1, valueUsd: 2100 },
-        { chainId: 42161, valueUsd: 0 },
         { chainId: 8453, valueUsd: 50 },
+        { chainId: 42161, valueUsd: 0 },
         { chainId: 10, valueUsd: 0 },
       ],
     });

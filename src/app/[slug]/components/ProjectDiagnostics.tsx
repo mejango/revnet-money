@@ -11,7 +11,7 @@ import {
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type PropsWithChildren } from "react";
-import { isAddress, type Address } from "viem";
+import { getAddress, isAddress, type Address } from "viem";
 import { refreshProjectDisplay } from "../invalidateProjectDisplay";
 import { CheckDeploymentButton, DiagnosticsContext } from "./CheckDeploymentButton";
 
@@ -22,6 +22,10 @@ const statusLabels = {
   unavailable: "Unavailable",
   info: "Information",
 } satisfies Record<ProjectDeploymentCheck["status"], string>;
+
+function checksummed(value: string): string {
+  return isAddress(value, { strict: false }) ? getAddress(value) : value;
+}
 
 export function ProjectDiagnosticsProvider({
   children,
@@ -152,7 +156,7 @@ export function ProjectDiagnosticsProvider({
                   <h3 className="font-semibold">Onchain deployment</h3>
                   <p className="mb-3 text-zinc-500">
                     {report.deployment.checkedBlock
-                      ? `Block ${report.deployment.checkedBlock} · `
+                      ? `Block ${report.deployment.checkedBlock}. `
                       : ""}
                     Checked {report.deployment.checkedAt}
                   </p>
@@ -165,7 +169,7 @@ export function ProjectDiagnosticsProvider({
                         <p className="font-medium">
                           {check.label}{" "}
                           <span className="font-normal text-zinc-500">
-                            · {statusLabels[check.status]}
+                            ({statusLabels[check.status]})
                           </span>
                         </p>
                         <p>{check.message}</p>
@@ -174,13 +178,13 @@ export function ProjectDiagnosticsProvider({
                             {check.actual !== undefined ? (
                               <div>
                                 <dt className="inline">Actual: </dt>
-                                <dd className="inline">{check.actual}</dd>
+                                <dd className="inline">{checksummed(check.actual)}</dd>
                               </div>
                             ) : null}
                             {check.expected !== undefined ? (
                               <div>
                                 <dt className="inline">Expected: </dt>
-                                <dd className="inline">{check.expected}</dd>
+                                <dd className="inline">{checksummed(check.expected)}</dd>
                               </div>
                             ) : null}
                           </dl>

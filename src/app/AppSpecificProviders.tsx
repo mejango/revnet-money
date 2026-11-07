@@ -128,8 +128,10 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
     if (PARA_EMBEDDED_WALLET_ENABLED) void verifyMarkedParaSession();
   }, []);
 
+  const paraReturnFocus = React.useRef<HTMLElement | null>(null);
   const requestSignIn = React.useCallback(() => {
     if (!PARA_EMBEDDED_WALLET_ENABLED) return;
+    paraReturnFocus.current = document.activeElement as HTMLElement | null;
     setParaConnectionError(false);
     setParaHostLoaded(true);
     setParaRequest({ kind: "auth" });
@@ -137,6 +139,7 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
   }, []);
   const requestAddFunds = React.useCallback((request: ParaAddFundsRequest) => {
     if (!PARA_EMBEDDED_WALLET_ENABLED) return;
+    paraReturnFocus.current = document.activeElement as HTMLElement | null;
     setParaConnectionError(false);
     setParaHostLoaded(true);
     setParaRequest({ kind: "addFunds", ...request });
@@ -202,6 +205,7 @@ export function AppSpecificProviders({ children }: { children: React.ReactNode }
                 onSettled={markParaSettled}
                 entry={signInEntry}
                 onEntryChange={setSignInEntry}
+                returnFocus={paraReturnFocus}
               />
             </React.Suspense>
           ) : null}

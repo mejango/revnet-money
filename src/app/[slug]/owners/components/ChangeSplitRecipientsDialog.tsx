@@ -37,7 +37,7 @@ import {
   type StickyGroupDraft,
 } from "@/lib/sticky";
 import { wagmiConfig } from "@/lib/wagmiConfig";
-import { JB_CHAINS, JBChainId, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
+import { JBChainId, SPLITS_TOTAL_PERCENT } from "@bananapus/nana-sdk-core";
 import { useEffect, useMemo, useState } from "react";
 import { Address, zeroAddress, type PublicClient } from "viem";
 import { useAccount } from "wagmi";
@@ -103,10 +103,12 @@ type Props = {
   initialChainId: JBChainId;
   splitLimit?: string;
   triggerVariant?: "default" | "outline" | "secondary";
+  /** For a panel that would otherwise sit empty when the account can't edit. */
+  deniedNote?: string;
 };
 
 export function ChangeSplitRecipientsDialog(props: Props) {
-  const { stageIdx, initialChainId, splitLimit, triggerVariant = "outline" } = props;
+  const { stageIdx, initialChainId, splitLimit, triggerVariant = "outline", deniedNote } = props;
   const [open, setOpen] = useState(false);
   const [reviewing, setReviewing] = useState<ChainFormData[] | null>(null);
   // A multi-chain change stopped at a Safe proposal: nothing more to send from here.
@@ -193,7 +195,7 @@ export function ChangeSplitRecipientsDialog(props: Props) {
         splitCount: chain.splits.length,
         fallbackSplitCount: fallbackCountByChain.get(chain.chainId) ?? null,
       })),
-      (chainId) => JB_CHAINS[chainId as JBChainId]?.name ?? `chain ${chainId}`,
+      (chainId) => chainDisplayName(chainId),
     );
 
   // Each chain's project id is written into the call, so it must be a pair the
@@ -297,10 +299,10 @@ export function ChangeSplitRecipientsDialog(props: Props) {
     relayrAvailable &&
     (reviewing?.length ?? 0) > 1 &&
     areRelayrChainsCompatible(reviewing?.map((chain) => chain.chainId) ?? []);
-  const chainNameOf = (chainId: JBChainId) => JB_CHAINS[chainId]?.name ?? `chain ${chainId}`;
+  const chainNameOf = (chainId: JBChainId) => chainDisplayName(chainId);
 
   if (!hasPermission("SET_SPLIT_GROUPS")) {
-    return <PermissionStatus {...permissions} />;
+    return <PermissionStatus {...permissions} deniedNote={deniedNote} />;
   }
 
   return (

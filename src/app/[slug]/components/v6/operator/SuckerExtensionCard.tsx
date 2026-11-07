@@ -239,8 +239,8 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
         <p className="text-sm text-zinc-500">
           This revnet runs on {rows.length} chain{rows.length === 1 ? "" : "s"}
           {rows.length > 0 ? ": " : ""}
-          {rows.map((row) => chainName(row.chainId)).join(", ")}. Suckers bridge its token between
-          them.
+          {rows.map((row) => chainName(row.chainId)).join(", ")}.
+          {rows.length > 1 ? " Suckers bridge its token between them." : null}
         </p>
         {candidates.length === 0 ? (
           <p className="mt-2 text-sm text-zinc-500">

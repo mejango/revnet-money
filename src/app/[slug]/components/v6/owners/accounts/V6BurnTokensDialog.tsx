@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import {
@@ -24,7 +25,6 @@ import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { formatWalletError } from "@/lib/utils";
 import {
   formatUnits,
-  JB_CHAINS,
   JB_TOKEN_DECIMALS,
   JBChainId,
   JBCoreContracts,
@@ -112,7 +112,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
   const isLoading = phase === "receipt";
   const isSafeResultUnconfirmed = phase === "proposed" && !!held?.exit;
   const { toast } = useToast();
-  const chainName = JB_CHAINS[row.chainId]?.name ?? String(row.chainId);
+  const chainName = chainDisplayName(row.chainId);
   let count = 0n;
   try {
     count = amount.trim() ? parseUnits(amount.trim(), JB_TOKEN_DECIMALS) : 0n;
@@ -130,7 +130,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
     if (isSuccess) {
       toast({
         title: "Tokens burned",
-        description: `Burn confirmed on ${JB_CHAINS[row.chainId]?.name ?? row.chainId}.`,
+        description: `Burn confirmed on ${chainDisplayName(row.chainId)}.`,
       });
     }
   }, [isSuccess, row.chainId, toast]);
@@ -198,7 +198,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="flex items-center gap-2">
           <ChainLogo chainId={row.chainId} width={16} height={16} />
-          {JB_CHAINS[row.chainId]?.name ?? row.chainId}
+          {chainDisplayName(row.chainId)}
         </span>
         <button
           type="button"

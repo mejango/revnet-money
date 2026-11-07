@@ -1,3 +1,4 @@
+import { chainSortIndex } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { IpfsImage } from "@/components/IpfsImage";
 import { IssuanceFingerprint } from "@/components/IssuanceFingerprint";
@@ -81,7 +82,7 @@ async function getHomepageProjects(
                   ]),
                 ]
                   .filter((chainId): chainId is JBChainId => chainId in JB_CHAINS)
-                  .sort((a, b) => a - b)
+                  .sort((a, b) => chainSortIndex(a) - chainSortIndex(b))
               : undefined,
         };
       }),

@@ -58,6 +58,7 @@ function sanitizeStage(value: unknown): StageData {
   const autoIssuance = Array.isArray(stage.autoIssuance) ? stage.autoIssuance : [];
   const splits = Array.isArray(stage.splits) ? stage.splits : [];
   return {
+    initialOperator: text(stage.initialOperator, 64) || undefined,
     initialIssuance: numericText(stage.initialIssuance),
     pickUpFromPrevious: stage.pickUpFromPrevious === true,
     priceCeilingIncreasePercentage: numericText(stage.priceCeilingIncreasePercentage),
@@ -111,11 +112,14 @@ function sanitizeStage(value: unknown): StageData {
     }),
     stageStart: numericText(stage.stageStart) || "0",
     stageStartCuts: numericText(stage.stageStartCuts) || undefined,
+    // null is a passed start still waiting for a new date, which validation holds.
     futureStartTimestamp:
-      Number.isSafeInteger(Number(stage.futureStartTimestamp)) &&
-      Number(stage.futureStartTimestamp) > 0
-        ? Number(stage.futureStartTimestamp)
-        : undefined,
+      stage.futureStartTimestamp === null
+        ? null
+        : Number.isSafeInteger(Number(stage.futureStartTimestamp)) &&
+            Number(stage.futureStartTimestamp) > 0
+          ? Number(stage.futureStartTimestamp)
+          : undefined,
   };
 }
 
@@ -141,7 +145,7 @@ function sanitizeStore(value: unknown): RevnetFormData["store"] {
       const name = text(category.name, 64);
       return Number.isSafeInteger(id) && id > 0 && name ? [{ id, name }] : [];
     }),
-    items: items.slice(0, 64).map((entry) => {
+    items: items.map((entry) => {
       const item = (entry ?? {}) as Record<string, unknown>;
       const splits = Array.isArray(item.splits) ? item.splits : [];
       const perChainSupply = (item.perChainSupply ?? {}) as Record<string, unknown>;
@@ -194,6 +198,18 @@ function sanitizeStore(value: unknown): RevnetFormData["store"] {
   };
 }
 
+/**
+ * REVDeployer locks cash outs and loans for 7 days when the first stage's start has already
+ * passed, so a passed start comes back as a date still to choose, which validation holds.
+ */
+function withUpcomingStart(stage: StageData, index: number): StageData {
+  return index === 0 &&
+    stage.futureStartTimestamp &&
+    stage.futureStartTimestamp <= Date.now() / 1000
+    ? { ...stage, futureStartTimestamp: null }
+    : stage;
+}
+
 /** Parse an untrusted Revnet .jb file into whitelisted create-form values. */
 export function parseRevnetDraft(source: string): RevnetFormData {
   if (source.length > MAX_DRAFT_BYTES) throw new Error("That file is too large.");
@@ -233,7 +249,7 @@ export function parseRevnetDraft(source: string): RevnetFormData {
     discord: text(raw.discord, 200),
     infoUri: text(raw.infoUri, 500),
     tokenSymbol: text(raw.tokenSymbol, 32),
-    stages: raw.stages.slice(0, 32).map(sanitizeStage),
+    stages: raw.stages.slice(0, 32).map(sanitizeStage).map(withUpcomingStart),
     chainIds,
     operator: operators.slice(0, 16).flatMap((value) => {
       const item = (value ?? {}) as Record<string, unknown>;

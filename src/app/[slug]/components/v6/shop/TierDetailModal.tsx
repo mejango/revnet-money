@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { StickyRecipient } from "@/components/sticky/StickyRecipient";
@@ -21,6 +22,7 @@ import { useConfig, useReadContract } from "wagmi";
 import { getPublicClient } from "wagmi/actions";
 import { ProjectItem } from "../shared";
 import {
+  customVotingUnits,
   describeTransferSchedule,
   discountLabel,
   formatShopAmount,
@@ -211,7 +213,7 @@ export function TierDetailModal({
                   ? "Sold out"
                   : tier.unlimited
                     ? "Unlimited inventory"
-                    : `${tier.remaining.toLocaleString("en-US")} left on ${JB_CHAINS[chainId]?.name ?? "this chain"}`}
+                    : `${tier.remaining.toLocaleString("en-US")} left on ${chainDisplayName(chainId)}`}
               </span>
             </div>
 
@@ -250,7 +252,7 @@ export function TierDetailModal({
                     >
                       <span className="inline-flex items-center gap-1.5 text-zinc-600">
                         <ChainLogo chainId={row.chainId} width={15} height={15} />
-                        {JB_CHAINS[row.chainId]?.name ?? `Chain ${row.chainId}`}
+                        {chainDisplayName(row.chainId)}
                       </span>
                       <span className="tabular-nums text-zinc-900">
                         {row.state === "missing"
@@ -283,7 +285,7 @@ export function TierDetailModal({
               {tier.reserveFrequency > 0 ? (
                 <Fact label="Items set aside" value={`1 per ${tier.reserveFrequency} sold`} />
               ) : null}
-              {tier.votingUnits > 0n ? (
+              {customVotingUnits(tier) !== null ? (
                 <Fact label="Voting units" value={tier.votingUnits.toLocaleString("en-US")} />
               ) : null}
             </dl>

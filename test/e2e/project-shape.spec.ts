@@ -232,7 +232,7 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   );
   await expect(page.getByRole("columnheader", { name: "Prepaid fee" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "Current repayment fee" })).toBeVisible();
-  await expect(page.getByText("603.5741 USDC")).toBeVisible();
+  await expect(page.getByText("603.57 USDC")).toBeVisible();
   await expect(page.getByText("2.5%")).toBeVisible();
   await expect(page.getByRole("cell", { name: "0 USDC", exact: true })).toBeVisible();
   await expectContained(page, ["nav", "main"]);

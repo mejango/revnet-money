@@ -13,6 +13,8 @@ interface Props {
   /** What this price MEANS. Carried by the button itself so the whole target reveals it; the
    *  (?) beside the label is the affordance saying so. */
   note?: string;
+  /** The series' latest value, so a line too small to read on the axis still has a number. */
+  value?: string;
 }
 
 export function ChartToggleButton({
@@ -22,12 +24,14 @@ export function ChartToggleButton({
   colorVar,
   onClick,
   note,
+  value,
 }: Props) {
   const navigate = useProjectNavigation();
   const isActive = active && !disabled;
 
   return (
     <button
+      aria-pressed={isActive}
       data-project-navigation="local"
       onClick={() => navigate(onClick)}
       disabled={disabled}
@@ -53,6 +57,7 @@ export function ChartToggleButton({
         style={isActive ? { backgroundColor: `var(${colorVar})` } : undefined}
       />
       {note ? <ConceptTerm note={note}>{label}</ConceptTerm> : label}
+      {value ? <span className="font-normal tabular-nums text-zinc-600">{value}</span> : null}
     </button>
   );
 }

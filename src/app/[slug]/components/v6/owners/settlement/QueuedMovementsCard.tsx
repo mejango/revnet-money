@@ -438,7 +438,11 @@ export function QueuedMovementsCard({
       <p className="text-sm text-zinc-500 mt-1">
         Anything moving between chains shows here until it clears.
       </p>
-      <div className={visible.length > 0 && !isLoading ? "-mx-4 mt-3 overflow-x-auto" : "mt-3"}>
+      <div
+        className={
+          visible.length > 0 && !isLoading ? "table-scroll -mx-4 mt-3 overflow-x-auto" : "mt-3"
+        }
+      >
         {isLoading ? (
           <TableSkeleton rows={4} columns={7} />
         ) : isError && rows.length === 0 ? (

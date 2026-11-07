@@ -1,5 +1,6 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { TableSkeleton } from "@/components/loading/LoadingSkeletons";
@@ -30,7 +31,6 @@ import { formatTokenSymbol } from "@/lib/utils";
 import {
   formatUnits,
   getRevnetLoanContract,
-  JB_CHAINS,
   JBCoreContracts,
   jbMultiTerminalAbi,
   jbTokensAbi,
@@ -728,7 +728,7 @@ function YouChainRow({
       <TableCell className="whitespace-nowrap">
         <div className="flex items-center gap-2">
           <ChainLogo chainId={chainId} width={15} height={15} />
-          <span>{JB_CHAINS[chainId]?.name ?? chainId}</span>
+          <span>{chainDisplayName(chainId)}</span>
         </div>
       </TableCell>
       <TableCell className="text-right tabular-nums whitespace-nowrap">

@@ -131,7 +131,9 @@ export function validateStage(
     );
   }
 
-  if (
+  if (input.futureStartTimestamp === null) {
+    issue(issues, [...prefix, "futureStartTimestamp"], "Choose a start date and time");
+  } else if (
     input.futureStartTimestamp !== undefined &&
     (!Number.isSafeInteger(input.futureStartTimestamp) || Number(input.futureStartTimestamp) <= 0)
   ) {

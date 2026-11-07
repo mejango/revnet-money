@@ -1,12 +1,12 @@
 "use client";
 
+import { chainSortIndex } from "@/app/constants";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
 import {
   JBCoreContracts,
   JBProjectToken,
   jbTokensAbi,
   resolveSuckers,
-  type JBChainId,
 } from "@bananapus/nana-sdk-core";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
@@ -14,8 +14,6 @@ import { getContract } from "viem";
 import { useConfig, useReadContract } from "wagmi";
 import { useJBChainId, useJBContractContext, useJBProject } from "./project";
 import type { SuckerPair } from "./types";
-
-const CHAIN_ORDER: readonly JBChainId[] = [1, 8453, 10, 42161, 11155111, 84532, 11155420, 421614];
 
 /**
  * Ensure the active project is represented exactly once and keep chain order
@@ -37,14 +35,8 @@ export function normalizeSuckerPairs(
     if (!byPair.has(key)) byPair.set(key, pair);
   }
   return [...byPair.values()].sort((a, b) => {
-    const aIndex = CHAIN_ORDER.indexOf(a.peerChainId);
-    const bIndex = CHAIN_ORDER.indexOf(b.peerChainId);
-    if (aIndex !== bIndex) {
-      if (aIndex === -1) return 1;
-      if (bIndex === -1) return -1;
-      return aIndex - bIndex;
-    }
-    if (a.peerChainId !== b.peerChainId) return a.peerChainId - b.peerChainId;
+    const order = chainSortIndex(a.peerChainId) - chainSortIndex(b.peerChainId);
+    if (order !== 0) return order;
     return a.projectId < b.projectId ? -1 : a.projectId > b.projectId ? 1 : 0;
   });
 }

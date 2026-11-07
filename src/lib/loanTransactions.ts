@@ -15,6 +15,11 @@ export const LOAN_SOURCE_UNREADABLE = "Couldn't read this network's loan token o
 export const LOAN_SOURCE_CHANGED =
   "This network's loan token changed. Check the terms and confirm again.";
 
+/** `REVLoans._generateLoanId`: a loan id is `revnetId * 1e18 + loanNumber`. */
+export function loanNumberOf(loanId: bigint | number | string): bigint {
+  return BigInt(loanId) % 10n ** 18n;
+}
+
 export type LoanSource = { revnetId: bigint; token: Address; decimals: number; currency: number };
 
 /**

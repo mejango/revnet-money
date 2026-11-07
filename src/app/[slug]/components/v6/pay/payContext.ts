@@ -1,5 +1,5 @@
+import { chainDisplayName } from "@/app/constants";
 import { formatPayAmount, type V6PayMode } from "@/lib/v6/pay";
-import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import { PAY_QUOTE_FAILED_MESSAGE } from "@bananapus/nana-sdk-core/v6";
 
 /** What a payment sends and gets, as its progress and its one review show it. */
@@ -24,7 +24,7 @@ export function payContext(
     },
     {
       label: "On",
-      value: JB_CHAINS[prepared.chainId as JBChainId]?.name ?? String(prepared.chainId),
+      value: chainDisplayName(prepared.chainId),
     },
     prepared.mode === "pay"
       ? {

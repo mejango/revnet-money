@@ -80,6 +80,29 @@ beforeEach(() => {
 });
 
 describe("project diagnostics", () => {
+  it("checksums both the actual and expected addresses", async () => {
+    const lower = "0x5aff29060e023e6fb87be5596652b33c65af535b";
+    const checksummed = "0x5AfF29060E023e6FB87BE5596652B33c65Af535B";
+    mocks.load.mockResolvedValue({
+      ...availableReport,
+      deployment: {
+        ...report.deployment,
+        checks: [
+          {
+            ...report.deployment.checks[0],
+            status: "passed",
+            actual: checksummed,
+            expected: lower,
+          },
+        ],
+      },
+    });
+    mount();
+    fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
+    expect(await screen.findAllByText(checksummed)).toHaveLength(2);
+    expect(screen.queryByText(lower)).toBeNull();
+  });
+
   it.each(["available", "not-checked"])(
     "reuses complete findings with group %s until ten seconds, then refreshes",
     async (group) => {

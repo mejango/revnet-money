@@ -22,7 +22,8 @@ export type StageData = {
   splits: SplitDraft[];
   stageStart: string;
   stageStartCuts?: string;
-  futureStartTimestamp?: number;
+  /** Unset starts about 10 minutes after preparation; null is a future start with no date yet. */
+  futureStartTimestamp?: number | null;
 };
 
 /**

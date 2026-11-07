@@ -1539,3 +1539,198 @@ Review: Permission reads expose failure and retry while retaining fail-closed gr
 
 ## 2026-11-05 Balance tooltip layout
 - [x] Header balance tooltip: chain names instead of ids, three-column grid (chain, token amount, USD), no pipes or brackets, width fits content. One file: src/app/[slug]/components/Header/TvlDatum.tsx. Verified: typecheck, lint, 16 header tests, screenshot on /eth:1.
+
+# revnet.money UX review fixes, 2026-11-06
+
+Source: decisions jango recorded on the review page (41 Fix, q12 Skip). Evidence: /Users/jango/Documents/jb/v6/evm/.ux-review/revnet-money/ (stories/STORY-NNN screenshots, ux-walker/all-findings.md). F-NNN-N is STORY-NNN.
+
+## Plan refinement
+
+- **Objective:** Fix all 41 issues jango marked Fix on live revnet.money behavior, honouring each note, with no wallet-write regressions. q12 was skipped on a wrong answer and is now in scope (stream B): keep the 256 limit but stop cutting silently, on both the Pay note and the payer default memo.
+- **System fit:** Outcome is a trustworthy anonymous and holder experience. Owners are the revnet client components plus shared formatters and chain constants; juice-sdk is touched only if a rule already lives there. Wallet write authority and contracts are unaffected. Learning goes to tasks/lessons.md and the parity check to sibling clients.
+- **Reuse and simplicity:** Grep first and reuse the existing formatter, chain constants, skeletons and table container. Copy juicebox-money search presentation for b01. New shared owners only when a rule has several copies, moving every caller.
+- **Evidence and unknowns:** Walk evidence is anonymous and live; connected-wallet behavior is untested, so b08 must be reasoned from source. b04 and b06 root causes are unknown until read against live RPC and metadata. Local dev may not show real Bendystraw data.
+- **Verification:** Per stream typecheck, lint, focused vitest plus a regression test per behavior fix. After integration, full `npm run check` on Node 26 and rendered desktop and 390px checks of changed surfaces. Then a cross-client parity pass against juicebox-money.
+- **Resource budget:** Seven streams on disjoint files in separate worktrees, integrated by the main session into fix/ux-review-20261106. A stream reports rather than edits when it needs a file another stream owns. Replan if a root cause needs a contract or SDK release.
+
+## Items
+
+### Stream A: Search, navigation, not-found, focus
+
+- [x] **b01** Search results hide the names
+  - What: Type in the nav search and each row shows only a ticker and chain logos. The name is painted in the same colour as the panel, so a search for "banny" returns four logos and no text. Account rows hide the ENS name the same way. Four separate test runs hit this.
+  - Likely fix: Set an explicit text colour on the result name in the search dropdown, then add a visual regression test.
+  - Where: src/components/layout/RevnetSearch.tsx. Findings: F-001-1, F-015-1, F-057-2, F-075-1, F-061-2
+  - NOTE: jango: see how juicebox money does it, copy. Make it pretty with enough context for the user, keep it simple.
+- [x] **q06** Reduce the 44px left padding or shorten the placeholder at phone width
+  - Where: layout/RevnetSearch.tsx. Findings: S12 (F-009-6, F-061-1, F-068-4, F-080-1)
+- [x] **q17** Escape closes the search list without clearing the input
+  - Where: layout/RevnetSearch.tsx. Findings: F-081-5
+- [x] **b18** Not-found page is a dead end
+  - What: Bad handles, slugs and account ids all render "Revnet Not Found" with one button, no nav and no search, and nothing says what failed.
+  - Likely fix: Keep the nav and search on the page, and name what was not found.
+  - Where: src/app/not-found.tsx. Findings: F-004-1, F-059-1, F-075-2
+- [x] **q10** Make "Return Home" a single `<a>`, add an h1, set the document title
+  - Where: not-found.tsx. Findings: F-075-4, F-059-3
+- [x] **b16** Phone tab bar hides the active tab
+  - What: At 390px, the tab row opens scrolled to the start, so on an Owners or Shop link the active tab is off-screen. Phones also land on the activity feed rather than Overview for the same URL.
+  - Likely fix: Scroll the active tab into view, and decide which view phones open on.
+  - Where: src/app/[slug]/components/ProjectMenu.tsx. Findings: F-033-02, F-041-1, F-024-1, F-008-4
+- [x] **q16** Add `aria-current` on tabs and `aria-pressed` on legend and stage pills
+  - Where: ProjectMenu.tsx, TokenPriceChart.tsx. Findings: F-014-5, F-024-2, F-011-3, F-037-04
+- [x] **b17** Keyboard focus gets lost
+  - What: Escape on the Sign in sheet drops focus to the page body. The sheet can lose focus so typed text goes nowhere until you click the field. Project pages take 34 Tab presses to pass the feed and reach Overview, with no skip link. Chart term tooltips work by mouse only.
+  - Likely fix: Restore focus after sheets and menus, add a skip link to every page, and make tooltips reachable by keyboard.
+  - Where: src/providers/ParaAuthSheet.tsx, project layout. Findings: F-081-1, F-081-2, F-021-1, F-062-1, F-013-3
+
+### Stream B: Pay card, cart, shop
+
+- [x] **b02** "Card or bank" quotes dollars as ETH
+  - What: Choose Card or bank and type $25. The Pay card previews 8,804 REV, which is the quote for 25 ETH. At the live rate $25 buys about 3.9 REV, so the figure is about 2,275 times too high. It happens on Ethereum, on Base and at phone width. Related: a chosen USDC silently resets to ETH on a chain switch, and an old quote stays bright green for 4 to 8 seconds while a new one loads.
+  - Likely fix: Convert the dollar amount before quoting, or hide the receipt until it can be converted. Keep the chosen token across chain switches and dim stale figures.
+  - Where: src/app/[slug]/components/v6/pay/V6PayCard.tsx. Findings: F-020-1, F-019-1, F-017-1
+- [x] **b05** Shop cart is lost on a chain switch and its quote lags
+  - What: With an item in the cart, clicking a header "On:" chain link empties the cart with no notice. The Pay card's own Chain select keeps the old amount (102 ETH) over an empty cart and quotes tokens for nothing. The "You get about" preview runs one cart change behind: 2 ETH of items showed the 1 ETH quote. The checkout bar sits after the last of 68 cards.
+  - Likely fix: Keep the cart across chain routes, derive the amount from the cart in one place, and pin the receipt while the cart has items.
+  - Where: Cart provider, V6PayCard, shop/InventorySection.tsx. Findings: F-048-1, F-043-1, F-043-2, F-043-4, F-047-2
+- [x] **b06** Most BAN shop items have no name
+  - What: 49 of 68 items on the BAN shop show as "Item #N", and 12 of those have a blank tile. No retry line ever appears, so a shopper cannot tell a broken item from an unnamed one. The same ids leak into the Customers list and the Replace media selects.
+  - Likely fix: Find why the item metadata does not load, add a retry, and say so when details are missing.
+  - Where: Shop inventory. Findings: F-042-1, F-046-1, F-041-2
+- [x] **q05** Divide Voting units by 1e18 before display
+  - Where: shop/TierDetailModal.tsx. Findings: F-042-3
+  - NOTE: jango: check with contracts. Checked: JB721TiersHookStore.sol:693 returns custom units (uint32) when flagged, else the tier price, and the read exposes no flag. Hide the row when units equal the price, show the raw custom number otherwise.
+- [x] **b10** Balance reads $0.00 when the price fails (ONLY: pay-card half (red Payments are off during pending reads))
+  - What: On one load the ETH price failed and the header read "$0.00 balance" for a revnet holding 0.346 ETH. Only a hover tooltip says No USD price. It was intermittent and recovered minutes later. Similarly, a cold load of Artizen shows a disabled Pay card with a red "Payments are off" for about 5 seconds before everything resolves.
+  - Likely fix: Show the ETH balance when the USD price is missing, and show loading instead of an error while reads are pending.
+  - Where: Header/TvlDatum.tsx, V6PayCard. Findings: F-004-3, F-011-4, F-018-2
+- [x] **q19** Single-column dialog grid and nowrap selection bar at 390px (ONLY: selection bar half)
+  - Where: BridgeDialog.tsx, shop/InventorySection.tsx. Findings: F-029-05, F-047-1, F-027-04
+- [x] **b19** Loading looks like failure (ONLY: shop half)
+  - What: "(balance unavailable)" appears while balances load. /discover flashes "No matching revnets found" before results arrive. The shop runs a 6 to 10 second skeleton before saying it has no items.
+  - Likely fix: Separate loading from failed states across these surfaces.
+  - Where: Cross-cutting. Findings: F-037-01, F-007-2, F-041-2, F-017-1
+
+### Stream C: Holder dialogs and account
+
+- [x] **b08** Cash out and Move dead-end under View as
+  - What: Viewing as a holder with no wallet, Cash out and Move between chains never show an estimate, and typing a valid amount silently disables the only button. The Move dialog keeps saying to choose networks after both are chosen. New loan is narrower: it quotes correctly and only disables silently when the quote is zero. Connected wallets were not tested, so this may only affect View as.
+  - Likely fix: Quote with the viewed address, and never disable the button without a sentence saying why.
+  - Where: src/components/ButtonWithWallet.tsx, RedeemDialog, BridgeDialog. Findings: F-027-01, F-029-03, F-058-1, F-028-01
+- [x] **q02** De-duplicate the "To network" options
+  - Where: Value/BridgeDialog.tsx. Findings: F-029-01
+- [x] **q14** Show chain name and short loan id in the Refinance "Current loan" box
+  - Where: Value/ReallocateDialog.tsx. Findings: F-032-04
+- [x] **q19** Single-column dialog grid and nowrap selection bar at 390px (ONLY: BridgeDialog half)
+  - Where: BridgeDialog.tsx, shop/InventorySection.tsx. Findings: F-029-05, F-047-1, F-027-04
+- [x] **q08** Suppress the "This is you" badge while View as is active without a wallet
+  - Where: AccountHeader.tsx, useViewedAccount.ts. Findings: F-058-3, F-026-01
+- [x] **q09** Keep the full address as the subtitle on the address route; never repeat the h1
+  - Where: AccountHeader.tsx. Findings: F-003-1, F-058-2
+- [x] **b12** Account rows leave the site, and payer addresses cannot be copied
+  - What: Holder, customer, borrower and operator cells open Etherscan or Basescan in a new tab, though the site has an account page for each. The payer address table shows only a shortened link with no copy control, so a treasurer cannot copy the address on the site. Five stories took 5 to 6 actions against an ideal of 1 to 3.
+  - Likely fix: Link account cells to /account/<address>, and add a copy control to payer addresses.
+  - Where: Owners, Loans and Extras tables. Findings: F-064-1, F-025-05, F-045-1, F-057-1, F-022-1
+
+### Stream D: Shared formatting, chain names, tables, terms
+
+- [x] **b13** Raw numbers throughout
+  - What: 18-decimal amounts, floats and scientific notation appear across tables and tooltips: 1,130,130.258069698905346873 REV, 5.36e-6 ETH, 540.3599853515625. One balance can print with 2, 6, 8 and 18 decimals on the same page. Cash out tax reads 0.1 where the chart says 10%.
+  - Likely fix: Route every token and price through one shared formatter.
+  - Where: About 20 stories, shared formatter. Findings: F-034-03, F-038-03, F-042-3, F-013-1, F-035-05
+  - NOTE: See q01: cash out tax stays 0 to 1, so the chart must change, not the table.
+- [x] **q01** Render cash out tax as a percentage ("10%") in the Stages table
+  - Where: terms/components/StagesTable.tsx. Findings: F-013-1
+  - NOTE: jango OVERRIDES the listed fix: cash out tax is a value 0 to 1, never a percentage. Render 0.1, and remove every place that expresses the tax as a percent, including charts, tooltips and create copy. A percentage is only a derived figure from the curve formula.
+- [x] **q03** Format the donut tooltip balance and say "REV", not "tokens"
+  - Where: owners accounts donut component. Findings: F-034-03
+- [x] **q04** Format Amount and "Tokens backing loan" with the shared token formatter
+  - Where: auto issuance table, LoansDetailsTable.tsx. Findings: F-038-03, F-039-02
+- [x] **q15** Format "5.36e-6 ETH" with the price formatter
+  - Where: market pool card. Findings: F-035-05
+- [x] **b14** Chain names and order change by screen
+  - What: The header says Optimism and Arbitrum. The Pay card, You table and distribute checkboxes say OP Mainnet and Arbitrum One. One project page orders the chains three ways, and nothing marks the chain you are viewing.
+  - Likely fix: One owner for chain names and order, plus a marker on the current chain.
+  - Where: Shared chain constants. Findings: F-018-1, F-009-4, F-010-1, F-037-02, F-033-03, F-009-7
+  - NOTE: jango: do not mark the current chain anywhere. The project should feel like one unified project across chains. Only unify names and order.
+- [x] **b15** Tables overflow with no sign they scroll
+  - What: Stages, Loans, Auto issuance, Splits, Holders and others sit in scroll boxes with no visible cue. The Stages table is 938px in an 819px column, which hides Cash out tax. On a phone, the loan Repay and Refinance actions are entirely off-screen.
+  - Likely fix: One responsive table container with a visible scroll cue, or collapsed columns at phone width.
+  - Where: Shared table container. Findings: F-013-2, F-032-01, F-038-02, F-039-01, F-036-03
+- [x] **b03** Holders table is out of order and Paid is always 0
+  - What: The footer says ranked by balance, but 14.092% sits above 15.775% and 0.644% above 0.956%. The Paid column reads 0 ETH for all 232 holders, including accounts paying in the feed beside the table. Pages 4 to 8 show 0% on every row.
+  - Likely fix: Sort on the combined balance across chains and fill Paid from real payment totals, or remove the column if the data does not exist.
+  - Where: Owners accounts table. Findings: F-034-01, F-034-02, F-057-3, F-025-01, F-057-4, F-034-04
+  - NOTE: jango: just fix the ordering by balance if that is wrong. Do not build Paid totals; if Paid has no real data, remove the column.
+- [x] **b11** Auto issuance links go nowhere
+  - What: Distributed rows link to a four-character hash such as etherscan.io/tx/f509, labelled "f509...f509". The links cannot resolve. The table also clips its last column and slices the locked row in half.
+  - Likely fix: Pass the full transaction hash to the link, and let the table show all its rows.
+  - Where: Auto issuance table. Findings: F-038-01, F-038-02
+- [x] **q07** Show "Loading…" while reserved balances load; keep "(balance unavailable)" for failures
+  - Where: splits distribute panel. Findings: F-037-01
+  - NOTE: jango OVERRIDES the listed fix: use the canonical loading states that do not litter the screen with "loading..." strings. Keep (balance unavailable) for real failures.
+- [x] **q13** Checksum both Expected and Actual addresses
+  - Where: ProjectDiagnostics.tsx. Findings: F-066-1
+- [x] **b22** Price chart has no scale
+  - What: The Overview chart has no y-axis, and REV's cash out line sits flat on the baseline where it cannot be read.
+  - Likely fix: Add a y-axis or value labels, and decide how to show a line much smaller than the others.
+  - Where: TokenPriceChart.tsx. Findings: F-011-1, F-011-2
+
+### Stream E: Market liquidity
+
+- [x] **b04** REV liquidity card fails on all four chains
+  - What: After 15 to 40 seconds of skeleton, every chain reads "The RPC could not return the complete pool history, so liquidity is unavailable." There is no retry. Providers, Composition and Depth never rendered in any load. The same subtab also stacks four charts with 24 range buttons, and shows the cash out price for one chain only.
+  - Likely fix: Find why the pool history read fails, add a retry, and show whatever partial data did load.
+  - Where: Market subtab, AMM card. Findings: F-035-01, F-035-02, F-035-03, F-035-04
+
+### Stream F: Create form
+
+- [x] **b07** First .jb import drops the operator address
+  - What: On a freshly opened Create page, importing a draft leaves "Enable limited operator controls" checked with an empty address. Importing the same file a second time fills it. REV's real export reproduced this three times. Its description also arrives as literal HTML tags, and the logo preview does not come back.
+  - Likely fix: Set the operator field when the import first renders, convert or strip HTML in the description, and restore the logo preview.
+  - Where: src/app/create/form/DeployRevnetForm.tsx. Findings: F-054-1, F-054-2, F-054-3
+- [x] **b20** Create form loses or hides what you entered
+  - What: "Start the revnet in the future" with no date saves silently and the intent is lost. The stage dialog's error list renders under the Save button, clipped at the edge. The cut setting leaks between stages. Toggling operator controls clears the typed address. A reload wipes the whole form.
+  - Likely fix: Validate the start date, move errors into view, and keep a browser draft.
+  - Where: src/app/create/form. Findings: F-051-2, F-051-1, F-051-6, F-053-1
+
+### Stream G: Home, header, operator, small copy
+
+- [x] **b09** Home feed amounts are cut to "0.0000…"
+  - What: The amount cell in the home Latest feed is 55px wide, so most amounts clip, even 0.00003 ETH. Trending truncates five of eight names, and Top and New show about two rows inside a small inner scroll box.
+  - Likely fix: Format amounts to a few significant digits, widen the cell, and let the panels grow to their rows.
+  - Where: src/app/HomepageActivityFeed.tsx, TopProjectsFeed.tsx. Findings: F-006-3, F-006-1, F-006-2
+- [x] **b10** Balance reads $0.00 when the price fails (ONLY: TvlDatum half (balance with no USD price))
+  - What: On one load the ETH price failed and the header read "$0.00 balance" for a revnet holding 0.346 ETH. Only a hover tooltip says No USD price. It was intermittent and recovered minutes later. Similarly, a cold load of Artizen shows a disabled Pay card with a red "Payments are off" for about 5 seconds before everything resolves.
+  - Likely fix: Show the ETH balance when the USD price is missing, and show loading instead of an error while reads are pending.
+  - Where: Header/TvlDatum.tsx, V6PayCard. Findings: F-004-3, F-011-4, F-018-2
+- [x] **q20** Anchor the "Balance by chain" tooltip below its trigger
+  - Where: Header/TvlDatum.tsx. Findings: F-009-1
+- [x] **b21** Operator tab "Set splits" has no button
+  - What: The Edits panel describes setting splits but shows no action for an anonymous viewer, on both revnets walked. Artizen's header also has no Operator row, though Other info names one.
+  - Likely fix: Show the action or a state line, and render the operator row whenever one exists.
+  - Where: Operator tab, project header. Findings: F-063-1, F-015-3, F-067-1
+- [x] **q11** Replace the middot and bullet separators with commas
+  - Where: guides/RevnetGuide.tsx, shields route. Findings: F-068-2, F-073-3
+- [x] **q18** Pluralise "Across 1 project chains", drop "Suckers bridge" for single-chain revnets, drop the "revnet.eth" byline
+  - Where: discover/MiniHeaderCard.tsx, Chains card, Viewing-as menu. Findings: F-045-3, F-067-3, F-007-1
+- [x] **b19** Loading looks like failure (ONLY: discover and splits half)
+  - What: "(balance unavailable)" appears while balances load. /discover flashes "No matching revnets found" before results arrive. The shop runs a 6 to 10 second skeleton before saying it has no items.
+  - Likely fix: Separate loading from failed states across these surfaces.
+  - Where: Cross-cutting. Findings: F-037-01, F-007-2, F-041-2, F-017-1
+
+### Integration
+
+- [ ] Merge streams into fix/ux-review-20261106, resolve conflicts, full `npm run check`
+- [ ] Rendered desktop and 390px checks
+- [ ] Parity pass against juicebox-money
+- [ ] Open PR, leave merge to jango
+- [ ] Then run the same UX pass on juicebox.money and publish a review page for jango
+
+### Review
+
+All items above were triple checked: symptom real, correct behavior from a contract, live data or sibling with file and line, fix proven by a test or render. Items whose proposal was wrong were corrected, not applied as listed: q01 and b13 (cash out tax stays 0 to 1), q05 (voting units hidden when equal to price, raw otherwise), Move refusing a chain with no surplus (the contract allows it, fork tested).
+
+Not changed, to raise with jango: home panel heights and Trending truncation, account cells opening an explorer rather than /account, HTML in imported descriptions, the first bridge route default, Pay amount digits staying when the token changes.
+
+Gates: `npm run check` steps all pass (3112 unit tests, browser 160 passed, 10 skipped). Two Codex passes: 5 reproduced findings, all fixed with failing tests. The hydration failure on /shop came from the shared inventory read, fixed by holding the skeleton until hydrated.

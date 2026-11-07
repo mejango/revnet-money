@@ -4,12 +4,13 @@ import { ReallocateDialog } from "@/app/[slug]/components/Value/ReallocateDialog
 import { RedeemDialog } from "@/app/[slug]/components/Value/RedeemDialog";
 import { RepayDialog } from "@/app/[slug]/components/Value/RepayDialog";
 import { repayCeilingFor } from "@/lib/loanFees";
+import { clearViewAs, setViewAs } from "@/lib/view-as";
 import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { useState, type ReactNode } from "react";
 import { formatUnits, pad, parseAbi, type Hex } from "viem";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Cash out, bridge, borrow, refinance and repay each host their confirm in
 // their own dialog, whose owner resets and closes it on any request. While a
@@ -19,6 +20,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // the next open could send again.
 
 const mocks = vi.hoisted(() => ({
+  /** The connected wallet, or undefined for a visitor with none. */
+  account: "0x1111111111111111111111111111111111111111" as string | undefined,
+  /** The registry's active pairs from the home chain, when a test overrides them. */
+  homePairs: null as { local: string; remote: string; remoteChainId: bigint }[] | null,
+  /** What the loans contract quotes for the entered collateral. */
+  borrowQuote: (10n ** 18n) as bigint | undefined,
+  borrowQuoteError: false,
+  routeHolder: vi.fn(),
+  bridgeBeneficiary: vi.fn(),
   /** The balance rows' chain/project pairs; null = the default home and peer rows. */
   balanceRows: null as [number, number][] | null,
   verifiedPairs: [] as { peerChainId: number; projectId: bigint }[],
@@ -79,7 +89,7 @@ const tokenBalance = (chainId: number, projectId: number) => ({
 
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
-  useAccount: () => ({ address: "0x1111111111111111111111111111111111111111" }),
+  useAccount: () => ({ address: mocks.account }),
   // One client per chain across renders, as wagmi's is.
   usePublicClient: (parameters?: { chainId?: number }) =>
     (mocks.clients[parameters?.chainId ?? 0] ??= {
@@ -96,13 +106,15 @@ vi.mock("wagmi", async (importOriginal) => ({
               },
             ];
           }
-          return [
-            {
-              local: "0x3333333333333333333333333333333333333333",
-              remote: pad("0x4444444444444444444444444444444444444444"),
-              remoteChainId: 10n,
-            },
-          ];
+          return (
+            mocks.homePairs ?? [
+              {
+                local: "0x3333333333333333333333333333333333333333",
+                remote: pad("0x4444444444444444444444444444444444444444"),
+                remoteChainId: 10n,
+              },
+            ]
+          );
         }
         if (functionName === "projectId") return 8n;
         if (functionName === "allowance" && mocks.bridgeAllowed) return 10n ** 30n;
@@ -168,7 +180,7 @@ vi.mock("wagmi", async (importOriginal) => ({
     const loan = mocks.loan;
     const answers: Record<string, unknown> = {
       PERMISSIONS: "0x4444444444444444444444444444444444444444",
-      suckerPairsOf: [
+      suckerPairsOf: mocks.homePairs ?? [
         {
           local: "0x3333333333333333333333333333333333333333",
           remote: pad("0x4444444444444444444444444444444444444444"),
@@ -293,17 +305,25 @@ vi.mock("@/hooks/useProjectBaseToken", () => ({
   useProjectBaseToken: () => ({ symbol: "ETH", decimals: 18, tokenMap: {} }),
 }));
 vi.mock("@/hooks/useBorrowableAmountFrom", () => ({
-  useBorrowableAmountFrom: () => ({ data: 10n ** 18n, capacity: 2n * 10n ** 18n }),
+  useBorrowableAmountFrom: () => ({
+    data: mocks.borrowQuote,
+    capacity: 2n * 10n ** 18n,
+    isError: mocks.borrowQuoteError,
+  }),
 }));
 vi.mock("@/hooks/useCashOutRoute", () => {
   const data = { expectedReturn: 10n ** 17n, minimumReturn: 9n * 10n ** 16n };
   return {
-    useCashOutRoute: () => ({
-      data,
-      isFetching: false,
-      isError: false,
-      refetch: async () => ({ data, isError: false }),
-    }),
+    useCashOutRoute: ({ holder }: { holder?: string }) => {
+      mocks.routeHolder(holder);
+      return {
+        // The real query is off without a holder.
+        data: holder ? data : undefined,
+        isFetching: false,
+        isError: false,
+        refetch: async () => ({ data, isError: false }),
+      };
+    },
   };
 });
 vi.mock("@/lib/directSellSwap", async (importOriginal) => ({
@@ -382,11 +402,14 @@ vi.mock("@/lib/token", () => ({
 }));
 vi.mock("@/lib/bridgePrepare", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/bridgePrepare")>()),
-  quoteBridgePrepare: async () => ({
-    netReclaimAmount: 10n ** 17n,
-    minTokensReclaimed: 9n * 10n ** 16n,
-    tokenDecimals: 18,
-  }),
+  quoteBridgePrepare: async (_client: unknown, { beneficiary }: { beneficiary: string }) => {
+    mocks.bridgeBeneficiary(beneficiary);
+    return {
+      netReclaimAmount: 10n ** 17n,
+      minTokensReclaimed: 9n * 10n ** 16n,
+      tokenDecimals: 18,
+    };
+  },
 }));
 vi.mock("@/lib/loanTransactions", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/loanTransactions")>()),
@@ -1100,3 +1123,164 @@ const LOAN = {
   collateral: (2n * 10n ** 18n).toString(),
   projectId: 7,
 };
+
+describe("holder dialogs tell why their button is off, and preview for the viewed account", () => {
+  const WALLET = "0x1111111111111111111111111111111111111111";
+  const VIEWED = "0x000000000000000000000000000000000000bEEF";
+  const pairTo = (chainId: bigint, local: string) => ({
+    local,
+    remote: pad(local as Hex),
+    remoteChainId: chainId,
+  });
+
+  beforeEach(() => {
+    mocks.account = WALLET;
+    mocks.homePairs = null;
+    mocks.borrowQuote = 10n ** 18n;
+    mocks.borrowQuoteError = false;
+    mocks.routeHolder.mockClear();
+    mocks.bridgeBeneficiary.mockClear();
+    mocks.balanceRows = [[1, 7]];
+    mocks.verifiedPairs = [{ peerChainId: 1, projectId: 7n }];
+    clearViewAs();
+  });
+  afterEach(() => {
+    mocks.account = WALLET;
+    mocks.homePairs = null;
+    mocks.borrowQuote = 10n ** 18n;
+    mocks.borrowQuoteError = false;
+    clearViewAs();
+  });
+
+  async function openCashOut() {
+    renderWithQueries(
+      <RedeemDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open cash out</button>
+      </RedeemDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
+    return screen.findByLabelText("Tokens to cash out");
+  }
+
+  async function openMove() {
+    mocks.balanceRows = [
+      [1, 7],
+      [10, 8],
+    ];
+    renderWithQueries(
+      <BridgeDialog
+        projects={[
+          { projectId: 7, chainId: 1, token: NATIVE_TOKEN },
+          { projectId: 8, chainId: 10, token: NATIVE_TOKEN },
+        ]}
+      >
+        <button type="button">Open move</button>
+      </BridgeDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open move" }));
+    const [, to] = await screen.findAllByRole("combobox");
+    fireEvent.click(to);
+  }
+
+  it("quotes a cash out for the viewed holder with no wallet connected", async () => {
+    mocks.account = undefined;
+    setViewAs(VIEWED);
+    const amount = await openCashOut();
+    fireEvent.change(amount, { target: { value: "1" } });
+    expect(await screen.findByText(/You'll get/)).toBeTruthy();
+    expect(mocks.routeHolder).toHaveBeenLastCalledWith(VIEWED);
+  });
+
+  it("quotes a cash out for the connected wallet outside View as", async () => {
+    const amount = await openCashOut();
+    fireEvent.change(amount, { target: { value: "1" } });
+    expect(await screen.findByText(/You'll get/)).toBeTruthy();
+    expect(mocks.routeHolder).toHaveBeenLastCalledWith(WALLET);
+  });
+
+  it("keeps Cash out off with a reason until an amount is entered, and a junk amount is not a crash", async () => {
+    const amount = await openCashOut();
+    const button = screen.getByRole("button", { name: "Cash out" });
+    expect(button).toBeDisabled();
+    expect(screen.getByText("Enter an amount.")).toBeTruthy();
+    fireEvent.change(amount, { target: { value: "abc" } });
+    expect(button).toBeDisabled();
+    expect(screen.getByText("Enter an amount.")).toBeTruthy();
+    fireEvent.change(amount, { target: { value: "99" } });
+    expect(button).toBeDisabled();
+    expect(screen.getByText(/Not enough REV on Ethereum/)).toBeTruthy();
+    fireEvent.change(amount, { target: { value: "1" } });
+    await waitFor(() => expect(button).toBeEnabled());
+    expect(screen.queryByText("Enter an amount.")).toBeNull();
+  });
+
+  it("quotes a move for the viewed holder with no wallet connected", async () => {
+    mocks.account = undefined;
+    setViewAs(VIEWED);
+    await openMove();
+    fireEvent.click(await screen.findByRole("option", { name: /Optimism/ }));
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    expect(await screen.findByText("Estimated funding moved")).toBeTruthy();
+    expect(mocks.bridgeBeneficiary).toHaveBeenLastCalledWith(VIEWED);
+  });
+
+  it("lists a destination reached by two active suckers once", async () => {
+    mocks.homePairs = [
+      pairTo(10n, "0x3333333333333333333333333333333333333333"),
+      pairTo(10n, "0x6666666666666666666666666666666666666666"),
+    ];
+    await openMove();
+    expect(await screen.findAllByRole("option", { name: /Optimism/ })).toHaveLength(1);
+  });
+
+  it("says a move is over the balance when that is what keeps it off", async () => {
+    await openMove();
+    fireEvent.click(await screen.findByRole("option", { name: /Optimism/ }));
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "99" } });
+    expect(await screen.findByText("Not enough REV on Ethereum")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Move REV" })).toBeDisabled();
+  });
+
+  it("says nothing can be borrowed when the loans contract quotes zero", async () => {
+    mocks.borrowQuote = 0n;
+    renderWithQueries(
+      <BorrowDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open loan form</button>
+      </BorrowDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open loan form" }));
+    fireEvent.change(await screen.findByLabelText(/How much REV/), { target: { value: "1" } });
+    expect(await screen.findByText("Nothing can be borrowed on Ethereum right now.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open loan" })).toBeDisabled();
+  });
+
+  it("says the loan quote failed when the read fails", async () => {
+    mocks.borrowQuote = undefined;
+    mocks.borrowQuoteError = true;
+    renderWithQueries(
+      <BorrowDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open loan form</button>
+      </BorrowDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open loan form" }));
+    fireEvent.change(await screen.findByLabelText(/How much REV/), { target: { value: "1" } });
+    expect(await screen.findByText("Couldn't read the loan quote. Try again.")).toBeTruthy();
+  });
+
+  it("names the refinance's network and the loan's own number", async () => {
+    renderWithQueries(
+      <ReallocateDialog
+        projectId={7n}
+        tokenSymbol="REV"
+        selectedLoan={{ ...LOAN, id: "6000000000000000002", chainId: 1 }}
+      >
+        <button type="button">Open refinance</button>
+      </ReallocateDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open refinance" }));
+    const box = (await screen.findByText("Current loan")).parentElement!;
+    expect(within(box).getByText("Ethereum")).toBeTruthy();
+    expect(within(box).getByText("2")).toBeTruthy();
+    expect(within(box).queryByText("6000000000000000002")).toBeNull();
+  });
+});

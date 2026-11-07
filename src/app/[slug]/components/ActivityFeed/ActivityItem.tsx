@@ -253,7 +253,14 @@ function ItemMintBullets({
   const tier = shop.data?.tiers.find((entry) => entry.id === item.tierId);
   const media = useTierMedia(
     chainId,
-    tier && shop.data ? { hook: shop.data.hook, tiers: [tier] } : null,
+    tier && shop.data
+      ? {
+          hook: shop.data.hook,
+          store: shop.data.store,
+          tiers: [tier],
+          hasResolver: shop.data.tiers.some((entry) => entry.resolvedUri),
+        }
+      : null,
   );
   const name = media.data[item.tierId]?.name;
   const split =
@@ -422,7 +429,7 @@ export function ActivityItemRow({
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
             <EtherscanLink type="tx" value={event.txHash} chain={chain}>
-              <DateRelative timestamp={event.timestamp} />
+              <DateRelative timestamp={event.timestamp} insideLink />
             </EtherscanLink>
             {event.chains ? (
               <span className="isolate inline-flex items-center">

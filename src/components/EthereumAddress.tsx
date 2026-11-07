@@ -1,20 +1,11 @@
 import { useEnsName } from "@/hooks/ens/useEnsName";
+import { ensAvatarUrlForAddress } from "@/lib/ensAvatarUrl";
 import { formatEthAddress } from "@/lib/utils";
 import Image from "next/image";
 import { twMerge } from "tailwind-merge";
 import { Address, Chain } from "viem";
 import EtherscanLink from "./EtherscanLink";
 import { SafeBadge } from "./SafeBadge";
-
-const STAMP_FYI_BASE_URL = "https://cdn.stamp.fyi";
-
-export function ensAvatarUrlForAddress(address: string, { size }: { size?: number } = {}) {
-  let url = `${STAMP_FYI_BASE_URL}/avatar/${address}`;
-  if (size) {
-    url += `?s=${size}`;
-  }
-  return url;
-}
 
 export function EthereumAddress({
   address,
@@ -37,7 +28,8 @@ export function EthereumAddress({
 }) {
   const { data } = useEnsName(address, { enabled: withEnsName });
   const formattedAddress = short ? formatEthAddress(address) : address;
-  const ensName = data as string | undefined;
+  // A disabled query still returns another component's cached lookup.
+  const ensName = withEnsName === false ? undefined : (data as string | undefined);
 
   const renderValue = ensName ?? formattedAddress;
 

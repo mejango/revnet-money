@@ -61,3 +61,11 @@
 
 ## 2026-11-05 Same widget, same layout across clients
 - When restyling a header tooltip or breakdown in one client, first open the equivalent in the other client and copy its layout. jango picked jbm's stacked per-chain layout (title line, chain icon and name, token amount over USD, divider, All chains) over a fresh column grid built in revnet. Diverging designs cost a second round; parity is the default, not a follow-up.
+
+## 2026-11-06 — Cash out tax is a value, not a percentage
+- Correction: a UX review proposed rendering the cash out tax as "10%" to match a chart. The tax is a 0 to 1 value and is never a percentage; any percentage is a derived output of the curve formula.
+- Rule: render the tax as its 0 to 1 value everywhere, and when two surfaces disagree, check which one states the protocol's own unit before picking the fix.
+
+## 2026-11-06 — Review proposals are hypotheses until checked three ways
+- Correction: jango saw that some review fixes were wrong and asked for a triple check before changes. Two more of my claims then failed: a memo "no cap" answer rested on one contract grep, and a voting-units fix assumed a read flag that does not exist.
+- Rule: before changing code from a review, confirm the symptom in the source, confirm the correct behavior from the authority (contract, live data, sibling client) with file and line, and prove the fix with a test or render. Search the concept across every repo on the path before saying a limit does not exist. An unconfirmed item is reported, not changed.

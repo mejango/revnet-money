@@ -148,7 +148,7 @@ export function RevnetGuide({
           <nav aria-label={`${eyebrow} contents`} className="lg:hidden">
             <details>
               <summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold text-zinc-800 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-melon-700">
-                Contents · {sections.length} sections
+                Contents, {sections.length} sections
               </summary>
               <ContentsList sections={sections} />
             </details>
