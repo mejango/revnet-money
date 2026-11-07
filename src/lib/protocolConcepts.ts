@@ -21,8 +21,7 @@ export const PROTOCOL_CONCEPTS = {
 
   /** JBRulesetMetadataResolver.reservedPercent — the share of newly minted tokens routed to
    *  the reserved split list instead of the payer. */
-  reservedShare:
-    "The share of new tokens that goes to chosen recipients. The payer gets the rest.",
+  reservedShare: "The share of new tokens that goes to chosen recipients. The payer gets the rest.",
 
   /** REVOwner.autoIssueFor: named beneficiaries can receive their allocation after stage start. */
   autoIssuance:
