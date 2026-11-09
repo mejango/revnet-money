@@ -63,10 +63,11 @@ const account = `0x${"1".repeat(40)}`;
 // SDK 6.0.0 (every buyback, router and gateway generation) measures / 396.0, learn 358.1, audit 361.0, create 560.1, account 429.1,
 // holdings 418.3, projects 431.2, roles 392.4 and not-found 356.7 KiB; round only those up.
 // Explicit pay, loan and payment-source state measures shop 595.1 KiB; round only that ceiling up.
+// One Para sign-out generation measures build 360.2, route-referenced 922.2 and all client JS 2775.6 KiB; round only those up.
 const routes = [
   { route: "/", path: "/", kib: 397 },
   { route: "/learn", path: "/learn", kib: 359 },
-  { route: "/build", path: "/build", kib: 360 },
+  { route: "/build", path: "/build", kib: 361 },
   { route: "/audit", path: "/audit", kib: 362 },
   { route: "/discover", path: "/discover", kib: 343 },
   { route: "/create", path: "/create", kib: 561 },
@@ -93,7 +94,7 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
 // All JS 2730 -> 2754: the R stack on SDK 4.0.0 (core reviewed runs and Relayr rounds), measured 2752.4 locally and 2753.1 on CI.
 // SDK 4.0.0 measures 921.2 KiB route-referenced (919.7 before); the ceiling moves up 1 KiB.
 // Next 16.4.2 measures 923.0 KiB; the ceiling moves to 924.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 923);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
@@ -241,7 +242,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
 // The same artifact measures 2757.6 KiB total, +3.6 KiB (0.13%) over the previous ceiling.
 // The same frozen acquisition-fix artifact measures2759.3 KiB, +1.7 KiB over the prior artifact.
 // Explicit homepage availability and permission retry: measured 2760.4 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2774);
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2776);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
