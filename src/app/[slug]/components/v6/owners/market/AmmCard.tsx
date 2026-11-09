@@ -1503,7 +1503,7 @@ function MovableLiquidity({
     }
   };
 
-  const busy = move.busy || moving || move.phase === "receipt";
+  const busy = move.busy || moving;
   return (
     <div className="mt-2 space-y-1">
       {(movable.data ?? []).map(({ from, position }) => (
