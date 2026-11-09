@@ -1023,11 +1023,6 @@ export function V6PayCard() {
         setRevertedOnchain(true);
         return;
       }
-      if ((failure as { name?: string } | null)?.name === "TransactionReceiptUnavailableError") {
-        setPhase("pending");
-        setTxError(result.error);
-        return;
-      }
       setPhase("ready");
       // The revert's own reason, when known, and a looser minimum when that is the fix.
       const decoded = decodePayFailure(failure);

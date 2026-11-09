@@ -29,6 +29,8 @@ const mocks = vi.hoisted(() => ({
   cardSimulate: vi.fn(),
   /** Whether the sent payment's receipt says it reverted. */
   reverted: false,
+  /** A failure the sent payment ends with instead, by its error name. */
+  endedWith: null as string | null,
   routeCalls: [] as { slippageBps?: bigint }[],
   quoteFailed: false,
   routingUnavailable: false,
@@ -50,17 +52,23 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
   const runner = liveReviewedAction(
     mocks.submit,
     (hash) =>
-      mocks.reverted
+      mocks.endedWith
         ? {
             phase: "failed",
-            error: "The transaction reverted onchain.",
-            failure: Object.assign(new Error("reverted"), {
-              name: "ReviewedCallRevertedError",
-              step: 0,
-              hash,
-            }),
+            error: "The receipt could not be read.",
+            failure: Object.assign(new Error("unavailable"), { name: mocks.endedWith }),
           }
-        : undefined,
+        : mocks.reverted
+          ? {
+              phase: "failed",
+              error: "The transaction reverted onchain.",
+              failure: Object.assign(new Error("reverted"), {
+                name: "ReviewedCallRevertedError",
+                step: 0,
+                hash,
+              }),
+            }
+          : undefined,
     mocks.cardSimulate,
   );
   mocks.resetRunner = runner.reset;
@@ -196,6 +204,7 @@ beforeEach(() => {
   mocks.refetchSurface.mockReset().mockResolvedValue(undefined);
   mocks.cardSimulate.mockReset().mockResolvedValue({ request: {} });
   mocks.reverted = false;
+  mocks.endedWith = null;
   mocks.submit.mockReset().mockResolvedValue(HASH);
   mocks.resetRunner();
 });
@@ -362,6 +371,15 @@ describe("a failed payment's reason and a looser minimum", () => {
     expect(mocks.routeCalls.slice(calls).every((call) => call.slippageBps === undefined)).toBe(
       true,
     );
+  });
+
+  it("lets the payer leave a payment whose receipt could not be read", async () => {
+    mocks.endedWith = "TransactionReceiptUnavailableError";
+    const confirm = await payFromConfirm();
+    await within(confirm).findByText("The receipt could not be read.");
+    expect(within(confirm).getByRole("button", { name: "Pay" })).toBeEnabled();
+    fireEvent.keyDown(confirm, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
   it("says a payment would return no tokens, and offers no tolerance for it", async () => {
