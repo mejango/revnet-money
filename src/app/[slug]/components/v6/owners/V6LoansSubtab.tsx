@@ -163,12 +163,18 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
   const tokenSymbol = formatTokenSymbol(token);
   const { address } = useViewedAccount();
 
-  const [selectedLoanId, setSelectedLoanId] = useState<string | null>(null);
-  const [selectedChainId, setSelectedChainId] = useState<JBChainId | null>(null);
-  const [selectedLoanProjectId, setSelectedLoanProjectId] = useState<number | null>(null);
-  const [showRepayDialog, setShowRepayDialog] = useState(false);
-  const [reallocateLoan, setReallocateLoan] = useState<SelectedLoan | null>(null);
-  const [showReallocateDialog, setShowReallocateDialog] = useState(false);
+  // One loan dialog at a time. A closed repay dialog stays mounted until another one opens.
+  const [dialog, setDialog] = useState<
+    | {
+        kind: "repay";
+        loanId: string;
+        chainId: JBChainId;
+        loanProjectId: number;
+        open: boolean;
+      }
+    | { kind: "reallocate"; loan: SelectedLoan }
+    | null
+  >(null);
 
   if (!address) {
     return (
@@ -199,37 +205,37 @@ export function V6LoansSubtab({ projects }: { projects: ProjectItem[] }) {
         tokenSymbol={tokenSymbol}
         projects={projects}
         onSelectLoan={(loanId, chainId, loanProjectId) => {
-          setSelectedLoanId(loanId);
-          setSelectedChainId(chainId as JBChainId);
-          setSelectedLoanProjectId(loanProjectId);
-          setShowRepayDialog(true);
+          if (!loanId || !chainId) return;
+          setDialog({
+            kind: "repay",
+            loanId,
+            chainId: chainId as JBChainId,
+            loanProjectId,
+            open: true,
+          });
         }}
-        onReallocateLoan={(loan) => {
-          setReallocateLoan(loan);
-          setShowReallocateDialog(true);
-        }}
+        onReallocateLoan={(loan) => setDialog({ kind: "reallocate", loan })}
       />
 
-      {selectedLoanId && selectedChainId && selectedLoanProjectId !== null && (
+      {dialog?.kind === "repay" && (
         <RepayDialog
-          loanId={selectedLoanId}
-          chainId={selectedChainId}
+          loanId={dialog.loanId}
+          chainId={dialog.chainId}
           projectId={projectId}
-          loanProjectId={BigInt(selectedLoanProjectId)}
-          open={showRepayDialog}
-          onOpenChange={setShowRepayDialog}
+          loanProjectId={BigInt(dialog.loanProjectId)}
+          open={dialog.open}
+          onOpenChange={(open) => setDialog({ ...dialog, open })}
         />
       )}
 
-      {reallocateLoan && (
+      {dialog?.kind === "reallocate" && (
         <ReallocateDialog
           projectId={BigInt(projectId)}
           tokenSymbol={tokenSymbol}
-          selectedLoan={reallocateLoan}
-          open={showReallocateDialog}
+          selectedLoan={dialog.loan}
+          open
           onOpenChange={(open) => {
-            setShowReallocateDialog(open);
-            if (!open) setReallocateLoan(null);
+            if (!open) setDialog(null);
           }}
         >
           <div style={{ display: "none" }} />
