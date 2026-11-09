@@ -193,3 +193,54 @@ describe("a refinance whose permission a Safe executes after the run ended", () 
     expect(result.current.borrowStatus).toBe("success");
   });
 });
+
+describe("a loan proposal released from another tab", () => {
+  it("wallet-action:loans returns to its start, then opens the loan from the next review", async () => {
+    mocks.hasPermissions.mockResolvedValue(true);
+    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }), { wrapper });
+    const [borrow, reallocation] = mocks.runners;
+    // The loan goes to the Safe as a proposal, and the run follows its hold.
+    borrow.run.mockImplementationOnce(
+      async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
+        expect(action.calls.map((call) => call.functionName)).toEqual(["borrowFrom"]);
+        await action.beforeWallet?.(action.calls[0], 0);
+        borrow.set({ phase: "proposed" });
+        return { status: "proposed", step: 0, safeTxHash: `0x${"ab".repeat(32)}` as Hex };
+      },
+    );
+
+    act(() => result.current.handleChainSelection(1));
+    act(() => result.current.setCollateralAmount("1"));
+    await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
+    await act(() => result.current.handleBorrow());
+    expect(result.current.borrowStatus).toBe("pending");
+
+    // Released in another tab: the runner is idle, with no error, hold or settled step.
+    act(() => borrow.set({ phase: "idle" }));
+    expect(result.current.borrowStatus).toBe("idle");
+
+    // The next run's runner is still idle while it starts: that is the new send, not a release.
+    let start!: () => void;
+    const started = new Promise<void>((resolve) => (start = resolve));
+    borrow.run.mockImplementationOnce(
+      async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
+        await started;
+        await action.beforeWallet?.(action.calls[0], 0);
+        borrow.set({ phase: "done" });
+        return { status: "done", hashes: [`0x${"cd".repeat(32)}`], receipts: [] };
+      },
+    );
+    let retry: Promise<unknown> | undefined;
+    act(() => {
+      retry = result.current.handleBorrow();
+    });
+    await waitFor(() => expect(borrow.run).toHaveBeenCalledTimes(2));
+    expect(result.current.borrowStatus).toBe("checking");
+    start();
+    await act(() => retry!);
+
+    expect(borrow.run).toHaveBeenCalledTimes(2);
+    expect(reallocation.run).not.toHaveBeenCalled();
+    expect(result.current.borrowStatus).toBe("success");
+  });
+});
