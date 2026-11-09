@@ -9,7 +9,8 @@ import {
 } from "@/components/ui/ModalShell";
 import { TxSteps } from "@/components/ui/TxSteps";
 import { formatTransactionMessage } from "@/lib/utils";
-import { useEffect, useId, useRef, type ComponentProps, type ReactNode } from "react";
+import { useStartOnce } from "@bananapus/nana-sdk-core/review/react";
+import { useEffect, useId, type ComponentProps, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 export type TxProgressRow = {
@@ -71,19 +72,9 @@ export function TxProgress({
   footerContent?: ReactNode;
 }) {
   const titleId = useId();
-  const ready = open && !busy && !preparing && !complete && !error && !!start;
   // Once per opening or preparation: a cancelled review leaves the progress to its site, never
   // reopens itself; a new preparation is a new write.
-  const started = useRef(false);
-  const startRef = useRef(start);
-  startRef.current = start;
-  useEffect(() => {
-    if (!open || preparing) started.current = false;
-    else if (ready && !started.current) {
-      started.current = true;
-      startRef.current?.();
-    }
-  }, [open, preparing, ready]);
+  useStartOnce(open, !!preparing, start, undefined, !!busy || !!complete || !!error);
   // Inside a ModalShell already, the confirm replaces that card's content in
   // place: one scrim, one card, and closing brings the form back.
   const host = useEnclosingModalCard();
