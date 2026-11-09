@@ -76,7 +76,7 @@ const routes = [
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 596 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 605 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 606 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 430 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 419 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 432 },
