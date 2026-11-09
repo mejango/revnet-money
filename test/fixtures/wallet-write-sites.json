@@ -641,7 +641,7 @@
       "tests": [
         "test/loan-transactions.test.ts",
         "test/borrow-review-cancel.test.tsx",
-        "test/borrow-refinance-safe-grant.test.tsx"
+        "test/loan-safe-proposal-end.test.tsx"
       ]
     },
     {
