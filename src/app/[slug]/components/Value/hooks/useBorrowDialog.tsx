@@ -904,17 +904,19 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   // Don't auto-select any chain - let user choose manually
   // This prevents pre-selection issues and ensures user has full control
 
-  // The Safe ran the permission after its run ended: the loan is still to send, from Borrow again.
+  // The Safe ran the permission after its run ended: the loan is still to send, from its button again.
+  const grantSettled =
+    borrow.settledStep === 0 ? "borrow" : reallocation.settledStep === 0 ? "reallocation" : null;
   useEffect(() => {
-    if (borrow.settledStep !== 0) return;
+    if (!grantSettled) return;
     setAttempt((now) =>
-      now.status === "sending" && now.runner === "borrow" ? { status: "idle" } : now,
+      now.status === "sending" && now.runner === grantSettled ? { status: "idle" } : now,
     );
     toast({
       title: "Safe granted the permission",
-      description: "Review the loan again to borrow.",
+      description: `Review the loan again to ${grantSettled === "borrow" ? "borrow" : "refinance"}.`,
     });
-  }, [borrow.settledStep, toast]);
+  }, [grantSettled, toast]);
 
   // Success persists until the user closes the dialog: no timed close.
   const adjusted = attempt.status === "sending" && attempt.runner === "reallocation";
