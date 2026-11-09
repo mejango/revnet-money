@@ -9,6 +9,7 @@ import { useJBProject, useJBTokenContext } from "@/lib/nana/project";
 import { isPairCheckPending, useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { cn, formatEthAddress, formatTokenSymbol } from "@/lib/utils";
 import { useViewAs } from "@/lib/view-as";
+import { signOutOnce } from "@/providers/para-bridge";
 import {
   logoutParaSession,
   ParaLocalDisconnectError,
@@ -601,7 +602,7 @@ export function WalletButton() {
             onClick={() => {
               setDisconnectError(undefined);
               setParaLogoutPending(true);
-              void endSession()
+              void signOutOnce(endSession)
                 .then(() => setOpen(false))
                 .catch((error: unknown) => {
                   setDisconnectError(
