@@ -24,9 +24,30 @@
     },
     {
       "file": "src/components/TransactionReviewProvider.tsx",
-      "line": 138,
+      "line": 81,
       "api": "registerReviewHandler",
       "boundary": "The one review dialog answers core's prompts: it returns core's confirmation for the model it showed, or null. It never signs or sends.",
+      "test": "test/transaction-review-provider.test.tsx"
+    },
+    {
+      "file": "src/components/TransactionReviewProvider.tsx",
+      "line": 82,
+      "api": "request",
+      "boundary": "Core's review dialog queue (createReviewQueue) shows a review; it resolves the person's answer and never signs, sends or calls a wallet RPC.",
+      "test": "test/transaction-review-provider.test.tsx"
+    },
+    {
+      "file": "src/components/TransactionReviewProvider.tsx",
+      "line": 94,
+      "api": "request",
+      "boundary": "Core's review dialog queue (createReviewQueue) shows a flow choice; it resolves the person's answer and never signs, sends or calls a wallet RPC.",
+      "test": "test/transaction-review-provider.test.tsx"
+    },
+    {
+      "file": "src/components/TransactionReviewProvider.tsx",
+      "line": 104,
+      "api": "request",
+      "boundary": "Core's review dialog queue (createReviewQueue) shows a funding chain choice; it resolves the person's answer and never signs, sends or calls a wallet RPC.",
       "test": "test/transaction-review-provider.test.tsx"
     },
     {
