@@ -39,6 +39,7 @@ describe("project-scoped global reviews", () => {
     const result = requireFundingChainSelection(options, 1);
     await screen.findByRole("dialog", { name: "Choose where to pay" });
     fireEvent.click(screen.getByRole("button", { name: "Continue to payment review" }));
+    await act(async () => undefined);
     expect(scope.verify).toHaveBeenCalledOnce();
     expect(screen.getByRole("button", { name: "Continue to payment review" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
