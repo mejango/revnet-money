@@ -638,7 +638,11 @@
       "id": "loans",
       "risk": "money",
       "files": ["src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx"],
-      "tests": ["test/loan-transactions.test.ts", "test/borrow-review-cancel.test.tsx"]
+      "tests": [
+        "test/loan-transactions.test.ts",
+        "test/borrow-review-cancel.test.tsx",
+        "test/loan-safe-proposal-end.test.tsx"
+      ]
     },
     {
       "id": "cash-out",

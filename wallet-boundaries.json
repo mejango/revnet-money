@@ -10,7 +10,7 @@
     },
     {
       "file": "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
-      "line": 161,
+      "line": 167,
       "api": "useWalletClient",
       "boundary": "Reads the connected wallet client only to require a connected wallet; it never signs or sends. Writes go through the reviewed write hook.",
       "test": "test/borrow-review-cancel.test.tsx"

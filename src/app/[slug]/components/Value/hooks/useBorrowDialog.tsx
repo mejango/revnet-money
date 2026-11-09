@@ -57,12 +57,18 @@ export type LoanStatus =
   | "safe-unconfirmed";
 
 /**
- * The loan send outside its runner: the reads before it, then which runner sends it and which
- * wallet prompt it last opened. Everything after that is the runner's own phase.
+ * The loan send outside its runner: the reads before it, then which runner sends it, which
+ * wallet prompt it last opened, and whether its run ended at a Safe proposal the runner follows.
+ * Everything after that is the runner's own phase.
  */
 type LoanAttempt =
   | { status: "idle" | "checking" | "error" }
-  | { status: "sending"; runner: "borrow" | "reallocation"; prompt?: "grant" | "loan" };
+  | {
+      status: "sending";
+      runner: "borrow" | "reallocation";
+      prompt?: "grant" | "loan";
+      proposed?: true;
+    };
 
 /** The loan's status: the attempt's own until it sends, then its runner's phase. */
 function loanStatus(attempt: LoanAttempt, run: ReviewedAction): LoanStatus {
@@ -396,10 +402,10 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   // Transaction hooks
   const borrow = useReviewedAction();
   const reallocation = useReviewedAction();
-  const borrowStatus = loanStatus(
-    attempt,
-    attempt.status === "sending" && attempt.runner === "reallocation" ? reallocation : borrow,
-  );
+  // The runner the attempt sends with.
+  const sender =
+    attempt.status === "sending" && attempt.runner === "reallocation" ? reallocation : borrow;
+  const borrowStatus = loanStatus(attempt, sender);
   useEffect(() => {
     if (borrowStatus === "idle") setGrantsPermission(false);
   }, [borrowStatus]);
@@ -645,6 +651,10 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         calls: [...(grant ? [grant] : []), grant ? { ...loan, dependsOnPrior: true } : loan],
       });
       if (!result) return "closed" as const;
+      if (result.status === "proposed")
+        setAttempt((now) =>
+          now.status === "sending" && now.runner === kind ? { ...now, proposed: true } : now,
+        );
       if (grant && result.status === "proposed" && result.step === 0) {
         toast({
           title: "Safe permission proposal submitted",
@@ -903,17 +913,28 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   // Don't auto-select any chain - let user choose manually
   // This prevents pre-selection issues and ensures user has full control
 
-  // The Safe ran the permission after its run ended: the loan is still to send, from Borrow again.
+  // The Safe ran the permission after its run ended: the loan is still to send, from its button again.
+  const grantSettled =
+    borrow.settledStep === 0 ? "borrow" : reallocation.settledStep === 0 ? "reallocation" : null;
   useEffect(() => {
-    if (borrow.settledStep !== 0) return;
+    if (!grantSettled) return;
     setAttempt((now) =>
-      now.status === "sending" && now.runner === "borrow" ? { status: "idle" } : now,
+      now.status === "sending" && now.runner === grantSettled ? { status: "idle" } : now,
     );
     toast({
       title: "Safe granted the permission",
-      description: "Review the loan again to borrow.",
+      description: `Review the loan again to ${grantSettled === "borrow" ? "borrow" : "refinance"}.`,
     });
-  }, [borrow.settledStep, toast]);
+  }, [grantSettled, toast]);
+
+  // A followed proposal whose runner went idle with no error was released (from Account, say):
+  // nothing is pending, and the loan is sent from its button again. A new run's own idle start
+  // is not this: its attempt has not ended at a proposal.
+  const released =
+    attempt.status === "sending" && !!attempt.proposed && sender.phase === "idle" && !sender.error;
+  useEffect(() => {
+    if (released) setAttempt({ status: "idle" });
+  }, [released]);
 
   // Success persists until the user closes the dialog: no timed close.
   const adjusted = attempt.status === "sending" && attempt.runner === "reallocation";
