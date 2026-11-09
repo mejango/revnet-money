@@ -43,7 +43,7 @@ export type PendingFundingChainSelection = {
 /** A choice a flow asks for mid-action, such as sending a held write again. */
 type PendingFlowChoice = { kind: "choice"; id: number; choice: FlowChoice };
 
-export type PendingDialog = PendingReview | PendingFundingChainSelection | PendingFlowChoice;
+type PendingDialog = PendingReview | PendingFundingChainSelection | PendingFlowChoice;
 
 /** The dialogs the lazily loaded review module draws. */
 type PendingReviewDialog = PendingReview | PendingFundingChainSelection;
