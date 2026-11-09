@@ -63,9 +63,9 @@ export function PayAndDeploy({
   const [selectedPayment, selectPayment] = useState<ChainPayment | null>(() =>
     preselectedRelayrPayment(relayrResponse.payment_info, preferredPaymentChainId),
   );
-  const [payIsProcessing, setPayIsProcessing] = useState(false);
-  const [paymentSubmitted, setPaymentSubmitted] = useState(false);
-  const [safeProposalSubmitted, setSafeProposalSubmitted] = useState(false);
+  /** The launch payment: not sent, being sent, sent (its bundle is then followed), or with a Safe. */
+  const [paid, setPaid] = useState<"unsent" | "sending" | "sent" | "safe-proposed">("unsent");
+  const payIsProcessing = paid === "sending";
   const [review, setReview] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { values } = useCreateForm();
@@ -80,13 +80,13 @@ export function PayAndDeploy({
   } = useGetRelayrTxBundle();
   const { toast } = useToast();
   // A receipt or bundle verification error cannot make an existing payment safe to repeat.
-  const paymentSent = paymentSubmitted || !!paymentHash;
+  const paymentSent = paid === "sent" || paid === "safe-proposed" || !!paymentHash;
   const paymentLocked = paymentSent || isComplete || hasFailed;
   const busy = payIsProcessing || isPolling;
 
   const payAndLaunch = async () => {
     if (payIsProcessing || paymentLocked) return;
-    setPayIsProcessing(true);
+    setPaid("sending");
     setError(null);
     try {
       if (!selectedPayment || !sendRelayrTx) throw new Error("No payment selected");
@@ -104,9 +104,8 @@ export function PayAndDeploy({
       });
       if (payment !== selectedPayment) selectPayment(payment);
       const hash = await sendRelayrTx(payment);
-      setPaymentSubmitted(true);
       if (submittedViaSafe(hash)) {
-        setSafeProposalSubmitted(true);
+        setPaid("safe-proposed");
         setReview(false);
         toast({
           title: "Safe payment proposal submitted",
@@ -115,6 +114,7 @@ export function PayAndDeploy({
         });
         return;
       }
+      setPaid("sent");
       setReview(false);
       startPolling(bundle.bundle_uuid);
     } catch (e: any) {
@@ -129,7 +129,7 @@ export function PayAndDeploy({
         variant: "destructive",
       });
     } finally {
-      setPayIsProcessing(false);
+      setPaid((now) => (now === "sending" ? "unsent" : now));
     }
   };
 
@@ -196,7 +196,7 @@ export function PayAndDeploy({
           ]}
         />
       ) : null}
-      {safeProposalSubmitted ? (
+      {paid === "safe-proposed" ? (
         <p className="mt-4 text-sm text-melon-700">
           Complete the existing payment proposal in Safe, then check transaction activity. Do not
           submit another payment.
