@@ -21,19 +21,17 @@ import { formatUnits } from "viem";
 import { ImportantInfo } from "./ImportantInfo";
 import { LoanFeeChart } from "./LoanFeeChart";
 import { SimulatedLoanCard } from "./SimulatedLoanCard";
-import { useBorrowDialog, type SelectedLoan } from "./hooks/useBorrowDialog";
+import { useBorrowDialog, type LoanStatus, type SelectedLoan } from "./hooks/useBorrowDialog";
 
-const REALLOCATE_STATUS_TEXT: Record<string, string> = {
+const REALLOCATE_STATUS_TEXT: Record<LoanStatus, string> = {
+  idle: "",
   checking: "Checking permissions...",
   "granting-permission": "Granting permission...",
-  "permission-granted": "Permission granted. Refinancing loan...",
   "waiting-signature": "Waiting for wallet confirmation...",
   pending: "Refinancing loan...",
   "reallocation-pending": "Refinancing loan...",
   success: "Loan refinanced.",
-  "error-permission-denied": "Permission was not granted. Approve it to continue.",
   "safe-unconfirmed": SAFE_PROPOSAL_UNCONFIRMED_LINE,
-  "error-loan-canceled": "Refinancing canceled.",
   error: "The loan could not be refinanced.",
 };
 
@@ -145,10 +143,7 @@ export function ReallocateDialog({
   const newLoanCollateral = collateralToTransfer + additionalCollateral;
 
   const busy =
-    loading ||
-    ["checking", "granting-permission", "permission-granted", "waiting-signature"].includes(
-      borrowStatus,
-    );
+    loading || ["checking", "granting-permission", "waiting-signature"].includes(borrowStatus);
   const statusText = REALLOCATE_STATUS_TEXT[borrowStatus];
 
   useEffect(() => {

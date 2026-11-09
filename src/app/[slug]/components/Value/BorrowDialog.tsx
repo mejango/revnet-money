@@ -29,24 +29,22 @@ import { formatUnits } from "viem";
 import { ImportantInfo } from "./ImportantInfo";
 import { LoanFeeChart } from "./LoanFeeChart";
 import { SimulatedLoanCard } from "./SimulatedLoanCard";
-import { useBorrowDialog } from "./hooks/useBorrowDialog";
+import { useBorrowDialog, type LoanStatus } from "./hooks/useBorrowDialog";
 
 interface Props {
   projectId: bigint;
   tokenSymbol: string;
 }
 
-const BORROW_STATUS_TEXT: Record<string, string> = {
+const BORROW_STATUS_TEXT: Record<LoanStatus, string> = {
+  idle: "",
   checking: "Checking permissions...",
   "granting-permission": "Granting permission...",
-  "permission-granted": "Permission granted. Creating loan...",
   "waiting-signature": "Waiting for wallet confirmation...",
   pending: "Creating loan...",
   "reallocation-pending": "Adjusting loan...",
   success: "Loan opened.",
-  "error-permission-denied": "Permission was not granted. Approve it to continue.",
   "safe-unconfirmed": SAFE_PROPOSAL_UNCONFIRMED_LINE,
-  "error-loan-canceled": "Loan canceled.",
   error: "The loan could not be opened.",
 };
 
@@ -166,10 +164,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
       : 0;
 
   const busy =
-    loading ||
-    ["checking", "granting-permission", "permission-granted", "waiting-signature"].includes(
-      borrowStatus,
-    );
+    loading || ["checking", "granting-permission", "waiting-signature"].includes(borrowStatus);
   const statusText = BORROW_STATUS_TEXT[borrowStatus];
   const amountEntered = !!collateralAmount && Number(collateralAmount) > 0;
   const blockedLine = !cashOutChainId

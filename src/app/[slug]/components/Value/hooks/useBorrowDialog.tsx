@@ -44,20 +44,50 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits, isAddressEqual, parseUnits } from "viem";
 import { useAccount, usePublicClient, useReadContract, useWalletClient } from "wagmi";
 
-// Types
-type BorrowState =
+/** What the loan dialog shows of its send. */
+export type LoanStatus =
   | "idle"
   | "checking"
   | "granting-permission"
-  | "permission-granted"
   | "waiting-signature"
   | "pending"
   | "success"
-  | "error-permission-denied"
-  | "error-loan-canceled"
   | "error"
   | "reallocation-pending"
   | "safe-unconfirmed";
+
+/**
+ * The loan send outside its runner: the reads before it, then which runner sends it and which
+ * wallet prompt it last opened. Everything after that is the runner's own phase.
+ */
+type LoanAttempt =
+  | { status: "idle" | "checking" | "error" }
+  | { status: "sending"; runner: "borrow" | "reallocation"; prompt?: "grant" | "loan" };
+
+/** The loan's status: the attempt's own until it sends, then its runner's phase. */
+function loanStatus(attempt: LoanAttempt, run: ReviewedAction): LoanStatus {
+  if (attempt.status !== "sending") return attempt.status;
+  switch (run.phase) {
+    case "receipt":
+      return "pending";
+    // A proposed grant waits for its Safe; a proposed loan whose result can't be known is not failed.
+    case "proposed":
+      return run.held?.exit && attempt.prompt !== "grant" ? "safe-unconfirmed" : "pending";
+    case "done":
+      return "success";
+    // Ended without a send: failed, or closed until the send returns.
+    case "idle":
+      return run.error ? "error" : "checking";
+    default:
+      return attempt.prompt === "grant"
+        ? "granting-permission"
+        : attempt.prompt === "loan"
+          ? "waiting-signature"
+          : attempt.runner === "reallocation"
+            ? "reallocation-pending"
+            : "checking";
+  }
+}
 
 /**
  * A loan row as the loan tables select it (a superset of Bendystraw's LoanRow;
@@ -96,16 +126,13 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   const [showingWaitingMessage, setShowingWaitingMessage] = useState(false);
 
   // Borrow-related state
-  const [borrowStatus, setBorrowStatus] = useState<BorrowState>("idle");
+  const [attempt, setAttempt] = useState<LoanAttempt>({ status: "idle" });
   // A send-time read of the loan source that failed or disagreed with the reviewed one.
   const [sourceNotice, setSourceNotice] = useState<{ key?: string; line: string }>();
   // The burn permission is read live at submission, so a run only learns it is
   // two prompts once the grant starts. Remembering that keeps the finished
   // grant listed instead of vanishing when the loan step begins.
   const [grantsPermission, setGrantsPermission] = useState(false);
-  useEffect(() => {
-    if (borrowStatus === "idle") setGrantsPermission(false);
-  }, [borrowStatus]);
   const [collateralAmount, setCollateralText] = useState("");
   /** The second argument (an option's name, or "auto") is kept for callers; keys don't read it. */
   const setCollateralAmount = useCallback(
@@ -369,23 +396,22 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   // Transaction hooks
   const borrow = useReviewedAction();
   const reallocation = useReviewedAction();
-  const [txHash, setTxHash] = useState<`0x${string}`>();
-  const [reallocationTxHash, setReallocationTxHash] = useState<`0x${string}`>();
+  const borrowStatus = loanStatus(
+    attempt,
+    attempt.status === "sending" && attempt.runner === "reallocation" ? reallocation : borrow,
+  );
+  useEffect(() => {
+    if (borrowStatus === "idle") setGrantsPermission(false);
+  }, [borrowStatus]);
   const signing = (runner: ReviewedAction) =>
     runner.phase === "review" || runner.phase === "simulating" || runner.phase === "signing";
   // A Safe proposal reads as pending until its Safe executes it, unless its result can't be known.
   const confirming = (runner: ReviewedAction) =>
     runner.phase === "receipt" || (runner.phase === "proposed" && !runner.held?.exit);
   const isWriteLoading = signing(borrow);
-  const isReallocating = signing(reallocation);
 
   // Transaction status
   const isTxLoading = confirming(borrow);
-  const isSuccess = borrow.phase === "done";
-  const isTxUnconfirmed = borrow.phase === "proposed" && !!borrow.held?.exit;
-  const isReallocationTxLoading = confirming(reallocation);
-  const isReallocationSuccess = reallocation.phase === "done";
-  const isReallocationUnconfirmed = reallocation.phase === "proposed" && !!reallocation.held?.exit;
 
   /** One reviewed loan step, sent exactly; a failure throws its line. */
   const send = async (runner: ReviewedAction, action: ReviewedActionInput) => {
@@ -504,7 +530,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         setGrossBorrowedNative(0);
 
         // Clear all status states
-        setBorrowStatus("idle");
+        setAttempt({ status: "idle" });
 
         // Clear chain selection and loan data
         setCashOutChainId(undefined);
@@ -601,26 +627,26 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
    */
   const sendLoan = useCallback(
     async (
-      runner: ReviewedAction,
+      kind: "borrow" | "reallocation",
       grant: ReviewedCall | null,
       loan: ReviewedCall,
       context: ReviewedActionInput["context"],
-      onLoanHash: (hash: `0x${string}`) => void,
     ) => {
-      const result = await send(runner, {
+      setAttempt({ status: "sending", runner: kind });
+      const result = await send(kind === "borrow" ? borrow : reallocation, {
         account: address,
         context,
         scope: grant ? loan.intent : undefined,
         beforeWallet: (_call, step) =>
-          setBorrowStatus(grant && step === 0 ? "granting-permission" : "waiting-signature"),
-        onSubmitted: (_call, step, hash) => {
-          if (!grant || step === 1) onLoanHash(hash);
-        },
+          setAttempt({
+            status: "sending",
+            runner: kind,
+            prompt: grant && step === 0 ? "grant" : "loan",
+          }),
         calls: [...(grant ? [grant] : []), grant ? { ...loan, dependsOnPrior: true } : loan],
       });
       if (!result) return "closed" as const;
       if (grant && result.status === "proposed" && result.step === 0) {
-        setBorrowStatus("pending");
         toast({
           title: "Safe permission proposal submitted",
           description: SAFE_PROPOSAL_PENDING_LINE,
@@ -628,7 +654,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       }
       return result.status;
     },
-    [address, toast],
+    [address, borrow, reallocation, toast],
   );
 
   const handleBorrow = useCallback(
@@ -636,14 +662,14 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       // The loan source is read again from the loans contract at send: the quote, the
       // minimum and the calldata all use what the chain says now.
       // Busy from the first read, so the dialog cannot close under the send.
-      setBorrowStatus("checking");
+      setAttempt({ status: "checking" });
       let selectedChainTokenConfig: Awaited<ReturnType<typeof readLoanSource>>;
       try {
         if (!publicClient || !loanSourceArgs) throw new Error(LOAN_SOURCE_UNREADABLE);
         selectedChainTokenConfig = await readLoanSource(publicClient, loanSourceArgs);
       } catch {
         setSourceNotice({ key: loanSourceKey, line: LOAN_SOURCE_UNREADABLE });
-        setBorrowStatus("error");
+        setAttempt({ status: "error" });
         void refetchLoanSource();
         return;
       }
@@ -651,7 +677,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       // terms in place and send nothing until they are confirmed.
       if (!reviewedLoanSource || !sameLoanSource(reviewedLoanSource, selectedChainTokenConfig)) {
         setSourceNotice({ key: loanSourceKey, line: LOAN_SOURCE_CHANGED });
-        setBorrowStatus("error");
+        setAttempt({ status: "error" });
         void refetchLoanSource();
         return;
       }
@@ -664,7 +690,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       ) {
         // Reallocation path - allow 0 additional capital
         if (!internalSelectedLoan || !cashOutChainId || !address || !walletClient) {
-          setBorrowStatus("error");
+          setAttempt({ status: "error" });
           return;
         }
 
@@ -680,7 +706,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
           selectedLoanReallocAmount !== undefined &&
           selectedLoanReallocAmount < BigInt(internalSelectedLoan.borrowAmount)
         ) {
-          setBorrowStatus("error");
+          setAttempt({ status: "error" });
           toast({
             variant: "destructive",
             title: "Cannot refinance",
@@ -691,7 +717,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
         // Busy from here, as the standard path is: the reads before the wallet
         // prompt are part of the send, and its dialog must not close under them.
-        setBorrowStatus("checking");
+        setAttempt({ status: "checking" });
 
         try {
           // Adding collateral burns project tokens, exactly as the standard borrow path does, so
@@ -717,7 +743,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
           // Held by the loan alone: the borrowable amount and the collateral moved follow its capacity.
           const sent = await sendLoan(
-            reallocation,
+            "reallocation",
             grant,
             reviewedCall(
               buildProtectedReallocateCollateralTx({
@@ -739,12 +765,11 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
               },
             ),
             context,
-            setReallocationTxHash,
           );
-          if (sent === "closed") setBorrowStatus("idle");
+          if (sent === "closed") setAttempt({ status: "idle" });
           return sent;
         } catch (err) {
-          setBorrowStatus("error");
+          setAttempt({ status: "error" });
           toast({
             variant: "destructive",
             title: "Refinancing failed",
@@ -754,7 +779,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       } else {
         // Standard borrow path
         try {
-          setBorrowStatus("checking");
+          setAttempt({ status: "checking" });
 
           if (
             !walletClient ||
@@ -763,7 +788,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
             !cashOutChainId ||
             !resolvedPermissionsAddress
           ) {
-            setBorrowStatus("error");
+            setAttempt({ status: "error" });
             return;
           }
 
@@ -784,7 +809,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
 
             // Held by the project and holder: the amount and collateral are not part of it.
             const sent = await sendLoan(
-              borrow,
+              "borrow",
               grant,
               reviewedCall(
                 buildProtectedBorrowTx({
@@ -812,12 +837,11 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
                 },
               ),
               context,
-              setTxHash,
             );
-            if (sent === "closed") setBorrowStatus("idle");
+            if (sent === "closed") setAttempt({ status: "idle" });
             return sent;
           } catch (err) {
-            setBorrowStatus("error");
+            setAttempt({ status: "error" });
             toast({
               variant: "destructive",
               title: "Loan not submitted",
@@ -826,7 +850,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
             return;
           }
         } catch (err) {
-          setBorrowStatus("error");
+          setAttempt({ status: "error" });
           toast({
             variant: "destructive",
             title: "Borrow Failed",
@@ -843,10 +867,8 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       walletClient,
       selectedLoanReallocAmount,
       prepaidPercent,
-      reallocation,
       toast,
       resolvedPermissionsAddress,
-      borrow,
       effectiveProjectId,
       publicClient,
       projectTokenDecimals,
@@ -882,53 +904,24 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   // Don't auto-select any chain - let user choose manually
   // This prevents pre-selection issues and ensures user has full control
 
-  // Handle reallocation pending status
-  useEffect(() => {
-    if (isReallocating) {
-      setBorrowStatus("reallocation-pending");
-    }
-  }, [isReallocating]);
-
   // The Safe ran the permission after its run ended: the loan is still to send, from Borrow again.
   useEffect(() => {
     if (borrow.settledStep !== 0) return;
-    setBorrowStatus((status) => (status === "pending" ? "idle" : status));
+    setAttempt((now) =>
+      now.status === "sending" && now.runner === "borrow" ? { status: "idle" } : now,
+    );
     toast({
       title: "Safe granted the permission",
       description: "Review the loan again to borrow.",
     });
   }, [borrow.settledStep, toast]);
 
-  // Transaction status effects
+  // Success persists until the user closes the dialog: no timed close.
+  const adjusted = attempt.status === "sending" && attempt.runner === "reallocation";
   useEffect(() => {
-    if (!txHash && !reallocationTxHash) return;
-
-    if (isTxLoading || isReallocationTxLoading) {
-      setBorrowStatus("pending");
-    } else if (isSuccess || isReallocationSuccess) {
-      // Success persists until the user closes the dialog — no timed close.
-      setBorrowStatus("success");
-      toast({
-        title: "Success",
-        description: isReallocationSuccess ? "Loan adjusted." : "Loan opened.",
-      });
-    } else if (isTxUnconfirmed || isReallocationUnconfirmed) {
-      // Its Safe proposal's result can't be confirmed, which is not a failure.
-      setBorrowStatus("safe-unconfirmed");
-    } else {
-      setBorrowStatus("error");
-    }
-  }, [
-    txHash,
-    reallocationTxHash,
-    isTxLoading,
-    isReallocationTxLoading,
-    isSuccess,
-    isReallocationSuccess,
-    isTxUnconfirmed,
-    isReallocationUnconfirmed,
-    toast,
-  ]);
+    if (borrowStatus === "success")
+      toast({ title: "Success", description: adjusted ? "Loan adjusted." : "Loan opened." });
+  }, [borrowStatus, adjusted, toast]);
 
   // Calculate gross borrowed
   useEffect(() => {

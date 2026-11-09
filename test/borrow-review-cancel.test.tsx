@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   end: vi.fn(),
   run: undefined as unknown as import("vitest").Mock,
   reset: (() => undefined) as () => void,
+  holdReview: (() => () => undefined) as () => () => void,
 }));
 
 vi.mock("wagmi", () => ({
@@ -62,6 +63,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
   const runner = liveReviewedAction(mocks.write, (hash) => mocks.end(hash));
   mocks.run = runner.run;
   mocks.reset = runner.reset;
+  mocks.holdReview = runner.holdReview;
   return {
     ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
     useReviewedAction: runner.hook,
@@ -183,5 +185,39 @@ describe("a refinance whose permission check can't be read", () => {
     expect(result.current.internalSelectedLoan).toBe(LOAN);
     expect(result.current.borrowStatus).toBe("error");
     expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ variant: "destructive" }));
+  });
+});
+
+describe("a second loan in the same mounted dialog", () => {
+  it("wallet-action:loans shows no failure while the second loan is in review", async () => {
+    mocks.write.mockResolvedValue(`0x${"cd".repeat(32)}`);
+    const { result } = renderHook(() => useBorrowDialog({ projectId: 7n }), { wrapper });
+    const choose = async () => {
+      act(() => result.current.handleChainSelection(1));
+      act(() => result.current.setCollateralAmount("1"));
+      await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
+    };
+
+    act(() => result.current.handleOpenChange(true));
+    await choose();
+    await act(() => result.current.handleBorrow());
+    expect(result.current.borrowStatus).toBe("success");
+
+    act(() => result.current.handleOpenChange(false));
+    expect(result.current.borrowStatus).toBe("idle");
+    act(() => result.current.handleOpenChange(true));
+    await choose();
+    const release = mocks.holdReview();
+    let second: Promise<unknown> | undefined;
+    act(() => {
+      second = result.current.handleBorrow();
+    });
+    await waitFor(() => expect(mocks.run).toHaveBeenCalledTimes(2));
+
+    expect(result.current.borrowStatus).not.toBe("error");
+    expect(result.current.borrowStatus).toBe("checking");
+    release();
+    await act(() => second!);
+    expect(result.current.borrowStatus).toBe("success");
   });
 });
