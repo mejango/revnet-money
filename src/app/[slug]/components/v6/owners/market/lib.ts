@@ -58,6 +58,7 @@ import {
   Hex,
   isAddress,
   keccak256,
+  parseAbi,
   PublicClient,
   toFunctionSelector,
   zeroAddress,
@@ -2520,6 +2521,17 @@ export async function fetchAmmStates(chains: ChainProject[]): Promise<AmmChainSt
  */
 export const lpSplitHookAbi = jbUniswapV4LpSplitHookAbi;
 
+/**
+ * The single-position reads of the hooks live projects use. 1.5.0 replaced them with
+ * ask and bid positions, so the SDK's current ABI no longer carries them; a 1.5.0 hook
+ * answers none and reads as having no position.
+ */
+const lpSplitHookPositionAbi = parseAbi([
+  "function tokenIdOf(uint256 projectId, address terminalToken) view returns (uint256)",
+  "function activeTickLowerOf(uint256 projectId, address terminalToken) view returns (int24)",
+  "function activeTickUpperOf(uint256 projectId, address terminalToken) view returns (int24)",
+]);
+
 /** Reserved-token split group id (JBSplitGroupIds.RESERVED_TOKENS). */
 const RESERVED_SPLIT_GROUP = 1n;
 
@@ -2648,7 +2660,7 @@ export async function fetchSplitHookStates(chains: ChainProject[]): Promise<Spli
             rd(
               client.readContract({
                 address: hook,
-                abi: lpSplitHookAbi,
+                abi: lpSplitHookPositionAbi,
                 functionName: "tokenIdOf",
                 args: [projectId, primary.token],
               }),
@@ -2656,7 +2668,7 @@ export async function fetchSplitHookStates(chains: ChainProject[]): Promise<Spli
             rd(
               client.readContract({
                 address: hook,
-                abi: lpSplitHookAbi,
+                abi: lpSplitHookPositionAbi,
                 functionName: "activeTickLowerOf",
                 args: [projectId, primary.token],
               }),
@@ -2664,7 +2676,7 @@ export async function fetchSplitHookStates(chains: ChainProject[]): Promise<Spli
             rd(
               client.readContract({
                 address: hook,
-                abi: lpSplitHookAbi,
+                abi: lpSplitHookPositionAbi,
                 functionName: "activeTickUpperOf",
                 args: [projectId, primary.token],
               }),
@@ -2695,29 +2707,23 @@ export async function fetchSplitHookStates(chains: ChainProject[]): Promise<Spli
   return states.filter((s): s is SplitHookChainState => s !== null);
 }
 
-/** `deployPool(uint256)` — the next hook generation, which drops `minCashOutReturn`. */
-export const deployPoolSingleArgAbi = [
-  {
-    type: "function",
-    name: "deployPool",
-    stateMutability: "nonpayable",
-    inputs: [{ name: "projectId", type: "uint256" }],
-    outputs: [],
-  },
-] as const;
+/** `deployPool(uint256,uint256)`: the generation live projects use, before 1.5.0 dropped `minCashOutReturn`. */
+export const deployPoolTwoArgAbi = parseAbi([
+  "function deployPool(uint256 projectId, uint256 minCashOutReturn)",
+]);
 
 /**
  * Which `deployPool` the hook at `hookAddress` actually exposes.
  *
- * Two generations exist during the lp-split-hook rollout: `deployPool(uint256,uint256)` (what
- * is deployed, and what the SDK's artifact-generated ABI carries) and `deployPool(uint256)`
- * (univ4-lp-split-hook-v6 HEAD, deployed nowhere yet). Different arity means a DIFFERENT
- * SELECTOR, so calling the wrong one reverts at simulate with nothing to explain why.
+ * Live projects use `deployPool(uint256,uint256)`; 1.5.0, the SDK's current ABI, has
+ * `deployPool(uint256)`. Different arity means a DIFFERENT SELECTOR, so calling the wrong one
+ * reverts at simulate with nothing to explain why.
  *
  * Solidity emits every external selector as a PUSH4 immediate in the dispatch table, so the
  * deployed bytecode answers this directly — one cached read, no revert-classification
- * guesswork and no simulating a write twice. Falls back to the two-argument form (what is
- * deployed today) when the code cannot be read.
+ * guesswork and no simulating a write twice. Hooks are minimal-proxy clones, so a clone's
+ * implementation is read instead. Falls back to the two-argument form (what live projects
+ * use) when the code cannot be read.
  */
 const deployPoolArityCache = new Map<string, 1 | 2>();
 
@@ -2730,7 +2736,10 @@ export async function deployPoolArity(
   if (cached) return cached;
   let arity: 1 | 2 = 2;
   try {
-    const code = await client.getCode({ address: hookAddress });
+    let code = await client.getCode({ address: hookAddress });
+    // A minimal proxy is PUSH20 <implementation> GAS DELEGATECALL in under 64 bytes.
+    const implementation = code && code.length < 2 + 128 && /73([0-9a-f]{40})5af4/i.exec(code)?.[1];
+    if (implementation) code = await client.getCode({ address: `0x${implementation}` });
     if (code && code !== "0x") {
       const body = code.toLowerCase();
       const singleArg = toFunctionSelector("deployPool(uint256)").slice(2);

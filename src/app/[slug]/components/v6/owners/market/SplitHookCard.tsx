@@ -23,7 +23,7 @@ import {
 } from "../settlement/lib";
 import {
   deployPoolArity,
-  deployPoolSingleArgAbi,
+  deployPoolTwoArgAbi,
   fetchSplitHookStates,
   lpSplitHookAbi,
   SplitHookChainState,
@@ -92,15 +92,15 @@ function HookActionButton({
             setBusy(true);
             setError(null);
             if (!publicClient) throw new Error("Public client unavailable.");
-            // Two hook generations are live during the lp-split-hook rollout and their
-            // `deployPool` selectors differ. Ask the deployed bytecode which one it has rather
-            // than hard-coding one and reverting at simulate on the other.
+            // Live hooks and 1.5.0 differ in their `deployPool` selector. Ask the deployed
+            // bytecode which one it has rather than hard-coding one and reverting at simulate
+            // on the other.
             let callAbi: readonly unknown[] = lpSplitHookAbi;
             let callArgs = args;
             if (functionName === "deployPool") {
-              const arity = await deployPoolArity(publicClient, state.hook);
-              if (arity === 1) {
-                callAbi = deployPoolSingleArgAbi;
+              if ((await deployPoolArity(publicClient, state.hook)) === 2) {
+                callAbi = deployPoolTwoArgAbi;
+              } else {
                 callArgs = [args[0]] as unknown as typeof args;
               }
             }
