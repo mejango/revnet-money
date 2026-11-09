@@ -9,11 +9,11 @@ import { useJBProject, useJBTokenContext } from "@/lib/nana/project";
 import { isPairCheckPending, useSuckers, useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import { cn, formatEthAddress, formatTokenSymbol } from "@/lib/utils";
 import { useViewAs } from "@/lib/view-as";
+import { signOutOnce } from "@/providers/para-bridge";
 import {
   logoutParaSession,
   ParaLocalDisconnectError,
   ParaSessionLogoutError,
-  signOutOnce,
 } from "@/providers/para-logout";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import { preloadParaHost } from "@/providers/preload-para";

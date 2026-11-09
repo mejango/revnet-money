@@ -1,5 +1,4 @@
-import { connectParaSession } from "@/providers/para-bridge";
-import { signOutGeneration, signOutOnce } from "@/providers/para-logout";
+import { connectParaSession, signOutGeneration, signOutOnce } from "@/providers/para-bridge";
 import { describe, expect, it, vi } from "vitest";
 
 describe("connectParaSession", () => {

@@ -1756,3 +1756,9 @@ Discovery: scratchpad `sm/revnet.md` (34 machines). Brief: scratchpad `sm/BRIEF.
 ## Review
 
 Two real defects fixed with regression tests (false loan failure on a second loan; a pay card that could trap the payer in pending). The rest are behavior-preserving unions. The shop route is 0.1 KiB over its ceiling; the ceiling was not raised.
+
+## State machines wave 2 (2026-11-09)
+
+- [x] jbm-16 parity: one app-wide `signOutOnce` with a generation in `para-bridge.ts`; `connectParaSession` drops a check a sign-out overtook (test: para-bridge "drops a session check that a sign-out overtook").
+- [ ] revnet-9 stopped: Markee already recovers through the SDK's `createSavedAttemptRecovery` (`savedAttempts`); its journal is the domain journal that recovery's `confirmRetirable` re-reads. The React `useSavedAttempt` wrapper would add mount-time recovery and binds one attempt per render, which conflicts with the lost-reply hash typed at Check. Awaiting a decision.
+- Bundle: +0.4 KiB on every route against state-machines-2026-11-09; /build 360.2 over 360, route-referenced 922.2 over 922, all client 2775.6 over 2774.
