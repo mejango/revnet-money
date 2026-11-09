@@ -10,6 +10,7 @@ import {
   RELAYR_PAYMENT_EVENT,
   RelayrPaymentNotSentError,
 } from "@bananapus/nana-sdk-core/review/relayr";
+import type { SafeRelayrView } from "@bananapus/nana-sdk-core/review/safe-relayr";
 import { canonicalSafeTxHash, SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
 import { act, renderHook } from "@testing-library/react";
@@ -178,6 +179,26 @@ async function parentPlan(
   } finally {
     stop();
   }
+}
+
+const showBundle = (
+  hooks: Awaited<ReturnType<typeof freshHarness>>["hooks"],
+  show: (view: SafeRelayrView) => void,
+) => hooks.watchSafeBundleView(mocks.config as never, `relayr:${BUNDLE_UUID}`, show);
+
+/** Every view the bundle's Safe controller shows, from now until `stop`. */
+function watchBundle(hooks: Awaited<ReturnType<typeof freshHarness>>["hooks"]) {
+  const views: SafeRelayrView[] = [];
+  const stop = showBundle(hooks, (view) => views.push(view));
+  const rows = (view?: SafeRelayrView) => Object.values(view?.executions ?? {});
+  return {
+    stop,
+    phase: () => views.at(-1)?.phase,
+    /** Each row status any view showed. */
+    shown: () => views.flatMap((view) => rows(view)),
+    /** The rows the latest view shows. */
+    rows: () => rows(views.at(-1)),
+  };
 }
 
 async function freshHarness() {
@@ -1574,7 +1595,7 @@ describe("raw pending-payment publication and funding", () => {
     }));
     completed = true;
     const onResults = vi.fn();
-    await hooks.waitForRelayrBundle(BUNDLE_UUID, undefined, undefined, onResults);
+    await hooks.waitForRelayrBundle(BUNDLE_UUID, undefined, onResults);
     expect(onResults.mock.calls).toEqual([
       [
         [
@@ -3481,12 +3502,13 @@ describe("Safe execution bundles", () => {
           );
         const payer = renderHook(() => hooks.useSendRelayrTx());
         await act(async () => {
-          const pending = payer.result.current.sendRelayrTx(payment(), {
-            onProgress: (event) => {
-              if (stage === "payment-submitting" && event.type === "phase" && event.phase === stage)
-                changeContext(change, setViewAs);
-            },
+          let changed = false;
+          const stop = showBundle(hooks, (view) => {
+            if (stage !== "payment-submitting" || view.phase !== stage || changed) return;
+            changed = true;
+            changeContext(change, setViewAs);
           });
+          const pending = payer.result.current.sendRelayrTx(payment()).finally(stop);
           const refused = expect(pending).rejects.toThrow();
           if (stage === "switch") {
             await vi.waitFor(() => expect(entered).toBe(true));
@@ -3547,18 +3569,11 @@ describe("Safe execution bundles", () => {
           ),
         ),
       );
-    await expect(
-      payer.result.current.sendRelayrTx(payment(), {
-        onProgress: (event) => {
-          if (
-            failure === "expired before wallet" &&
-            event.type === "phase" &&
-            event.phase === "payment-submitting"
-          )
-            vi.setSystemTime(new Date((NOW + 601) * 1_000));
-        },
-      }),
-    ).rejects.toThrow();
+    const stop = showBundle(hooks, (view) => {
+      if (failure === "expired before wallet" && view.phase === "payment-submitting")
+        vi.setSystemTime(new Date((NOW + 601) * 1_000));
+    });
+    await expect(payer.result.current.sendRelayrTx(payment()).finally(stop)).rejects.toThrow();
     expect(mocks.sendTransaction).toHaveBeenCalledTimes(invoked ? 1 : 0);
     // The marker class proves nothing from a wallet; a 4001 inside what it threw still does.
     const unknown = failure === "wallet threw not-sent";
@@ -3677,36 +3692,28 @@ describe("Safe execution bundles", () => {
           await new Promise<void>((resolve) => rechecks.push(resolve));
         return read(args);
       });
-      const progress = vi.fn();
+      const progress = watchBundle(hooks);
       const payer = renderHook(() => hooks.useSendRelayrTx());
       await act(async () => {
-        const pending = payer.result.current.sendRelayrTx(payment(), { onProgress: progress });
+        const pending = payer.result.current.sendRelayrTx(payment());
         await vi.waitFor(() => expect(acceptPaymentReview).toBeTypeOf("function"));
-        expect(progress).toHaveBeenLastCalledWith(
-          expect.objectContaining({ phase: "payment-review" }),
-        );
+        expect(progress.phase()).toBe("payment-review");
         expect(rechecks).toHaveLength(0);
         expect(mocks.sendTransaction).not.toHaveBeenCalled();
         acceptPaymentReview();
         // Core rechecks the Safe executions first, then authenticates the payment contract.
         await vi.waitFor(() => expect(rechecks).toHaveLength(2));
-        expect(progress).toHaveBeenLastCalledWith(
-          expect.objectContaining({ phase: "payment-checking" }),
-        );
+        expect(progress.phase()).toBe("payment-checking");
         expect(authenticatePayment).toBeUndefined();
         rechecks.forEach((resolve) => resolve());
         await vi.waitFor(() => expect(authenticatePayment).toBeTypeOf("function"));
         expect(mocks.sendTransaction).not.toHaveBeenCalled();
         authenticatePayment();
         await vi.waitFor(() => expect(submitPayment).toBeTypeOf("function"));
-        expect(progress).toHaveBeenLastCalledWith(
-          expect.objectContaining({ phase: "payment-submitting" }),
-        );
+        expect(progress.phase()).toBe("payment-submitting");
         submitPayment();
         await vi.waitFor(() => expect(confirmPayment).toBeTypeOf("function"));
-        expect(progress).toHaveBeenLastCalledWith(
-          expect.objectContaining({ phase: "payment-confirming" }),
-        );
+        expect(progress.phase()).toBe("payment-confirming");
         expect(activity.transactionActivitySnapshot()[0]).toMatchObject({
           hash: HASH,
           relayrPaymentStatus: "submitted",
@@ -3717,59 +3724,49 @@ describe("Safe execution bundles", () => {
       });
       expect(mocks.getCode).toHaveBeenCalledWith({ address: PAYMENT_TARGET, blockNumber: 123n });
       expect(activity.transactionActivitySnapshot()[0].relayrPaymentStatus).toBe("confirmed");
-      expect(progress).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "phase", phase: "payment-confirming" }),
+      progress.stop();
+      expect(progress.shown()).toContainEqual(
+        expect.objectContaining({ status: "confirming", hash: ethereumHash }),
       );
-      expect(progress).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "execution", status: "confirming", hash: ethereumHash }),
+      expect(progress.shown()).toContainEqual(
+        expect.objectContaining({ status: "executed", hash: optimismHash }),
       );
-      expect(progress).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "execution", status: "executed", hash: optimismHash }),
-      );
-      expect(progress).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: "execution", status: "executed", hash: ethereumHash }),
+      expect(progress.shown()).not.toContainEqual(
+        expect.objectContaining({ status: "executed", hash: ethereumHash }),
       );
       expect(mocks.sendTransaction).toHaveBeenCalledOnce();
       if (reopenRecovery) {
         // Each listener represents a newly opened recovery dialog. The SDK may
         // suppress unchanged statuses, but both dialogs still need every row.
         for (let reopened = 0; reopened < 2; reopened += 1) {
-          const recoveredProgress = vi.fn();
-          await expect(
-            hooks.checkRelayrSession(`relayr:${BUNDLE_UUID}`, recoveredProgress),
-          ).resolves.toMatchObject({ state: "pending" });
-          expect(recoveredProgress).toHaveBeenCalledWith(
-            expect.objectContaining({
-              type: "execution",
-              status: "confirming",
-              hash: ethereumHash,
-            }),
+          const recovered = watchBundle(hooks);
+          await expect(hooks.checkRelayrSession(`relayr:${BUNDLE_UUID}`)).resolves.toMatchObject({
+            state: "pending",
+          });
+          recovered.stop();
+          expect(recovered.rows()).toContainEqual(
+            expect.objectContaining({ status: "confirming", hash: ethereumHash }),
           );
-          expect(recoveredProgress).toHaveBeenCalledWith(
-            expect.objectContaining({ type: "execution", status: "executed", hash: optimismHash }),
+          expect(recovered.rows()).toContainEqual(
+            expect.objectContaining({ status: "executed", hash: optimismHash }),
           );
-          expect(recoveredProgress).not.toHaveBeenCalledWith(
-            expect.objectContaining({
-              type: "execution",
-              status: "confirming",
-              hash: optimismHash,
-            }),
+          expect(recovered.shown()).not.toContainEqual(
+            expect.objectContaining({ status: "confirming", hash: optimismHash }),
           );
         }
         expect(mocks.sendTransaction).toHaveBeenCalledOnce();
       }
       ethereumAvailable = true;
-      progress.mockClear();
-      await hooks.waitForRelayrBundle(BUNDLE_UUID, undefined, progress);
-      expect(progress).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "execution", status: "executed", hash: ethereumHash }),
+      const finished = watchBundle(hooks);
+      await hooks.waitForRelayrBundle(BUNDLE_UUID);
+      finished.stop();
+      expect(finished.rows()).toContainEqual(
+        expect.objectContaining({ status: "executed", hash: ethereumHash }),
       );
-      expect(progress).not.toHaveBeenCalledWith(
-        expect.objectContaining({ type: "execution", status: "confirming", hash: optimismHash }),
+      expect(finished.shown()).not.toContainEqual(
+        expect.objectContaining({ status: "confirming", hash: optimismHash }),
       );
-      expect(progress).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "phase", phase: "complete" }),
-      );
+      expect(finished.phase()).toBe("complete");
       expect(mocks.sendTransaction).toHaveBeenCalledOnce();
     },
   );
