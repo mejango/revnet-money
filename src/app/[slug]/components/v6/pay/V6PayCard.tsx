@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOpenedOnce } from "@/hooks/useOpenedOnce";
 import { useReviewedAction } from "@/hooks/useReviewedAction";
+import { useSecondsUntil } from "@/hooks/useSecondsUntil";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { legacyIntents } from "@/lib/legacy-intents";
@@ -224,13 +225,8 @@ export function V6PayCard() {
 
   // ---- Ruleset start countdown ----
   const startsAt = surface?.rulesetStart ?? 0;
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    if (!startsAt || startsAt <= now) return;
-    const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
-    return () => clearInterval(t);
-  }, [startsAt, now]);
-  const notStarted = startsAt > now;
+  const untilStart = useSecondsUntil(startsAt) ?? 0;
+  const notStarted = untilStart > 0;
 
   const amountRaw = useMemo(() => {
     try {
@@ -1530,7 +1526,7 @@ export function V6PayCard() {
 
             {notStarted ? (
               <p className="w-full border-b border-zinc-200 bg-zinc-100 px-4 py-2 text-xs text-zinc-500">
-                Starts in {formatStartCountdown(startsAt - now)}.
+                Starts in {formatStartCountdown(untilStart)}.
               </p>
             ) : null}
           </div>
