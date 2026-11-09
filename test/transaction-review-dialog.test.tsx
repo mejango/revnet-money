@@ -101,7 +101,7 @@ describe("transaction review dialog", () => {
     act(() =>
       root.render(
         <TransactionReviewDialog
-          pending={{ kind: "review", id: 1, model: modelOf(request), resolve: () => {} }}
+          pending={{ kind: "review", id: 1, model: modelOf(request) }}
           onFinish={() => {}}
         />,
       ),
@@ -128,7 +128,7 @@ describe("transaction review dialog", () => {
     act(() =>
       root.render(
         <TransactionReviewDialog
-          pending={{ kind: "review", id: 1, model: modelOf(request), resolve: () => {} }}
+          pending={{ kind: "review", id: 1, model: modelOf(request) }}
           onFinish={() => {}}
         />,
       ),
@@ -149,7 +149,7 @@ describe("transaction review dialog", () => {
     act(() =>
       root.render(
         <TransactionReviewDialog
-          pending={{ kind: "review", id: 1, model: modelOf(request), resolve: () => {} }}
+          pending={{ kind: "review", id: 1, model: modelOf(request) }}
           onFinish={(approved) => finished.push(approved)}
         />,
       ),

@@ -14,41 +14,34 @@ import {
   type FundingChainOption,
 } from "@/lib/transaction-review";
 import { registerReviewHandler, type ReviewModel } from "@bananapus/nana-sdk-core/review";
+import { createReviewQueue } from "@bananapus/nana-sdk-core/review/machines";
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ComponentType,
   type PropsWithChildren,
 } from "react";
 
 export type PendingReview = {
-  scope?: TransactionReviewScope | null;
   kind: "review";
   id: number;
-  resolve: (approved: boolean) => void;
   /** Core's prompt: the model it bound, confirmed only by the confirmation it minted. */
   model: ReviewModel;
 };
 
 export type PendingFundingChainSelection = {
-  scope?: TransactionReviewScope | null;
   kind: "funding";
   id: number;
   options: readonly FundingChainOption[];
   initialChainId: number | null;
-  resolve: (chainId: number | null) => void;
 };
 
 /** A choice a flow asks for mid-action, such as sending a held write again. */
-type PendingFlowChoice = {
-  scope?: TransactionReviewScope | null;
-  kind: "choice";
-  id: number;
-  choice: FlowChoice;
-  resolve: (confirmed: boolean) => void;
-};
+type PendingFlowChoice = { kind: "choice"; id: number; choice: FlowChoice };
 
 export type PendingDialog = PendingReview | PendingFundingChainSelection | PendingFlowChoice;
 
@@ -61,149 +54,88 @@ export type TransactionReviewDialogProps = {
   projectCheckPending?: boolean;
 };
 
-function cancelPendingDialog(pending: PendingDialog) {
-  if (pending.kind === "funding") pending.resolve(null);
-  else pending.resolve(false);
-}
+type Answer = boolean | number | null;
+type Payload =
+  | Omit<PendingReview, "id">
+  | Omit<PendingFundingChainSelection, "id">
+  | Omit<PendingFlowChoice, "id">;
+const approves = (result: Answer) => result === true || typeof result === "number";
 
 /**
- * Global, promise-based modal queue. Every low-level transaction boundary
- * registers with this one provider, so simultaneous multichain flows review
+ * Global, promise-based modal queue over core's review queue. Every low-level transaction
+ * boundary registers with this one provider, so simultaneous multichain flows review
  * sequentially and each approval applies to one immutable call snapshot.
  */
 export function TransactionReviewProvider({ children }: PropsWithChildren) {
-  const nextId = useRef(1);
-  const scopeRef = useRef<TransactionReviewScope | null>(null);
-  const [checkingScopeId, setCheckingScopeId] = useState<number | null>(null);
-  const activeRef = useRef<PendingDialog | null>(null);
-  const queueRef = useRef<PendingDialog[]>([]);
-  const [active, setActive] = useState<PendingDialog | null>(null);
+  const [queue] = useState(() => createReviewQueue<Payload, Answer>());
+  const state = useSyncExternalStore(queue.subscribe, queue.getState, queue.getState);
+  const active = useMemo(
+    () =>
+      state.active ? ({ ...state.active.payload, id: state.active.id } as PendingDialog) : null,
+    [state.active],
+  );
   const [Dialog, setDialog] = useState<ComponentType<TransactionReviewDialogProps> | null>(null);
-
-  const enqueueDialog = useCallback((pending: PendingDialog) => {
-    if (activeRef.current) {
-      queueRef.current.push(pending);
-      return;
-    }
-    activeRef.current = pending;
-    setActive(pending);
-  }, []);
-
-  const enqueueFundingChainSelection = useCallback(
-    (options: readonly FundingChainOption[], initialChainId: number | null) =>
-      new Promise<number | null>((resolve) => {
-        enqueueDialog({
-          kind: "funding",
-          scope: scopeRef.current,
-          id: nextId.current++,
-          options: options.map((option) => ({ ...option })),
-          initialChainId,
-          resolve,
-        });
-      }),
-    [enqueueDialog],
-  );
-
-  const enqueueFlowChoice = useCallback(
-    (choice: FlowChoice, signal?: AbortSignal) =>
-      new Promise<boolean>((resolve) => {
-        const pending: PendingFlowChoice = {
-          kind: "choice",
-          scope: scopeRef.current,
-          id: nextId.current++,
-          choice: { ...choice, lines: [...choice.lines] },
-          resolve,
-        };
-        // Closed unanswered when its caller no longer needs the answer.
-        signal?.addEventListener(
-          "abort",
-          () => {
-            if (activeRef.current === pending) {
-              activeRef.current = queueRef.current.shift() ?? null;
-              setActive(activeRef.current);
-            } else {
-              queueRef.current = queueRef.current.filter((dialog) => dialog !== pending);
-            }
-            resolve(false);
-          },
-          { once: true },
-        );
-        enqueueDialog(pending);
-      }),
-    [enqueueDialog],
-  );
 
   useEffect(
     () =>
       registerReviewHandler(async (prompt) => {
-        const approved = await new Promise<boolean>((resolve) =>
-          enqueueDialog({
-            kind: "review",
-            scope: scopeRef.current,
-            id: nextId.current++,
-            model: prompt.model,
-            resolve,
-          }),
+        const approved = await queue.request(
+          { kind: "review", model: prompt.model },
+          { declined: false, approves },
         );
-        return approved ? prompt.confirmation : null;
+        return approved === true ? prompt.confirmation : null;
       }),
-    [enqueueDialog],
+    [queue],
   );
-  useEffect(() => registerFlowChoiceHandler(enqueueFlowChoice), [enqueueFlowChoice]);
   useEffect(
-    () => registerFundingChainSelectionHandler(enqueueFundingChainSelection),
-    [enqueueFundingChainSelection],
+    () =>
+      registerFlowChoiceHandler(
+        async (choice: FlowChoice, signal?: AbortSignal) =>
+          (await queue.request(
+            { kind: "choice", choice: { ...choice, lines: [...choice.lines] } },
+            { declined: false, approves, signal },
+          )) === true,
+      ),
+    [queue],
   );
+  useEffect(
+    () =>
+      registerFundingChainSelectionHandler(async (options, initialChainId) => {
+        const chosen = await queue.request(
+          {
+            kind: "funding",
+            options: options.map((option) => ({ ...option })),
+            initialChainId,
+          },
+          { declined: null, approves },
+        );
+        return typeof chosen === "number" ? chosen : null;
+      }),
+    [queue],
+  );
+  useEffect(() => () => queue.cancelAll(), [queue]);
 
-  useEffect(
-    () => () => {
-      if (activeRef.current) cancelPendingDialog(activeRef.current);
-      queueRef.current.forEach(cancelPendingDialog);
-      activeRef.current = null;
-      queueRef.current = [];
+  // Each registration is its own scope, even for the same project: one that ends takes its
+  // dialogs with it.
+  const registrations = useRef(0);
+  const registered = useRef<string | null>(null);
+  const registerScope = useCallback(
+    (scope: TransactionReviewScope) => {
+      const identity = `${scope.identity}#${++registrations.current}`;
+      registered.current = identity;
+      queue.setContext({ scope: { identity, verify: scope.verify } });
+      return () => {
+        if (registered.current !== identity) return;
+        registered.current = null;
+        queue.setContext({ scope: null });
+      };
     },
-    [],
+    [queue],
   );
-
-  const registerScope = useCallback((scope: TransactionReviewScope) => {
-    scopeRef.current = scope;
-    return () => {
-      if (scopeRef.current === scope) scopeRef.current = null;
-      const cancelled = queueRef.current.filter((dialog) => dialog.scope === scope);
-      queueRef.current = queueRef.current.filter((dialog) => dialog.scope !== scope);
-      cancelled.forEach(cancelPendingDialog);
-      if (activeRef.current?.scope === scope) {
-        cancelPendingDialog(activeRef.current);
-        activeRef.current = queueRef.current.shift() ?? null;
-        setActive(activeRef.current);
-      }
-    };
-  }, []);
-
-  const finish = useCallback(async (id: number, result: boolean | number | null) => {
-    const current = activeRef.current;
-    if (!current || current.id !== id) return;
-    const approving = result === true || typeof result === "number";
-    if (approving && current.scope) {
-      setCheckingScopeId(id);
-      let verified = false;
-      try {
-        verified = await current.scope.verify();
-      } catch {
-        /* A failed proof never approves. */
-      }
-      setCheckingScopeId((checking) => (checking === id ? null : checking));
-      // Cancellation, navigation and a different queued review can all race the check.
-      if (activeRef.current !== current) return;
-      if (!verified || scopeRef.current !== current.scope) result = null;
-    }
-    if (activeRef.current !== current) return;
-    const next = queueRef.current.shift() ?? null;
-    activeRef.current = next;
-    setActive(next);
-    if (current.kind === "funding") current.resolve(typeof result === "number" ? result : null);
-    else current.resolve(result === true);
-  }, []);
+  const finish = useCallback(
+    (id: number, result: Answer) => void queue.finish(id, result),
+    [queue],
+  );
 
   // The review UI loads once the page is idle, so the first click opens it with no wait.
   useEffect(() => {
@@ -224,13 +156,13 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
         if (!cancelled) setDialog(() => module.TransactionReviewDialog);
       },
       () => {
-        if (!cancelled) finish(active.id, null);
+        if (!cancelled) queue.cancel(active.id);
       },
     );
     return () => {
       cancelled = true;
     };
-  }, [active, Dialog, finish]);
+  }, [active, Dialog, queue]);
 
   return (
     <ReviewScopeContext.Provider value={registerScope}>
@@ -247,7 +179,7 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
           <Dialog
             key={active.id}
             pending={active}
-            projectCheckPending={checkingScopeId === active.id}
+            projectCheckPending={state.checking}
             onFinish={(result) => finish(active.id, result)}
           />
         ) : (
