@@ -340,7 +340,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
     void refetchErc20Allowance();
     void refetchRouterAllowance();
     void refetchClaimedBalance();
-  }, [sale.phase, refetchErc20Allowance, refetchRouterAllowance, refetchClaimedBalance]);
+  }, [sale.status, refetchErc20Allowance, refetchRouterAllowance, refetchClaimedBalance]);
 
   // A cleared approval stops being "needed", so the queue is built from the
   // approvals this sale ever required — otherwise a finished step disappears

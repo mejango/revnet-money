@@ -1058,7 +1058,7 @@ export function V6PayCard() {
     prepared?.mode,
     pay.error,
     pay.held,
-    pay.phase,
+    pay.status,
     pay.settledStep,
   ]);
 
