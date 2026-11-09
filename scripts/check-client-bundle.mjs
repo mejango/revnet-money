@@ -67,6 +67,7 @@ const account = `0x${"1".repeat(40)}`;
 // One reviewed run vocabulary (SDK run status, held writes) and shared tab locks measure discover 343.3, create 562.2,
 // project 590.0, terms 589.3, shop 596.8, extras 606.3, holdings 419.0, roles 393.2, not-found 357.4,
 // route-referenced 924.3 and all client JS 2778.8 KiB; round only those up.
+// Published SDK core 6.1.0 (replacing the packed tarball) measures project 590.2, shop 597.1 and all client JS 2779.2 KiB; round only those up.
 const routes = [
   { route: "/", path: "/", kib: 397 },
   { route: "/learn", path: "/learn", kib: 359 },
@@ -74,11 +75,11 @@ const routes = [
   { route: "/audit", path: "/audit", kib: 362 },
   { route: "/discover", path: "/discover", kib: 344 },
   { route: "/create", path: "/create", kib: 563 },
-  { route: "/[slug]", path: "/eth:1", kib: 590 },
+  { route: "/[slug]", path: "/eth:1", kib: 591 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 590 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 597 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 598 },
   { route: "/[slug]/extras", path: "/eth:1/extras", kib: 607 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 430 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 420 },
@@ -245,7 +246,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 925);
 // The same artifact measures 2757.6 KiB total, +3.6 KiB (0.13%) over the previous ceiling.
 // The same frozen acquisition-fix artifact measures2759.3 KiB, +1.7 KiB over the prior artifact.
 // Explicit homepage availability and permission retry: measured 2760.4 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2779);
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2780);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
