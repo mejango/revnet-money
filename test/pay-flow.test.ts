@@ -64,7 +64,7 @@ describe("the pay card's confirm flow", () => {
   });
 
   it("ignores a preparation that lands after the flow moved on", () => {
-    const flow = run({ type: "open" }, { type: "prepare-failed", error: "No quote." });
+    const flow = run({ type: "open" }, { type: "failed", error: "No quote." });
     expect(payFlow(flow, { type: "prepared", prepared: PREPARED })).toBe(flow);
   });
 });

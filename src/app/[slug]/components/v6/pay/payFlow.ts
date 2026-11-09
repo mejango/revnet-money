@@ -32,7 +32,6 @@ export type PayFlowAction =
   /** Prepare again, saying why when the payer should know. */
   | { type: "prepare"; notice?: string }
   | { type: "prepared"; prepared: PreparedV6Pay }
-  | { type: "prepare-failed"; error: string }
   | { type: "send"; phase: Sending }
   /** The approval's receipt succeeded: the payment step is next. */
   | { type: "approved" }
@@ -52,69 +51,56 @@ const hashOf = (flow: PayFlow) => ("hash" in flow ? flow.hash : null);
 
 export function payFlow(flow: PayFlow, action: PayFlowAction): PayFlow {
   const { open } = flow;
+  const prepared = preparedOf(flow);
+  const ready = (error: string | null, recovery: PayRecovery | null = null): PayFlow => ({
+    open,
+    phase: "ready",
+    prepared,
+    error,
+    recovery,
+  });
   switch (action.type) {
     case "open":
       return { open: true, phase: "preparing", notice: null };
     case "show":
-      if (action.open || flow.phase !== "ready") return { ...flow, open: action.open };
-      return { ...flow, open: false, recovery: null };
+      return flow.phase === "ready" && !action.open
+        ? { ...flow, open: false, recovery: null }
+        : { ...flow, open: action.open };
     case "prepare":
       return { open, phase: "preparing", notice: action.notice ?? null };
     case "prepared":
-      if (flow.phase !== "preparing") return flow;
-      return {
-        open,
-        phase: "ready",
-        prepared: action.prepared,
-        error: flow.notice,
-        recovery: null,
-      };
-    case "prepare-failed":
-      return { open, phase: "ready", prepared: null, error: action.error, recovery: null };
-    case "send": {
-      const prepared = preparedOf(flow);
-      return prepared ? { open, phase: action.phase, prepared } : flow;
-    }
-    case "approved": {
-      const prepared = preparedOf(flow);
-      return prepared
-        ? ({ ...flow, prepared: { ...prepared, tokenApprovalComplete: true } } as PayFlow)
+      return flow.phase === "preparing"
+        ? { open, phase: "ready", prepared: action.prepared, error: flow.notice, recovery: null }
         : flow;
-    }
-    case "submitted": {
-      const prepared = preparedOf(flow);
-      return prepared ? { open, phase: "pending", prepared, hash: action.hash } : flow;
-    }
-    case "closed":
-      return {
-        open: false,
-        phase: "ready",
-        prepared: preparedOf(flow),
-        error: null,
-        recovery: null,
-      };
-    case "proposed": {
-      const prepared = preparedOf(flow);
-      return prepared
-        ? { open, phase: "safe-proposed", prepared, hash: action.hash, approval: action.approval }
-        : flow;
-    }
-    case "done":
-      return { open, phase: "success", prepared: preparedOf(flow), hash: hashOf(flow) };
     case "failed":
-      return {
-        open,
-        phase: "ready",
-        prepared: preparedOf(flow),
-        error: action.error,
-        recovery: action.recovery ?? null,
-      };
+      return ready(action.error, action.recovery);
+    case "closed":
+      return { ...ready(null), open: false };
+    case "done":
+      return { open, phase: "success", prepared, hash: hashOf(flow) };
     case "slippage":
       return flow.phase === "ready" && flow.recovery?.kind === "slippage"
         ? { ...flow, recovery: { kind: "slippage", bps: action.bps } }
         : flow;
     case "reset":
       return PAY_FLOW_START;
+  }
+  if (!prepared) return flow;
+  switch (action.type) {
+    case "send":
+      return { open, phase: action.phase, prepared };
+    case "approved":
+      return { ...flow, prepared: { ...prepared, tokenApprovalComplete: true } } as PayFlow;
+    case "submitted":
+      return { open, phase: "pending", prepared, hash: action.hash };
+    case "proposed":
+      return {
+        open,
+        phase: "safe-proposed",
+        prepared,
+        hash: action.hash,
+        approval: action.approval,
+      };
   }
 }
 

@@ -862,7 +862,7 @@ export function V6PayCard() {
     })().catch((err) => {
       if (cancelled) return;
       dispatch({
-        type: "prepare-failed",
+        type: "failed",
         error: formatWalletError(err, "Couldn't prepare the transaction. Please try again."),
       });
     });
