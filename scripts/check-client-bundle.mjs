@@ -64,24 +64,27 @@ const account = `0x${"1".repeat(40)}`;
 // holdings 418.3, projects 431.2, roles 392.4 and not-found 356.7 KiB; round only those up.
 // Explicit pay, loan and payment-source state measures shop 595.1 KiB; round only that ceiling up.
 // One Para sign-out generation measures build 360.2, route-referenced 922.2 and all client JS 2775.6 KiB; round only those up.
+// One reviewed run vocabulary (SDK run status, held writes) and shared tab locks measure discover 343.3, create 562.2,
+// project 590.0, terms 589.3, shop 596.8, extras 606.3, holdings 419.0, roles 393.2, not-found 357.4,
+// route-referenced 924.3 and all client JS 2778.8 KiB; round only those up.
 const routes = [
   { route: "/", path: "/", kib: 397 },
   { route: "/learn", path: "/learn", kib: 359 },
   { route: "/build", path: "/build", kib: 361 },
   { route: "/audit", path: "/audit", kib: 362 },
-  { route: "/discover", path: "/discover", kib: 343 },
-  { route: "/create", path: "/create", kib: 561 },
-  { route: "/[slug]", path: "/eth:1", kib: 589 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 588 },
+  { route: "/discover", path: "/discover", kib: 344 },
+  { route: "/create", path: "/create", kib: 563 },
+  { route: "/[slug]", path: "/eth:1", kib: 590 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 590 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 596 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 606 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 597 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 607 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 430 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 419 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 420 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 432 },
-  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 393 },
-  { route: "/_not-found", path: "/no-such-page/x/y", kib: 357, status: 404 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 394 },
+  { route: "/_not-found", path: "/no-such-page/x/y", kib: 358, status: 404 },
 ];
 // Next renders its global error page only when the root layout itself throws; no URL reaches it.
 const unmeasuredRoutes = new Set(["/_global-error"]);
@@ -94,7 +97,7 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
 // All JS 2730 -> 2754: the R stack on SDK 4.0.0 (core reviewed runs and Relayr rounds), measured 2752.4 locally and 2753.1 on CI.
 // SDK 4.0.0 measures 921.2 KiB route-referenced (919.7 before); the ceiling moves up 1 KiB.
 // Next 16.4.2 measures 923.0 KiB; the ceiling moves to 924.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 923);
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 925);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
@@ -242,7 +245,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 923);
 // The same artifact measures 2757.6 KiB total, +3.6 KiB (0.13%) over the previous ceiling.
 // The same frozen acquisition-fix artifact measures2759.3 KiB, +1.7 KiB over the prior artifact.
 // Explicit homepage availability and permission retry: measured 2760.4 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2776);
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2779);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
