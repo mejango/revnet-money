@@ -3756,9 +3756,20 @@ describe("Safe execution bundles", () => {
         }
         expect(mocks.sendTransaction).toHaveBeenCalledOnce();
       }
-      ethereumAvailable = true;
       const finished = watchBundle(hooks);
-      await hooks.waitForRelayrBundle(BUNDLE_UUID);
+      let polled!: () => void;
+      const firstPoll = new Promise<void>((resolve) => (polled = resolve));
+      const watching = hooks.waitForRelayrBundle(BUNDLE_UUID, () => polled());
+      await firstPoll;
+      // A recovery check between the background watch's polls finds the Ethereum receipt.
+      ethereumAvailable = true;
+      await expect(hooks.checkRelayrSession(`relayr:${BUNDLE_UUID}`)).resolves.toMatchObject({
+        state: "complete",
+      });
+      expect(finished.rows()).toContainEqual(
+        expect.objectContaining({ status: "executed", hash: ethereumHash }),
+      );
+      await watching;
       finished.stop();
       expect(finished.rows()).toContainEqual(
         expect.objectContaining({ status: "executed", hash: ethereumHash }),
