@@ -43,7 +43,10 @@ vi.mock("@/providers/para-config", () => ({
   PARA_APP: { appName: "Revnet" },
   PARA_PORTAL_THEME: { backgroundColor: "#F6FEF9" },
 }));
-vi.mock("@/hooks/useMobileWallet", () => ({ useMobileWallet: () => null }));
+vi.mock("@bananapus/nana-sdk-core/review/react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/review/react")>()),
+  useMobileWallet: () => null,
+}));
 
 const { default: ParaAuthSheet } = await import("@/providers/ParaAuthSheet");
 const { SignInShell } = await import("@/providers/SignInShell");
