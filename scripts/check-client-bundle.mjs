@@ -60,24 +60,26 @@ const account = `0x${"1".repeat(40)}`;
 // build 359.1, audit 360.1, discover 342.0, create 559.6, project 588.0, terms 587.2, shop 594.4, extras 604.4,
 // account 428.2, holdings 417.4, projects 430.2, roles 391.5 KiB and all client JS 2773.1 KiB; round only those up.
 // The not-found page now keeps the site nav and search, so it measures 355.7 KiB like other nav pages.
+// SDK 6.0.0 (every buyback, router and gateway generation) measures / 396.0, learn 358.1, audit 361.0, create 560.1, account 429.1,
+// holdings 418.3, projects 431.2, roles 392.4 and not-found 356.7 KiB; round only those up.
 const routes = [
-  { route: "/", path: "/", kib: 396 },
-  { route: "/learn", path: "/learn", kib: 358 },
+  { route: "/", path: "/", kib: 397 },
+  { route: "/learn", path: "/learn", kib: 359 },
   { route: "/build", path: "/build", kib: 360 },
-  { route: "/audit", path: "/audit", kib: 361 },
+  { route: "/audit", path: "/audit", kib: 362 },
   { route: "/discover", path: "/discover", kib: 343 },
-  { route: "/create", path: "/create", kib: 560 },
+  { route: "/create", path: "/create", kib: 561 },
   { route: "/[slug]", path: "/eth:1", kib: 589 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 588 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 595 },
   { route: "/[slug]/extras", path: "/eth:1/extras", kib: 605 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 429 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 418 },
-  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 431 },
-  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 392 },
-  { route: "/_not-found", path: "/no-such-page/x/y", kib: 356, status: 404 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 430 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 419 },
+  { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 432 },
+  { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 393 },
+  { route: "/_not-found", path: "/no-such-page/x/y", kib: 357, status: 404 },
 ];
 // Next renders its global error page only when the root layout itself throws; no URL reaches it.
 const unmeasuredRoutes = new Set(["/_global-error"]);
