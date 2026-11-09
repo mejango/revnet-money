@@ -1034,10 +1034,10 @@ export function V6PayCard() {
 
   useEffect(() => {
     if (phase !== "safe-proposed") return;
-    if ((pay.phase === "done" || pay.settledStep === 0) && proposedApproval) {
+    if ((pay.status === "done" || pay.settledStep === 0) && proposedApproval) {
       // The Safe ran the approval: the payment is still to send, from a fresh review.
       dispatch({ type: "prepare", notice: SAFE_APPROVAL_DONE });
-    } else if (pay.phase === "done") {
+    } else if (pay.status === "done") {
       dispatch({ type: "done" });
       setPayerSlippage(null);
       setAmount("");

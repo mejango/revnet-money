@@ -1388,7 +1388,7 @@ function MovableLiquidity({
       </p>
     );
   }
-  if (!movable.data?.length && move.phase !== "done") return null;
+  if (!movable.data?.length && move.status !== "done") return null;
 
   const beginReview = async ({ from, position }: MovableLpPosition) => {
     setError(null);
@@ -1525,7 +1525,7 @@ function MovableLiquidity({
           </button>
         </div>
       ))}
-      {move.phase === "done" ? (
+      {move.status === "done" ? (
         <p className="text-xs text-green-700">Liquidity moved to the new pool.</p>
       ) : null}
       {move.phase === "proposed" ? (
@@ -1610,7 +1610,7 @@ function ChainPositionRows({
   const isPending = claim.busy || removal.busy;
   // A removal that may still land keeps every position action locked, after its confirm closes
   // too, so the same position cannot be sent twice.
-  const removalSettling = removal.phase === "receipt";
+  const removalSettling = removal.status === "receipt";
   const removalProposed = removal.phase === "proposed";
   const removalSafeUnconfirmed = removalProposed && !!removal.held?.exit;
   const removalHeldLine = removal.held && !removalProposed ? heldLineOf(removal.held) : null;
@@ -2189,7 +2189,7 @@ function ChainPositionRows({
                   }}
                 />
               ) : null}
-              {removal.phase === "done" ? (
+              {removal.status === "done" ? (
                 <p className="mt-2 text-xs text-green-700">Liquidity removal confirmed.</p>
               ) : null}
               {removalSafeUnconfirmed ? (

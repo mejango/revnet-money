@@ -73,7 +73,7 @@ export function V6BurnTokensDialog({
 function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string }) {
   const { address } = useAccount();
   const publicClient = usePublicClient({ chainId: row.chainId });
-  const { run, phase, held } = useReviewedAction();
+  const { run, phase, status, held } = useReviewedAction();
   /** Right before the wallet: the holder still has the tokens and the controller is the same. */
   const reverify = async (call: ReviewedCall, account: Address) => {
     if (!publicClient) throw new ReviewRefusal("The chain client is unavailable.");
@@ -109,7 +109,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
   // prompt are part of the send, so the confirm cannot be closed under them.
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const isLoading = phase === "receipt";
+  const isLoading = status === "receipt";
   const isSafeResultUnconfirmed = phase === "proposed" && !!held?.exit;
   const { toast } = useToast();
   const chainName = chainDisplayName(row.chainId);

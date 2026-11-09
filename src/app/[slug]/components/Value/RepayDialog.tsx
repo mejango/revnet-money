@@ -204,12 +204,11 @@ export function RepayDialog({
 
   // Repay loan hook
   const repay = useReviewedAction();
-  const isRepaying =
-    repay.phase === "review" || repay.phase === "simulating" || repay.phase === "signing";
+  const isRepaying = repay.busy && repay.status !== "receipt";
 
   // Transaction status tracking: the repayment's own transaction, once sent.
-  const isRepayTxLoading = !!repayTxHash && repay.phase === "receipt";
-  const isRepaySuccess = !!repayTxHash && repay.phase === "done";
+  const isRepayTxLoading = !!repayTxHash && repay.status === "receipt";
+  const isRepaySuccess = !!repayTxHash && repay.status === "done";
   const isRepayUnconfirmed = repay.phase === "proposed" && !!repay.held?.exit;
 
   // ===== HELPER FUNCTIONS =====

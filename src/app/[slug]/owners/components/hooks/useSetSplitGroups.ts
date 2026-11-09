@@ -49,7 +49,7 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
   const viaSafe = useSafeConnection(config);
   const { getRelayrTxQuote, reset: resetRelayr } = useGetRelayrTxQuote();
   const { sendRelayrTx } = useSendRelayrTx();
-  const { run, phase, held, busy } = useReviewedAction();
+  const { run, phase, status, held, busy } = useReviewedAction();
 
   const submitSplits = useCallback(
     async (selectedChains: ChainFormData[], context?: readonly ReviewContextRow[]) => {
@@ -182,8 +182,8 @@ export function useSetSplitGroups(props: { onSuccess: (txHash: string) => void }
   return {
     submitSplits,
     isSubmitting,
-    isPending: busy && phase !== "receipt",
-    isTxLoading: phase === "receipt",
+    isPending: busy && status !== "receipt",
+    isTxLoading: status === "receipt",
     /** A Safe proposal the hold can no longer prove: its account checks it in Safe. */
     isTxUnconfirmed: phase === "proposed" && Boolean(held?.exit),
     /** The write went to the Safe as a proposal and has not executed. */

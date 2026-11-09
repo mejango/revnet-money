@@ -88,11 +88,11 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   const router = useRouter();
   const publicClient = usePublicClient({ chainId: sourceChainId });
   const destinationClient = usePublicClient({ chainId: targetChainId });
-  const { run, phase, held, reset } = useReviewedAction();
+  const { run, phase, status, held, reset } = useReviewedAction();
   const [hash, setHash] = useState<Hex>();
-  const isLoading = phase === "receipt";
+  const isLoading = status === "receipt";
   // Only the move's own hash is success: a Safe that ran just the approval leaves the move to send.
-  const isSuccess = phase === "done" && !!hash;
+  const isSuccess = status === "done" && !!hash;
   const isSafeResultUnconfirmed = phase === "proposed" && !!held?.exit;
   const { data: balances, isLoading: isBalanceLoading } = useSuckersUserTokenBalance();
   const { balance } = balances?.find((b) => b.chainId === sourceChainId) || {

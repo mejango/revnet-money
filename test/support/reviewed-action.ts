@@ -1,4 +1,5 @@
 import type { ReviewedCall } from "@bananapus/nana-sdk-core/review";
+import { reviewedRunStatus } from "@bananapus/nana-sdk-core/review/machines";
 import { useEffect, useReducer } from "react";
 import type { Hex } from "viem";
 import { vi, type Mock } from "vitest";
@@ -36,6 +37,7 @@ export function reviewedActionState(run: Mock) {
     safeTxHash: null,
     receipt: null,
     held: null,
+    status: "idle" as const,
     busy: false,
     exitAction: null,
     sendAgainAction: null,
@@ -243,7 +245,13 @@ export function liveReviewedAction(
     return {
       ...reviewedActionState(run),
       ...state,
-      busy: ["review", "simulating", "signing", "receipt"].includes(state.phase),
+      // Core's rule, from this run's phase, error and hold.
+      ...reviewedRunStatus({
+        phase: state.phase as Parameters<typeof reviewedRunStatus>[0]["phase"],
+        error: state.error,
+        settled: null,
+        held: state.held as Parameters<typeof reviewedRunStatus>[0]["held"],
+      }),
       reset: () => set({ ...blank }),
       run,
     };
