@@ -57,7 +57,7 @@ import {
   type UserPayTiers,
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from "react";
 import {
   Address,
   encodeFunctionData,
@@ -79,6 +79,7 @@ import {
   pickedTokenIndex,
   tokensForDollars,
 } from "./payCardLayout";
+import { PAY_FLOW_START, payFlow, payFlowView } from "./payFlow";
 import { TextSelect } from "./TextSelect";
 import {
   BASE_CURRENCY_ETH,
@@ -88,7 +89,7 @@ import {
   usePayShopRoutes,
 } from "./usePayShop";
 import { usePaySurface } from "./usePaySurface";
-import type { PreparedV6Pay, V6PayPhase } from "./V6PayConfirmDialog";
+import type { PreparedV6Pay } from "./V6PayConfirmDialog";
 import { V6PayShopStrip } from "./V6PayShopStrip";
 
 const loadPayConfirm = () => import("./V6PayConfirmDialog");
@@ -144,8 +145,6 @@ export function V6PayCard() {
   // send (the write hook's review and final simulation included): a
   // preparation is sent only while it still matches both.
   const currentPayRef = useRef<CurrentPay>({ identity: "", quoteTerminal: null });
-  /** The Safe proposal awaited is the token approval, not the payment itself. */
-  const approvalProposedRef = useRef(false);
   const pay = useReviewedAction();
 
   const projectToken = useJBTokenContext().token.data;
@@ -161,10 +160,6 @@ export function V6PayCard() {
   const [memo, setMemo] = useState("");
   /** A tolerance the payer loosened after a shortfall, for the payment it was set on. */
   const [payerSlippage, setPayerSlippage] = useState<{ bps: number; payment: string } | null>(null);
-  /** The tolerance offered after a shortfall, until the payer reviews again with it. */
-  const [retrySlippageBps, setRetrySlippageBps] = useState<number | null>(null);
-  /** The payment reverted onchain: quote and simulate it again before anything else is sent. */
-  const [revertedOnchain, setRevertedOnchain] = useState(false);
   const [tokenIndex, setTokenIndex] = useState(0);
   // True once the user explicitly picks a pay token. Until then the selection
   // auto-defaults to the project's accounting token (list[0]) so an ETH/USDC
@@ -635,12 +630,19 @@ export function V6PayCard() {
   const addBalanceViaRouter = mode === "addbalance" && !!selected?.viaRouter;
 
   // ---- Confirm + send flow ----
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [flow, dispatch] = useReducer(payFlow, PAY_FLOW_START);
+  const confirmOpen = flow.open;
   const confirmMounted = useOpenedOnce(confirmOpen);
-  const [prepared, setPrepared] = useState<PreparedV6Pay | null>(null);
-  const [phase, setPhase] = useState<V6PayPhase>("preparing");
-  const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined);
-  const [txError, setTxError] = useState<string | null>(null);
+  const {
+    phase,
+    prepared,
+    error: txError,
+    retrySlippageBps,
+    revertedOnchain,
+    txHash,
+  } = payFlowView(flow);
+  /** The Safe proposal awaited is the token approval, not the payment itself. */
+  const proposedApproval = flow.phase === "safe-proposed" && flow.approval;
 
   const busy =
     phase === "safe-proposed" ||
@@ -690,13 +692,7 @@ export function V6PayCard() {
     if (mode === "pay" && (surface?.pausePay || !previewReady)) return;
     if (cartCount > 0 && (shopRoutesLoading || shopCreditsLoading || !shopMatchesToken)) return;
 
-    setTxError(null);
-    setRetrySlippageBps(null);
-    setRevertedOnchain(false);
-    setTxHash(undefined);
-    setPrepared(null);
-    setPhase("preparing");
-    setConfirmOpen(true);
+    dispatch({ type: "open" });
   };
 
   // Preparing runs as an effect once the confirm is open, so the confirm is on
@@ -866,12 +862,13 @@ export function V6PayCard() {
         };
       }
       if (cancelled) return;
-      setPrepared(next);
-      setPhase("ready");
+      dispatch({ type: "prepared", prepared: next });
     })().catch((err) => {
       if (cancelled) return;
-      setPhase("ready");
-      setTxError(formatWalletError(err, "Couldn't prepare the transaction. Please try again."));
+      dispatch({
+        type: "prepare-failed",
+        error: formatWalletError(err, "Couldn't prepare the transaction. Please try again."),
+      });
     });
     return () => {
       cancelled = true;
@@ -882,23 +879,19 @@ export function V6PayCard() {
   // A changed input or route rebuilds the payment for review again.
   useEffect(() => {
     if (!confirmOpen || phase !== "ready" || !prepared || !preparationChanged) return;
-    setTxError(
-      prepared.account.toLowerCase() !== address?.toLowerCase() ? ACCOUNT_CHANGED : PAYMENT_CHANGED,
-    );
-    setRetrySlippageBps(null);
-    setRevertedOnchain(false);
-    setPrepared(null);
-    setPhase("preparing");
+    dispatch({
+      type: "prepare",
+      notice:
+        prepared.account.toLowerCase() !== address?.toLowerCase()
+          ? ACCOUNT_CHANGED
+          : PAYMENT_CHANGED,
+    });
   }, [confirmOpen, phase, prepared, preparationChanged, address]);
 
   /** Prepare the payment again with the tolerance the payer chose, and review it from the start. */
   const reviewWithSlippage = (bps: number) => {
     setPayerSlippage({ bps, payment: paymentInputs });
-    setRetrySlippageBps(null);
-    setRevertedOnchain(false);
-    setTxError(null);
-    setPrepared(null);
-    setPhase("preparing");
+    dispatch({ type: "prepare" });
   };
 
   const confirm = async () => {
@@ -910,28 +903,21 @@ export function V6PayCard() {
     if (revertedOnchain) {
       // A fresh quote, reviewed and simulated at the latest block; only that simulation's
       // failure is a reason.
-      setRevertedOnchain(false);
-      setTxError(null);
-      setPrepared(null);
       void refetchPreview();
-      setPhase("preparing");
+      dispatch({ type: "prepare" });
       return;
     }
     if (!prepared) {
       // Preparing failed — retry with a fresh quote.
-      setTxError(null);
-      setPhase("preparing");
+      dispatch({ type: "prepare" });
       return;
     }
     if (prepared.account.toLowerCase() !== address.toLowerCase()) {
       // The plan pays its tokens to the account it was built for. Build it
       // again for this one, and let the payer review that before it sends.
-      setPrepared(null);
-      setTxError(ACCOUNT_CHANGED);
-      setPhase("preparing");
+      dispatch({ type: "prepare", notice: ACCOUNT_CHANGED });
       return;
     }
-    setTxError(null);
     // Held by the project and beneficiary alone: one payment to a project at a time, whatever
     // the cart, token, route, amount or memo.
     const intent = payIntent({
@@ -944,7 +930,7 @@ export function V6PayCard() {
     try {
       requireCurrent(prepared, currentPayRef.current);
       // In flight from here: the confirm holds, and a changed payment is caught by the write gate.
-      setPhase(approval ? "approving-token" : "simulating");
+      dispatch({ type: "send", phase: approval ? "approving-token" : "simulating" });
       // The review's rows load with the confirm that called this, never with the card.
       const { payContext } = await loadPayConfirm();
       const result = await pay.run({
@@ -985,75 +971,65 @@ export function V6PayCard() {
         assertWriteState: () => requireCurrent(prepared, currentPayRef.current),
         beforeWallet: async (_call, step) => {
           // The payment step opens only after the approval's receipt succeeded.
-          if (approval && step === 1)
-            setPrepared((current) =>
-              current ? { ...current, tokenApprovalComplete: true } : current,
-            );
-          setPhase(approval && step === 0 ? "approving-token" : "signing");
+          if (approval && step === 1) dispatch({ type: "approved" });
+          dispatch({ type: "send", phase: approval && step === 0 ? "approving-token" : "signing" });
           await nextUiPaint();
         },
         onSubmitted: (_call, step, hash) => {
           if (approval && step === 0) return;
-          setTxHash(hash);
-          setPhase("pending");
+          dispatch({ type: "submitted", hash });
         },
       });
       if (!result) {
         // Closing the review closes the payment; the card keeps its inputs.
-        setPhase("ready");
-        setConfirmOpen(false);
+        dispatch({ type: "closed" });
         return;
       }
       if (result.status === "proposed") {
-        approvalProposedRef.current = !!approval && result.step === 0;
-        setTxHash(result.safeTxHash);
-        setPhase("safe-proposed");
+        dispatch({
+          type: "proposed",
+          hash: result.safeTxHash,
+          approval: !!approval && result.step === 0,
+        });
         return;
       }
       if (result.status === "done") {
-        setPhase("success");
+        dispatch({ type: "done" });
         return;
       }
       const { failure } = result;
       if (failure instanceof PaymentChangedError) throw failure;
       if (revertedStep(failure) === (approval ? 1 : 0)) {
         // A receipt carries no reason, and replaying it can't establish one.
-        setPhase("ready");
-        setTxError(PAYMENT_REVERTED);
-        setRevertedOnchain(true);
+        dispatch({ type: "failed", error: PAYMENT_REVERTED, recovery: { kind: "reverted" } });
         return;
       }
-      setPhase("ready");
       // The revert's own reason, when known, and a looser minimum when that is the fix.
       const decoded = decodePayFailure(failure);
-      setTxError(decoded?.message ?? failedLine(result));
       // A failed quote's minimum is the mint rate, not a market price a looser tolerance widens.
-      if (prepared.mode === "pay" && !prepared.quoteFailed) {
-        // The tolerance of the attempt that failed, never a loosened one not yet sent.
-        const retry = payRetrySlippageBps(
-          decoded,
-          slippageBps === undefined ? PAY_DEFAULT_SLIPPAGE_BPS : BigInt(slippageBps),
-        );
-        setRetrySlippageBps(retry === null ? null : Number(retry));
-      }
+      // The tolerance is the failed attempt's, never a loosened one not yet sent.
+      const retry =
+        prepared.mode === "pay" && !prepared.quoteFailed
+          ? payRetrySlippageBps(
+              decoded,
+              slippageBps === undefined ? PAY_DEFAULT_SLIPPAGE_BPS : BigInt(slippageBps),
+            )
+          : null;
+      dispatch({
+        type: "failed",
+        error: decoded?.message ?? failedLine(result),
+        recovery: retry === null ? null : { kind: "slippage", bps: Number(retry) },
+      });
     } catch (err) {
       if (!(err instanceof PaymentChangedError)) throw err;
       // Stop before the wallet and rebuild what is on screen for review.
-      setPrepared(null);
-      setTxError(PAYMENT_CHANGED);
-      setPhase("preparing");
+      dispatch({ type: "prepare", notice: PAYMENT_CHANGED });
     }
   };
 
   const resetAfterSuccess = () => {
-    setConfirmOpen(false);
+    dispatch({ type: "reset" });
     setPayerSlippage(null);
-    setRetrySlippageBps(null);
-    setRevertedOnchain(false);
-    setPrepared(null);
-    setPhase("preparing");
-    setTxHash(undefined);
-    setTxError(null);
     setAmount("");
     setDebouncedAmount("");
     setMemo("");
@@ -1062,34 +1038,27 @@ export function V6PayCard() {
 
   useEffect(() => {
     if (phase !== "safe-proposed") return;
-    if ((pay.phase === "done" || pay.settledStep === 0) && approvalProposedRef.current) {
+    if ((pay.phase === "done" || pay.settledStep === 0) && proposedApproval) {
       // The Safe ran the approval: the payment is still to send, from a fresh review.
-      approvalProposedRef.current = false;
-      setPrepared(null);
-      setPhase("preparing");
-      setTxError(SAFE_APPROVAL_DONE);
+      dispatch({ type: "prepare", notice: SAFE_APPROVAL_DONE });
     } else if (pay.phase === "done") {
-      setPhase("success");
-      setTxError(null);
+      dispatch({ type: "done" });
       setPayerSlippage(null);
-      setRetrySlippageBps(null);
-      setRevertedOnchain(false);
       setAmount("");
       setDebouncedAmount("");
       setMemo("");
       for (const item of chainCartItems) cart.remove(item.tierId, item.chainId);
     } else if (pay.error) {
-      setPhase("ready");
-      setTxError(pay.error);
+      dispatch({ type: "failed", error: pay.error });
     } else if (pay.held?.exit) {
       // Its result can't be confirmed: the payment is no longer awaiting the Safe here.
-      setPhase("ready");
-      setTxError(heldLineOf(pay.held) ?? null);
+      dispatch({ type: "failed", error: heldLineOf(pay.held) ?? null });
     }
   }, [
     cart,
     chainCartItems,
     phase,
+    proposedApproval,
     prepared?.mode,
     pay.error,
     pay.held,
@@ -1106,14 +1075,7 @@ export function V6PayCard() {
     if (!next) return;
     setDroppedToken(null);
     setSelectedSucker(next);
-    if (confirmOpen) {
-      setPrepared(null);
-      setTxError(null);
-      setRetrySlippageBps(null);
-      setRevertedOnchain(false);
-      setTxHash(undefined);
-      setPhase("preparing");
-    }
+    if (confirmOpen) dispatch({ type: "prepare" });
   };
 
   // Signed out, this button signs in, so the checks that describe a payment
@@ -1714,13 +1676,9 @@ export function V6PayCard() {
         <V6PayConfirmDialog
           open={confirmOpen}
           onOpenChange={(open) => {
-            setConfirmOpen(open);
             // Closing the review abandons a loosened tolerance.
-            if (!open) {
-              setPayerSlippage(null);
-              setRetrySlippageBps(null);
-              setRevertedOnchain(false);
-            }
+            dispatch({ type: "show", open });
+            if (!open) setPayerSlippage(null);
           }}
           prepared={prepared}
           phase={phase}
@@ -1729,7 +1687,7 @@ export function V6PayCard() {
           reviewAgain={revertedOnchain}
           retrySlippage={
             retrySlippageBps !== null
-              ? { bps: retrySlippageBps, onChange: setRetrySlippageBps }
+              ? { bps: retrySlippageBps, onChange: (bps) => dispatch({ type: "slippage", bps }) }
               : null
           }
           quoteSettled={mode !== "pay" || quoteSettled}
