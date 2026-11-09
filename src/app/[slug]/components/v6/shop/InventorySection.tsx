@@ -82,10 +82,12 @@ export function InventorySection({
   const { data: credits } = usePayShopCredits(chainId, shop.hook);
 
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
-  const [detailTierId, setDetailTierId] = useState<number | null>(null);
-  const [addItemsOpen, setAddItemsOpen] = useState(false);
-  const [mintTierId, setMintTierId] = useState<number | null>(null);
-  const [mediaTierId, setMediaTierId] = useState<number | null>(null);
+  /** The one inventory modal open: an item's detail, mint or media, or adding items. */
+  const [modal, setModal] = useState<
+    { kind: "detail" | "mint" | "media"; tierId: number } | { kind: "add" } | null
+  >(null);
+  const tierOf = (kind: "detail" | "mint" | "media") =>
+    modal?.kind === kind ? (shop.tiers.find((tier) => tier.id === modal.tierId) ?? null) : null;
 
   // Use both the indexed affordance and the hook's live permission semantics.
   // The latter covers indexer lag and delegates authorized specifically to
@@ -162,11 +164,9 @@ export function InventorySection({
     [categories, selectedCategory, shop.tiers],
   );
 
-  const detailTier =
-    detailTierId == null ? null : (shop.tiers.find((tier) => tier.id === detailTierId) ?? null);
-  const mediaTier = shop.tiers.find((tier) => tier.id === mediaTierId);
-  const mintTier =
-    mintTierId == null ? null : (shop.tiers.find((tier) => tier.id === mintTierId) ?? null);
+  const detailTier = tierOf("detail");
+  const mediaTier = tierOf("media");
+  const mintTier = tierOf("mint");
   // An open item's Mint and Edit media actions open their modals from inside it.
   const detailCanMint = !!(canMintItems && detailTier?.flags?.allowOwnerMint);
   const detailCanEditMedia = !!(detailTier && canEditMedia);
@@ -183,7 +183,7 @@ export function InventorySection({
           {canAddItems ? (
             <button
               type="button"
-              onClick={() => setAddItemsOpen(true)}
+              onClick={() => setModal({ kind: "add" })}
               onPointerEnter={() => void loadAddItems()}
               onFocus={() => void loadAddItems()}
               className="min-h-10 bg-teal-500 px-4 text-sm font-medium text-melon-950 transition-colors hover:bg-teal-600"
@@ -255,7 +255,7 @@ export function InventorySection({
                         chainId={chainId}
                         tier={tier}
                         media={mediaById?.[tier.id]}
-                        onOpen={() => setDetailTierId(tier.id)}
+                        onOpen={() => setModal({ kind: "detail", tierId: tier.id })}
                       />
                     ))}
                   </div>
@@ -326,21 +326,13 @@ export function InventorySection({
           media={mediaById?.[detailTier.id]}
           onMint={
             canMintItems && detailTier.flags?.allowOwnerMint && detailTier.remaining > 0
-              ? () => {
-                  setDetailTierId(null);
-                  setMintTierId(detailTier.id);
-                }
+              ? () => setModal({ kind: "mint", tierId: detailTier.id })
               : undefined
           }
           onEditMedia={
-            canEditMedia
-              ? () => {
-                  setDetailTierId(null);
-                  setMediaTierId(detailTier.id);
-                }
-              : undefined
+            canEditMedia ? () => setModal({ kind: "media", tierId: detailTier.id }) : undefined
           }
-          onClose={() => setDetailTierId(null)}
+          onClose={() => setModal(null)}
         />
       ) : null}
 
@@ -352,7 +344,7 @@ export function InventorySection({
           tierId={mintTier.id}
           itemName={tierDisplayName(mediaById?.[mintTier.id], mintTier.id)}
           remaining={mintTier.remaining}
-          onClose={() => setMintTierId(null)}
+          onClose={() => setModal(null)}
         />
       ) : null}
 
@@ -363,18 +355,18 @@ export function InventorySection({
           projects={projects}
           tier={mediaTier}
           media={mediaById?.[mediaTier.id]}
-          onClose={() => setMediaTierId(null)}
+          onClose={() => setModal(null)}
         />
       ) : null}
 
-      {addItemsOpen ? (
+      {modal?.kind === "add" ? (
         <AddItemsModal
           shop={shop}
           chainId={chainId}
           projectId={projectId}
           categories={categories}
           projects={projects}
-          onClose={() => setAddItemsOpen(false)}
+          onClose={() => setModal(null)}
         />
       ) : null}
     </div>

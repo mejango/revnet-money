@@ -62,6 +62,7 @@ const account = `0x${"1".repeat(40)}`;
 // The not-found page now keeps the site nav and search, so it measures 355.7 KiB like other nav pages.
 // SDK 6.0.0 (every buyback, router and gateway generation) measures / 396.0, learn 358.1, audit 361.0, create 560.1, account 429.1,
 // holdings 418.3, projects 431.2, roles 392.4 and not-found 356.7 KiB; round only those up.
+// Explicit pay, loan and payment-source state measures shop 595.1 KiB; round only that ceiling up.
 const routes = [
   { route: "/", path: "/", kib: 397 },
   { route: "/learn", path: "/learn", kib: 359 },
@@ -73,7 +74,7 @@ const routes = [
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 588 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 631 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 595 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 596 },
   { route: "/[slug]/extras", path: "/eth:1/extras", kib: 605 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 430 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 419 },
@@ -92,7 +93,7 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
 // All JS 2730 -> 2754: the R stack on SDK 4.0.0 (core reviewed runs and Relayr rounds), measured 2752.4 locally and 2753.1 on CI.
 // SDK 4.0.0 measures 921.2 KiB route-referenced (919.7 before); the ceiling moves up 1 KiB.
 // Next 16.4.2 measures 923.0 KiB; the ceiling moves to 924.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 922);
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 923);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load

@@ -55,11 +55,23 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   const scope = `pending-routing:destination:${projectKey}`;
   const saved = hydrated ? getPendingBatch(scope, identities) : undefined;
   const resume = saved && !saved.replaceableDraft && !saved.refreshable ? saved : undefined;
-  const [savedSelection, setSavedSelection] = useState<NonNullable<
-    ReturnType<typeof getPendingBatch>
-  > | null>(null);
-  const [replacementId, setReplacementId] = useState<string | undefined>();
-  const [refreshBatchId, setRefreshBatchId] = useState<string | undefined>();
+  /**
+   * What the confirm reviews: the saved batch it resumes, or payments prepared for an account,
+   * replacing an unfunded draft or refreshing a stale quote when one was saved.
+   */
+  const [source, setSource] = useState<
+    | { kind: "saved"; batch: NonNullable<ReturnType<typeof getPendingBatch>> }
+    | {
+        kind: "fresh";
+        prepared: Prepared[];
+        account: string;
+        replaceDraftId?: string;
+        refreshBatchId?: string;
+      }
+    | null
+  >(null);
+  const savedSelection = source?.kind === "saved" ? source.batch : null;
+  const reviewed = source?.kind === "fresh" ? source.prepared : null;
   const [needsReview, setNeedsReview] = useState(false);
   const [checkingSaved, setCheckingSaved] = useState(false);
   const [savedCheck, setSavedCheck] = useState<{ id: string; reason: string } | null>(null);
@@ -78,10 +90,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
     },
     [],
   );
-  const [reviewed, setReviewed] = useState<Prepared[] | null>(null);
   // The routing round ended. The confirm keeps listing what it routed and ends on Done.
   const [routed, setRouted] = useState(false);
-  const [reviewedAccount, setReviewedAccount] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [callProgress, setCallProgress] = useState<readonly BatchCallProgress[] | null>(null);
@@ -144,7 +154,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         reason: checked?.recoveryReason ?? "The saved batch no longer needs recovery.",
       });
       if (open && savedSelection?.id === saved.id) {
-        if (checked?.id === savedSelection.id) setSavedSelection(checked);
+        if (checked?.id === savedSelection.id) setSource({ kind: "saved", batch: checked });
         else {
           setNeedsReview(true);
           setError("The saved batch changed. Review the current payments again.");
@@ -237,17 +247,14 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   async function review(selected: PendingRouterPayment[]) {
     setError(null);
     setCallProgress(null);
-    setRefreshBatchId(undefined);
     if (resume) {
       setNeedsReview(false);
-      setSavedSelection(resume);
-      setReplacementId(undefined);
-      setReviewed(null);
+      setSource({ kind: "saved", batch: resume });
       setOpen(true);
       return;
     }
     if (!address) return;
-    setReviewed(null);
+    setSource(null);
     setBusy(true);
     setProgress("Preparing routing…");
     try {
@@ -260,11 +267,13 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       );
       if (!prepared.length) throw new Error("No pending payments are ready to route.");
       setNeedsReview(false);
-      setSavedSelection(null);
-      setReplacementId(saved?.replaceableDraft ? saved.id : undefined);
-      setRefreshBatchId(saved?.refreshable ? saved.id : undefined);
-      setReviewed(prepared);
-      setReviewedAccount(address.toLowerCase());
+      setSource({
+        kind: "fresh",
+        prepared,
+        account: address.toLowerCase(),
+        replaceDraftId: saved?.replaceableDraft ? saved.id : undefined,
+        refreshBatchId: saved?.refreshable ? saved.id : undefined,
+      });
       setProgress(null);
       setRouted(false);
       setOpen(true);
@@ -277,7 +286,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   }
 
   async function submit() {
-    if (!savedSelection && !reviewed) return;
+    if (!source) return;
+    const fresh = source.kind === "fresh" ? source : null;
     const recoverSavedSubmission = () => {
       const pending = getPendingBatch(savedSelection?.scope ?? scope, identities);
       if (
@@ -288,10 +298,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         (savedSelection && pending.id !== savedSelection.id)
       )
         return false;
-      setSavedSelection(pending);
-      setReviewed(null);
-      setReplacementId(undefined);
-      setRefreshBatchId(undefined);
+      setSource({ kind: "saved", batch: pending });
       setNeedsReview(false);
       return true;
     };
@@ -304,7 +311,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
     setError(null);
     setProgress("Preparing routing…");
     try {
-      if (reviewed && address?.toLowerCase() !== reviewedAccount) {
+      if (fresh && address?.toLowerCase() !== fresh.account) {
         throw new Error(
           "The connected account changed. Reconnect the wallet used for this review.",
         );
@@ -313,9 +320,9 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
         label: "Retry payments",
         scope: savedSelection?.scope ?? scope,
         expectedBatchId: savedSelection?.id,
-        replaceDraftId: savedSelection ? undefined : replacementId,
-        refreshBatchId: savedSelection ? undefined : refreshBatchId,
-        calls: savedSelection ? [] : (reviewed ?? []).map((row) => row.call),
+        replaceDraftId: fresh?.replaceDraftId,
+        refreshBatchId: fresh?.refreshBatchId,
+        calls: (fresh?.prepared ?? []).map((row) => row.call),
         signal: submission.controller.signal,
         onBeforePayment: () => {
           if (!current()) return;
@@ -347,7 +354,8 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       if (!current()) return;
       setProgress(null);
       setError(formatWalletError(cause));
-      if (!recoverSavedSubmission() && (replacementId || refreshBatchId)) setNeedsReview(true);
+      if (!recoverSavedSubmission() && (fresh?.replaceDraftId || fresh?.refreshBatchId))
+        setNeedsReview(true);
     } finally {
       if (activeSubmission.current === submission) {
         activeSubmission.current = null;
@@ -366,7 +374,7 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
     setOpen(false);
     if (!routed) return;
     setRouted(false);
-    setReviewed(null);
+    setSource((now) => (now?.kind === "fresh" ? null : now));
   }
 
   if (!hydrated || !identities.length) return null;

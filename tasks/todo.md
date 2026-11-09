@@ -1734,3 +1734,25 @@ All items above were triple checked: symptom real, correct behavior from a contr
 Not changed, to raise with jango: home panel heights and Trending truncation, account cells opening an explorer rather than /account, HTML in imported descriptions, the first bridge route default, Pay amount digits staying when the token changes.
 
 Gates: `npm run check` steps all pass (3112 unit tests, browser 160 passed, 10 skipped). Two Codex passes: 5 reproduced findings, all fixed with failing tests. The hydration failure on /shop came from the shared inventory read, fixed by holding the skeleton until hydrated.
+
+## State machines wave 1 (2026-11-09)
+
+Discovery: scratchpad `sm/revnet.md` (34 machines). Brief: scratchpad `sm/BRIEF.md`.
+
+## Plan refinement
+- **Objective:** Fix the confirmed implicit-state bugs (revnet-1 false loan failure, revnet-2 dead pending branch) and make the listed UNION/DERIVE machines explicit without changing what users see; record SDK-owned items as SDK requests.
+- **System fit:** Every send goes through `useReviewedAction` over core's `useReviewedRun`; local status must derive from its `phase`/`held`/`error` rather than copy it. Owners stay the SDK runner and revnet's dialogs; jbm's PayPanel and GetLoanFlow are the sibling consumers named in the cross-client notes.
+- **Reuse and simplicity:** Reuse the runner's phases (SDK vocabulary) and existing test harness (`test/support/reviewed-action.ts`). One reducer per flow; refactors are separate commits from fixes. No SDK code is invented locally.
+- **Evidence and unknowns:** Bugs are confirmed by a failing regression test before the fix; an item that does not reproduce is dropped with a reason. Installed SDK is nana-sdk-core 6.0.0.
+- **Verification:** Regression test per fix; existing suites stay green per refactor; full `npm run check` before the PR.
+- **Resource budget:** Disk is tight; node_modules is an APFS clone. Suites run one at a time. Items whose conversion would change visible behavior with no bug are skipped and named.
+
+- [x] revnet-1 loan status derived from the runner (test: borrow-review-cancel "a second loan in the same mounted dialog")
+- [x] revnet-2 pay confirm reducer (`payFlow.ts`, test/pay-flow.test.ts); dead pending branch (pay-failure-retry "receipt could not be read")
+- [x] Done: 6 (routing review source), 8 (launch payment), 10 (typed repay status), 26 (useSecondsUntil), 32 (loan dialog), 33 (inventory modal)
+- [x] Dropped with reasons in the PR: 11, 12, 13, 14, 23, 24, 31
+- [x] Gate: every step of npm run check passes except bundle:check (/[slug]/shop 595.1 KiB vs 595 KiB ceiling; origin/main 594.7, delta +0.4 KiB on every [slug] route)
+
+## Review
+
+Two real defects fixed with regression tests (false loan failure on a second loan; a pay card that could trap the payer in pending). The rest are behavior-preserving unions. The shop route is 0.1 KiB over its ceiling; the ceiling was not raised.

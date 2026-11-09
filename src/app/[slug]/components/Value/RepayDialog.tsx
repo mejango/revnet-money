@@ -43,7 +43,10 @@ import {
   useWalletClient,
 } from "wagmi";
 
-const REPAY_STATUS_TEXT: Record<string, string> = {
+type RepayStatus =
+  "idle" | "approving" | "waiting-signature" | "pending" | "success" | "error" | "safe-unconfirmed";
+
+const REPAY_STATUS_TEXT: Record<Exclude<RepayStatus, "idle">, string> = {
   "waiting-signature": "Waiting for wallet confirmation...",
   approving: "Approving token use...",
   pending: "Repayment pending...",
@@ -74,7 +77,7 @@ export function RepayDialog({
 }) {
   // ===== STATE =====
   const [collateralToReturn, setCollateralToReturn] = useState("");
-  const [repayStatus, setRepayStatus] = useState("idle");
+  const [repayStatus, setRepayStatus] = useState<RepayStatus>("idle");
   const [repayTxHash, setRepayTxHash] = useState<`0x${string}` | undefined>();
   const [collateralError, setCollateralError] = useState<string>("");
   const [review, setReview] = useState<"approve" | "repay" | null>(null);
@@ -780,7 +783,7 @@ export function RepayDialog({
     );
   };
 
-  const statusText = REPAY_STATUS_TEXT[repayStatus];
+  const statusText = repayStatus === "idle" ? undefined : REPAY_STATUS_TEXT[repayStatus];
   const renderStatusMessage = () =>
     statusText ? <p className="text-sm text-zinc-600 mt-2">{statusText}</p> : null;
   const signing = isRepaying || repayStatus === "waiting-signature" || repayStatus === "approving";
