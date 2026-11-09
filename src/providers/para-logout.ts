@@ -27,6 +27,26 @@ export class ParaLocalDisconnectError extends Error {
   }
 }
 
+let signingOut: Promise<void> | null = null;
+let signOuts = 0;
+
+/** One sign-out at a time, app-wide: a second call joins the one under way. */
+export function signOutOnce(run: () => Promise<unknown>): Promise<void> {
+  if (signingOut) return signingOut;
+  signOuts += 1;
+  signingOut = run()
+    .then(() => undefined)
+    .finally(() => {
+      signingOut = null;
+    });
+  return signingOut;
+}
+
+/** Changes whenever a sign-out starts; a session check that saw another value is stale. */
+export function signOutGeneration() {
+  return signingOut ? -1 : signOuts;
+}
+
 /**
  * End Para's authoritative session before disconnecting Wagmi.
  *

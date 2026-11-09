@@ -1,6 +1,7 @@
 "use client";
 
 import { markParaSession } from "./ParaAuthContext";
+import { signOutGeneration } from "./para-logout";
 
 type ParaSessionModule = typeof import("./para-config");
 type ParaSessionLoader = () => Promise<ParaSessionModule>;
@@ -25,8 +26,12 @@ export async function connectParaSession<TConnector extends ParaConnector>({
   load = loadParaSession,
   markSession = markParaSession,
 }: ConnectParaSessionOptions<TConnector>): Promise<boolean> {
+  const generation = signOutGeneration();
+  if (generation < 0) return false;
   const { getParaClient } = await load();
-  if (!(await getParaClient().isFullyLoggedIn())) return false;
+  const loggedIn = await getParaClient().isFullyLoggedIn();
+  // A sign-out that started during the check makes its answer stale.
+  if (!loggedIn || signOutGeneration() !== generation) return false;
 
   const para = connectors.find((connector) => connector.id === "para");
   if (!para) return false;

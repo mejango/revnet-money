@@ -13,6 +13,7 @@ import {
   logoutParaSession,
   ParaLocalDisconnectError,
   ParaSessionLogoutError,
+  signOutOnce,
 } from "@/providers/para-logout";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import { preloadParaHost } from "@/providers/preload-para";
@@ -601,7 +602,7 @@ export function WalletButton() {
             onClick={() => {
               setDisconnectError(undefined);
               setParaLogoutPending(true);
-              void endSession()
+              void signOutOnce(endSession)
                 .then(() => setOpen(false))
                 .catch((error: unknown) => {
                   setDisconnectError(
