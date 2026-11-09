@@ -32,6 +32,10 @@ const mocks = vi.hoisted(() => ({
   // Core's simulation before the wallet (an eth_call), and the wallet's send.
   hookSimulate: vi.fn(),
   submit: vi.fn(),
+  // The chain's word on the sent payment: unread until mined.
+  mined: null as null | { transaction: object; receipt: object },
+  /** The node's receipt watcher, which a load-balanced RPC can drop. */
+  watchReceipt: vi.fn(),
 }));
 
 function client() {
@@ -53,12 +57,16 @@ function client() {
     getTransactionCount: async () => 3,
     getCode: async () => undefined,
     getTransaction: async () => {
-      throw new Error("Transaction not found");
+      if (mocks.mined) return mocks.mined.transaction;
+      throw Object.assign(new Error("Transaction not found"), {
+        name: "TransactionNotFoundError",
+      });
     },
     getTransactionReceipt: async () => {
+      if (mocks.mined) return mocks.mined.receipt;
       throw new Error("Receipt not found");
     },
-    waitForTransactionReceipt: () => new Promise(() => undefined),
+    waitForTransactionReceipt: () => mocks.watchReceipt(),
   };
 }
 const CLIENT = client();
@@ -175,6 +183,8 @@ beforeEach(() => {
   mocks.routeError = null;
   mocks.hookSimulate.mockReset().mockResolvedValue(undefined);
   mocks.submit.mockReset().mockResolvedValue(HASH);
+  mocks.mined = null;
+  mocks.watchReceipt.mockReset().mockReturnValue(new Promise(() => undefined));
   registerReviewHandler(async (prompt) => prompt.confirmation);
 });
 
@@ -266,5 +276,53 @@ describe("the pay card at the real reviewed send's submission boundary", () => {
     };
     expect(sent.to).toBe(FIRST);
     expect(typeof sent.account === "string" ? sent.account : sent.account.address).toBe(ACCOUNT);
+  });
+
+  it("holds a payment whose receipt can't be read as pending, then confirms it once the chain shows it, sent once", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // The node drops its receipt watcher, and every direct read of the receipt fails.
+      mocks.watchReceipt.mockRejectedValue(new Error("The receipt watcher was dropped."));
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const confirm = await sendFromReadyConfirm(queryClient);
+      await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));
+      // Past every direct read: the run is left at its receipt, unverified, and still pending.
+      await vi.advanceTimersByTimeAsync(200_000);
+      await within(confirm).findByText("Transaction submitted, awaiting confirmation…");
+      expect(within(confirm).queryByRole("button", { name: "Pay" })).toBeNull();
+
+      // The chain shows the payment mined: its hold settles it, and the run ends done.
+      // In the chain's latest block, which is final.
+      const blockHash = `0x${"bb".repeat(32)}` as Hex;
+      mocks.mined = {
+        transaction: {
+          hash: HASH,
+          from: ACCOUNT,
+          to: FIRST,
+          nonce: 3,
+          chainId: 1,
+          blockNumber: 100n,
+          blockHash,
+          transactionIndex: 0,
+        },
+        receipt: {
+          status: "success",
+          transactionHash: HASH,
+          from: ACCOUNT,
+          to: FIRST,
+          blockNumber: 100n,
+          blockHash,
+          transactionIndex: 0,
+          logs: [],
+        },
+      };
+      await vi.advanceTimersByTimeAsync(10_000);
+      await within(await screen.findByRole("dialog", { name: "Payment confirmed" })).findByText(
+        "Your payment went through.",
+      );
+      expect(mocks.submit).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
