@@ -1539,7 +1539,8 @@ function MovableLiquidity({
           open
           onClose={() => {
             setReviewed(null);
-            if (!busy) move.reset();
+            // A move only followed until its hold settles closes too; the hold keeps it shown.
+            if (!busy || move.following) move.dismiss();
           }}
           title="Confirm move"
           preparing={!reviewed}
@@ -2112,7 +2113,8 @@ function ChainPositionRows({
           open
           onClose={() => {
             setReviewed(null);
-            if (!removalOutstanding) removal.reset();
+            // A removal only followed until its hold settles closes too; it stays outstanding.
+            if (!removalOutstanding || removal.following) removal.dismiss();
           }}
           title="Confirm removal"
           preparing={!reviewed}

@@ -120,6 +120,9 @@ function loadRecovery(): Recovery | undefined {
     throw new Error("Markee recovery storage is invalid. Do not submit again until it is checked.");
   return value;
 }
+/** A sent step whose confirm closed before its result: the saved hash is checked, never resent. */
+export const MARKEE_SENT_UNCHECKED = "Sent. Check its result here before sending again.";
+
 function saveRecovery(value: Recovery) {
   requireTransactionActivityPersistence();
   window.localStorage.setItem(RECOVERY_KEY, JSON.stringify(value));
@@ -199,7 +202,7 @@ export function useMarkee(initialBoardAddress?: Address) {
     };
   }, [refresh]);
 
-  const { run } = useReviewedAction();
+  const { run, following, dismiss } = useReviewedAction();
   /** The Markee journal's record of the step at the wallet boundary, before the wallet opens. */
   const beforeWallet = async () => {
     const current = active.current;
@@ -438,7 +441,9 @@ export function useMarkee(initialBoardAddress?: Address) {
         ),
       ],
     });
-    if (!result) throw new ReviewRefusal("Review canceled. Nothing was sent.");
+    // Null after a hash: the confirm closed while the step's hold still follows it.
+    if (!result)
+      throw new ReviewRefusal(step.hash ? MARKEE_SENT_UNCHECKED : "Review canceled. Nothing was sent.");
     // Nothing sent: the run's own line. Sent: the step's exact result decides.
     if (!step.hash)
       throw new ReviewRefusal(
@@ -1001,6 +1006,9 @@ export function useMarkee(initialBoardAddress?: Address) {
     wallet,
     loading,
     busy,
+    /** The sent step is only followed until its hold settles: the dialog can close (`dismiss`). */
+    following,
+    dismiss,
     status,
     error,
     pending,

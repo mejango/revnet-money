@@ -103,7 +103,7 @@ export function MarkeeRentDialog({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (markee.busy && !nextOpen) return;
+        if (markee.busy && !nextOpen && !(markee.following && markee.dismiss())) return;
         onOpenChange(nextOpen);
       }}
     >

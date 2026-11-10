@@ -571,7 +571,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
       onOpenChange={(open) => {
         // The dialog stays mounted: a finished cash out must not greet the next one.
         if (!open) {
-          sale.reset();
+          sale.dismiss();
           setHash(undefined);
           setRedeemAmount(undefined);
           setReview(false);

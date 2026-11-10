@@ -41,7 +41,9 @@ export function reviewedActionState(run: Mock) {
     busy: false,
     exitAction: null,
     sendAgainAction: null,
+    following: false,
     reset: () => undefined,
+    dismiss: () => true,
   };
 }
 
@@ -253,6 +255,7 @@ export function liveReviewedAction(
         held: state.held as Parameters<typeof reviewedRunStatus>[0]["held"],
       }),
       reset: () => set({ ...blank }),
+      dismiss: () => (set({ ...blank }), true),
       run,
     };
   }
