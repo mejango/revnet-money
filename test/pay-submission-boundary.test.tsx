@@ -325,4 +325,24 @@ describe("the pay card at the real reviewed send's submission boundary", () => {
       vi.useRealTimers();
     }
   });
+
+  it("lets the payer close a payment its hold still follows, without sending it again", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      mocks.watchReceipt.mockRejectedValue(new Error("The receipt watcher was dropped."));
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const confirm = await sendFromReadyConfirm(queryClient);
+      await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(200_000);
+      await within(confirm).findByText("Transaction submitted, awaiting confirmation…");
+
+      fireEvent.keyDown(confirm, { key: "Escape" });
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Confirm payment" })).toBeNull(),
+      );
+      expect(mocks.submit).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -107,6 +107,7 @@ export function V6PayConfirmDialog({
   txHash,
   onConfirm,
   onDone,
+  following = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -126,6 +127,8 @@ export function V6PayConfirmDialog({
   /** Retained for caller compatibility; chain selection belongs to the payment card. */
   onSwitchChain?: (chainId: string) => void;
   onDone: () => void;
+  /** The sent payment is only followed until its hold settles: the confirm can close. */
+  following?: boolean;
 }) {
   const busy =
     phase === "approving-token" ||
@@ -149,7 +152,7 @@ export function V6PayConfirmDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (busy) return;
+        if (busy && !following) return;
         if (!next && phase === "success") onDone();
         onOpenChange(next);
       }}

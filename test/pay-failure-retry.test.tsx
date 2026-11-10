@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => ({
   // The wallet's send.
   submit: vi.fn(),
   resetRunner: () => undefined as void,
+  run: null as null | import("vitest").Mock,
 }));
 
 vi.mock("wagmi", async (importOriginal) => ({
@@ -64,6 +65,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
     mocks.cardSimulate,
   );
   mocks.resetRunner = runner.reset;
+  mocks.run = runner.run;
   return {
     ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
     useReviewedAction: runner.hook,
@@ -393,5 +395,15 @@ describe("a failed payment's reason and a looser minimum", () => {
     });
     expect(mocks.routeCalls.length).toBe(calls + 1);
     expect(screen.queryByText(new RegExp(PAY_SWAP_QUOTE_FAILED_MESSAGE))).toBeNull();
+  });
+
+  it("frees a payment whose send could not start, says so and offers it again, nothing sent", async () => {
+    // The send's own preparation (its review rows' chunk, the engine) failed before any wallet.
+    mocks.run!.mockRejectedValueOnce(new Error("Failed to fetch dynamically imported module"));
+    const confirm = await payFromConfirm();
+    await within(confirm).findByText("The payment could not start. Nothing was sent; try again.");
+    expect(mocks.submit).not.toHaveBeenCalled();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));
   });
 });
