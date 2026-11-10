@@ -1,4 +1,6 @@
 import { V6PayCard } from "@/app/[slug]/components/v6/pay/V6PayCard";
+import { ReviewRefusal } from "@/lib/reviewed-call";
+import { REVIEWED_ENGINE_LOAD_LINE } from "@bananapus/nana-sdk-core/review";
 import {
   PAY_SWAP_QUOTE_FAILED_MESSAGE,
   PaySwapQuoteFailedError,
@@ -398,10 +400,14 @@ describe("a failed payment's reason and a looser minimum", () => {
   });
 
   it("frees a payment whose send could not start, says so and offers it again, nothing sent", async () => {
-    // The send's own preparation (its review rows' chunk, the engine) failed before any wallet.
-    mocks.run!.mockRejectedValueOnce(new Error("Failed to fetch dynamically imported module"));
+    // The reviewed send's own preparation failed before any wallet: its result says so.
+    mocks.run!.mockResolvedValueOnce({
+      status: "failed",
+      error: REVIEWED_ENGINE_LOAD_LINE,
+      failure: new ReviewRefusal(REVIEWED_ENGINE_LOAD_LINE),
+    });
     const confirm = await payFromConfirm();
-    await within(confirm).findByText("The payment could not start. Nothing was sent; try again.");
+    await within(confirm).findByText(REVIEWED_ENGINE_LOAD_LINE);
     expect(mocks.submit).not.toHaveBeenCalled();
     fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
     await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));

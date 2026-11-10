@@ -1017,11 +1017,9 @@ export function V6PayCard() {
         recovery: retry === null ? null : { kind: "slippage", bps: Number(retry) },
       });
     } catch (err) {
+      if (!(err instanceof PaymentChangedError)) throw err;
       // Stop before the wallet and rebuild what is on screen for review.
-      if (err instanceof PaymentChangedError)
-        dispatch({ type: "prepare", notice: PAYMENT_CHANGED });
-      // The send could not start (its review or engine failed to load): the card is free again.
-      else dispatch({ type: "failed", error: PAYMENT_NOT_STARTED });
+      dispatch({ type: "prepare", notice: PAYMENT_CHANGED });
     }
   };
 
@@ -1724,8 +1722,6 @@ async function needsApproval(
 const PAYMENT_CHANGED = "The payment changed. Review it again.";
 
 const PAYMENT_REVERTED = "The payment reverted.";
-
-const PAYMENT_NOT_STARTED = "The payment could not start. Nothing was sent; try again.";
 
 class PaymentChangedError extends Error {
   constructor() {

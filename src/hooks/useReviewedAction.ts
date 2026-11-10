@@ -18,6 +18,7 @@ import {
   discardReviewedSequence,
   findReviewedSequence,
   openStepHold,
+  REVIEWED_ENGINE_LOAD_LINE,
   type WriteHoldClient,
 } from "@bananapus/nana-sdk-core/review";
 import {
@@ -92,8 +93,19 @@ export function useReviewedAction() {
 
   const runOnce = useCallback(
     async (action: ReviewedActionInput): Promise<ReviewedRunResult> => {
-      await safeWalletPeerSettled();
-      const { requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy");
+      // Its own preparation, before any review or wallet: a failure here is every flow's
+      // "nothing was sent", not a throw each caller must catch.
+      let requirePriceBasedShopVoting: typeof import("@/lib/shop-voting-policy").requirePriceBasedShopVoting;
+      try {
+        await safeWalletPeerSettled();
+        ({ requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy"));
+      } catch (cause) {
+        return {
+          status: "failed",
+          error: REVIEWED_ENGINE_LOAD_LINE,
+          failure: Object.assign(new ReviewRefusal(REVIEWED_ENGINE_LOAD_LINE), { cause }),
+        };
+      }
       const safe = isSafeConnection(config);
       // Its sends are journaled under the account it was reviewed for, whatever the wallet shows.
       const account = action.account ?? getAccount(config).address;

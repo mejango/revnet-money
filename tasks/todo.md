@@ -1789,3 +1789,4 @@ Two real defects fixed with regression tests (false loan failure on a second loa
 - build:browser, standalone:check and bundle:check pass. Ceilings were raised to the measurement, as recorded in `scripts/check-client-bundle.mjs`.
 - test:browser: 159 passed and one load timeout (`project-shape` at wide-1100). That spec passes in full at workers=1 (48 passed).
 - SDK 6.3.0 will keep lost-lock outcomes itself. When it lands, delete `keptOutcomes` and its uses. The PR body lists them.
+- [x] Run wrapper owns its own preparation: a failed Safe peer check or policy chunk returns core's `REVIEWED_ENGINE_LOAD_LINE` as a failed result (nothing sent), so no flow catches it; the pay card's not-started branch and line are gone. Failing-first test through the real wrapper on the burn flow (`test/reviewed-action-not-started.test.tsx`).
