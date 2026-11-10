@@ -10,6 +10,7 @@ import {
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
+import { activityJournal } from "@/lib/activity-journal";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { fence, keptOutcomes, type TabLocks } from "@/lib/fence";
 import {
@@ -48,7 +49,6 @@ import { loadEngine, reviewedSendDeps, WALLET_CHANGED } from "@/lib/reviewed-sen
 import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls } from "@/lib/safe-transactions";
 import {
-  activityJournal,
   contractTransactionKey,
   refreshTransactionActivities,
   requireTransactionActivityPersistence,

@@ -2,6 +2,7 @@
 
 import { ReviewRefusal } from "@/lib/review-refusal";
 
+import { activityJournal } from "@/lib/activity-journal";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { formatShortDateTime } from "@/lib/date";
 import { fence, keptOutcomes, type TabLocks } from "@/lib/fence";
@@ -52,7 +53,6 @@ import {
   safeRelayrSession,
 } from "@/lib/safe-relayr";
 import {
-  activityJournal,
   dismissTransactionActivity,
   recordTransactionActivity,
   refreshTransactionActivities,

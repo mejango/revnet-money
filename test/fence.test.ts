@@ -1,5 +1,6 @@
+import { activityJournal } from "@/lib/activity-journal";
 import { fence, keptOutcomes } from "@/lib/fence";
-import { activityJournal, refreshTransactionActivities } from "@/lib/transaction-activity";
+import { refreshTransactionActivities } from "@/lib/transaction-activity";
 import { LockLostError, type LockHandle } from "@bananapus/nana-sdk-core/review/locks";
 import { beforeEach, expect, it, vi } from "vitest";
 
