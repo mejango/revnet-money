@@ -52,38 +52,73 @@
     },
     {
       "file": "src/hooks/useMarkee.ts",
-      "line": 456,
+      "line": 500,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/use-markee.test.tsx"
     },
     {
       "file": "src/hooks/useMultichainBatch.ts",
-      "line": 414,
+      "line": 417,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/multichain-batch.test.tsx"
     },
     {
       "file": "src/hooks/useMultichainBatch.ts",
-      "line": 1097,
+      "line": 1142,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/multichain-batch.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 310,
+      "line": 316,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2658,
+      "line": 2721,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
+    },
+    {
+      "file": "src/lib/fence.ts",
+      "line": 45,
+      "api": "request",
+      "boundary": "navigator.locks.request (Web Locks) via the SDK's browserLocks, to take a lapsed lock again and save a wallet answer it kept; never a wallet request.",
+      "test": "test/fence.test.ts"
+    },
+    {
+      "file": "src/lib/reviewed-send-deps.ts",
+      "line": 77,
+      "api": "signMessage",
+      "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty. Core's lock fence (WalletRequestOptions) is forwarded to the wallet request.",
+      "test": "test/safe-batch.test.tsx"
+    },
+    {
+      "file": "src/lib/reviewed-send-deps.ts",
+      "line": 81,
+      "api": "sendTransaction",
+      "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty. Core's lock fence (WalletRequestOptions) is forwarded to the wallet request.",
+      "test": "test/safe-batch.test.tsx"
+    },
+    {
+      "file": "src/lib/reviewed-send-deps.ts",
+      "line": 86,
+      "api": "signTypedData",
+      "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty. Core's lock fence (WalletRequestOptions) is forwarded to the wallet request.",
+      "test": "test/safe-batch.test.tsx"
+    },
+    {
+      "file": "src/lib/reviewed-send-deps.ts",
+      "line": 101,
+      "api": "sendCalls",
+      "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty. Core's lock fence (WalletRequestOptions) is forwarded to the wallet request.",
+      "test": "test/safe-batch.test.tsx"
     },
     {
       "file": "src/lib/safe-relayr.ts",
@@ -91,34 +126,6 @@
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
-    },
-    {
-      "file": "src/lib/reviewed-send-deps.ts",
-      "line": 80,
-      "api": "sendTransaction",
-      "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty.",
-      "test": "test/safe-batch.test.tsx"
-    },
-    {
-      "file": "src/lib/reviewed-send-deps.ts",
-      "line": 85,
-      "api": "signTypedData",
-      "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty.",
-      "test": "test/safe-batch.test.tsx"
-    },
-    {
-      "file": "src/lib/reviewed-send-deps.ts",
-      "line": 76,
-      "api": "signMessage",
-      "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty.",
-      "test": "test/safe-batch.test.tsx"
-    },
-    {
-      "file": "src/lib/reviewed-send-deps.ts",
-      "line": 100,
-      "api": "sendCalls",
-      "boundary": "Core's viemWalletAdapter over the current wagmi connector: as each sending or signing request reaches the provider it rechecks the account, chain, Safe route, connector and revnet's check (view-as, the reviewed wallet, the operation's final check and shop-voting policy). Only core's WalletNotInvokedError, raised before any request went out, releases an unsent hold; wallet errors keep their certainty.",
-      "test": "test/safe-batch.test.tsx"
     }
   ]
 }
