@@ -865,6 +865,36 @@ describe("reviewed Relayr authorization hook", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("signs, saves and publishes nothing once the authorization lock passed to another tab", async () => {
+    const { review, hooks } = await freshHarness();
+    review.answerReviews(async () => true);
+    const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: async (name: string, _options: unknown, callback: (lock: object) => unknown) =>
+          callback({
+            name,
+            mode: "exclusive",
+            signal: AbortSignal.abort(),
+            held: async () => false,
+            assertHeld: async () => {
+              throw new LockLostError(name);
+            },
+          }),
+      },
+    });
+    try {
+      const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+      await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow();
+      expect(mocks.signTypedData).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem("revnet:transaction-activities:v1") ?? "[]").toBe("[]");
+    } finally {
+      Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+    }
+  });
+
   it.each(["not json", "{}", "[null]"])(
     "blocks signing and direct fallback when the saved activity journal is invalid: %s",
     async (corrupt) => {
@@ -2045,6 +2075,39 @@ describe("reviewed Relayr payment hook", () => {
         expect.objectContaining({ chainId: 1, transactionUuid: TX_UUIDS[0] }),
       ],
     });
+  });
+
+  it("marks no payment submitted and opens no wallet once the payment lock passed to another tab", async () => {
+    const { result } = await quotedPayment();
+    const before = window.localStorage.getItem("revnet:transaction-activities:v1");
+    const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        // Only the payment's own lock passed on; core's write holds are still this tab's.
+        request: async (name: string, _options: unknown, callback: (lock: object) => unknown) => {
+          const lost = name.startsWith("revnet:relayr:");
+          return callback({
+            name,
+            mode: "exclusive",
+            signal: lost ? AbortSignal.abort() : new AbortController().signal,
+            held: async () => !lost,
+            assertHeld: async () => {
+              if (lost) throw new LockLostError(name);
+            },
+          });
+        },
+      },
+    });
+    try {
+      await act(async () => {
+        await expect(result.current.sendRelayrTx(payment())).rejects.toThrow();
+      });
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem("revnet:transaction-activities:v1")).toBe(before);
+    } finally {
+      Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+    }
   });
 
   it("switches a wallet parked on another chain to the funding chain before it pays", async () => {

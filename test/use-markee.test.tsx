@@ -647,6 +647,29 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
     expect(result.current.error ?? "").not.toContain("Web Locks");
     expect(mocks.write).toHaveBeenCalledOnce();
   });
+  it("writes nothing to the Markee journal once its lock passed to another tab", async () => {
+    const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: async (name: string, _options: unknown, callback: (lock: object) => unknown) =>
+          callback({
+            name,
+            mode: "exclusive",
+            signal: AbortSignal.abort(),
+            held: async () => false,
+            assertHeld: async () => {
+              throw new LockLostError(name);
+            },
+          }),
+      },
+    });
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    expect(localStorage.getItem("revnet:markee-rent:recovery:v1")).toBeNull();
+    expect(localStorage.getItem("revnet:markee-rent:board:v1")).toBeNull();
+  });
   it("refuses a lifecycle already owned by another tab", async () => {
     Object.defineProperty(navigator, "locks", {
       configurable: true,

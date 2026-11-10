@@ -1,5 +1,6 @@
 "use client";
 
+import { fence, type TabLocks } from "@/lib/fence";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
 import type { MetadataSourceGuard } from "@/lib/project-metadata-write";
 import { ReviewRefusal } from "@/lib/review-refusal";
@@ -303,6 +304,19 @@ export function updateTransactionActivity(
     { ...current, ...guardedPatch, updatedAt: Date.now() },
     ...snapshot.filter((row) => row.id !== id),
   ]);
+}
+
+/**
+ * The activity journal as one lock's holder writes it. The store is global and also written
+ * outside any lock (a sent write's row), so work under a lock takes its own bound journal: each
+ * write checks the lock first, and a tab whose lease passed on writes nothing.
+ */
+export function activityJournal(locks: TabLocks) {
+  return {
+    record: fence(locks, recordTransactionActivity),
+    update: fence(locks, updateTransactionActivity),
+    restoreUnsent: fence(locks, restoreUnsentPaymentActivity),
+  };
 }
 
 /** Restore only the exact payment marker whose wallet invocation was refused. */

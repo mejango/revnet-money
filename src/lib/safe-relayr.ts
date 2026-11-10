@@ -418,7 +418,8 @@ export function safeRelayrController(
                 (accountLock) => {
                   if (!accountLock)
                     throw new Error("Another authorization is being prepared for this account.");
-                  return run();
+                  // Core checks both before each save, signature and wallet request.
+                  return run([lock, accountLock]);
                 },
               );
             },

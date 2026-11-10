@@ -7,6 +7,7 @@ import {
   SafeProposalPendingError,
   useReviewedAction,
 } from "@/hooks/useReviewedAction";
+import { fence, type TabLocks } from "@/lib/fence";
 import { confirmCheckedIt, confirmHeldWriteExit, confirmUnreadableExit } from "@/lib/flow-choice";
 import * as markee from "@/lib/markee";
 import { recoverMarkeeSubmission } from "@/lib/markee-recovery";
@@ -123,8 +124,10 @@ function loadRecovery(): Recovery | undefined {
 /** A sent step whose confirm closed before its result: the saved hash is checked, never resent. */
 export const MARKEE_SENT_UNCHECKED = "Sent. Check its result here before sending again.";
 
-function saveRecovery(value: Recovery) {
+/** Saves the Markee journal, and the board it just created, when it created one. */
+function saveRecovery(value: Recovery, createdBoard?: Address) {
   requireTransactionActivityPersistence();
+  if (createdBoard) window.localStorage.setItem(markee.MARKEE_BOARD_KEY, createdBoard);
   window.localStorage.setItem(RECOVERY_KEY, JSON.stringify(value));
 }
 
@@ -203,6 +206,9 @@ export function useMarkee(initialBoardAddress?: Address) {
   }, [refresh]);
 
   const { run, following, dismiss } = useReviewedAction();
+  /** The Markee lock `act` holds: every journal and activity write checks it first. */
+  const held = useRef<TabLocks>([]);
+  const write = (journal: () => void) => fence(held.current, journal)();
   /** The Markee journal's record of the step at the wallet boundary, before the wallet opens. */
   const beforeWallet = async () => {
     const current = active.current;
@@ -212,19 +218,21 @@ export function useMarkee(initialBoardAddress?: Address) {
         "Another Markee submission is already held. Check it before proceeding.",
       );
     current.recovery.pending = current.pending;
-    saveRecovery(current.recovery);
-    recordTransactionActivity({
-      id: current.pending.id,
-      hash: undefined,
-      executionHash: undefined,
-      createdAt: Date.now(),
-      kind: "direct",
-      account: current.recovery.account,
-      chainId: markee.MARKEE_CHAIN_ID,
-      title: "Markee Rent",
-      status: "pending",
-      manualVerificationRequired: true,
-      message: "Wallet submission may be in progress. Check its result before sending again.",
+    await write(() => {
+      saveRecovery(current.recovery);
+      recordTransactionActivity({
+        id: current.pending.id,
+        hash: undefined,
+        executionHash: undefined,
+        createdAt: Date.now(),
+        kind: "direct",
+        account: current.recovery.account,
+        chainId: markee.MARKEE_CHAIN_ID,
+        title: "Markee Rent",
+        status: "pending",
+        manualVerificationRequired: true,
+        message: "Wallet submission may be in progress. Check its result before sending again.",
+      });
     });
     requireTransactionActivityPersistence();
     setPending(true);
@@ -236,11 +244,13 @@ export function useMarkee(initialBoardAddress?: Address) {
     const saved = loadRecovery();
     if (saved?.pending?.id !== current.pending.id || saved.pending.hash) return;
     delete saved.pending;
-    saveRecovery(saved);
-    updateTransactionActivity(current.pending.id, {
-      status: "failed",
-      manualVerificationRequired: false,
-      message: "Nothing was sent.",
+    await write(() => {
+      saveRecovery(saved);
+      updateTransactionActivity(current.pending.id, {
+        status: "failed",
+        manualVerificationRequired: false,
+        message: "Nothing was sent.",
+      });
     });
     setPending(false);
   };
@@ -289,7 +299,7 @@ export function useMarkee(initialBoardAddress?: Address) {
    * Saves a verified step's result and lets the submission go: persisted before any later step,
    * and only while the journal still holds exactly this step.
    */
-  const completeStep = (
+  const completeStep = async (
     recovery: Recovery,
     step: Pending,
     effects: Pick<Recovery, "board" | "messageAddress">,
@@ -304,18 +314,18 @@ export function useMarkee(initialBoardAddress?: Address) {
     )
       throw new Error("The saved Markee submission changed during verification.");
     Object.assign(recovery, effects);
-    if (step.kind === "board" && recovery.board) {
-      window.localStorage.setItem(markee.MARKEE_BOARD_KEY, recovery.board);
-      setBoardAddress(recovery.board);
-    }
+    const createdBoard = step.kind === "board" ? recovery.board : undefined;
     delete recovery.pending;
-    saveRecovery(recovery);
-    if (hash) releaseTransactionActivityVerification(hash, "Markee onchain result verified.");
-    updateTransactionActivity(step.id, {
-      status: "success",
-      manualVerificationRequired: false,
-      message: "Markee onchain result verified.",
+    await write(() => {
+      saveRecovery(recovery, createdBoard);
+      if (hash) releaseTransactionActivityVerification(hash, "Markee onchain result verified.");
+      updateTransactionActivity(step.id, {
+        status: "success",
+        manualVerificationRequired: false,
+        message: "Markee onchain result verified.",
+      });
     });
+    if (createdBoard) setBoardAddress(createdBoard);
     setPending(false);
   };
 
@@ -365,23 +375,25 @@ export function useMarkee(initialBoardAddress?: Address) {
     )
       throw new Error("The receipt does not match the submitted transaction.");
     if (receipt.status !== "success") {
-      updateTransactionActivity(step.id, {
-        status: "failed",
-        manualVerificationRequired: false,
-        message: "Markee transaction reverted.",
-      });
-      if (activity)
-        updateTransactionActivity(activity.id, {
+      delete recovery.pending;
+      await write(() => {
+        updateTransactionActivity(step.id, {
           status: "failed",
           manualVerificationRequired: false,
           message: "Markee transaction reverted.",
         });
-      delete recovery.pending;
-      saveRecovery(recovery);
+        if (activity)
+          updateTransactionActivity(activity.id, {
+            status: "failed",
+            manualVerificationRequired: false,
+            message: "Markee transaction reverted.",
+          });
+        saveRecovery(recovery);
+      });
       setPending(false);
       throw new Error("The Markee transaction reverted. It can be reviewed again.");
     }
-    completeStep(recovery, step, await markeeEffects(recovery, step, receipt));
+    await completeStep(recovery, step, await markeeEffects(recovery, step, receipt));
   };
 
   type Call = {
@@ -419,6 +431,8 @@ export function useMarkee(initialBoardAddress?: Address) {
     const result = await run({
       account: recovery.account,
       title: "Markee Rent",
+      // Core checks the Markee lock before the wallet opens.
+      locks: held.current,
       reverify: async () => {
         if (!active.current) throw new ReviewRefusal("Markee action is unavailable.");
         await active.current.guard();
@@ -426,12 +440,14 @@ export function useMarkee(initialBoardAddress?: Address) {
       beforeWallet,
       onUnsent,
       // The hash is the Markee journal's before its receipt is awaited.
-      onSubmitted: (_call, _step, hash) => {
+      onSubmitted: async (_call, _step, hash) => {
         step.hash = hash;
         recovery.pending = step;
-        saveRecovery(recovery);
-        updateTransactionActivity(step.id, {
-          message: "Submitted. Verifying the exact Markee result.",
+        await write(() => {
+          saveRecovery(recovery);
+          updateTransactionActivity(step.id, {
+            message: "Submitted. Verifying the exact Markee result.",
+          });
         });
       },
       calls: [
@@ -465,6 +481,7 @@ export function useMarkee(initialBoardAddress?: Address) {
           throw new Error(
             "Another tab is handling a Markee action. Finish or check that action first.",
           );
+        held.current = [lock];
         setStatus((await run()) ?? "Verified");
         await refresh();
       });
@@ -473,6 +490,7 @@ export function useMarkee(initialBoardAddress?: Address) {
       setStatus("Action needs attention");
     } finally {
       running.current = false;
+      held.current = [];
       active.current = undefined;
       setBusy(false);
     }
@@ -892,18 +910,20 @@ export function useMarkee(initialBoardAddress?: Address) {
     };
   };
   /** The submission ended without a result to save: the journal lets it go. */
-  const letGo = (step: Pending, line: string) => {
-    const current = loadRecovery();
-    if (current?.pending && configurationKey(current.pending) === configurationKey(step)) {
-      delete current.pending;
-      saveRecovery(current);
-    }
-    updateTransactionActivity(step.id, {
-      status: "failed",
-      manualVerificationRequired: false,
-      message: line,
+  const letGo = async (step: Pending, line: string) => {
+    await write(() => {
+      const current = loadRecovery();
+      if (current?.pending && configurationKey(current.pending) === configurationKey(step)) {
+        delete current.pending;
+        saveRecovery(current);
+      }
+      updateTransactionActivity(step.id, {
+        status: "failed",
+        manualVerificationRequired: false,
+        message: line,
+      });
+      if (step.hash) settleTransactionActivityFailure(step.hash, line);
     });
-    if (step.hash) settleTransactionActivityFailure(step.hash, line);
     setPending(false);
   };
   /**
@@ -919,7 +939,7 @@ export function useMarkee(initialBoardAddress?: Address) {
   ): Promise<string> => {
     if (!client) throw new Error("Base RPC unavailable.");
     if (outcome.status === "none") {
-      letGo(step, HELD_RELEASED_LINE);
+      await letGo(step, HELD_RELEASED_LINE);
       return HELD_RELEASED_LINE;
     }
     if (outcome.status === "held") {
@@ -936,12 +956,12 @@ export function useMarkee(initialBoardAddress?: Address) {
               : HELD_RELEASED_ELSEWHERE_LINE,
         );
       await savedAttempts.retire(attempt, { by: "exit" });
-      letGo(step, HELD_RELEASED_LINE);
+      await letGo(step, HELD_RELEASED_LINE);
       return HELD_RELEASED_LINE;
     }
     if (outcome.status === "done" && outcome.result === "failed") {
       await savedAttempts.retire(attempt, { by: "settled", hash: outcome.hash });
-      letGo(step, "Markee transaction reverted.");
+      await letGo(step, "Markee transaction reverted.");
       throw new Error("The Markee transaction reverted. It can be reviewed again.");
     }
     if (outcome.status === "done") {
@@ -950,11 +970,11 @@ export function useMarkee(initialBoardAddress?: Address) {
         const current = loadRecovery();
         if (outcome.hash && current?.pending && !current.pending.hash) {
           current.pending.hash = outcome.hash;
-          saveRecovery(current);
+          await write(() => saveRecovery(current));
         }
         throw new Error(SETTLED_UNVERIFIED);
       }
-      completeStep(saved, step, outcome.value, step.hash ?? outcome.hash);
+      await completeStep(saved, step, outcome.value, step.hash ?? outcome.hash);
       await savedAttempts.retire(attempt, { by: "settled", hash: outcome.hash });
       return "Verified";
     }
@@ -963,7 +983,7 @@ export function useMarkee(initialBoardAddress?: Address) {
     if (!retired.retired && retired.reason === "unreadable" && (await confirmUnreadableExit()))
       retired = await savedAttempts.retire(attempt, { by: "check", outcome, force: "unreadable" });
     if (!retired.retired) throw new Error(outcome.line);
-    letGo(step, HELD_RELEASED_LINE);
+    await letGo(step, HELD_RELEASED_LINE);
     return HELD_RELEASED_LINE;
   };
   const recover = (providedHash?: string) =>

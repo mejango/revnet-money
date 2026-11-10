@@ -323,6 +323,58 @@ describe("durable multichain batch journal", () => {
   );
 });
 
+/** Web Locks whose lock another tab took over: its handle reads as lost. */
+async function lostLocks() {
+  const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
+  Object.defineProperty(navigator, "locks", {
+    configurable: true,
+    value: {
+      request: async (name: string, _options: unknown, callback: (lock: object) => unknown) =>
+        callback({
+          name,
+          mode: "exclusive",
+          signal: AbortSignal.abort(),
+          held: async () => false,
+          assertHeld: async () => {
+            throw new LockLostError(name);
+          },
+        }),
+    },
+  });
+}
+
+describe("a batch whose lock passed to another tab", () => {
+  afterEach(() => {
+    Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+  });
+  it("leaves a saved routing draft as it was on a re-check", async () => {
+    const draft = createMultichainBatch(ACCOUNT, "routing", "Routing", [retryCall(1)], "relayr");
+    draft.rounds[0] = {
+      ...draft.rounds[0],
+      state: "quoted",
+      bundleUuid: "quote",
+      transactionUuids: ["tx"],
+    };
+    saveMultichainBatch(draft);
+    mocks.releasedUnpaid.mockReturnValue(true);
+    await lostLocks();
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await result.current.recheckPendingRoutingBatch("routing");
+    });
+    expect(readMultichainBatches()[0].rounds[0]).toMatchObject({ state: "quoted" });
+  });
+  it("saves and sends nothing for a fresh direct batch", async () => {
+    await lostLocks();
+    const { result } = renderHook(() => useMultichainBatch());
+    await expect(
+      result.current.runBatch({ scope: "destination", label: "Distribute", calls: [call(1)] }),
+    ).rejects.toThrow();
+    expect(readMultichainBatches()).toEqual([]);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+});
+
 describe("read-only saved routing re-check", () => {
   const quotedDraft = () => {
     const draft = createMultichainBatch(ACCOUNT, "routing", "Routing", [retryCall(1)], "relayr");
