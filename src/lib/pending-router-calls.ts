@@ -1,5 +1,5 @@
 import { NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
-import { gasWithHeadroom } from "@bananapus/nana-sdk-core/review";
+import { gasWithHeadroom, TRANSACTION_GAS_CAP } from "@bananapus/nana-sdk-core/review";
 import {
   decodeEventLog,
   decodeFunctionData,
@@ -423,7 +423,7 @@ export async function readPendingRouterPayment(
   if (typeof block.gasLimit !== "bigint" || block.gasLimit <= 0n) {
     throw new Error("The chain's executable transaction gas limit is unavailable.");
   }
-  const gasCap = block.gasLimit < 16_777_216n ? block.gasLimit : 16_777_216n;
+  const gasCap = block.gasLimit < TRANSACTION_GAS_CAP ? block.gasLimit : TRANSACTION_GAS_CAP;
   let amountLabel = "Amount unavailable";
   if (isAddressEqual(call.token, NATIVE_TOKEN)) amountLabel = `${formatUnits(call.amount, 18)} ETH`;
   else {

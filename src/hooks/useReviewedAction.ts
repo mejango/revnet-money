@@ -213,12 +213,6 @@ export function useReviewedAction() {
      * and running the action again continues from the next step.
      */
     settledStep: runner.settled && !runner.settled.finished ? runner.settled.step : null,
-    /** In review, simulating, signing or awaiting a receipt. */
-    busy:
-      runner.phase === "review" ||
-      runner.phase === "simulating" ||
-      runner.phase === "signing" ||
-      runner.phase === "receipt",
   };
 }
 

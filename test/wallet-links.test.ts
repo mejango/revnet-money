@@ -1,4 +1,5 @@
-import { isMobileDevice, mobileWalletLinks, walletDappUrl } from "@/lib/walletLinks";
+import { mobileWalletLinks, walletDappUrl } from "@/lib/walletLinks";
+import { isMobileDevice } from "@bananapus/nana-sdk-core/review/react";
 import { describe, expect, it } from "vitest";
 
 const CID = "bafybeif2pn5x3mxfhin4cflqyeu3spqlanc3r6nutyufh7ijw54gggtdra";

@@ -177,11 +177,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
   const sale = useReviewedAction();
   const [hash, setHash] = useState<`0x${string}`>();
-  const isWriteLoading =
-    sale.phase === "review" || sale.phase === "simulating" || sale.phase === "signing";
-  const isTxLoading = sale.phase === "receipt";
+  const isTxLoading = sale.status === "receipt";
+  const isWriteLoading = sale.busy && !isTxLoading;
   // Only the sale's own hash is success: a Safe that ran just the approval leaves the sale to send.
-  const isSuccess = sale.phase === "done" && !!hash;
+  const isSuccess = sale.status === "done" && !!hash;
   const isTxUnconfirmed = sale.phase === "proposed" && !!sale.held?.exit;
   // const { data: redeemQuote } = useTokenCashOutQuoteEth(redeemAmountBN, {
   //   chainId: selectedSucker?.peerChainId as JBChainId,
@@ -337,11 +336,11 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
   // A finished sale spent the allowances and the balance it read.
   useEffect(() => {
-    if (sale.phase !== "done") return;
+    if (sale.status !== "done") return;
     void refetchErc20Allowance();
     void refetchRouterAllowance();
     void refetchClaimedBalance();
-  }, [sale.phase, refetchErc20Allowance, refetchRouterAllowance, refetchClaimedBalance]);
+  }, [sale.status, refetchErc20Allowance, refetchRouterAllowance, refetchClaimedBalance]);
 
   // A cleared approval stops being "needed", so the queue is built from the
   // approvals this sale ever required — otherwise a finished step disappears

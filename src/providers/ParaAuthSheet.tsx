@@ -5,9 +5,9 @@ import { ViewAsForm } from "@/components/ViewAsForm";
 import { Button } from "@/components/ui/button";
 import { X } from "@/components/ui/icons";
 import { Input } from "@/components/ui/input";
-import { useMobileWallet } from "@/hooks/useMobileWallet";
 import { offerableWallets } from "@/lib/wallet-list";
 import { mobileWalletLinks, walletDappUrl } from "@/lib/walletLinks";
+import { useMobileWallet } from "@bananapus/nana-sdk-core/review/react";
 import {
   useAuthenticateWithEmailOrPhone,
   useAuthenticateWithOAuth,

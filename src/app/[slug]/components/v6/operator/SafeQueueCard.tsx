@@ -6,6 +6,7 @@ import {
   type SafeRelayrPhase,
   type SafeRelayrProgress,
   type SafeRelayrResult,
+  type SafeRelayrView,
 } from "@bananapus/nana-sdk-core/review/safe-relayr";
 
 import { EthereumAddress } from "@/components/EthereumAddress";
@@ -25,6 +26,7 @@ import {
   useGetRelayrTxQuote,
   useSendRelayrTx,
   waitForRelayrBundle,
+  watchSafeBundleView,
   type ReviewedRelayrRequest,
 } from "@/hooks/useReviewedRelayr";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
@@ -628,6 +630,27 @@ export function SafeQueueCard({
     });
   };
 
+  /** Shows a saved bundle's phase and each changed row from its controller view, until stopped. */
+  const showBundle = (activityId: string, generation: number) => {
+    let shown: SafeRelayrView | null = null;
+    return watchSafeBundleView(config, activityId, (view) => {
+      const last = shown;
+      shown = view;
+      if (view.phase && view.phase !== last?.phase)
+        updateBatchProgress({ type: "phase", phase: view.phase }, generation);
+      const session = view.session;
+      if (!session) return;
+      for (const [index, row] of Object.entries(view.executions)) {
+        const execution = session.executions[Number(index)];
+        if (execution && row !== last?.executions[Number(index)])
+          updateBatchProgress(
+            { type: "execution", session, index: Number(index), execution, ...row },
+            generation,
+          );
+      }
+    });
+  };
+
   const prepareAll = async (rows: BatchRow[]) => {
     if (!address || payingBatch.current || rows.some(({ row }) => rowBlocked(row))) return;
     const account = address;
@@ -727,12 +750,9 @@ export function SafeQueueCard({
     setBatch((current) =>
       current ? { ...current, preparing: true, phase: undefined, error: null } : current,
     );
+    const stopShowing = showBundle(recovery.activityId, generation);
     try {
-      const checked = await checkRelayrSession(
-        recovery.activityId,
-        (progress) => updateBatchProgress(progress, generation),
-        batchAbort.current?.signal,
-      );
+      const checked = await checkRelayrSession(recovery.activityId, batchAbort.current?.signal);
       if (!current()) return;
       if (
         checked?.state === "released" &&
@@ -788,6 +808,7 @@ export function SafeQueueCard({
             : batch,
         );
     } finally {
+      stopShowing();
       if (current()) setBatch((batch) => (batch ? { ...batch, preparing: false } : batch));
     }
   };
@@ -818,19 +839,17 @@ export function SafeQueueCard({
       error: null,
       message: "Re-checking the Safe transactions…",
     });
+    const stopShowing = showBundle(`relayr:${quote.bundle_uuid}`, generation);
     try {
       // sendRelayrTx checks the live account, quote, and Safe execution again before payment.
       await sendRelayrTx(payment, {
-        onProgress: (progress) => updateBatchProgress(progress, generation),
         onStatus: (_index, state, execution) =>
           setRowStatus(
             execution.entry.chain,
             state === "ready" ? "Ready" : state === "failed" ? "Check failed" : "Re-checking…",
           ),
       });
-      await waitForRelayrBundle(quote.bundle_uuid, undefined, (progress) =>
-        updateBatchProgress(progress, generation),
-      );
+      await waitForRelayrBundle(quote.bundle_uuid);
       rows.forEach(({ row }) => setRowStatus(row.chainId, "Executed"));
       resetRelayr();
       update({ done: true, message: `Executed ${rows.length} Safe transactions.` });
@@ -843,6 +862,7 @@ export function SafeQueueCard({
         ...(cause instanceof RelayrRecoveryError ? { quote: null, paymentChainId: null } : {}),
       });
     } finally {
+      stopShowing();
       payingBatch.current = false;
       setBusy(null);
       update({ running: false });

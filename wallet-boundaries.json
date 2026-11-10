@@ -17,16 +17,37 @@
     },
     {
       "file": "src/app/[slug]/components/v6/operator/SafeQueueCard.tsx",
-      "line": 964,
+      "line": 984,
       "api": "sendTransaction",
       "boundary": "The reviewed Safe execution's own wallet send, wrapped so the queue rechecks its live transaction, then the reviewed account, the wallet connection and view-as at the wallet, and journals the send under the reviewed account; core reviews, simulates and holds it first.",
       "test": "test/safe-queue-card.test.tsx"
     },
     {
       "file": "src/components/TransactionReviewProvider.tsx",
-      "line": 138,
+      "line": 81,
       "api": "registerReviewHandler",
       "boundary": "The one review dialog answers core's prompts: it returns core's confirmation for the model it showed, or null. It never signs or sends.",
+      "test": "test/transaction-review-provider.test.tsx"
+    },
+    {
+      "file": "src/components/TransactionReviewProvider.tsx",
+      "line": 82,
+      "api": "request",
+      "boundary": "Core's review dialog queue (createReviewQueue) shows a review; it resolves the person's answer and never signs, sends or calls a wallet RPC.",
+      "test": "test/transaction-review-provider.test.tsx"
+    },
+    {
+      "file": "src/components/TransactionReviewProvider.tsx",
+      "line": 94,
+      "api": "request",
+      "boundary": "Core's review dialog queue (createReviewQueue) shows a flow choice; it resolves the person's answer and never signs, sends or calls a wallet RPC.",
+      "test": "test/transaction-review-provider.test.tsx"
+    },
+    {
+      "file": "src/components/TransactionReviewProvider.tsx",
+      "line": 104,
+      "api": "request",
+      "boundary": "Core's review dialog queue (createReviewQueue) shows a funding chain choice; it resolves the person's answer and never signs, sends or calls a wallet RPC.",
       "test": "test/transaction-review-provider.test.tsx"
     },
     {
@@ -52,14 +73,14 @@
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 308,
+      "line": 310,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/reviewed-relayr-hooks.test.tsx"
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2669,
+      "line": 2658,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/reviewed-relayr-hooks.test.tsx"

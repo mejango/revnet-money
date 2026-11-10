@@ -409,11 +409,10 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   useEffect(() => {
     if (borrowStatus === "idle") setGrantsPermission(false);
   }, [borrowStatus]);
-  const signing = (runner: ReviewedAction) =>
-    runner.phase === "review" || runner.phase === "simulating" || runner.phase === "signing";
+  const signing = (runner: ReviewedAction) => runner.busy && runner.status !== "receipt";
   // A Safe proposal reads as pending until its Safe executes it, unless its result can't be known.
   const confirming = (runner: ReviewedAction) =>
-    runner.phase === "receipt" || (runner.phase === "proposed" && !runner.held?.exit);
+    runner.status === "receipt" || (runner.phase === "proposed" && !runner.held?.exit);
   const isWriteLoading = signing(borrow);
 
   // Transaction status

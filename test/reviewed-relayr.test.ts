@@ -204,9 +204,9 @@ describe("Relayr destination transaction tracking", () => {
     const onUpdate = vi.fn();
     const onResults = vi.fn();
     respond(response);
-    await expect(
-      relayr.waitForRelayrBundle(BUNDLE_UUID, onUpdate, undefined, onResults),
-    ).resolves.toEqual(response);
+    await expect(relayr.waitForRelayrBundle(BUNDLE_UUID, onUpdate, onResults)).resolves.toEqual(
+      response,
+    );
     expect(onUpdate).toHaveBeenCalledWith(response);
     expect(onResults.mock.calls).toEqual([
       [[{ transactionUuid: "transaction", hash: HASH, status: "submitted" }]],
@@ -283,10 +283,10 @@ describe("Relayr destination transaction tracking", () => {
       results[0].transactionUuid = "unrelated";
       throw new Error("display failed");
     });
-    const first = relayr.waitForRelayrBundle(BUNDLE_UUID, undefined, undefined, unsafe);
+    const first = relayr.waitForRelayrBundle(BUNDLE_UUID, undefined, unsafe);
     await vi.advanceTimersByTimeAsync(0);
     const observer = vi.fn<(results: readonly RelayrDestinationProgress[]) => void>();
-    const second = relayr.waitForRelayrBundle(BUNDLE_UUID, undefined, undefined, observer);
+    const second = relayr.waitForRelayrBundle(BUNDLE_UUID, undefined, observer);
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(observer).toHaveBeenCalledTimes(1);
     expect(observer.mock.lastCall![0].filter((row) => row.status === "submitted")).toHaveLength(12);
@@ -336,9 +336,9 @@ describe("Relayr destination transaction tracking", () => {
       });
     respond();
     const observer = vi.fn();
-    await expect(
-      relayr.waitForRelayrBundle(BUNDLE_UUID, undefined, undefined, observer),
-    ).rejects.toThrow(/incomplete recipient/);
+    await expect(relayr.waitForRelayrBundle(BUNDLE_UUID, undefined, observer)).rejects.toThrow(
+      /incomplete recipient/,
+    );
     expect(observer.mock.calls).toEqual([
       [[{ transactionUuid: "transaction", hash: HASH, status: "submitted" }]],
     ]);
@@ -384,9 +384,9 @@ describe("Relayr destination transaction tracking", () => {
     respond(response);
     const onUpdate = vi.fn();
     const onResults = vi.fn();
-    await expect(
-      relayr.waitForRelayrBundle(BUNDLE_UUID, onUpdate, undefined, onResults),
-    ).rejects.toThrow(/does not match/);
+    await expect(relayr.waitForRelayrBundle(BUNDLE_UUID, onUpdate, onResults)).rejects.toThrow(
+      /does not match/,
+    );
     expect(onUpdate).not.toHaveBeenCalled();
     expect(onResults).not.toHaveBeenCalled();
     expect(activity.transactionActivitySnapshot()[0]).toMatchObject({

@@ -125,6 +125,7 @@ import {
   type SafeRelayrRecovery,
   type SafeRelayrResult,
   type SafeRelayrStatus,
+  type SafeRelayrView,
 } from "@bananapus/nana-sdk-core/review/safe-relayr";
 import type { ExpectedPayoutReceipt, ExpectedReservedReceipt } from "@bananapus/nana-sdk-core/v6";
 import { useCallback, useEffect, useState } from "react";
@@ -227,8 +228,6 @@ const bundleInflight = new Map<string, Promise<RelayrGetBundleResponse>>();
 const paymentInflight = new Set<string>();
 const fundedBundles = new Set<string>();
 const bundleListeners = new Map<string, Set<(bundle: RelayrGetBundleResponse) => void>>();
-const bundleProgressListeners = new Map<string, Set<(progress: SafeRelayrProgress) => void>>();
-const bundleProgressSnapshots = new Map<string, Map<string, SafeRelayrProgress>>();
 const bundleResultListeners = new Map<string, Set<DestinationResultsListener>>();
 const bundleResultSnapshots = new Map<string, readonly RelayrDestinationProgress[]>();
 const safeBundleControllers = new Map<string, ReturnType<typeof safeRelayrController>>();
@@ -258,43 +257,46 @@ function notifyProgress<T>(listener: (progress: T) => void, progress: T) {
   }
 }
 
-function subscribeSafeProgress(key: string, listener?: (progress: SafeRelayrProgress) => void) {
-  const listeners =
-    bundleProgressListeners.get(key) ?? new Set<(progress: SafeRelayrProgress) => void>();
-  if (listener) listeners.add(listener);
-  bundleProgressListeners.set(key, listeners);
-  // A reopened dialog needs the latest displayed state even when the shared
-  // controller correctly suppresses duplicate proof/progress notifications.
-  if (listener)
-    for (const progress of bundleProgressSnapshots.get(key)?.values() ?? [])
-      notifyProgress(listener, progress);
-  return () => {
-    if (listener) listeners.delete(listener);
-  };
-}
-
-function safeBundleController(
-  config: Parameters<typeof safeRelayrController>[0],
-  key: string,
-  pays = false,
-) {
+/**
+ * One controller per bundle, so its view keeps every row from checking through paying and
+ * watching. Only `fund` pays, and only sendRelayrTx calls it, after its payment review.
+ */
+function safeBundleController(config: Parameters<typeof safeRelayrController>[0], key: string) {
   let controller = safeBundleControllers.get(key);
-  // Funding makes a paying controller. Reuse that SDK instance for subsequent
-  // checks/watching so its verified row progress does not restart.
-  if (!controller || pays) {
-    controller = safeRelayrController(config, pays, (progress) => {
-      const snapshots = bundleProgressSnapshots.get(key) ?? new Map<string, SafeRelayrProgress>();
-      snapshots.set(
-        progress.type === "phase" ? "phase" : `execution:${progress.index}`,
-        structuredClone(progress),
-      );
-      bundleProgressSnapshots.set(key, snapshots);
-      for (const listener of bundleProgressListeners.get(key) ?? [])
-        notifyProgress(listener, progress);
-    });
+  if (!controller) {
+    controller = safeRelayrController(config, true);
     safeBundleControllers.set(key, controller);
   }
   return controller;
+}
+
+/** The bundle key of a saved Safe session's activity. */
+function safeSessionKey(activity: TransactionActivity | undefined) {
+  const session = activity && safeRelayrSession(activity);
+  return session ? (session.bundleUuid ?? session.id) : undefined;
+}
+
+/**
+ * Shows a saved Safe session's controller view now and on each change, until the returned stop.
+ * A reopened dialog gets the latest rows even when the controller suppresses repeats.
+ */
+export function watchSafeBundleView(
+  config: Parameters<typeof safeRelayrController>[0],
+  activityId: string,
+  show: (view: SafeRelayrView) => void,
+) {
+  const key = safeSessionKey(refreshTransactionActivities().find((row) => row.id === activityId));
+  if (!key) return () => undefined;
+  const controller = safeBundleController(config, key);
+  const tell = () => {
+    try {
+      show(controller.getState());
+    } catch {
+      // Display listeners cannot interrupt reconciliation or other observers.
+    }
+  };
+  tell();
+  return controller.subscribe(tell);
 }
 
 const authorizingAccounts = new Set<string>();
@@ -1092,16 +1094,14 @@ function savedSessionOf(account: Address, callKey: string): TransactionActivity 
  */
 export async function checkRelayrSession(
   id: string,
-  onProgress?: (progress: SafeRelayrProgress) => void,
   signal?: AbortSignal,
 ): Promise<SafeRelayrResult | undefined> {
   const activity = refreshTransactionActivities().find((row) => row.id === id);
   if (!activity) return;
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
   const safeSession = safeRelayrSession(activity);
-  if (safeSession) {
-    const key = safeSession.bundleUuid ?? safeSession.id;
-    const unsubscribe = subscribeSafeProgress(key, onProgress);
+  const key = safeSessionKey(activity);
+  if (safeSession && key) {
     try {
       const result = await safeBundleController(wagmiConfig, key).check({
         signal,
@@ -1117,8 +1117,6 @@ export async function checkRelayrSession(
       return result;
     } catch (cause) {
       throw safeRecoveryError(cause);
-    } finally {
-      unsubscribe();
     }
   }
   const verdict = await savedRequestsVerdict(wagmiConfig, activity);
@@ -1605,18 +1603,15 @@ function bundleChainStates(bundle: RelayrGetBundleResponse) {
 export async function waitForRelayrBundle(
   bundleUuid: string,
   onUpdate?: (bundle: RelayrGetBundleResponse) => void,
-  onProgress?: (progress: SafeRelayrProgress) => void,
   onResults?: DestinationResultsListener,
 ): Promise<RelayrGetBundleResponse> {
   const listeners =
     bundleListeners.get(bundleUuid) ?? new Set<(bundle: RelayrGetBundleResponse) => void>();
   if (onUpdate) listeners.add(onUpdate);
   bundleListeners.set(bundleUuid, listeners);
-  const unsubscribeProgress = subscribeSafeProgress(bundleUuid, onProgress);
   const unsubscribeResults = subscribeDestinationResults(bundleUuid, onResults);
   const unsubscribe = () => {
     if (onUpdate) listeners.delete(onUpdate);
-    unsubscribeProgress();
     unsubscribeResults();
   };
   const notify = (bundle: RelayrGetBundleResponse) =>
@@ -1764,8 +1759,6 @@ export async function waitForRelayrBundle(
     .finally(() => {
       bundleInflight.delete(bundleUuid);
       bundleListeners.delete(bundleUuid);
-      bundleProgressListeners.delete(bundleUuid);
-      bundleProgressSnapshots.delete(bundleUuid);
       bundleResultListeners.delete(bundleUuid);
       bundleResultSnapshots.delete(bundleUuid);
       safeBundleControllers.delete(bundleUuid);
@@ -2330,7 +2323,6 @@ export function useSendRelayrTx() {
       options?: {
         onMessage?: (message: string) => void;
         onStatus?: SafeRelayrStatus;
-        onProgress?: (progress: SafeRelayrProgress) => void;
       },
     ): Promise<Hex> => {
       requireNoViewAs();
@@ -2365,9 +2357,8 @@ export function useSendRelayrTx() {
       const activity = refreshTransactionActivities().find((row) => row.id === activityId);
       const safeSession = activity && safeRelayrSession(activity);
       if (safeSession) {
-        const unsubscribe = subscribeSafeProgress(remembered.bundleUuid, options?.onProgress);
         try {
-          const result = await safeBundleController(config, remembered.bundleUuid, true).fund({
+          const result = await safeBundleController(config, remembered.bundleUuid).fund({
             account: address,
             sessionId: safeSession.id,
             paymentChainId: payment.chain,
@@ -2382,8 +2373,6 @@ export function useSendRelayrTx() {
           return hash;
         } catch (cause) {
           throw safeRecoveryError(cause);
-        } finally {
-          unsubscribe();
         }
       }
       const submit = async () => {

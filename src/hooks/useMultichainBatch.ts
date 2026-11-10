@@ -941,7 +941,7 @@ export function useMultichainBatch() {
               );
               reportCalls();
               const bundle = input.onCallProgress
-                ? await waitForRelayrBundle(round.bundleUuid, undefined, undefined, (results) => {
+                ? await waitForRelayrBundle(round.bundleUuid, undefined, (results) => {
                     for (const [position, index] of round.indices.entries()) {
                       const id = round.transactionUuids?.[position];
                       // Legacy bundles without exact UUID bindings keep their existing recovery.

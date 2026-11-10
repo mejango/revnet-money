@@ -2012,7 +2012,7 @@ describe("reviewed selected-call orchestration", () => {
         status,
         ...(status === "pending" ? {} : { hash: toHex(index + 1, { size: 32 }) }),
       });
-      mocks.wait.mockImplementation(async (_uuid, _update, _safe, onResults) => {
+      mocks.wait.mockImplementation(async (_uuid, _update, onResults) => {
         notify = onResults;
         await complete.promise;
         const activity = refreshTransactionActivities().find(

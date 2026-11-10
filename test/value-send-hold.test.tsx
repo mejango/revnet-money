@@ -235,6 +235,7 @@ vi.mock("@/components/ui/use-toast", () => ({
  */
 vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
   const { useState } = await import("react");
+  const { reviewedRunStatus } = await import("@bananapus/nana-sdk-core/review/machines");
   return {
     ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
     useReviewedAction: () => {
@@ -294,6 +295,12 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
       };
       return {
         ...state,
+        ...reviewedRunStatus({
+          phase: state.phase as Parameters<typeof reviewedRunStatus>[0]["phase"],
+          error: null,
+          settled: null,
+          held: state.held as Parameters<typeof reviewedRunStatus>[0]["held"],
+        }),
         run,
         error: null,
         reset: () => setState({ phase: "idle", held: null }),

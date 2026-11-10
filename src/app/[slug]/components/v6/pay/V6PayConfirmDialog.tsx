@@ -14,8 +14,8 @@ import { TxSteps } from "@/components/ui/TxSteps";
 import { etherscanLink } from "@/lib/utils";
 import { V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
 import { JBChainId } from "@bananapus/nana-sdk-core";
+import { useStartOnce } from "@bananapus/nana-sdk-core/review/react";
 import { PAY_MAX_SLIPPAGE_BPS, PAY_QUOTE_FAILED_MESSAGE } from "@bananapus/nana-sdk-core/v6";
-import { useEffect, useRef } from "react";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
@@ -137,14 +137,13 @@ export function V6PayConfirmDialog({
   const chainId = prepared?.chainId ?? selectedSucker.peerChainId;
   // The payment's one review opens as soon as it is prepared; the button is only for recovery.
   const recovering = !!error || !!retrySlippage || !!reviewAgain;
-  const started = useRef<PreparedV6Pay | null>(null);
-  useEffect(() => {
-    if (!open) started.current = null;
-    if (!open || phase !== "ready" || !prepared || recovering || !address || !quoteSettled) return;
-    if (started.current === prepared) return;
-    started.current = prepared;
-    onConfirm();
-  }, [open, phase, prepared, recovering, address, quoteSettled, onConfirm]);
+  useStartOnce(
+    open,
+    false,
+    onConfirm,
+    prepared,
+    phase !== "ready" || !prepared || recovering || !address || !quoteSettled,
+  );
 
   return (
     <Dialog

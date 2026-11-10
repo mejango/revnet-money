@@ -8,6 +8,7 @@ import {
 import type {
   SafeRelayrProgress,
   SafeRelayrSession,
+  SafeRelayrView,
 } from "@bananapus/nana-sdk-core/review/safe-relayr";
 import {
   safeProposalFor,
@@ -47,6 +48,7 @@ const mocks = vi.hoisted(() => ({
   pay: vi.fn(),
   bundle: vi.fn(),
   check: vi.fn(),
+  watch: vi.fn(),
 }));
 
 vi.mock("wagmi", () => ({
@@ -89,6 +91,7 @@ vi.mock("@/hooks/useReviewedRelayr", async (importOriginal) => ({
   useGetRelayrTxQuote: () => ({ getRelayrTxQuote: mocks.quote, reset: vi.fn() }),
   useSendRelayrTx: () => ({ sendRelayrTx: mocks.pay }),
   waitForRelayrBundle: mocks.bundle,
+  watchSafeBundleView: mocks.watch,
 }));
 vi.mock("@/lib/transaction-review", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/transaction-review")>()),
@@ -162,6 +165,7 @@ beforeEach(() => {
   mocks.pay.mockReset().mockResolvedValue(EXECUTION);
   mocks.bundle.mockReset().mockResolvedValue(undefined);
   mocks.check.mockReset().mockResolvedValue(undefined);
+  mocks.watch.mockReset().mockReturnValue(() => undefined);
 });
 
 describe("the Safe queue's signature confirm", () => {
@@ -475,11 +479,7 @@ describe("the Safe queue's execute-all confirm", () => {
     expect(within(confirm).getByText("saved-bundle")).toBeVisible();
     fireEvent.click(check);
     await waitFor(() =>
-      expect(mocks.check).toHaveBeenCalledWith(
-        "existing",
-        expect.any(Function),
-        expect.any(AbortSignal),
-      ),
+      expect(mocks.check).toHaveBeenCalledWith("existing", expect.any(AbortSignal)),
     );
     await within(confirm).findByText("An unpaid quote is still payable.");
     expect(mocks.quote).toHaveBeenCalledOnce();
@@ -541,11 +541,7 @@ describe("the Safe queue's execute-all confirm", () => {
     expect(within(confirm).getByText(message)).toBeVisible();
     expect(within(confirm).getByText("No longer pending.")).toBeVisible();
     expect(within(confirm).getByText("Still pending.")).toBeVisible();
-    expect(mocks.check).toHaveBeenCalledWith(
-      activity.id,
-      expect.any(Function),
-      expect.any(AbortSignal),
-    );
+    expect(mocks.check).toHaveBeenCalledWith(activity.id, expect.any(AbortSignal));
     expect(mocks.quote).toHaveBeenCalledOnce();
     expect(mocks.pay).not.toHaveBeenCalled();
   });
@@ -616,29 +612,42 @@ describe("the Safe queue's execute-all confirm", () => {
       state: "active",
       createdAt: 1,
     };
-    let paymentProgress!: (progress: SafeRelayrProgress) => void;
+    let show!: (view: SafeRelayrView) => void;
+    mocks.watch.mockImplementation(
+      (_config: unknown, _activityId: string, listener: (view: SafeRelayrView) => void) => {
+        show = listener;
+        return () => undefined;
+      },
+    );
+    let view: SafeRelayrView = {
+      phase: null,
+      checks: {},
+      executions: {},
+      result: null,
+      running: "fund",
+      session: null,
+      error: null,
+    };
+    const next = (patch: Partial<SafeRelayrView>) => {
+      view = { ...view, ...patch };
+      show(view);
+    };
     let finishPayment!: () => void;
     mocks.pay.mockImplementation(
-      (_payment: unknown, options: { onProgress: (progress: SafeRelayrProgress) => void }) => {
-        paymentProgress = options.onProgress;
-        return new Promise((resolve) => (finishPayment = () => resolve(EXECUTION)));
-      },
+      () => new Promise((resolve) => (finishPayment = () => resolve(EXECUTION))),
     );
-    let executionProgress!: (progress: SafeRelayrProgress) => void;
     let finishWatch!: () => void;
-    mocks.bundle.mockImplementation(
-      (_uuid: string, _listener: unknown, onProgress: (progress: SafeRelayrProgress) => void) => {
-        executionProgress = onProgress;
-        return new Promise<void>((resolve) => (finishWatch = resolve));
-      },
-    );
+    mocks.bundle.mockImplementation(() => new Promise<void>((resolve) => (finishWatch = resolve)));
     fireEvent.click(pay);
     await waitFor(() => expect(mocks.pay).toHaveBeenCalledOnce());
+    expect(mocks.watch).toHaveBeenCalledWith(
+      expect.anything(),
+      "relayr:bundle-1",
+      expect.any(Function),
+    );
 
     const unpaid = { ...session, paymentStatus: "unfunded" as const };
-    await act(async () =>
-      paymentProgress({ type: "phase", phase: "payment-review", session: unpaid }),
-    );
+    await act(async () => next({ phase: "payment-review", session: unpaid }));
     expect(
       within(confirm).getByText(
         (_, element) => element?.tagName === "P" && element.textContent === "Preparing payment…",
@@ -646,9 +655,7 @@ describe("the Safe queue's execute-all confirm", () => {
       ),
     ).toBeVisible();
     expect(within(confirm).getByRole("button", { name: "Preparing payment…" })).toBeDisabled();
-    await act(async () =>
-      paymentProgress({ type: "phase", phase: "payment-checking", session: unpaid }),
-    );
+    await act(async () => next({ phase: "payment-checking", session: unpaid }));
     expect(
       within(confirm).getByText(
         (_, element) =>
@@ -659,7 +666,7 @@ describe("the Safe queue's execute-all confirm", () => {
     expect(within(confirm).queryByText("Review the network fee…")).toBeNull();
     expect(within(confirm).queryByRole("button", { name: "Pay" })).toBeNull();
 
-    await act(async () => paymentProgress({ type: "phase", phase: "payment-confirming", session }));
+    await act(async () => next({ phase: "payment-confirming", session }));
 
     expect(
       within(confirm).getByText(
@@ -676,12 +683,9 @@ describe("the Safe queue's execute-all confirm", () => {
 
     for (const paymentStatus of ["sending", "submitted"] as const) {
       await act(async () =>
-        paymentProgress({
-          type: "execution",
+        next({
           session: { ...session, paymentStatus },
-          index: 0,
-          execution: session.executions[0],
-          status: "pending",
+          executions: { ...view.executions, 0: { status: "pending" } },
         }),
       );
       expect(within(confirm).getAllByText("Checking payment status…")).toHaveLength(2);
@@ -689,28 +693,12 @@ describe("the Safe queue's execute-all confirm", () => {
     }
 
     await act(async () => finishPayment());
-    await waitFor(() =>
-      expect(mocks.bundle).toHaveBeenCalledWith("bundle-1", undefined, expect.any(Function)),
-    );
+    await waitFor(() => expect(mocks.bundle).toHaveBeenCalledWith("bundle-1"));
     const optimismHash = `0x${"ab".repeat(32)}` as Hex;
     await act(async () => {
-      executionProgress({ type: "phase", phase: "executing", session });
-      executionProgress({
-        type: "execution",
-        session,
-        index: 0,
-        execution: session.executions[0],
-        status: "confirming",
-        hash: EXECUTION,
-      });
-      executionProgress({
-        type: "execution",
-        session,
-        index: 1,
-        execution: session.executions[1],
-        status: "executed",
-        hash: optimismHash,
-      });
+      next({ phase: "executing", session });
+      next({ executions: { ...view.executions, 0: { status: "confirming", hash: EXECUTION } } });
+      next({ executions: { ...view.executions, 1: { status: "executed", hash: optimismHash } } });
     });
 
     const [base, optimism] = within(confirm).getAllByRole("listitem");
@@ -770,11 +758,7 @@ describe("the Safe queue's execute-all confirm", () => {
     fireEvent.click(check);
 
     await waitFor(() =>
-      expect(mocks.check).toHaveBeenCalledWith(
-        activity.id,
-        expect.any(Function),
-        expect.any(AbortSignal),
-      ),
+      expect(mocks.check).toHaveBeenCalledWith(activity.id, expect.any(AbortSignal)),
     );
     expect(
       await within(confirm).findByText("The submitted payment is still awaiting confirmation."),

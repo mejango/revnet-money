@@ -6,6 +6,7 @@ import { chainDisplayName, isSupportedChainId } from "@/app/constants";
 import { ChainLogo } from "@/components/ChainLogo";
 import { RelayrPaymentSelect } from "@/components/RelayrPaymentSelect";
 import { ModalCloseButton, ModalDialog } from "@/components/ui/ModalShell";
+import { feeBuybackContext } from "@/lib/fee-buyback-client";
 import { buildTransactionReviewPrompt } from "@/lib/transaction-review";
 import {
   type ReviewArgument,
@@ -19,9 +20,10 @@ import {
   type PrettyStep,
   type V4PlanStep,
 } from "@bananapus/nana-sdk-core/review/decode";
+import { useFeeBuybackReview } from "@bananapus/nana-sdk-core/review/react";
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 
-import { FeeBuybackNotice, useFeeBuybackReview } from "./FeeBuybackNotice";
+import { FeeBuybackNotice } from "./FeeBuybackNotice";
 
 import type {
   PendingFundingChainSelection,
@@ -516,7 +518,7 @@ function ReviewModal({
       })),
     [model],
   );
-  const feeReview = useFeeBuybackReview(feeCalls);
+  const feeReview = useFeeBuybackReview(feeCalls, feeBuybackContext);
   const [agreed, setAgreed] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
 
