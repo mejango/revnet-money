@@ -443,7 +443,9 @@ export function useMarkee(initialBoardAddress?: Address) {
     });
     // Null after a hash: the confirm closed while the step's hold still follows it.
     if (!result)
-      throw new ReviewRefusal(step.hash ? MARKEE_SENT_UNCHECKED : "Review canceled. Nothing was sent.");
+      throw new ReviewRefusal(
+        step.hash ? MARKEE_SENT_UNCHECKED : "Review canceled. Nothing was sent.",
+      );
     // Nothing sent: the run's own line. Sent: the step's exact result decides.
     if (!step.hash)
       throw new ReviewRefusal(

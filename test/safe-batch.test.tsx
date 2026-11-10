@@ -61,12 +61,12 @@ vi.mock("wagmi/actions", () => ({
 import { useReviewedAction } from "@/hooks/useReviewedAction";
 import { reviewedCall } from "@/lib/reviewed-call";
 import { transactionActivitySnapshot } from "@/lib/transaction-activity";
+import { clearViewAs, setViewAs } from "@/lib/view-as";
 
 const queryClient = new QueryClient();
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
 );
-import { clearViewAs, setViewAs } from "@/lib/view-as";
 
 const ACCOUNT = "0x000000000000000000000000000000000000dEaD" as Address;
 const TOKEN = "0x0000000000000000000000000000000000001000" as Address;
