@@ -26,7 +26,7 @@ import {
   safeProposalFor,
   safeTransactionHash,
 } from "@bananapus/nana-sdk-core/safe-service";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { Hex } from "viem";
 import {
   encodeAbiParameters,
@@ -343,6 +343,31 @@ async function lostLocks() {
   });
 }
 
+/** Web Locks whose first lock lapses once `lapse()` is called; every later one is held. */
+async function lapsingLocks() {
+  const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
+  let lapsed = false;
+  let taken = 0;
+  Object.defineProperty(navigator, "locks", {
+    configurable: true,
+    value: {
+      request: async (name: string, _options: unknown, callback: (lock: object) => unknown) => {
+        const first = taken++ === 0;
+        return callback({
+          name,
+          mode: "exclusive",
+          signal: new AbortController().signal,
+          held: async () => !(first && lapsed),
+          assertHeld: async () => {
+            if (first && lapsed) throw new LockLostError(name);
+          },
+        });
+      },
+    },
+  });
+  return () => (lapsed = true);
+}
+
 describe("a batch whose lock passed to another tab", () => {
   afterEach(() => {
     Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
@@ -364,6 +389,25 @@ describe("a batch whose lock passed to another tab", () => {
     });
     expect(readMultichainBatches()[0].rounds[0]).toMatchObject({ state: "quoted" });
   });
+  it.each([
+    ["a hash", HASH, { hash: HASH, state: "submitted" }],
+    ["a definite rejection", null, { state: "ready" }],
+  ] as const)(
+    "saves the wallet's answer (%s) once the lock is free again when it lapsed while the wallet was open",
+    async (_kind, answer, saved) => {
+      const lapse = await lapsingLocks();
+      mocks.write.mockImplementationOnce(async () => {
+        lapse();
+        if (!answer) throw Object.assign(new Error("User rejected the request."), { code: 4001 });
+        return answer;
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      await result.current
+        .runBatch({ scope: "destination", label: "Distribute", calls: [call(1)] })
+        .catch(() => undefined);
+      await waitFor(() => expect(readMultichainBatches()[0]?.calls[0]).toMatchObject(saved));
+    },
+  );
   it("saves and sends nothing for a fresh direct batch", async () => {
     await lostLocks();
     const { result } = renderHook(() => useMultichainBatch());

@@ -670,6 +670,43 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
     expect(localStorage.getItem("revnet:markee-rent:recovery:v1")).toBeNull();
     expect(localStorage.getItem("revnet:markee-rent:board:v1")).toBeNull();
   });
+  it("saves the wallet's hash once the lock is free again when the lock lapsed while the wallet was open", async () => {
+    const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
+    let lapsed = false;
+    let taken = 0;
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: async (name: string, _options: unknown, callback: (lock: object) => unknown) => {
+          // The first lock lapses while the wallet is open; the next one is this tab's again.
+          const first = taken++ === 0;
+          return callback({
+            name,
+            mode: "exclusive",
+            signal: new AbortController().signal,
+            held: async () => !(first && lapsed),
+            assertHeld: async () => {
+              if (first && lapsed) throw new LockLostError(name);
+            },
+          });
+        },
+      },
+    });
+    mocks.write.mockImplementationOnce(async () => {
+      await mocks.options!.reverify();
+      await mocks.options!.beforeSubmission();
+      lapsed = true;
+      return hash;
+    });
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending.hash).toBe(
+        hash,
+      ),
+    );
+  });
   it("refuses a lifecycle already owned by another tab", async () => {
     Object.defineProperty(navigator, "locks", {
       configurable: true,

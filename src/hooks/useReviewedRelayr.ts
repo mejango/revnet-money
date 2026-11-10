@@ -4,7 +4,7 @@ import { ReviewRefusal } from "@/lib/review-refusal";
 
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { formatShortDateTime } from "@/lib/date";
-import { fence, type TabLocks } from "@/lib/fence";
+import { fence, keptOutcomes, type TabLocks } from "@/lib/fence";
 import { confirmRelayrDiscard } from "@/lib/flow-choice";
 import {
   batchCallScope,
@@ -582,6 +582,8 @@ function payableQuote(
 async function releaseUnfundableQuote(
   config: Config,
   activity: TransactionActivity,
+  /** The locks its caller holds: its write checks them first. */
+  locks: TabLocks = [],
 ): Promise<boolean> {
   if (activity.relayrPaymentStatus !== "unfunded" || sentPayments(activity).length) return false;
   const { bundleUuid, options, destinationChainIds } = relayrSavedQuote(activity);
@@ -601,6 +603,7 @@ async function releaseUnfundableQuote(
     ))
   )
     return false;
+  await assertLocksHeld(locks);
   updateTransactionActivity(activity.id, {
     status: "failed",
     relayrPaymentStatus: "expired",
@@ -633,16 +636,19 @@ function paidInFlight(activity: TransactionActivity): boolean {
 async function reservationOf(
   config: Config,
   activity: TransactionActivity,
+  locks: TabLocks = [],
 ): Promise<"released" | "reserved"> {
   if (activity.relayrDiscardable === "ran") throw new RelayrDiscardError(activity.id, "ran");
   const verdict = await savedRequestsVerdict(config, activity);
-  if (!verdict) return (await releaseUnfundableQuote(config, activity)) ? "released" : "reserved";
+  if (!verdict)
+    return (await releaseUnfundableQuote(config, activity, locks)) ? "released" : "reserved";
   if (verdict.live) {
     if (paidInFlight(activity)) return "reserved";
     throw new Error(relayrHeldMessage(verdict.until));
   }
   const outcome = await relayrSessionOutcome(verdict, { nonces: activity.relayrNonces });
   if (outcome.kind !== "discard") throw new Error(relayrHeldMessage(0));
+  await assertLocksHeld(locks);
   const discard = discardableSession(activity, outcome.reason);
   if (outcome.reason === "ran") throw discard;
   return "released";
@@ -761,6 +767,8 @@ async function requireUnfunded(
   config: Config,
   quote: Pick<RememberedQuote, "bundleUuid" | "callKey" | "callKeys">,
   exempt?: string,
+  /** The locks its caller holds: a session it releases is written only under them. */
+  locks: TabLocks = [],
 ): Promise<void> {
   requireTransactionActivityPersistence();
   if (fundedBundles.has(quote.bundleUuid))
@@ -818,7 +826,7 @@ async function requireUnfunded(
       if (await relayrRequestsDead(clientFor(config), relayrSessionRequests(existing))) continue;
     } else if (
       existing.bundleUuid !== quote.bundleUuid &&
-      (await reservationOf(config, existing)) === "released"
+      (await reservationOf(config, existing, locks)) === "released"
     )
       continue;
     throw new RelayrRecoveryError(existing);
@@ -1020,7 +1028,9 @@ async function continueSession(
   const quote = !released && payableQuote(saved, chains);
   if (!verdict) {
     if (quote) return { kind: "quote", quote };
-    return released || (await releaseUnfundableQuote(config, saved)) ? { kind: "fresh" } : null;
+    return released || (await releaseUnfundableQuote(config, saved, locks))
+      ? { kind: "fresh" }
+      : null;
   }
   if (verdict.live) {
     if (verdict.mayHaveRun) throw new Error(relayrHeldMessage(verdict.until));
@@ -1557,14 +1567,17 @@ async function verifyDestinationReceipts(
  * A proof the SDK cannot make for now (no RPC for the chain, a read that
  * failed) throws, so the caller keeps checking.
  */
-async function provePayment(bundleUuid: string): Promise<void> {
+async function provePayment(bundleUuid: string, locks: TabLocks = []): Promise<void> {
   const activity = transactionActivitySnapshot().find((item) => item.bundleUuid === bundleUuid);
   if (!activity?.account || !sentPayments(activity).length)
     throw new RelayrVerificationError(
       "The original funding transaction cannot be verified. Do not pay again; inspect the existing bundle and wallet activity.",
     );
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
+  const update = fence(locks, updateTransactionActivity);
   let proven: boolean;
+  // Core tells of a revert without awaiting: it is written, under the locks, once the proof returns.
+  let reverted = false;
   try {
     proven = await proveSavedRelayrPayment(
       clientFor(wagmiConfig),
@@ -1572,15 +1585,17 @@ async function provePayment(bundleUuid: string): Promise<void> {
       activity.account,
       () => {
         fundedBundles.delete(bundleUuid);
-        updateTransactionActivity(activity.id, PAYMENT_REVERTED);
+        reverted = true;
       },
     );
   } catch (error) {
     if (error instanceof RelayrProofError) throw new RelayrVerificationError(error.message);
     throw error;
+  } finally {
+    if (reverted) await update(activity.id, PAYMENT_REVERTED);
   }
   if (!proven) throw new Error("The funding RPC is unavailable.");
-  updateTransactionActivity(activity.id, { relayrPaymentStatus: "confirmed" });
+  await update(activity.id, { relayrPaymentStatus: "confirmed" });
 }
 
 /** Never from a cache: a stale answer could hide a payment or a destination result. */
@@ -1935,6 +1950,7 @@ export function useGetRelayrTxQuote() {
             config,
             { bundleUuid: quote.bundle_uuid, callKey, callKeys: continuedKeys },
             saved.id,
+            locks,
           );
           await activity.update(saved.id, {
             relayrCallKeys: continuedKeys,
@@ -1952,7 +1968,7 @@ export function useGetRelayrTxQuote() {
         );
         // Ruling R117: every other session that shares a call, a recovery scope or a
         // forwarder nonce reserves it while one of its requests can still run.
-        await requireUnfunded(config, { bundleUuid: "", callKey, callKeys }, continued?.id);
+        await requireUnfunded(config, { bundleUuid: "", callKey, callKeys }, continued?.id, locks);
         await requireForwarderNoncesFree(
           config,
           address,
@@ -2199,7 +2215,12 @@ export function useGetRelayrTxQuote() {
           );
           // A response can be lost after Relayr receives executable signatures. Persist
           // the intent first; only authenticated unsigned routing remains freely retryable.
-          await requireUnfunded(config, { bundleUuid: "", callKey, callKeys }, continued?.id);
+          await requireUnfunded(
+            config,
+            { bundleUuid: "", callKey, callKeys },
+            continued?.id,
+            locks,
+          );
           options?.signal?.throwIfAborted();
           requireWalletContext();
           const publicationId = `relayr-publication:${callKey}`;
@@ -2404,7 +2425,7 @@ export function useSendRelayrTx() {
           throw new Error(
             "This quote was paid too many times to pay again. Keep it pending; do not pay again.",
           );
-        await requireUnfunded(config, remembered);
+        await requireUnfunded(config, remembered, undefined, locks);
         const { amount: value } = relayrPaymentDetails(payment, {
           bundleUuid: remembered.bundleUuid,
           destinationChainIds: remembered.chainIds,
@@ -2462,7 +2483,7 @@ export function useSendRelayrTx() {
             bundleUuid: remembered.bundleUuid,
             destinationChainIds: remembered.chainIds,
           });
-          await requireUnfunded(config, remembered);
+          await requireUnfunded(config, remembered, undefined, locks);
           requireAccount();
         };
         /** Saves the attempt as submitted, last before the wallet. */
@@ -2500,13 +2521,23 @@ export function useSendRelayrTx() {
           walletOpened = true;
           options?.onMessage?.("Confirm the network-fee payment in your wallet.");
         };
+        /** The journal still holds this attempt submitting, with no payment saved since. */
+        const thisAttempt = () => {
+          const row = journal();
+          return (
+            row?.relayrPaymentStatus === "submitted" && sentPayments(row).length === sent.length
+          );
+        };
         const onSent = async (submitted: Hex) => {
           hash ??= submitted;
           fundedBundles.add(remembered.bundleUuid);
-          await activity.update(activityId, {
-            ...sentAs(submitted),
-            message: "Payment submitted. Do not pay again while its receipt is pending.",
-          });
+          // The hash is never dropped: kept under a lapsed lock, saved once it is free.
+          await kept.save(locks, thisAttempt, () =>
+            updateTransactionActivity(activityId, {
+              ...sentAs(submitted),
+              message: "Payment submitted. Do not pay again while its receipt is pending.",
+            }),
+          );
           options?.onMessage?.("Checking the submitted network-fee payment.");
         };
         // A quote's first payment under the plan that reviewed its round's fee bound pays within
@@ -2620,22 +2651,25 @@ export function useSendRelayrTx() {
               sending: true,
               paid: sent.length > 0,
             });
-            await activity.update(
-              activityId,
-              outcome === "reverted"
-                ? PAYMENT_REVERTED
-                : outcome === "unpaid"
-                  ? {
-                      status: "pending",
-                      relayrPaymentStatus: "unfunded",
-                      message:
-                        "The wallet declined payment. The existing signed quote can still be funded once before it expires.",
-                    }
-                  : {
-                      status: "pending",
-                      message:
-                        "The wallet's funding result is uncertain. Do not pay again; inspect wallet activity and this bundle.",
-                    },
+            // The wallet's answer: kept under a lapsed lock, saved once it is free.
+            await kept.save(locks, thisAttempt, () =>
+              updateTransactionActivity(
+                activityId,
+                outcome === "reverted"
+                  ? PAYMENT_REVERTED
+                  : outcome === "unpaid"
+                    ? {
+                        status: "pending",
+                        relayrPaymentStatus: "unfunded",
+                        message:
+                          "The wallet declined payment. The existing signed quote can still be funded once before it expires.",
+                      }
+                    : {
+                        status: "pending",
+                        message:
+                          "The wallet's funding result is uncertain. Do not pay again; inspect wallet activity and this bundle.",
+                      },
+              ),
             );
             throw error;
           } else throw cause;
@@ -2649,9 +2683,14 @@ export function useSendRelayrTx() {
             throw new Error("The payment receipt names no transaction hash.");
           if (receipt.transactionHash.toLowerCase() !== mined.toLowerCase()) {
             mined = receipt.transactionHash;
-            await activity.update(activityId, sentAs(mined));
+            const sped = mined;
+            await kept.save(
+              locks,
+              () => journal()?.hash === hash,
+              () => updateTransactionActivity(activityId, sentAs(sped)),
+            );
           }
-          await provePayment(remembered.bundleUuid);
+          await provePayment(remembered.bundleUuid, locks);
         } catch (error) {
           if (!(error instanceof RelayrVerificationError)) {
             await activity.update(activityId, {
@@ -2677,6 +2716,7 @@ export function useSendRelayrTx() {
       if (paymentInflight.has(remembered.callKey))
         throw new Error("This payment is already in progress. Do not pay again.");
       paymentInflight.add(remembered.callKey);
+      const kept = keptOutcomes(`revnet:relayr:${remembered.callKey}`);
       try {
         const mined = (await browserLocks().request(
           `revnet:relayr:${remembered.callKey}`,
@@ -2687,6 +2727,7 @@ export function useSendRelayrTx() {
         return mined;
       } finally {
         paymentInflight.delete(remembered.callKey);
+        void kept.apply().catch(() => undefined);
       }
     },
     [address, config, switchChainAsync],

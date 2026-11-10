@@ -13,7 +13,7 @@ import {
 import type { SafeRelayrView } from "@bananapus/nana-sdk-core/review/safe-relayr";
 import { canonicalSafeTxHash, SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import {
   decodeFunctionData,
   encodeAbiParameters,
@@ -2105,6 +2105,48 @@ describe("reviewed Relayr payment hook", () => {
       });
       expect(mocks.sendTransaction).not.toHaveBeenCalled();
       expect(window.localStorage.getItem("revnet:transaction-activities:v1")).toBe(before);
+    } finally {
+      Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+    }
+  });
+
+  it("saves the payment's hash once its lock is free again when the lock lapsed while the wallet was open", async () => {
+    const { result } = await quotedPayment();
+    const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
+    let lapsed = false;
+    let paymentLocks = 0;
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        // The payment's first lock lapses once the wallet is open; the next one is this tab's.
+        request: async (name: string, _options: unknown, callback: (lock: object) => unknown) => {
+          const first = name.startsWith("revnet:relayr:") && paymentLocks++ === 0;
+          return callback({
+            name,
+            mode: "exclusive",
+            signal: new AbortController().signal,
+            held: async () => !(first && lapsed),
+            assertHeld: async () => {
+              if (first && lapsed) throw new LockLostError(name);
+            },
+          });
+        },
+      },
+    });
+    mocks.sendTransaction.mockImplementationOnce(async () => {
+      lapsed = true;
+      return HASH;
+    });
+    try {
+      await act(async () => {
+        await result.current.sendRelayrTx(payment()).catch(() => undefined);
+      });
+      await waitFor(() => {
+        const rows = JSON.parse(
+          window.localStorage.getItem("revnet:transaction-activities:v1") ?? "[]",
+        ) as { hash?: string }[];
+        expect(rows.some((row) => row.hash === HASH)).toBe(true);
+      });
     } finally {
       Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
     }
