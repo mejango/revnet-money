@@ -1762,3 +1762,24 @@ Two real defects fixed with regression tests (false loan failure on a second loa
 - [x] jbm-16 parity: one app-wide `signOutOnce` with a generation in `para-bridge.ts`; `connectParaSession` drops a check a sign-out overtook (test: para-bridge "drops a session check that a sign-out overtook").
 - [ ] revnet-9 stopped: Markee already recovers through the SDK's `createSavedAttemptRecovery` (`savedAttempts`); its journal is the domain journal that recovery's `confirmRetirable` re-reads. The React `useSavedAttempt` wrapper would add mount-time recovery and binds one attempt per render, which conflicts with the lost-reply hash typed at Check. Awaiting a decision.
 - Bundle: +0.4 KiB on every route against state-machines-2026-11-09; /build 360.2 over 360, route-referenced 922.2 over 922, all client 2775.6 over 2774.
+
+## SDK 6.2.0 adoption (2026-11-10)
+
+## Plan refinement
+
+- **Objective:** revnet on @bananapus/nana-sdk-core 6.2.0: the run wrapper's dismiss, following and onDismissedSettled used where a confirm closes; the pay card freed when its send can't start and closable while a sent payment is only followed; every journal write under a cross-tab lock fenced by that lock, with `locks` handed to every SDK send and sign; wallet answers a lapsed lock refused kept and saved once the lock is free; the wallet adapter forwarding core's fence; one lost-reply hash field shared by Markee and every held write, with jbm #175's wording. Success: full `npm run check` green, failing-first tests, draft PR, not merged.
+- **System fit:** User action, useReviewedAction over core's useReviewedRun, browserLocks, journal save (activity store, multichain batch, Markee journal), SDK send or sign under `locks`, wallet adapter fence, hold followed to a verified receipt. The SDK owns run status, dismissal, hold following, lock fencing at wallet boundaries and the Safe Relayr store's saves; revnet owns its journals and wording. Contracts and server routes are unaffected.
+- **Reuse and simplicity:** One fence home (`src/lib/fence.ts`: `fence`, `keptOutcomes`), one bound activity journal (`activityJournal(locks)`), one hash field component. No wrapper code to delete: revnet's useReviewedAction already spread the runner.
+- **Evidence and unknowns:** Released 6.2.0 dist in node_modules is the authority. The SDK fences SafeRelayr store saves once `withLock` hands it locks; signatures signed under a lapsed authorization lock are never published, so they need no keeping.
+- **Verification:** Failing-first vitest per fix (adapter fence, pay card freed and closable, row settled after receipt, onDismissedSettled, Markee sent-step line, each lost-lock fence, each kept wallet answer, the hash field). Then `npm run check` on Node 26.
+- **Resource budget:** One worktree (adopt-revnet), sequential edits. Bundle ceiling raises are approved; record any.
+
+- [x] Bump core 6.2.0 (Node 26, npm 12)
+- [x] WalletRequestOptions forwarded by signMessage, signTypedData, sendCalls
+- [x] Pay card: freed when the send can't start; confirm closes through dismiss while following
+- [x] useReviewedAction: rows settled after a held receipt; onDismissedSettled refreshes reads
+- [x] AmmCard, RedeemDialog, Markee close through dismiss; Markee says a dismissed sent step is sent
+- [x] Fences: activity journal, multichain batch (check, execute, sendDirectCalls), resetUnpaidRoutingDraft, Markee journal with the board key folded in, relayr auth and payment locks, SafeRelayr run(locks)
+- [x] Kept wallet answers (hash, definite rejection) for Markee, direct batch calls and the relayr payment
+- [x] LostReplyHashField shared by Markee and the account page's held writes
+- [ ] Full check, push, draft PR
