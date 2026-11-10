@@ -81,3 +81,39 @@ it("refuses a saved custom-vote shop call before opening the current wallet", as
   ).rejects.toThrow(/Rebuild/);
   expect(state.load).not.toHaveBeenCalled();
 });
+
+it.each(["signMessage", "signTypedData", "sendCalls"] as const)(
+  "hands core's fence to the wallet request for %s, so a lost lock opens no wallet",
+  async (method) => {
+    const config = {} as Config;
+    const adapter = reviewedSendDeps(config).adapter;
+    const wallet = vi.fn().mockResolvedValue("0x1234");
+    const { viemWallet } = await import("./support/viem-wallet");
+    state.load.mockResolvedValue(viemWallet({ [method]: wallet }, () => 1));
+    const lost = new Error("lock lost");
+    const fence = vi.fn().mockRejectedValue(lost);
+    const account = state.account.address as `0x${string}`;
+    const request =
+      method === "signMessage"
+        ? adapter.signMessage("hello", { fence })
+        : method === "signTypedData"
+          ? adapter.signTypedData(
+              {
+                account,
+                domain: { name: "x", chainId: 1 },
+                types: { M: [{ name: "a", type: "uint256" }] },
+                primaryType: "M",
+                message: { a: 1n },
+              } as never,
+              { fence },
+            )
+          : adapter.sendCalls!(
+              1,
+              [{ to: "0x2222222222222222222222222222222222222222", data: "0x", value: 0n }],
+              { fence },
+            );
+    await expect(request).rejects.toBeTruthy();
+    expect(fence).toHaveBeenCalled();
+    expect(wallet).not.toHaveBeenCalled();
+  },
+);
