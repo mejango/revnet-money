@@ -1,4 +1,5 @@
 import { AccountActivity } from "@/app/account/[id]/components/AccountActivity";
+import { LOST_REPLY_HASH_UNVERIFIED, NOT_THAT_TRANSACTION } from "@/components/LostReplyHashField";
 import type { TransactionActivity } from "@/lib/transaction-activity";
 import { erc2771ForwarderAbi, jbContractAddress } from "@bananapus/nana-sdk-core";
 import {
@@ -382,12 +383,15 @@ describe("the account's held writes", () => {
   });
 
   it("takes the hash of a held write whose wallet reply was lost, attached only if it is that send", async () => {
+    /** The node's word on the given hash: unread until it indexes it. */
+    let given: object | null = null;
     const node = {
       getChainId: async () => 8453,
       getBlockNumber: async () => 100n,
       getBlock: async () => ({ number: 100n, hash: `0x${"bb".repeat(32)}` }),
       getTransactionCount: async () => 3,
       getTransaction: async () => {
+        if (given) return given;
         throw new Error("not found");
       },
       getTransactionReceipt: async () => {
@@ -418,10 +422,24 @@ describe("the account's held writes", () => {
     fireEvent.change(field!, { target: { value: "0x1234" } });
     check();
     expect(await screen.findByText("Enter a complete transaction hash.")).toBeVisible();
-    fireEvent.change(field!, { target: { value: `0x${"cd".repeat(32)}` } });
+    const other = `0x${"cd".repeat(32)}`;
+    fireEvent.change(field!, { target: { value: other } });
+    // Not readable yet: a retry, never a mismatch.
     check();
-    expect(
-      await screen.findByText("This hash is not that transaction. Check it in your wallet."),
-    ).toBeVisible();
+    expect(await screen.findByText(LOST_REPLY_HASH_UNVERIFIED)).toBeVisible();
+    expect(screen.queryByText(NOT_THAT_TRANSACTION)).toBeNull();
+    // Read, and another call: a mismatch.
+    given = {
+      hash: other,
+      from: ACCOUNT,
+      to: ACCOUNT,
+      input: "0x9999",
+      value: 0n,
+      nonce: 3,
+      chainId: 8453,
+      blockNumber: null,
+    };
+    check();
+    expect(await screen.findByText(NOT_THAT_TRANSACTION)).toBeVisible();
   });
 });

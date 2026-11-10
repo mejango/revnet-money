@@ -7,8 +7,8 @@ type PayRecovery = { kind: "slippage"; bps: number } | { kind: "reverted" };
 type Sending = "approving-token" | "simulating" | "signing";
 
 /**
- * The pay card's confirm, one state at a time. `open` is the confirm dialog's; a Safe proposal
- * keeps being followed while it is closed.
+ * The pay card's confirm, one state at a time. `open` is the confirm dialog's; a Safe proposal,
+ * or a sent payment whose confirm was closed, keeps being followed while it is closed.
  */
 export type PayFlow = { open: boolean } & (
   | { phase: "preparing"; notice: string | null }
@@ -75,7 +75,8 @@ export function payFlow(flow: PayFlow, action: PayFlowAction): PayFlow {
     case "failed":
       return ready(action.error, action.recovery);
     case "closed":
-      return { ...ready(null), open: false };
+      // A sent payment stays pending, followed with its confirm closed, until its hold settles it.
+      return flow.phase === "pending" ? { ...flow, open: false } : { ...ready(null), open: false };
     case "done":
       return { open, phase: "success", prepared, hash: hashOf(flow) };
     case "slippage":

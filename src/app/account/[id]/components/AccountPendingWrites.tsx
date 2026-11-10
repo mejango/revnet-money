@@ -1,7 +1,11 @@
 "use client";
 
 import { chainDisplayName } from "@/app/constants";
-import { LostReplyHashField, NOT_THAT_TRANSACTION } from "@/components/LostReplyHashField";
+import {
+  LOST_REPLY_HASH_UNVERIFIED,
+  LostReplyHashField,
+  NOT_THAT_TRANSACTION,
+} from "@/components/LostReplyHashField";
 import {
   checkRelayrSession,
   discardRelayrSession,
@@ -75,6 +79,9 @@ function HeldWritesOn({ chainId, account }: { chainId: number; account: Address 
               <LostReplyHashField
                 id={`held-hash-${key}`}
                 onCheck={async (hash) => {
+                  // A mismatch only once the transaction was read: unread, it is checked again.
+                  const sent = await client.getTransaction({ hash: hash! }).catch(() => null);
+                  if (!sent) return LOST_REPLY_HASH_UNVERIFIED;
                   // The hold attaches it only when it is that exact send.
                   const state = await handle.attachHash(client as WriteHoldClient, hash!);
                   return state.status === "held-no-hash" ? NOT_THAT_TRANSACTION : null;
