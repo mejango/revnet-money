@@ -380,4 +380,48 @@ describe("the account's held writes", () => {
       await screen.findByText("Your earlier transaction hasn't confirmed yet. Check your wallet."),
     ).toBeVisible();
   });
+
+  it("takes the hash of a held write whose wallet reply was lost, attached only if it is that send", async () => {
+    const node = {
+      getChainId: async () => 8453,
+      getBlockNumber: async () => 100n,
+      getBlock: async () => ({ number: 100n, hash: `0x${"bb".repeat(32)}` }),
+      getTransactionCount: async () => 3,
+      getTransaction: async () => {
+        throw new Error("not found");
+      },
+      getTransactionReceipt: async () => {
+        throw new Error("not found");
+      },
+      request: async () => null,
+    };
+    const { writeHolds } = await import("@/lib/write-hold");
+    await writeHolds
+      .open({
+        chainId: 8453,
+        account: ACCOUNT,
+        safe: false,
+        call: { to: ACCOUNT, data: "0x5678", value: 0n },
+      })
+      .send(node as never, async (gate) => {
+        await gate.beforeSend();
+        throw new Error("Wallet transport timed out");
+      })
+      .catch(() => undefined);
+    mocks.client = node;
+    await renderActivity();
+    const [field] = await screen.findAllByLabelText(
+      "Transaction hash, if the wallet reply was lost",
+    );
+    const check = () =>
+      fireEvent.click(field!.parentElement!.querySelector("button") as HTMLButtonElement);
+    fireEvent.change(field!, { target: { value: "0x1234" } });
+    check();
+    expect(await screen.findByText("Enter a complete transaction hash.")).toBeVisible();
+    fireEvent.change(field!, { target: { value: `0x${"cd".repeat(32)}` } });
+    check();
+    expect(
+      await screen.findByText("This hash is not that transaction. Check it in your wallet."),
+    ).toBeVisible();
+  });
 });

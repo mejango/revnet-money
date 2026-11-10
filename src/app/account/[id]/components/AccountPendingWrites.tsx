@@ -1,6 +1,7 @@
 "use client";
 
 import { chainDisplayName } from "@/app/constants";
+import { LostReplyHashField, NOT_THAT_TRANSACTION } from "@/components/LostReplyHashField";
 import {
   checkRelayrSession,
   discardRelayrSession,
@@ -22,6 +23,7 @@ import {
   SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
   SAVED_ATTEMPT_UNREADABLE_LINE,
   type SavedAttemptCheck,
+  type WriteHoldClient,
 } from "@bananapus/nana-sdk-core/review";
 import { HeldWritesNotice, useHeldWrites } from "@bananapus/nana-sdk-core/review/react";
 import { useMemo, useState } from "react";
@@ -44,15 +46,44 @@ function useInFlightActivities(address: Address): TransactionActivity[] {
   );
 }
 
-/** Every write the SDK holds for this account on one chain, with its line and its release. */
+/**
+ * Every write the SDK holds for this account on one chain, with its line and its release, and a
+ * hash field for one whose wallet reply was lost.
+ */
 function HeldWritesOn({ chainId, account }: { chainId: number; account: Address }) {
   const client = usePublicClient({ chainId });
   const items = useHeldWrites({ hold: writeHolds, chainId, account, client });
+  // A held send with no hash: the user can give it when the hold can check it (its nonce and
+  // the block it was sent from).
+  const unhashed = items.flatMap((item) => {
+    const held = writeHolds.list({ account, chainId }).find(({ key }) => key === item.key);
+    return item.view.state?.status === "held-no-hash" &&
+      held?.record.nonce !== undefined &&
+      held.record.fromBlock !== undefined
+      ? [{ key: item.key, handle: held.handle }]
+      : [];
+  });
   return (
-    <HeldWritesNotice
-      items={items}
-      className="space-y-2 border border-melon-200 bg-melon-50 p-3 text-xs text-zinc-700 [&_button]:font-medium [&_button]:text-teal-700 [&_button]:underline"
-    />
+    <>
+      <HeldWritesNotice
+        items={items}
+        className="space-y-2 border border-melon-200 bg-melon-50 p-3 text-xs text-zinc-700 [&_button]:font-medium [&_button]:text-teal-700 [&_button]:underline"
+      />
+      {client
+        ? unhashed.map(({ key, handle }) => (
+            <div key={key} className="border border-melon-200 bg-melon-50 p-3">
+              <LostReplyHashField
+                id={`held-hash-${key}`}
+                onCheck={async (hash) => {
+                  // The hold attaches it only when it is that exact send.
+                  const state = await handle.attachHash(client as WriteHoldClient, hash!);
+                  return state.status === "held-no-hash" ? NOT_THAT_TRANSACTION : null;
+                }}
+              />
+            </div>
+          ))
+        : null}
+    </>
   );
 }
 
