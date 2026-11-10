@@ -2,7 +2,9 @@ import { reviewedCall } from "@/lib/reviewed-call";
 import { refreshTransactionActivities } from "@/lib/transaction-activity";
 import { clearViewAs, setViewAs } from "@/lib/view-as";
 import type { ReviewedAction, ReviewedCall } from "@bananapus/nana-sdk-core/review";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { erc20Abi, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,6 +16,7 @@ const HASH = `0x${"ab".repeat(32)}` as Hex;
 
 const mocks = vi.hoisted(() => ({
   run: vi.fn(),
+  deps: null as null | { onDismissedSettled?: (call: ReviewedCall) => void },
   find: vi.fn(),
   discard: vi.fn(),
   account: { address: "0x1111111111111111111111111111111111111111", connector: { id: "a" } },
@@ -34,7 +37,10 @@ vi.mock("@/lib/safe-connector", () => ({
   safeWalletPeerSettled: async () => undefined,
 }));
 vi.mock("@bananapus/nana-sdk-core/review/react", () => ({
-  useReviewedRun: () => ({ run: mocks.run, phase: "idle", failure: null, error: null }),
+  useReviewedRun: (deps: typeof mocks.deps) => {
+    mocks.deps = deps;
+    return { run: mocks.run, phase: "idle", failure: null, error: null };
+  },
 }));
 vi.mock("@bananapus/nana-sdk-core/review", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/review")>()),
@@ -53,6 +59,11 @@ const call = (amount: number): ReviewedCall =>
     args: [OTHER, BigInt(amount)],
   });
 
+const queryClient = new QueryClient();
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+);
+
 beforeEach(() => {
   window.localStorage.clear();
   clearViewAs();
@@ -64,7 +75,7 @@ beforeEach(() => {
 
 describe("useReviewedAction", () => {
   it("refuses at the write gate once view-as turned on after the review", async () => {
-    const { result } = renderHook(() => useReviewedAction());
+    const { result } = renderHook(() => useReviewedAction(), { wrapper });
     await act(() => result.current.run({ account: REVIEWED, calls: [call(1)] }));
     const sent = mocks.run.mock.calls[0][0] as ReviewedAction;
     expect(() => sent.assertWriteState?.()).not.toThrow();
@@ -73,7 +84,7 @@ describe("useReviewedAction", () => {
   });
 
   it("journals a send under the reviewed account, not the one the wallet shows after", async () => {
-    const { result } = renderHook(() => useReviewedAction());
+    const { result } = renderHook(() => useReviewedAction(), { wrapper });
     await act(() => result.current.run({ account: REVIEWED, title: "Pay", calls: [call(1)] }));
     const sent = mocks.run.mock.calls[0][0] as ReviewedAction;
     mocks.account = { address: OTHER, connector: mocks.account.connector };
@@ -84,7 +95,7 @@ describe("useReviewedAction", () => {
   });
 
   it("replaces an unfinished earlier run whose calls were rebuilt, and resumes one with the same calls", async () => {
-    const { result } = renderHook(() => useReviewedAction());
+    const { result } = renderHook(() => useReviewedAction(), { wrapper });
     mocks.find.mockReturnValue({ calls: [call(1), call(2)] });
 
     await act(() => result.current.run({ scope: "s", calls: [call(1), call(2)] }));
@@ -99,7 +110,7 @@ describe("useReviewedAction", () => {
     let end!: (value: unknown) => void;
     const ended = new Promise((resolve) => (end = resolve));
     mocks.run.mockResolvedValueOnce({ status: "receipt", step: 0, hash: HASH, ended: () => ended });
-    const { result } = renderHook(() => useReviewedAction());
+    const { result } = renderHook(() => useReviewedAction(), { wrapper });
     let returned: unknown = "pending";
     await act(async () => {
       void result.current.run({ calls: [call(1)] }).then((value) => (returned = value));
@@ -110,8 +121,26 @@ describe("useReviewedAction", () => {
     expect(returned).toBe(done);
   });
 
+  it("settles a sent write's row once the hold it was left at ends the run done", async () => {
+    let end!: (value: unknown) => void;
+    const ended = new Promise((resolve) => (end = resolve));
+    mocks.run.mockImplementationOnce(async (action: ReviewedAction) => {
+      await action.onSubmitted?.(call(1), 0, HASH, { safe: false, adopted: false });
+      return { status: "receipt", step: 0, hash: HASH, ended: () => ended };
+    });
+    const { result } = renderHook(() => useReviewedAction(), { wrapper });
+    let returned: Promise<unknown> | undefined;
+    await act(async () => {
+      returned = result.current.run({ account: REVIEWED, calls: [call(1)] });
+    });
+    expect(refreshTransactionActivities()[0]).toMatchObject({ hash: HASH, status: "pending" });
+    await act(async () => end({ status: "done", hashes: [HASH], receipts: [] }));
+    await returned;
+    expect(refreshTransactionActivities()[0]).toMatchObject({ hash: HASH, status: "success" });
+  });
+
   it("sends nothing, and says why, when the earlier run still has a held step", async () => {
-    const { result } = renderHook(() => useReviewedAction());
+    const { result } = renderHook(() => useReviewedAction(), { wrapper });
     mocks.find.mockReturnValue({ calls: [call(1)] });
     mocks.discard.mockRejectedValue(
       new Error("A step of this action is still pending. Nothing was discarded."),
@@ -123,5 +152,13 @@ describe("useReviewedAction", () => {
       error: "A step of this action is still pending. Nothing was discarded.",
     });
     expect(mocks.run).not.toHaveBeenCalled();
+  });
+
+  it("reads again what a held step changed once it settles after its confirm was closed", async () => {
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries").mockResolvedValue();
+    renderHook(() => useReviewedAction(), { wrapper });
+    mocks.deps?.onDismissedSettled?.(call(1));
+    expect(invalidate).toHaveBeenCalledOnce();
+    invalidate.mockRestore();
   });
 });

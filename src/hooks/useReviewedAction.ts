@@ -27,6 +27,7 @@ import {
 } from "@bananapus/nana-sdk-core/review/react";
 import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
 import { canonicalSafeTxHash, SAFE_NONCE_GUIDANCE } from "@bananapus/nana-sdk-core/safe-service";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef } from "react";
 import type { Address, Hex } from "viem";
 import { useAccount, useConfig } from "wagmi";
@@ -63,6 +64,7 @@ export type ReviewedActionInput = Parameters<UseReviewedRunResult["run"]>[0];
  */
 export function useReviewedAction() {
   const config = useConfig();
+  const queryClient = useQueryClient();
   const { address } = useAccount();
   // The wallets running actions were reviewed on, each refused at the wallet if it changes.
   const reviewed = useRef(new Set<ReviewedWallet>());
@@ -79,8 +81,10 @@ export function useReviewedAction() {
       account: address,
       guard: requireNoViewAs,
       engine: loadEngine,
+      // A held step whose confirm was closed settled later: what it changed reads again.
+      onDismissedSettled: () => void queryClient.invalidateQueries(),
     }),
-    [config, address],
+    [config, address, queryClient],
   );
   const runner = useReviewedRun(deps);
   const latest = useRef(runner);
@@ -137,17 +141,18 @@ export function useReviewedAction() {
         .finally(() => {
           if (wallet) reviewed.current.delete(wallet);
         });
-      if (result?.status === "done")
+      // Sent, its receipt still verifying: pending (the hook's `receipt` phase), never failed or a
+      // reason to resend, until its hold ends the run, or `dismiss` ends the wait (null) and the
+      // hold keeps following it.
+      const ended = result?.status === "receipt" ? await result.ended() : result;
+      if (ended?.status === "done")
         for (const id of rows) if (id) settleSubmittedWrite(id, "success");
-      if (result?.status === "failed") {
-        const step = revertedStep(result.failure);
+      if (ended?.status === "failed") {
+        const step = revertedStep(ended.failure);
         const id = step === undefined ? undefined : rows[step];
         if (id) settleSubmittedWrite(id, "failed");
       }
-      // Sent, its receipt still verifying: pending (the hook's `receipt` phase), never failed or a
-      // reason to resend, until its hold ends the run. Its rows follow the hold.
-      if (result?.status === "receipt") return result.ended();
-      return result;
+      return ended;
     },
     [config],
   );
