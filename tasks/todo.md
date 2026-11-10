@@ -1782,4 +1782,10 @@ Two real defects fixed with regression tests (false loan failure on a second loa
 - [x] Fences: activity journal, multichain batch (check, execute, sendDirectCalls), resetUnpaidRoutingDraft, Markee journal with the board key folded in, relayr auth and payment locks, SafeRelayr run(locks)
 - [x] Kept wallet answers (hash, definite rejection) for Markee, direct batch calls and the relayr payment
 - [x] LostReplyHashField shared by Markee and the account page's held writes
-- [ ] Full check, push, draft PR
+- [x] Full check, push, draft PR
+
+### Review
+- `npm run check` (Node 26): dependencies, dead-code, env, deployment, typecheck, lint, format ratchet, source, protocol, wallet-writes and wallet checks pass. In vitest, 321 of 322 files pass. The one failure is the live testnet Bendystraw schema test: `testnet.bendystraw.xyz` times out from here (curl times out after 15 s), so it is external.
+- build:browser, standalone:check and bundle:check pass. Ceilings were raised to the measurement, as recorded in `scripts/check-client-bundle.mjs`.
+- test:browser: 159 passed and one load timeout (`project-shape` at wide-1100). That spec passes in full at workers=1 (48 passed).
+- SDK 6.3.0 will keep lost-lock outcomes itself. When it lands, delete `keptOutcomes` and its uses. The PR body lists them.
