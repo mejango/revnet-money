@@ -485,7 +485,7 @@ export function WalletButton() {
   }
 
   if (!mounted || !isConnected || !address) {
-    return <WalletConnectButton menuAlign="right" />;
+    return <WalletConnectButton menuAlign="right" variant="secondary" className="border-teal-500" />;
   }
 
   return (
