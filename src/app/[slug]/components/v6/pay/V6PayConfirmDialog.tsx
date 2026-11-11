@@ -82,7 +82,7 @@ const PHASE_LABELS: Record<Exclude<V6PayPhase, "ready" | "safe-proposed" | "succ
   preparing: "Preparing…",
   "approving-token":
     "Confirm token access in your wallet. The payment will continue automatically…",
-  simulating: "Simulating the transaction…",
+  simulating: "Checking the transaction…",
   signing: "Confirm in your wallet…",
   pending: "Transaction submitted, awaiting confirmation…",
 };

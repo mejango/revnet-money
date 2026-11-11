@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TxProgress } from "@/components/ui/TxProgress";
+import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import { useCashOutRoute } from "@/hooks/useCashOutRoute";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
@@ -553,7 +553,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
       setError(cashOutExecutionErrorMessage(err) ?? formatWalletError(err));
       toast({
         variant: "destructive",
-        title: "Cashout Failed",
+        title: "Cash out failed",
         description: cashOutExecutionErrorMessage(err) ?? formatWalletError(err),
       });
     } finally {
@@ -590,20 +590,19 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
               ) : (
                 <>
                   <p className="mb-4">
-                    Cashing out removes your tokens from supply, called burning, in exchange for
-                    revnet funds. If selling them to other traders pays more, this form offers that
-                    sale instead.
+                    Cashing out burns your tokens in exchange for revnet funds. If selling them to
+                    other traders pays more, this form offers that sale instead.
                   </p>
-                  <div className="mb-5 w-[65%]">
-                    <span className="text-sm text-black font-medium"> Your {tokenSymbol}</span>
-                    <div className="mt-1 border border-melon-300 p-3 bg-melon-25">
+                  <div className="mb-5">
+                    <span className="text-sm text-black font-medium">Your {tokenSymbol}</span>
+                    <div className="mt-1 grid grid-cols-2 gap-3 border border-melon-300 p-3">
                       {balances?.map((balance) => (
-                        <div key={balance.chainId} className="flex justify-between gap-2">
-                          {chainDisplayName(balance.chainId as JBChainId)}
-                          <span className="font-medium">
-                            {balance.balance?.format(6)} {tokenSymbol}
-                          </span>
-                        </div>
+                        <SummaryRow
+                          key={balance.chainId}
+                          label={chainDisplayName(balance.chainId as JBChainId)}
+                        >
+                          {balance.balance?.format(6)} {tokenSymbol}
+                        </SummaryRow>
                       ))}
                     </div>
                   </div>
@@ -612,10 +611,10 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                     <Label htmlFor="amount" className="text-zinc-900">
                       Tokens to cash out
                     </Label>
-                    <div className="grid grid-cols-7 gap-2">
-                      <div className="col-span-3">
+                    <div className="flex gap-2">
+                      <div className="shrink-0">
                         {cashOutableBalances.length === 1 ? (
-                          <div className="flex h-10 items-center gap-2 border border-melon-300 bg-melon-25 px-3 text-zinc-700">
+                          <div className="flex h-10 w-fit items-center gap-2 border border-melon-300 bg-melon-25 px-3 text-zinc-700">
                             <ChainLogo chainId={cashOutableBalances[0].chainId as JBChainId} />
                             {JB_CHAINS[cashOutableBalances[0].chainId as JBChainId].name}
                           </div>
@@ -624,7 +623,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                             value={cashOutChainId}
                             onValueChange={(v) => setCashOutChainId(v)}
                           >
-                            <SelectTrigger>
+                            <SelectTrigger className="w-fit gap-2">
                               <SelectValue placeholder="Choose network" />
                             </SelectTrigger>
                             <SelectContent>
@@ -643,7 +642,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                           </Select>
                         )}
                       </div>
-                      <div className="col-span-4">
+                      <div className="min-w-0 flex-1">
                         <div className="relative">
                           <Input
                             id="amount"
@@ -673,7 +672,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                                     : (Number(maxRedeemAmount) * (pct / 100)).toFixed(8),
                                 );
                               }}
-                              className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
+                              className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 bg-white hover:bg-zinc-100"
                             >
                               {pct === 100 ? "Max" : `${pct}%`}
                             </button>
@@ -701,10 +700,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
 
                   {!directSell && poolBufferBps !== null ? (
                     <div className="mt-2 text-sm text-zinc-500">
-                      This trading estimate already allows about{" "}
-                      {(poolBufferBps / 100).toFixed(2).replace(/\.00$/, "")}% for the trading fee
-                      and the price change caused by your sale. Your {slippageBps / 100}% setting
-                      allows further change before the transaction confirms.
+                      This estimate already includes about{" "}
+                      {(poolBufferBps / 100).toFixed(2).replace(/\.00$/, "")}% in trading costs.
+                      Your allowed decrease is on top.
                     </div>
                   ) : null}
 

@@ -24,8 +24,8 @@ export function AllowedDecreaseField({
             onClick={() => onChange(preset)}
             className={
               bps === preset
-                ? "h-7 px-2 text-sm rounded-md border border-teal-500 bg-teal-500 text-melon-950"
-                : "h-7 px-2 text-sm rounded-md border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100"
+                ? "h-7 px-2 text-sm border border-teal-500 bg-teal-500 text-melon-950"
+                : "h-7 px-2 text-sm border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100"
             }
           >
             {preset / 100}%

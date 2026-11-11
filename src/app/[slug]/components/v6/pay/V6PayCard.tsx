@@ -1173,7 +1173,7 @@ export function V6PayCard() {
             </div>
           ) : null}
 
-          <div className="flex justify-center items-center flex-col">
+          <div className="flex justify-center items-center flex-col [&>*:last-child]:border-b-0">
             {/* Pay block: mode dropdown in the label spot, big amount input, token selector at right */}
             <div
               className={`grid w-full grid-cols-[minmax(0,1fr)_auto] grid-rows-[auto_auto] content-center bg-zinc-100 px-4 ${payPanelLayout} ${
@@ -1339,7 +1339,7 @@ export function V6PayCard() {
                 ) : null}
 
                 {cartCount > 0 && shop ? (
-                  <div className="mt-3 rounded-md border border-zinc-200 bg-white p-3 text-sm">
+                  <div className="mt-3 border border-zinc-200 bg-white p-3 text-sm">
                     <div className="space-y-3">
                       {chainCartItems.map((item) => {
                         const tier = shop.tiers.find(
@@ -1626,8 +1626,7 @@ export function V6PayCard() {
       ) : null}
       {addBalanceViaRouter ? (
         <p className="mt-2 text-sm text-zinc-600">
-          Add to balance takes only tokens the project accepts directly. Pick one of those, or use
-          Pay.
+          This token can&apos;t be added to the balance. Pick another, or use Pay.
         </p>
       ) : null}
 
