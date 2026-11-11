@@ -58,7 +58,7 @@ export default function Page() {
           />
           <h2
             id="how-revnets-work"
-            className="text-center text-2xl font-semibold md:text-left md:text-3xl"
+            className="text-center text-[min(1.5rem,calc((100vw_-_3rem)/16.6))] font-semibold md:text-left md:text-3xl"
           >
             Shape that stands the test of time.
           </h2>
@@ -113,7 +113,7 @@ export default function Page() {
           />
           <h2
             id="why-revnets"
-            className="text-center text-2xl font-semibold md:text-left md:text-3xl"
+            className="text-center text-[min(1.5rem,calc((100vw_-_3rem)/16.6))] font-semibold md:text-left md:text-3xl"
           >
             <span className="block">Simple enough for startups.</span>
             <span className="block">Powerful enough for decentralized organizations.</span>
@@ -138,7 +138,7 @@ export default function Page() {
             loading="lazy"
             alt="Butterflies"
           />
-          <h2 id="join-us" className="text-center text-2xl font-semibold md:text-left md:text-3xl">
+          <h2 id="join-us" className="text-center text-[min(1.5rem,calc((100vw_-_3rem)/16.6))] font-semibold md:text-left md:text-3xl">
             Join us
           </h2>
           <p className="mt-4">
