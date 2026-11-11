@@ -388,10 +388,8 @@ describe("a saved single-chain launch", () => {
 
   it("offers the warned continue only after the check failed unreadable, and it launches anew", async () => {
     const { launchKeyOf, launchInputOf } = await import("@/app/create/helpers/launchIntent");
-    window.localStorage.setItem(
-      launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form)),
-      "{not json",
-    );
+    const key = launchKeyOf(TEST_ACCOUNT, 11155111, launchInputOf(mocks.form));
+    window.localStorage.setItem(key, "{not json");
     render(<Page />);
     const check = await screen.findByRole("button", { name: CHECK_LABEL });
     expect(
@@ -405,6 +403,8 @@ describe("a saved single-chain launch", () => {
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "I checked my wallet. Continue anyway" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: CHECK_LABEL })).toBeNull());
+    // A submit recovers a journaled launch first, so the forced exit has to finish clearing it.
+    await waitFor(() => expect(window.localStorage.getItem(key)).toBeNull());
     fireEvent.click(screen.getByRole("button", { name: "Submit launch fixture" }));
     await waitFor(() => expect(mocks.write).toHaveBeenCalledOnce());
   });
