@@ -1,0 +1,43 @@
+{
+  "v": 1,
+  "app": "revnet.money",
+  "data": {
+    "name": "Example Revnet",
+    "description": "A three-stage example schedule. Replace every value before launching.",
+    "tokenSymbol": "EXMPL",
+    "reserveAsset": "ETH",
+    "issuanceBaseCurrency": "ETH",
+    "chainIds": [8453],
+    "operator": [],
+    "stages": [
+      {
+        "initialIssuance": "1000",
+        "priceCeilingIncreasePercentage": "10",
+        "priceCeilingIncreaseFrequency": "30",
+        "priceFloorTaxIntensity": "20",
+        "stageStart": "0",
+        "splits": [{ "percentage": "30", "defaultBeneficiary": "" }],
+        "autoIssuance": []
+      },
+      {
+        "initialIssuance": "1000",
+        "pickUpFromPrevious": true,
+        "priceCeilingIncreasePercentage": "5",
+        "priceCeilingIncreaseFrequency": "90",
+        "priceFloorTaxIntensity": "50",
+        "stageStart": "365",
+        "splits": [{ "percentage": "10", "defaultBeneficiary": "" }],
+        "autoIssuance": []
+      },
+      {
+        "initialIssuance": "0",
+        "priceCeilingIncreasePercentage": "0",
+        "priceCeilingIncreaseFrequency": "0",
+        "priceFloorTaxIntensity": "50",
+        "stageStart": "1460",
+        "splits": [],
+        "autoIssuance": []
+      }
+    ]
+  }
+}

@@ -1,5 +1,26 @@
+import { createSchema } from "@/app/create/helpers/createSchema";
 import { parseRevnetDraft, revnetDraftFileName } from "@/lib/revnet-draft";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+
+describe("the published example draft", () => {
+  // /skill.md and /llms.txt send agents to this file, so it has to keep importing.
+  const source = readFileSync("public/examples/revnet.jb", "utf8");
+
+  it("imports every value it states and needs only an operator and a split recipient", () => {
+    const file = JSON.parse(source);
+    const parsed = parseRevnetDraft(source);
+    expect(file).toMatchObject({ v: 1, app: "revnet.money" });
+    expect(parsed).toMatchObject(file.data);
+
+    const result = createSchema.safeParse(parsed);
+    expect(result.success ? [] : result.error.issues.map((issue) => issue.path.join("."))).toEqual([
+      "stages.0.splits.0.defaultBeneficiary",
+      "stages.1.splits.0.defaultBeneficiary",
+      "operator",
+    ]);
+  });
+});
 
 describe("Revnet .jb drafts", () => {
   it("imports the native wrapper into whitelisted create-form values", () => {

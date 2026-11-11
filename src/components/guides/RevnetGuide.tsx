@@ -34,6 +34,19 @@ type RevnetGuideCodePoint = {
   links?: readonly { href: string; label: string }[];
 };
 
+type RevnetGuideTable = {
+  label: string;
+  /** Gives each row a stable `#term-…` anchor built from its key. */
+  termIds?: boolean;
+  rows: readonly (readonly [string, string])[];
+};
+
+const slug = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
 type RevnetGuideAudience = "founders" | "frontend" | "contracts";
 
 const AUDIENCE_LABEL: Record<RevnetGuideAudience, string> = {
@@ -54,15 +67,23 @@ export type RevnetGuideSection = {
   summary: string;
   paragraphs?: readonly string[];
   points?: readonly RevnetGuidePoint[];
+  /** Ordered steps, numbered by the list itself. */
+  steps?: readonly string[];
   /** A visual sketch with a plain-language alternative for readers who cannot use it. */
   diagrams?: readonly { label: string; description?: string; lines: readonly string[] }[];
-  /** Plain two-column reference rows, without the "code point" framing. */
-  table?: { label: string; rows: readonly (readonly [string, string])[] };
-  /** Side-by-side comparison: two named columns, one row per point. */
+  /** Render the diagrams directly after the summary instead of after the prose. */
+  diagramsFirst?: boolean;
+  /** Plain two-column reference rows. Values may carry inline links, one per line. */
+  table?: RevnetGuideTable | readonly RevnetGuideTable[];
+  /** Side-by-side comparison: named columns, one row per point. */
   compare?: {
     label: string;
-    columns: readonly [string, string];
-    rows: readonly (readonly [string, string])[];
+    /** The example's givens, shown under the label. */
+    lead?: string;
+    columns: readonly string[];
+    rows: readonly (readonly string[])[];
+    /** Text shown under the rows, such as the formula behind them. */
+    footer?: string;
   };
   codePoints?: readonly RevnetGuideCodePoint[];
   note?: string;
@@ -113,6 +134,37 @@ function ContentsList({ sections }: { sections: readonly RevnetGuideSection[] })
       ))}
     </ol>
   );
+}
+
+function Diagrams({ section }: { section: RevnetGuideSection }) {
+  return section.diagrams?.map((diagram, diagramIndex) => (
+    <figure key={diagram.label} className="border border-melon-300 bg-melon-50">
+      <figcaption className="border-b border-melon-200 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
+        {diagram.label}
+      </figcaption>
+      {diagram.description ? (
+        <p id={`${section.id}-diagram-${diagramIndex}-description`} className="sr-only">
+          {diagram.description}
+        </p>
+      ) : null}
+      <div
+        role="region"
+        aria-label={`${diagram.label}: scrollable diagram`}
+        aria-describedby={
+          diagram.description ? `${section.id}-diagram-${diagramIndex}-description` : undefined
+        }
+        tabIndex={0}
+        className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-melon-700"
+      >
+        <pre
+          aria-hidden={diagram.description ? true : undefined}
+          className="p-4 font-mono text-sm leading-6 text-zinc-800"
+        >
+          {diagram.lines.join("\n")}
+        </pre>
+      </div>
+    </figure>
+  ));
 }
 
 export function RevnetGuide({
@@ -189,10 +241,10 @@ export function RevnetGuide({
                   {section.part}
                 </p>
               ) : null}
-              <div className="flex items-start gap-4">
+              <div className="sm:flex sm:items-start sm:gap-4">
                 <span
                   aria-hidden="true"
-                  className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center border border-melon-300 bg-melon-100 text-sm font-semibold text-melon-800"
+                  className="mb-3 inline-flex h-8 w-8 shrink-0 sm:mb-0 sm:mt-1 items-center justify-center border border-melon-300 bg-melon-100 text-sm font-semibold text-melon-800"
                 >
                   {index + 1}
                 </span>
@@ -227,6 +279,8 @@ export function RevnetGuide({
               </div>
 
               <div className="ml-0 mt-6 space-y-5 text-base leading-relaxed text-zinc-700 sm:ml-12 sm:text-lg">
+                {section.diagramsFirst ? <Diagrams section={section} /> : null}
+
                 {section.paragraphs?.map((paragraph) => (
                   <p key={paragraph}>
                     <Inline text={paragraph} />
@@ -250,45 +304,28 @@ export function RevnetGuide({
                   </ul>
                 ) : null}
 
-                {section.diagrams?.map((diagram, diagramIndex) => (
-                  <figure key={diagram.label} className="border border-melon-300 bg-melon-50">
-                    <figcaption className="border-b border-melon-200 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
-                      {diagram.label}
-                    </figcaption>
-                    {diagram.description ? (
-                      <p
-                        id={`${section.id}-diagram-${diagramIndex}-description`}
-                        className="px-4 pt-4 text-base leading-relaxed text-zinc-800"
-                      >
-                        {diagram.description}
-                      </p>
-                    ) : null}
-                    <div
-                      role="region"
-                      aria-label={`${diagram.label}: scrollable diagram`}
-                      aria-describedby={
-                        diagram.description
-                          ? `${section.id}-diagram-${diagramIndex}-description`
-                          : undefined
-                      }
-                      tabIndex={0}
-                      className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-melon-700"
-                    >
-                      <pre
-                        aria-hidden={diagram.description ? true : undefined}
-                        className="p-4 font-mono text-sm leading-6 text-zinc-800"
-                      >
-                        {diagram.lines.join("\n")}
-                      </pre>
-                    </div>
-                  </figure>
-                ))}
+                {section.steps?.length ? (
+                  <ol className="ml-8 list-outside list-decimal space-y-3 marker:font-semibold marker:text-melon-700">
+                    {section.steps.map((step) => (
+                      <li key={step} className="pl-1">
+                        <Inline text={step} />
+                      </li>
+                    ))}
+                  </ol>
+                ) : null}
+
+                {section.diagramsFirst ? null : <Diagrams section={section} />}
 
                 {section.compare ? (
                   <div className="border border-melon-300">
                     <table className="w-full table-fixed border-collapse text-left text-sm sm:text-base">
                       <caption className="border-b border-melon-200 bg-melon-50 px-4 py-2 text-left text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
                         {section.compare.label}
+                        {section.compare.lead ? (
+                          <span className="mt-1 block text-sm font-normal normal-case tracking-normal text-zinc-700">
+                            {section.compare.lead}
+                          </span>
+                        ) : null}
                       </caption>
                       <thead>
                         <tr>
@@ -296,7 +333,7 @@ export function RevnetGuide({
                             <th
                               key={column}
                               scope="col"
-                              className="border-b border-melon-200 px-3 py-3 align-top font-semibold text-zinc-900 first:border-r sm:px-4"
+                              className="border-b border-r border-melon-200 px-3 py-3 align-top font-semibold text-zinc-900 last:border-r-0 sm:px-4"
                             >
                               {column}
                             </th>
@@ -304,45 +341,57 @@ export function RevnetGuide({
                         </tr>
                       </thead>
                       <tbody>
-                        {section.compare.rows.map(([left, right]) => (
-                          <tr key={left} className="border-b border-melon-200 last:border-b-0">
-                            <td className="border-r border-melon-200 px-3 py-3 align-top text-zinc-700 sm:px-4">
-                              {left}
-                            </td>
-                            <td className="px-3 py-3 align-top text-zinc-700 sm:px-4">{right}</td>
+                        {section.compare.rows.map((row) => (
+                          <tr key={row[0]} className="border-b border-melon-200 last:border-b-0">
+                            {row.map((cell, cellIndex) => (
+                              <td
+                                key={cellIndex}
+                                className="border-r border-melon-200 px-3 py-3 align-top text-zinc-700 last:border-r-0 sm:px-4"
+                              >
+                                {cell}
+                              </td>
+                            ))}
                           </tr>
                         ))}
                       </tbody>
                     </table>
+                    {section.compare.footer ? (
+                      <p className="border-t border-melon-200 px-3 py-3 text-sm sm:px-4 sm:text-base">
+                        {section.compare.footer}
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
 
-                {section.table ? (
-                  <div className="border border-melon-300">
-                    <h3
-                      id={`${section.id}-reference`}
-                      className="border-b border-melon-200 bg-melon-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-melon-700"
-                    >
-                      {section.table.label}
-                    </h3>
-                    <dl
-                      aria-labelledby={`${section.id}-reference`}
-                      className="text-sm sm:text-base"
-                    >
-                      {section.table.rows.map(([key, value]) => (
-                        <div
-                          key={key}
-                          className="grid border-b border-melon-200 last:border-b-0 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
-                        >
-                          <dt className="px-4 pb-1 pt-3 font-mono text-sm font-semibold text-zinc-900 sm:border-r sm:border-melon-200 sm:py-3">
-                            {key}
-                          </dt>
-                          <dd className="px-4 pb-3 pt-1 text-zinc-700 sm:py-3">{value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </div>
-                ) : null}
+                {[section.table ?? []].flat().map((table, tableIndex) => {
+                  const labelId = `${section.id}-reference${tableIndex ? `-${tableIndex + 1}` : ""}`;
+                  return (
+                    <div key={table.label} className="border border-melon-300">
+                      <h3
+                        id={labelId}
+                        className="border-b border-melon-200 bg-melon-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-melon-700"
+                      >
+                        {table.label}
+                      </h3>
+                      <dl aria-labelledby={labelId} className="text-sm sm:text-base">
+                        {table.rows.map(([key, value]) => (
+                          <div
+                            key={key}
+                            id={table.termIds ? `term-${slug(key)}` : undefined}
+                            className="grid scroll-mt-6 border-b border-melon-200 last:border-b-0 sm:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]"
+                          >
+                            <dt className="px-4 pb-1 pt-3 font-mono text-sm font-semibold text-zinc-900 sm:border-r sm:border-melon-200 sm:py-3">
+                              {key}
+                            </dt>
+                            <dd className="whitespace-pre-line px-4 pb-3 pt-1 text-zinc-700 sm:py-3">
+                              <Inline text={value} />
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </div>
+                  );
+                })}
 
                 {section.codePoints?.length ? (
                   <div className="space-y-5">
@@ -351,10 +400,7 @@ export function RevnetGuide({
                         key={codePoint.title}
                         className="border border-melon-300 bg-melon-50 p-4 sm:p-5"
                       >
-                        <p className="text-xs font-semibold uppercase tracking-[0.14em] text-melon-700">
-                          Code point
-                        </p>
-                        <h3 className="mt-2 text-lg font-semibold text-zinc-900 sm:text-xl">
+                        <h3 className="text-lg font-semibold text-zinc-900 sm:text-xl">
                           {codePoint.title}
                         </h3>
                         {codePoint.description ? (

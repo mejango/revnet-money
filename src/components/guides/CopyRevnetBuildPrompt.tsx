@@ -1,8 +1,11 @@
 "use client";
 
+import { REVNET_ONE_LINER } from "@/lib/one-liner";
 import { useState } from "react";
 
-const REVNET_BUILD_PROMPT = `My product: [describe the users, the value they exchange, and the experience I want].
+const REVNET_BUILD_PROMPT = `I want to build this on a revnet (Juicebox V6): ${REVNET_ONE_LINER} Start at https://revnet.money/skill.md; read https://revnet.money/learn#stages and https://revnet.money/build for the sections the brief needs.
+
+My product: [describe the users, the value they exchange, and the experience I want].
 
 Help me design and build the smallest product that achieves this outcome. Start with a short brief: users, success criteria, money and token flows, required networks, operator cash needs, and unresolved decisions. Preserve explicit constraints such as Base-only. Ask only questions that change the design; label unknowns instead of inventing defaults.
 

@@ -80,7 +80,8 @@ const routes = [
   { route: "/", path: "/", kib: 398 },
   { route: "/learn", path: "/learn", kib: 359 },
   { route: "/build", path: "/build", kib: 361 },
-  { route: "/audit", path: "/audit", kib: 362 },
+  // The audit prompts render in the page so a fetch can read them: /audit measures 362.0 KiB (just over 362).
+  { route: "/audit", path: "/audit", kib: 363 },
   { route: "/discover", path: "/discover", kib: 344 },
   { route: "/create", path: "/create", kib: 568 },
   { route: "/[slug]", path: "/eth:1", kib: 596 },

@@ -39,6 +39,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="icon" href="/assets/img/small-bw.svg" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        {/* Plain tags, not metadata.alternates: a page that sets its own canonical replaces that whole field. */}
+        <link rel="alternate" type="text/markdown" href="/skill.md" title="Agent skill" />
+        <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
       </head>
       <body className={twMerge(simplonMono.variable, "min-h-screen font-sans text-zinc-950")}>
         <Providers>

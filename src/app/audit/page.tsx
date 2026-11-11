@@ -3,9 +3,27 @@ import { Nav } from "@/components/layout/Nav";
 import type { Metadata } from "next";
 import Link from "next/link";
 
+const title = "Audit Revnet";
+const description =
+  "Inspect the Revnet V6 contracts, Juicebox V6 protocol, and Revnet Money webclient.";
+
 export const metadata: Metadata = {
-  title: "Audit Revnet",
-  description: "Inspect the Revnet V6 contracts, Juicebox V6 protocol, and Revnet Money webclient.",
+  title,
+  description,
+  alternates: { canonical: "/audit" },
+  openGraph: {
+    title,
+    description,
+    url: "/audit",
+    type: "website",
+    images: [{ url: "/assets/img/revnet-social.png", width: 1428, height: 804, alt: "Revnet" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: ["/assets/img/revnet-social.png"],
+  },
 };
 
 const CODE_LINKS = [

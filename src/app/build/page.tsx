@@ -55,6 +55,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     paragraphs: [
       "A contract owns every revnet and enforces its schedule. The operator can change details: contributor addresses, payment routes, names, bridges, and the shop.",
       `Project builders can launch with an [AI assistant](#launch-with-an-agent) or the [launch form](/create), without code. App builders use the [SDK](${JB_BUILD}#apps-set-up-the-sdk), a TypeScript library, and [Bendystraw](${JB_BUILD}#apps-indexed-data), an index of onchain records. Contract builders write Solidity.`,
+      `Revnets are built on Juicebox. The [Juicebox build guide](${JB_BUILD}) covers what every project shares; this guide covers stages, splits, loans, and the operator.`,
     ],
     links: [
       { href: "/learn", label: "How a revnet works" },
@@ -66,161 +67,6 @@ const SECTIONS: readonly RevnetGuideSection[] = [
   },
 
   // ------------------------------------------------------------------ Project builders
-  {
-    id: "launch-with-an-agent",
-    aliases: ["draft-files"],
-    part: "Project builders",
-    audience: ["founders"],
-    title: "Launch with an AI assistant",
-    summary:
-      "Describe the revnet to an assistant and let it do the setup. You review what it prepared and sign.",
-    paragraphs: [
-      "Connect it to the [Juicebox MCP](https://juicebox.center/mcp). It reads revnets, models stages with you, pins the name and logo to IPFS once you approve the upload, and prepares the exact deployFor transaction for each chain. It holds no keys and signs nothing.",
-      "Or have it write a .jb draft, a JSON file of the [launch form](/create)'s fields in the units you see on screen (days, percentages from 0 to 100, whole token amounts). Import it at the top of the launch form, check every section, and launch from there. Every live revnet's Extras tab exports one rebuilt from the chain, the easiest way to compare what launched with what you meant.",
-    ],
-    points: [
-      {
-        key: "Limits",
-        text: "up to 32 stages, 16 chains, 64 store items, 2 MB. Media cannot travel inside JSON; item images arrive as already-pinned ipfs:// URIs.",
-      },
-      {
-        key: "Skills",
-        text: "jb-deploy-ui for launch interfaces; revnet-economics and revnet-modeler for exploring terms. Check a generated draft against the current schema.",
-      },
-    ],
-    links: [
-      { href: "https://juicebox.center/mcp", label: "Juicebox MCP" },
-      { href: `${REFERENCE_ROOT}/src/lib/revnet-draft.ts`, label: "Draft format" },
-      { href: `${REFERENCE_ROOT}/src/app/create/types.ts`, label: "Every field" },
-      { href: `${SKILLS}/jb-deploy-ui/SKILL.md`, label: "Launch interface skill" },
-    ],
-  },
-  {
-    id: "launch-without-code",
-    aliases: ["launch-from-the-wizard"],
-    part: "Project builders",
-    audience: ["founders"],
-    title: "Launch without code",
-    summary:
-      "The [launch form](/create) has six sections. Save a draft, review the full schedule, then connect a wallet to launch. Check the launch cost on every selected network before signing.",
-    table: {
-      label: "The six sections",
-      rows: [
-        [
-          "1. Look",
-          "Name (up to 50 characters), token symbol (2–10), logo, description, and optional links. At launch these are pinned to IPFS as one file.",
-        ],
-        [
-          "2. Money and chains",
-          "What the revnet holds: ETH, USDC, both, or another token checked on each network. The currency that prices new tokens: ETH or USD. Then the networks.",
-        ],
-        [
-          "3. Terms",
-          "Issuance, issuance cuts, the split, the cash out tax, auto issuance, and stage starts. The schedule is fixed at launch; the operator can still change split recipients.",
-        ],
-        [
-          "4. Store",
-          "Optional items to sell, a pricing currency, and which shop powers the operator keeps. A shop contract deploys even with no items.",
-        ],
-        [
-          "5. Operator",
-          "Off by default: the role goes to an unusable dead address. On: one address for all chains, or one per chain. Confirm you control each address, especially a multisig on a new chain.",
-        ],
-        [
-          "6. Deploy",
-          "Refresh the quote, review, then sign. On one network, send a transaction or propose it to a Safe. On several, pay once on one network for a bundle that launches on all of them.",
-        ],
-      ],
-    },
-    paragraphs: [
-      "Issuance creates tokens per ETH or USD paid; later stages can inherit the rate. An issuance cut lowers it on a schedule (default 10% every 30 days). The cash out tax sets how much of a cash out stays behind (a value from 0 to 1: the form offers 0 to 0.8 in steps of 0.05, default 0.2; contracts allow anything below 1). The split sends a share of new tokens to contributors. Juicebox calls the same idea reserved tokens, and the contract field is splitPercent. Auto issuance sets aside fixed amounts to claim without paying.",
-    ],
-    note: "Stage starts must increase, a split above 0% needs a recipient, and issuance cuts should be at least a day apart. The form sets the first start ten minutes after you prepare the launch; you can pick a later time. If the launch executes after that start, cash outs and loans lock for seven days.",
-    links: [
-      { href: "/create", label: "Open the launch form" },
-      { href: "/learn#stages", label: "Stages in plain language" },
-      {
-        href: `${REFERENCE_ROOT}/src/app/create/helpers/parseDeployData.ts`,
-        label: "How the form becomes a deployFor call",
-      },
-    ],
-  },
-  {
-    id: "what-deploy-does",
-    part: "Project builders",
-    audience: ["founders", "frontend"],
-    title: "What happens when you deploy",
-    summary:
-      "The [launch form](/create) prepares a deployFor call for each selected chain with matching terms and salts. Each chain gets its own project ID and completes on its own, even when the token address matches.",
-    points: [
-      {
-        key: "Creation fee",
-        text: "read JBProjects.creationFee() on each chain right before preparing the launch, and show it apart from network and relay costs.",
-      },
-      {
-        key: "Token",
-        text: "an ERC-20 named after the revnet, with its ticker. Chains share a token address when the deployer, sender, configuration hash, and salts match; check the address on each chain.",
-      },
-      {
-        key: "Pool",
-        text: "a Uniswap V4 pool per accepted token, opened empty at the issuance price with a 1% fee tier and 200 tick spacing. The buyback hook turns the deployer's 172800-second placeholder into a 30-minute TWAP window; twapWindowOf returns the live value.",
-      },
-      {
-        key: "Chains",
-        text: "with two or more chains, pay for one bundle. Each chain completes on its own schedule, so track them separately. With one chain, send a wallet transaction or a Safe proposal.",
-      },
-      {
-        key: "Afterwards",
-        text: "each chain has its own project ID; the page lives at /<chain>:<id>. The Terms tab shows the schedule as the contracts hold it.",
-      },
-    ],
-    note: "Safe owners: a proposal that executes after the first stage's start triggers the seven-day cash out and loan lock. Leave a buffer, or set a later start.",
-  },
-  {
-    id: "running-a-revnet",
-    aliases: ["money-in-and-out"],
-    part: "Project builders",
-    audience: ["founders"],
-    title: "Running it: what the operator can do",
-    summary:
-      "The operator has nine default permissions plus any granted at launch. The Operator tab shows the available actions; check grants per chain, since routing, recipients, and shop choices affect holders.",
-    table: {
-      label: "Operator tab",
-      rows: [
-        [
-          "Edits",
-          "Name, description, logo, links; an ENS handle; the recipients of the current stage's split (never its size)",
-        ],
-        [
-          "Chains",
-          "Extend the revnet to a new chain with the same terms, if the stage allows it (the launch form always allows it)",
-        ],
-        [
-          "Buyback router",
-          "Point at a buyback hook, select the router gateway through the registry where deployed, set the TWAP window (5 minutes to 2 days), or initialize a pool by hand if someone front-ran the automatic one",
-        ],
-        [
-          "Shop",
-          "Add items (media pinned to IPFS) and mint up to 50 free copies of an item. Removing items and editing discounts are contract powers this site does not expose yet",
-        ],
-        ["Account", "Hand the role to another address, or to the zero address to end it"],
-        [
-          "Permissions",
-          "A read-only view of what is granted, flagging grants that no longer authorize anything",
-        ],
-      ],
-    },
-    paragraphs: [
-      "Collect auto issuance from Owners. Holders use the You card to cash out, borrow, move between networks, or claim their tokens as ERC-20s. Card and bank payments buy an accepted token first.",
-      "Liquidity lives under Owners → Market. Anyone can add liquidity to the pool through Uniswap V4's position manager, single-sided if they like. The site shows the pool's composition, depth by price band, and every position.",
-      "The operator cannot change issuance, cuts, cash out taxes, split percentages, or stage timing, and cannot withdraw the balance. There is no owner key: REVOwner holds the project NFT and never transfers it.",
-    ],
-    links: [
-      { href: `${REV_CORE}/REVOwner.sol`, label: "REVOwner.sol" },
-      { href: "/learn#how-money-flows", label: "Where payments and cash outs go" },
-      { href: "/learn#fees", label: "Fees" },
-    ],
-  },
   {
     id: "choosing-the-numbers",
     part: "Project builders",
@@ -257,6 +103,196 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       { href: "/learn#three-prices", label: "First: the three prices" },
     ],
   },
+  {
+    id: "launch-with-an-agent",
+    aliases: ["draft-files"],
+    part: "Project builders",
+    audience: ["founders"],
+    title: "Launch with an AI assistant",
+    summary:
+      "Describe the revnet to an assistant and let it do the setup. You review what it prepared and sign.",
+    paragraphs: [
+      "Connect it to the Juicebox MCP with the command below. It reads revnets, models stages with you, pins the name and logo to IPFS once you approve the upload, and prepares the exact deployFor transaction for each chain. It holds no keys and signs nothing.",
+      "Or have it write a .jb draft, a JSON file of the [launch form](/create)'s fields in the units you see on screen (days, percentages from 0 to 100, whole token amounts). Import it at the top of the launch form, check every section, and launch from there. Every live revnet's Extras tab exports one rebuilt from the chain, the easiest way to compare what launched with what you meant.",
+    ],
+    points: [
+      {
+        key: "Limits",
+        text: "up to 32 stages, 16 chains, 64 store items, 2 MB. Media cannot travel inside JSON; item images arrive as already-pinned ipfs:// URIs.",
+      },
+      {
+        key: "Skills",
+        text: "jb-deploy-ui for launch interfaces; revnet-economics and revnet-modeler for exploring terms. Check a generated draft against the current schema.",
+      },
+    ],
+    codePoints: [
+      {
+        title: "Connect the Juicebox MCP",
+        details: [{ key: "URL", value: "https://juicebox.center/mcp" }],
+        code: "claude mcp add --transport http juicebox https://juicebox.center/mcp",
+      },
+    ],
+    links: [
+      { href: "https://juicebox.center/api", label: "Juicebox Center API" },
+      { href: `${REFERENCE_ROOT}/src/lib/revnet-draft.ts`, label: "Draft format" },
+      { href: `${REFERENCE_ROOT}/src/app/create/types.ts`, label: "Every field" },
+      { href: `${SKILLS}/jb-deploy-ui/SKILL.md`, label: "Launch interface skill" },
+    ],
+  },
+  {
+    id: "launch-without-code",
+    aliases: ["launch-from-the-wizard"],
+    part: "Project builders",
+    audience: ["founders"],
+    title: "Launch without code",
+    summary:
+      "The [launch form](/create) has six sections. Save a draft, review the full schedule, then connect a wallet to launch. Check the launch cost on every selected network before signing.",
+    table: [
+      {
+        label: "The six sections",
+        rows: [
+          [
+            "1. Look",
+            "Name (up to 50 characters), token symbol (2–10), logo, description, and optional links. At launch these are pinned to IPFS as one file.",
+          ],
+          [
+            "2. Money and chains",
+            "What the revnet holds: ETH, USDC, both, or another token checked on each network. The currency that prices new tokens: ETH or USD. Then the networks.",
+          ],
+          [
+            "3. Terms",
+            "Issuance, issuance cuts, the split, the cash out tax, auto issuance, and stage starts. The schedule is fixed at launch; the operator can still change split recipients.",
+          ],
+          [
+            "4. Store",
+            "Optional items to sell, a pricing currency, and which shop powers the operator keeps. A shop contract deploys even with no items.",
+          ],
+          [
+            "5. Operator",
+            "Off by default: the role goes to an unusable dead address. On: one address for all chains, or one per chain. Confirm you control each address, especially a multisig on a new chain.",
+          ],
+          [
+            "6. Deploy",
+            "Refresh the quote, review, then sign. On one network, send a transaction or propose it to a Safe. On several, pay once on one network for a bundle that launches on all of them.",
+          ],
+        ],
+      },
+      {
+        label: "Terms, field by field",
+        rows: [
+          [
+            "Issuance",
+            "Tokens created per ETH or USD paid. Default 10,000. Later stages can inherit the rate.",
+          ],
+          [
+            "Issuance cut",
+            "Lowers issuance on a schedule. Default 10% every 30 days. Cuts should be at least a day apart.",
+          ],
+          [
+            "Split",
+            "A share of new tokens sent to contributors. Default none. Above 0% needs a recipient. Juicebox calls the same idea reserved tokens, and the contract field is splitPercent.",
+          ],
+          [
+            "Cash out tax",
+            "How much of a cash out stays behind, a value from 0 to 1. Default 0.2. The form offers 0 to 0.8 in steps of 0.05; contracts allow anything below 1.",
+          ],
+          [
+            "Auto issuance",
+            "A fixed number of tokens for named recipients, claimable once the stage starts. Default none.",
+          ],
+          [
+            "Stage start",
+            "Default for the first stage: ten minutes after you prepare the launch; you can pick a later time. Stage starts must increase.",
+          ],
+        ],
+      },
+    ],
+    note: "If the launch executes after the first stage's start, cash outs and loans lock for seven days.",
+    links: [
+      { href: "/create", label: "Open the launch form" },
+      { href: "/learn#stages", label: "Stages in plain language" },
+      {
+        href: `${REFERENCE_ROOT}/src/app/create/helpers/parseDeployData.ts`,
+        label: "How the form becomes a deployFor call",
+      },
+    ],
+  },
+  {
+    id: "what-deploy-does",
+    part: "Project builders",
+    audience: ["founders", "frontend"],
+    title: "What happens when you launch",
+    summary:
+      "The [launch form](/create) prepares a deployFor call for each selected chain with matching terms and salts. Each chain gets its own project ID and completes on its own, even when the token address matches.",
+    points: [
+      {
+        key: "Creation fee",
+        text: "read JBProjects.creationFee() on each chain right before preparing the launch, and show it apart from network and relay costs.",
+      },
+      {
+        key: "Token",
+        text: "an ERC-20 named after the revnet, with its ticker. Chains share a token address when the deployer, sender, configuration hash, and salts match; check the address on each chain.",
+      },
+      {
+        key: "Pool",
+        text: "a market opens empty for each accepted token, priced at the issuance price.",
+      },
+      {
+        key: "Chains",
+        text: "with two or more chains, pay for one bundle. Each chain completes on its own schedule, so track them separately. With one chain, send a wallet transaction or a Safe proposal.",
+      },
+      {
+        key: "Afterwards",
+        text: "each chain has its own project ID; the page lives at /<chain>:<id>. The Terms tab shows the schedule as the contracts hold it.",
+      },
+    ],
+    note: "Safe owners: a proposal that executes after the first stage's start triggers the seven-day cash out and loan lock. Leave a buffer, or set a later start.",
+  },
+  {
+    id: "running-a-revnet",
+    aliases: ["money-in-and-out"],
+    part: "Project builders",
+    audience: ["founders"],
+    title: "Running it: what the operator can do",
+    summary:
+      "The operator has nine default permissions plus any granted at launch. The Operator tab shows the available actions; check grants per chain, since routing, recipients, and shop choices affect holders.",
+    table: {
+      label: "Operator tab",
+      rows: [
+        [
+          "Edits",
+          "Name, description, logo, links; an ENS handle; the recipients of the current stage's split (never its size)",
+        ],
+        [
+          "Chains",
+          "Extend the revnet to a new chain with the same terms, if the stage allows it (the launch form always allows it)",
+        ],
+        [
+          "Buyback router",
+          "Point at a buyback hook, select the [router gateway](#words-for-builders) through the registry where deployed, set the [TWAP](#words-for-builders) window (5 minutes to 2 days), or initialize a pool by hand if someone front-ran the automatic one",
+        ],
+        [
+          "Shop",
+          "Add items (media pinned to IPFS) and mint up to 50 free copies of an item. Removing items and editing discounts are contract powers this site does not expose yet",
+        ],
+        ["Account", "Hand the role to another address, or to the zero address to end it"],
+        [
+          "Permissions",
+          "A read-only view of what is granted, flagging grants that no longer authorize anything",
+        ],
+      ],
+    },
+    paragraphs: [
+      "Collect auto issuance from Owners. Holders use the You card to cash out, borrow, move between networks, or claim their tokens as ERC-20s. Card and bank payments buy an accepted token first.",
+      "Liquidity lives under Owners → Market. Anyone can add liquidity to the pool through Uniswap V4's position manager, single-sided if they like. The site shows the pool's composition, depth by price band, and every position.",
+      "The operator cannot change issuance, cuts, cash out taxes, split percentages, or stage timing, and cannot withdraw the balance. There is no owner key: REVOwner holds the project NFT and never transfers it.",
+    ],
+    links: [
+      { href: `${REV_CORE}/REVOwner.sol`, label: "REVOwner.sol" },
+      { href: "/learn#how-money-flows", label: "Where payments and cash outs go" },
+      { href: "/learn#fees", label: "Fees" },
+    ],
+  },
 
   // ------------------------------------------------------------------ App builders
   {
@@ -282,25 +318,23 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     paragraphs: [
       `Start with the [SDK](${JB_BUILD}#apps-set-up-the-sdk), reads, and the review flow there, then come back for stages, loans, and the operator. Two revnet differences apply throughout: a payment with skipSplits set gets pool-bought tokens without the split, and a registered bridge contract cashes out without the tax or the launch lock.`,
     ],
-    links: [
-      { href: `${JB_BUILD}/first-payment`, label: "Your first test payment" },
-      {
-        href: `${JB_BUILD}#apps-juicebox-center`,
-        label: "Juicebox Center: RPC, IPFS, and indexed data",
-      },
-      { href: `${JB_BUILD}#apps-set-up-the-sdk`, label: "Set up the SDK" },
-      { href: `${JB_BUILD}#apps-read-a-project`, label: "Read a project" },
-      { href: `${JB_BUILD}#apps-indexed-data`, label: "Search indexed data with Bendystraw" },
-      { href: `${JB_BUILD}#apps-accept-payments`, label: "Accept payments" },
-      { href: `${JB_BUILD}#apps-cash-out`, label: "Quote and send cash outs" },
-      { href: `${JB_BUILD}#apps-move-across-chains`, label: "Move tokens across chains" },
-      { href: `${JB_BUILD}#apps-wallets-safe-relayr`, label: "Wallets, Safes, and bundles" },
-      { href: `${JB_BUILD}#apps-metadata-and-ipfs`, label: "Names, descriptions, and media" },
-      { href: `${JB_BUILD}#apps-transaction-boundary`, label: "Review, send, and confirm" },
-      { href: `${JB_BUILD}#contracts-hook-mechanics`, label: "Hooks" },
-      { href: `${JB_BUILD}#contracts-test`, label: "Test against deployed contracts" },
-      { href: `${JB_BUILD}#contracts-sharp-edges`, label: "Behavior every project shares" },
-    ],
+    table: {
+      label: "In the Juicebox build guide",
+      rows: [
+        [
+          "Start",
+          `[Your first test payment](${JB_BUILD}/first-payment)\n[Juicebox Center: RPC, IPFS, and indexed data](${JB_BUILD}#apps-juicebox-center)\n[Set up the SDK](${JB_BUILD}#apps-set-up-the-sdk)\n[Read a project](${JB_BUILD}#apps-read-a-project)\n[Search indexed data with Bendystraw](${JB_BUILD}#apps-indexed-data)`,
+        ],
+        [
+          "Money in and out",
+          `[Accept payments](${JB_BUILD}#apps-accept-payments)\n[Quote and send cash outs](${JB_BUILD}#apps-cash-out)\n[Move tokens across chains](${JB_BUILD}#apps-move-across-chains)\n[Wallets, Safes, and bundles](${JB_BUILD}#apps-wallets-safe-relayr)\n[Review, send, and confirm](${JB_BUILD}#apps-transaction-boundary)`,
+        ],
+        [
+          "Shipping",
+          `[Names, descriptions, and media](${JB_BUILD}#apps-metadata-and-ipfs)\n[Hooks](${JB_BUILD}#contracts-hook-mechanics)\n[Test against deployed contracts](${JB_BUILD}#contracts-test)\n[Behavior every project shares](${JB_BUILD}#contracts-sharp-edges)`,
+        ],
+      ],
+    },
   },
   {
     id: "operation-map",
@@ -367,7 +401,11 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     points: [
       {
         key: "Addresses",
-        text: `Juicebox [publishes one artifact per contract per chain](https://github.com/Bananapus/deploy-all-v6/tree/main/deployments): its address, ABI, and source name. The [SDK](${JB_BUILD}#apps-set-up-the-sdk)'s jbContractAddress map and the [skills library](https://github.com/mejango/juicebox-skills)'s chain-config.json come from it.`,
+        text: `Juicebox [publishes one artifact per contract per chain](https://github.com/Bananapus/deploy-all-v6/tree/main/deployments): its address, ABI, and source name. The [SDK](${JB_BUILD}#apps-set-up-the-sdk)'s jbContractAddress map and the [skills library](https://github.com/mejango/juicebox-skills)'s [chain-config.json](https://github.com/mejango/juicebox-skills/blob/main/plugins/juicebox-v6/shared/chain-config.json) come from it.`,
+      },
+      {
+        key: "Pool",
+        text: "launch opens a Uniswap V4 pool per accepted token with a 1% fee tier and 200 tick spacing. The buyback hook turns the deployer's 172800-second placeholder into a 30-minute TWAP window; twapWindowOf returns the live value.",
       },
       {
         key: "Chains",
@@ -379,6 +417,10 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
     ],
     links: [
+      {
+        href: "https://juicebox.center/api/v1/catalog/contracts",
+        label: "Address catalog, no key needed",
+      },
       { href: "https://github.com/Bananapus/deploy-all-v6", label: "Deployed addresses" },
       { href: "https://github.com/rev-net/revnet-core-v6", label: "Revnet contract source" },
       { href: "https://github.com/Bananapus/nana-core-v6", label: "Core contract source" },
@@ -450,13 +492,14 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ],
         code: [
           "const { borrowableNow } = await getBorrowableAmount(publicClient, {",
-          "  chainId, revnetId, collateralCount, decimals, currency,",
+          "  chainId, revnetId, collateralCount,",
+          "  decimals: 18n, currency: 61166n, // the borrowed token's decimals and currency (ETH shown)",
           "});",
           'if (borrowableNow <= 0n) throw new Error("No funds available to borrow for this collateral");',
           "",
           "const tx = buildBorrowTx({",
           "  chainId, revnetId, token, collateralCount, beneficiary, holder,",
-          "  prepaidFeePercent,            // 25–500 (2.5%–50%, out of 1000)",
+          "  prepaidFeePercent: 25n, // 25n to 500n, out of 1000",
           "  minBorrowAmount: slippageFloor(borrowableNow, 100n), // debt, 1% tolerance",
           "});",
         ].join("\n"),
@@ -684,7 +727,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           {
             key: "REVStageConfig",
             value:
-              "startsAtOrAfter (uint48, strictly increasing; 0 = now for the first), autoIssuances[] { chainId, count (uint104), beneficiary }, splitPercent (uint16, of 10,000), splits[] (JBSplit), initialIssuance (uint112, 18-dec tokens per base unit; 1 = inherit), issuanceCutFrequency (uint32 seconds), issuanceCutPercent (uint32, of 1e9), cashOutTaxRate (uint16, of 10,000, below 10,000), extraMetadata (uint16; bit 2 allows adding chains)",
+              "startsAtOrAfter (uint48, strictly increasing; 0 = now for the first; multichain: never 0, use one explicit timestamp on every chain), autoIssuances[] { chainId, count (uint104), beneficiary }, splitPercent (uint16, of 10,000), splits[] (JBSplit), initialIssuance (uint112, 18-dec tokens per base unit; 1 = inherit), issuanceCutFrequency (uint32 seconds), issuanceCutPercent (uint32, of 1e9), cashOutTaxRate (uint16, of 10,000, below 10,000), extraMetadata (uint16; bit 2 allows adding chains)",
           },
           {
             key: "JBAccountingContext",
@@ -917,7 +960,10 @@ export default function BuildPage() {
         sections={SECTIONS}
         afterIntroduction={
           <>
-            <nav aria-label="Choose a building path" className="grid gap-3 sm:grid-cols-3">
+            <nav
+              aria-label="Choose a building path"
+              className="flex flex-wrap gap-3 sm:grid sm:grid-cols-3"
+            >
               {[
                 {
                   href: "#launch-with-an-agent",
@@ -938,23 +984,15 @@ export default function BuildPage() {
                 <Link
                   key={href}
                   href={href}
-                  className="rounded-lg border border-zinc-300 bg-white p-4 text-zinc-900 hover:border-melon-500 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-900"
+                  className="inline-flex min-h-11 items-center rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm text-zinc-900 hover:border-melon-500 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-zinc-900 sm:block sm:p-4 sm:text-base"
                 >
                   <span className="block font-semibold">{title}</span>
-                  <span className="mt-2 block text-sm leading-relaxed text-zinc-700">
+                  <span className="mt-2 hidden text-sm leading-relaxed text-zinc-700 sm:block">
                     {description}
                   </span>
                 </Link>
               ))}
             </nav>
-            <p className="text-base text-zinc-600">
-              Revnets are built on Juicebox. The{" "}
-              <Link href={JB_BUILD} className="underline decoration-melon-400 underline-offset-4">
-                Juicebox build guide
-              </Link>{" "}
-              covers what every project shares; this guide covers stages, splits, loans, and the
-              operator.
-            </p>
             <AgentSkillsNote
               skills={[
                 "jb-deploy-ui",

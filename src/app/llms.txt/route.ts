@@ -1,6 +1,7 @@
 import {
   CHAIN_SLUGS,
   JUICEBOX_CENTER_API_URL,
+  JUICEBOX_MCP_GUIDE_URL,
   JUICEBOX_MCP_URL,
   JUICEBOX_SKILLS_URL,
 } from "@/lib/agent-guide";
@@ -37,9 +38,14 @@ identifier, description and logo.
 - [Discover](${siteOrigin}/discover): every indexed revnet.
 - [Learn](${siteOrigin}/learn): what a revnet is and the rules it fixes at launch.
 - [Build](${siteOrigin}/build): launch a revnet, connect an app, or write a contract.
+- [Stages](${siteOrigin}/learn#stages): the schedule a revnet fixes at launch, with an example.
+- [Loans](${siteOrigin}/learn#loans): borrowing against tokens, repaying, and the 10-year expiry.
+- [Operator](${siteOrigin}/learn#operator): what the operator can and cannot do.
+- [Launch form](${siteOrigin}/build#launch-without-code): launch a revnet without code.
+- [deployFor, field by field](${siteOrigin}/build#install-and-deploy-from-solidity): launch from a contract.
 - [Glossary](${siteOrigin}/learn#glossary): short definitions of the words used across this site.
 - [Fees](${siteOrigin}/learn#fees): costs, receiving revnets, and how they share tokens with payers.
-- [Payment tutorial](https://juicebox.money/build/first-payment): read a project, preview a payment, then try it on a test network.
+- [Payment tutorial (on juicebox.money)](https://juicebox.money/build/first-payment): read a project, preview a payment, then try it on a test network.
 - [Model the schedule](${siteOrigin}/build#choosing-the-numbers): compare scenarios before preparing a revnet draft.
 - [Three prices](${siteOrigin}/learn#three-prices): compare new tokens, existing tokens, and returning tokens for money.
 - [Inspect a project](https://juicebox.center/#apps/juicescan): identify a project by its network and ID; check transaction confirmation and any destination claim.
@@ -51,16 +57,24 @@ identifier, description and logo.
 - [Agent skill](${siteOrigin}/skill.md): how to launch, check, pay, cash out, and borrow here.
 - [Juicebox MCP](${JUICEBOX_MCP_URL}): reads, quotes, metadata pinning, and unsigned
   transaction plans. Holds no keys; the user signs.
+- [MCP guide](${JUICEBOX_MCP_GUIDE_URL}): how to connect a client.
+- [Contract addresses](https://juicebox.center/api/v1/catalog/contracts): every V6 contract per chain, keyless JSON.
 - [Juicebox Center API](${JUICEBOX_CENTER_API_URL}): RPC, IPFS, and indexed data in one place.
 - [Juicebox V6 skills](${JUICEBOX_SKILLS_URL}): instructions for launching,
   paying, cashing out, loans, and integrations.
 - [Launch with an AI assistant](${siteOrigin}/build#launch-with-an-agent): the MCP or a .jb draft.
+- [Example .jb draft](${siteOrigin}/examples/revnet.jb): the three-stage schedule from Learn, on Base, which imports at
+  ${siteOrigin}/create. \`initialIssuance\` is tokens per ETH, \`priceCeilingIncreasePercentage\` (the issuance cut),
+  \`priceFloorTaxIntensity\` (the cash out tax, so \`20\` is a 0.2 tax) and a split's \`percentage\` are 0 to 100,
+  \`priceCeilingIncreaseFrequency\` is days between cuts, and \`stageStart\` is days after the previous stage starts,
+  rounded up to one of that stage's cuts. The form asks for the two blanks, the operator and the split recipient.
 - [Shared app work](${siteOrigin}/build#shared-with-juicebox): SDK, reads, payments, and signing.
 - [Audit prompts](${siteOrigin}/audit): review the whole system or one transaction.
 
 ## JSON endpoints
 
-Read-only, no key required, cached at the edge.
+Read-only, no key required, cached at the edge. A revnet's stages are not in the page HTML or
+these endpoints; use \`jb_get_revnet\` on the MCP.
 
 - \`GET /api/discover-projects\`: every indexed V6 revnet, one entry per sucker group.
 - \`GET /api/top-projects?limit=<1-32>&offset=<n>\`: revnets ranked by balance.
