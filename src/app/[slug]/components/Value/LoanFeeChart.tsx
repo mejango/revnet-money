@@ -95,7 +95,7 @@ export function LoanFeeChart({
             tooltip={({ datum }) => {
               if (datum.year >= 9.99) {
                 return (
-                  <div className="rounded-md border border-zinc-200 bg-white p-3 text-sm shadow-xl">
+                  <div className="border border-zinc-200 bg-white p-3 text-sm shadow-xl">
                     <div className="font-medium">Ten-year deadline: token recovery ends</div>
                     <div className="mt-1 text-zinc-600">
                       The right to recover the tokens has ended.
@@ -109,7 +109,7 @@ export function LoanFeeChart({
               const remMonths = months % 12;
               const collateralSymbol = collateralTokenSymbol || tokenSymbol;
               return (
-                <div className="rounded-md border border-zinc-200 bg-white p-3 text-sm shadow-xl whitespace-nowrap">
+                <div className="border border-zinc-200 bg-white p-3 text-sm shadow-xl whitespace-nowrap">
                   <div className="font-medium">
                     {months} months ({years}y {remMonths}m)
                   </div>

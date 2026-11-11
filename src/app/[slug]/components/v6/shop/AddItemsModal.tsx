@@ -2,7 +2,6 @@
 
 import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { ChainLogo } from "@/components/ChainLogo";
 import {
   MAX_MEDIA_BYTES,
   newDraftItem,
@@ -303,10 +302,7 @@ export function AddItemsModal({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Add items for sale</DialogTitle>
-          <DialogDescription>
-            Stage items and choose the collections to stock. Review each chain’s prices and
-            inventory before submitting.
-          </DialogDescription>
+          <DialogDescription>Add items and pick the chains to sell them on.</DialogDescription>
         </DialogHeader>
 
         {phase === "done" || phase === "safe-proposed" ? (
@@ -314,7 +310,7 @@ export function AddItemsModal({
             <p className="text-sm font-medium text-zinc-900">
               {phase === "safe-proposed"
                 ? "Shop update pending"
-                : "Items added to every selected collection."}
+                : "Items added on every selected chain."}
             </p>
             {phase === "safe-proposed" ? (
               <p className="mx-auto mt-2 max-w-md text-sm text-zinc-600">
@@ -334,7 +330,7 @@ export function AddItemsModal({
         ) : (
           <>
             {saved ? (
-              <div className="space-y-2 bg-melon-50 p-3">
+              <div className="space-y-2 border border-zinc-200 p-3">
                 <p className="text-sm">
                   A saved shop update is awaiting completion. Confirmed chains will not be submitted
                   again.
@@ -346,7 +342,10 @@ export function AddItemsModal({
             ) : null}
             <div className="flex flex-col gap-5">
               {items.map((item, index) => (
-                <div key={index} className="bg-melon-50 p-4 sm:p-5">
+                <div
+                  key={index}
+                  className="border border-melon-300 p-4 max-sm:-mx-6 max-sm:border-x-0 max-sm:px-6 sm:p-5"
+                >
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium text-zinc-800">Item {index + 1}</span>
                     {items.length > 1 ? (
@@ -384,7 +383,7 @@ export function AddItemsModal({
                 type="button"
                 onClick={() => setItems((current) => [...current, newDraftItem()])}
                 disabled={busy || !!prepared || !!saved}
-                className="self-start border border-dashed border-zinc-400 px-4 py-2.5 text-sm text-zinc-600 hover:border-zinc-700 hover:text-zinc-900"
+                className="self-start border border-dashed border-zinc-400 bg-white px-4 py-3 text-sm font-medium hover:border-zinc-600 disabled:opacity-50"
               >
                 + Add an item
               </button>
@@ -394,15 +393,12 @@ export function AddItemsModal({
                 <div
                   role="group"
                   aria-label="Chains to add items on"
-                  className="mt-2 flex flex-wrap gap-2"
+                  className="mt-2 flex flex-wrap gap-x-6 gap-y-3"
                 >
                   {peers.destinations.map((destination) => {
                     const key = `${destination.chainId}:${destination.projectId}`;
                     return (
-                      <label
-                        key={key}
-                        className="inline-flex min-h-11 items-center gap-2 border border-zinc-300 px-3 text-sm"
-                      >
+                      <label key={key} className="flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
                           aria-label={`Add on ${chainDisplayName(destination.chainId)}`}
@@ -415,9 +411,8 @@ export function AddItemsModal({
                                 : current.filter((entry) => entry !== key),
                             )
                           }
+                          className="h-4 w-4"
                         />
-                        <ChainLogo chainId={destination.chainId} width={22} height={22} />
-                        Project #{destination.projectId.toString()} on{" "}
                         {chainDisplayName(destination.chainId)}
                       </label>
                     );
@@ -441,13 +436,13 @@ export function AddItemsModal({
                   <fieldset key={key} className="space-y-2 border-t border-zinc-200 pt-3">
                     <legend className="text-sm">
                       {chainDisplayName(destination.chainId)} prices (
-                      {destination.shop.pricing.symbol}; {destination.shop.pricing.decimals}{" "}
-                      decimals)
+                      {destination.shop.pricing.symbol})
                     </legend>
                     {items.map((item, index) => (
-                      <label key={index} className="flex items-center gap-3 text-xs">
+                      <label key={index} className="block text-xs">
                         {item.name || `Item ${index + 1}`}
                         <Input
+                          className="mt-1"
                           aria-label={`Item ${index + 1} price on ${chainDisplayName(destination.chainId)}`}
                           value={prices[key]?.[index] ?? item.price}
                           disabled={busy || !!prepared || !!saved}

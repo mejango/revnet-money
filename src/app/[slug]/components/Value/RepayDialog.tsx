@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SkeletonLines } from "@/components/ui/skeleton";
-import { TxProgress } from "@/components/ui/TxProgress";
+import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import {
   failedLine,
@@ -506,10 +506,10 @@ export function RepayDialog({
                   value:
                     amountToPayNow !== undefined
                       ? `${formatUnits(amountToPayNow, baseTokenDecimals)} ${baseTokenSymbol}`
-                      : "Calculated by the contract",
+                      : "Set when you repay",
                   ...(feeForThisRepay !== undefined && feeForThisRepay > 0n
                     ? {
-                        note: `Includes ${formatUnits(feeForThisRepay, baseTokenDecimals)} ${baseTokenSymbol} source fee`,
+                        note: `Includes ${formatUnits(feeForThisRepay, baseTokenDecimals)} ${baseTokenSymbol} repayment fee`,
                       }
                     : {}),
                 },
@@ -763,7 +763,7 @@ export function RepayDialog({
                 portion < 0.000001 ? "0" : portion.toFixed(6).replace(/\.?0+$/, ""),
               );
             }}
-            className="h-8 px-3 text-xs text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
+            className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 bg-white hover:bg-zinc-100"
           >
             {pct}%
           </button>
@@ -774,7 +774,7 @@ export function RepayDialog({
             const maxCollateralDisplay = formatUnits(loanData.collateral, projectTokenDecimals);
             setCollateralToReturn(maxCollateralDisplay);
           }}
-          className="h-8 px-3 text-xs text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
+          className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 bg-white hover:bg-zinc-100"
         >
           Max
         </button>
@@ -850,116 +850,96 @@ export function RepayDialog({
           <DialogTitle>Repay loan</DialogTitle>
         </DialogHeader>
         <div className="text-sm text-zinc-700 space-y-4">
-          <div className="grid grid-cols-7 gap-2">
-            <div className="col-span-4">
-              <Label
-                htmlFor="collateral-to-return"
-                className="block text-zinc-700 text-sm font-bold mb-1"
-              >
-                How much {tokenSymbol} do you want to recover?
-              </Label>
-              <Input
-                id="collateral-to-return"
-                type="number"
-                step="0.000001"
-                value={collateralToReturn}
-                onChange={(e) => {
-                  const value = e.target.value;
+          <div>
+            <Label
+              htmlFor="collateral-to-return"
+              className="block text-zinc-700 text-sm font-bold mb-1"
+            >
+              How much {tokenSymbol} do you want to recover?
+            </Label>
+            <Input
+              id="collateral-to-return"
+              type="number"
+              step="0.000001"
+              value={collateralToReturn}
+              onChange={(e) => {
+                const value = e.target.value;
 
-                  // Allow empty input for clearing
-                  if (value === "") {
-                    setCollateralToReturn("");
-                    return;
-                  }
+                // Allow empty input for clearing
+                if (value === "") {
+                  setCollateralToReturn("");
+                  return;
+                }
 
-                  // Limit decimal places to 8 digits
-                  const decimalIndex = value.indexOf(".");
-                  if (decimalIndex !== -1 && value.length - decimalIndex - 1 > 8) {
-                    return; // Don't update if too many decimal places
-                  }
+                // Limit decimal places to 8 digits
+                const decimalIndex = value.indexOf(".");
+                if (decimalIndex !== -1 && value.length - decimalIndex - 1 > 8) {
+                  return; // Don't update if too many decimal places
+                }
 
-                  const numValue = Number(value);
-                  const maxValue = loanData
-                    ? Number(formatUnits(loanData.collateral, projectTokenDecimals))
-                    : 0;
+                const numValue = Number(value);
+                const maxValue = loanData
+                  ? Number(formatUnits(loanData.collateral, projectTokenDecimals))
+                  : 0;
 
-                  // Only validate max if it's a valid number
-                  if (!isNaN(numValue)) {
-                    // Prevent entering more than available collateral
-                    if (numValue > maxValue) {
-                      setCollateralToReturn(maxValue.toFixed(6));
-                    } else {
-                      setCollateralToReturn(value);
-                    }
+                // Only validate max if it's a valid number
+                if (!isNaN(numValue)) {
+                  // Prevent entering more than available collateral
+                  if (numValue > maxValue) {
+                    setCollateralToReturn(maxValue.toFixed(6));
                   } else {
-                    // Allow partial input (like just a decimal point)
                     setCollateralToReturn(value);
                   }
-                }}
-                placeholder="Enter tokens to recover"
-                className={collateralError ? "border-red-500" : ""}
-              />
-              {collateralError && <p className="text-xs text-red-500 mt-1">{collateralError}</p>}
+                } else {
+                  // Allow partial input (like just a decimal point)
+                  setCollateralToReturn(value);
+                }
+              }}
+              placeholder="Enter tokens to recover"
+              className={collateralError ? "border-red-500" : ""}
+            />
+            {collateralError && <p className="text-xs text-red-500 mt-1">{collateralError}</p>}
 
-              {renderPercentageButtons()}
-            </div>
+            {renderPercentageButtons()}
           </div>
 
           <div className="mt-4">
             <Label className="block text-zinc-700 text-sm font-bold mb-1">Repayment details</Label>
             {loanData && (
-              <div className="bg-melon-25 border border-melon-300 p-4">
-                <div className="text-sm text-zinc-600">
-                  <table className="w-full">
-                    <tbody className="space-y-1">
-                      <tr>
-                        <td className="pr-4">Originally borrowed:</td>
-                        <td className="font-semibold text-right">
-                          {formatUnits(loanData.amount, baseTokenDecimals)} {baseTokenSymbol}
-                        </td>
-                      </tr>
-                      <tr>
-                        <td className="pr-4">
-                          Tokens to recover (
-                          {(
-                            (Number(collateralToReturn) /
-                              Number(formatUnits(loanData.collateral, projectTokenDecimals))) *
-                            100
-                          ).toFixed(1)}
-                          %):
-                        </td>
-                        <td className="font-semibold text-right">
-                          {collateralToReturn} {tokenSymbol}
-                        </td>
-                      </tr>
-                      {!isSimulating &&
-                        !simulationError &&
-                        amountToPayNow !== undefined &&
-                        repayPrincipal !== undefined && (
-                          <>
-                            <tr>
-                              <td className="pr-4">Pay now:</td>
-                              <td className="font-semibold text-right">
-                                {formatUnits(amountToPayNow, baseTokenDecimals)} {baseTokenSymbol}
-                                {feeForThisRepay !== undefined && feeForThisRepay > 0n ? (
-                                  <span className="block text-xs font-normal text-zinc-500">
-                                    includes {formatUnits(feeForThisRepay, baseTokenDecimals)}{" "}
-                                    {baseTokenSymbol} source fee
-                                  </span>
-                                ) : null}
-                              </td>
-                            </tr>
-                            <tr>
-                              <td className="pr-4">Debt left in a new loan:</td>
-                              <td className="font-semibold text-right">
-                                {formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)}{" "}
-                                {baseTokenSymbol}
-                              </td>
-                            </tr>
-                          </>
-                        )}
-                    </tbody>
-                  </table>
+              <div className="border border-melon-300 p-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <SummaryRow label="Originally borrowed">
+                    {formatUnits(loanData.amount, baseTokenDecimals)} {baseTokenSymbol}
+                  </SummaryRow>
+                  <SummaryRow
+                    label={`Tokens to recover (${(
+                      (Number(collateralToReturn) /
+                        Number(formatUnits(loanData.collateral, projectTokenDecimals))) *
+                      100
+                    ).toFixed(1)}%)`}
+                  >
+                    {collateralToReturn} {tokenSymbol}
+                  </SummaryRow>
+                  {!isSimulating &&
+                    !simulationError &&
+                    amountToPayNow !== undefined &&
+                    repayPrincipal !== undefined && (
+                      <>
+                        <SummaryRow label="Pay now">
+                          {formatUnits(amountToPayNow, baseTokenDecimals)} {baseTokenSymbol}
+                          {feeForThisRepay !== undefined && feeForThisRepay > 0n ? (
+                            <span className="block text-xs text-zinc-500">
+                              includes {formatUnits(feeForThisRepay, baseTokenDecimals)}{" "}
+                              {baseTokenSymbol} repayment fee
+                            </span>
+                          ) : null}
+                        </SummaryRow>
+                        <SummaryRow label="Debt left in a new loan">
+                          {formatUnits(loanData.amount - repayPrincipal, baseTokenDecimals)}{" "}
+                          {baseTokenSymbol}
+                        </SummaryRow>
+                      </>
+                    )}
                 </div>
                 {isSimulating && (
                   <p className="text-sm text-zinc-500 mt-2">Checking repayment amounts...</p>
@@ -980,16 +960,14 @@ export function RepayDialog({
                   !simulationError &&
                   amountToPayNow === undefined &&
                   (hasSufficientAllowance || isNativeBase) && (
-                    <p className="text-sm text-zinc-500 mt-2">
-                      The contract will calculate the amount
-                    </p>
+                    <p className="text-sm text-zinc-500 mt-2">The amount is set when you repay</p>
                   )}
               </div>
             )}
           </div>
           {/* Allowance Error Display */}
           {allowanceChecked && !hasSufficientAllowance && isNativeBase === false && (
-            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+            <div className="mt-4 p-4 border border-red-200">
               <div className="flex items-start gap-3">
                 <div className="flex-1">
                   <p className="text-sm text-red-700 font-medium mb-2">Token approval needed</p>

@@ -282,8 +282,8 @@ export function GossipCard({ chains }: { chains: ChainProject[] }) {
     <div className="border border-zinc-200 bg-melon-50 p-4">
       <h3 className="font-medium text-zinc-900">Gossip</h3>
       <p className="text-sm text-zinc-500 mt-1">
-        Chains share records of the revnet&apos;s money and tokens. This is called gossip. These
-        records affect how much holders can cash out or borrow on each chain.
+        Chains share records of the revnet&apos;s money and tokens. These records affect how much
+        owners can cash out or borrow on each chain.
       </p>
       {isLoading ? (
         <TableSkeleton rows={Math.max(chains.length, 2)} columns={6} />

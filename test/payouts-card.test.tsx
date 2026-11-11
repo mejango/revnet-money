@@ -141,6 +141,10 @@ describe("reachable selected-chain payouts", () => {
     setup();
     await selectAll();
     fireEvent.change(screen.getByLabelText("Payout amount on Base"), { target: { value: "1.25" } });
+    // The minimum is optional: its field shows once its checkbox is on.
+    expect(screen.queryByLabelText("Minimum payout on Base")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Set minimum received on Base"));
+    fireEvent.click(screen.getByLabelText("Set minimum received on Arbitrum"));
     fireEvent.change(screen.getByLabelText("Minimum payout on Base"), { target: { value: "1.2" } });
     fireEvent.change(screen.getByLabelText("Payout amount on Arbitrum"), {
       target: { value: "0.3" },
@@ -195,7 +199,7 @@ describe("reachable selected-chain payouts", () => {
     const review = screen.getByRole("button", { name: "Review selected payouts" });
     expect(screen.getByText("A project listed here isn't linked onchain.")).toBeTruthy();
     expect(review).toBeDisabled();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Project #99 on Arbitrum" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Arbitrum" }));
     expect(screen.queryByText("A project listed here isn't linked onchain.")).toBeNull();
     expect(review).not.toBeDisabled();
     expect(mocks.readPayoutOptions).not.toHaveBeenCalled();
@@ -204,7 +208,7 @@ describe("reachable selected-chain payouts", () => {
   it("keeps deselected chains out of both preparation and submission", async () => {
     setup();
     await screen.findByText(/Available 20 USDC/);
-    fireEvent.click(screen.getByRole("checkbox", { name: "Project #42 on Base" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Base" }));
     fireEvent.click(screen.getByRole("button", { name: "Review selected payouts" }));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
     expect(mocks.runBatch.mock.calls[0][0].calls).toHaveLength(1);

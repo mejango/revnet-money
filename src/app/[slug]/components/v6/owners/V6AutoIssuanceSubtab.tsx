@@ -130,8 +130,8 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
   return (
     <div>
       <p className="text-md text-black font-light italic mb-2">
-        These accounts can receive a fixed number of new tokens without paying. This is called auto
-        issuance. Anyone can send the tokens to them once the stage begins.
+        These accounts can receive a fixed number of new tokens without paying. Anyone can send the
+        tokens to them once the stage begins.
       </p>
       <div className="mb-4">
         <OwnerDistributionBatchButton
@@ -181,8 +181,8 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
       ) : null}
       <div className="mb-4">
         <div className="flex flex-col">
-          <Table className="min-w-max">
-            <TableHeader>
+          <Table className="min-w-max max-sm:block max-sm:min-w-0">
+            <TableHeader className="max-sm:hidden">
               <TableRow>
                 <TableHead className="whitespace-nowrap">Chain</TableHead>
                 <TableHead className="whitespace-nowrap">Stage</TableHead>
@@ -192,14 +192,22 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
                 <TableHead className="whitespace-nowrap">Distribute</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="max-sm:block">
               {rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="whitespace-nowrap">
+                <TableRow
+                  key={row.id}
+                  className="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2"
+                >
+                  <TableCell className="whitespace-nowrap max-sm:block max-sm:min-w-0 max-sm:px-0 max-sm:py-1 max-sm:whitespace-normal">
+                    <span className="block text-xs text-zinc-500 sm:hidden">Chain</span>
                     <ChainLogo chainId={row.chainId as JBChainId} standalone />
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">{row.stage ?? "—"}</TableCell>
-                  <TableCell className="whitespace-nowrap">
+                  <TableCell className="whitespace-nowrap max-sm:block max-sm:min-w-0 max-sm:px-0 max-sm:py-1 max-sm:whitespace-normal">
+                    <span className="block text-xs text-zinc-500 sm:hidden">Stage</span>
+                    {row.stage ?? "—"}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap max-sm:block max-sm:min-w-0 max-sm:px-0 max-sm:py-1 max-sm:whitespace-normal">
+                    <span className="block text-xs text-zinc-500 sm:hidden">Account</span>
                     <EthereumAddress
                       address={row.beneficiary as `0x${string}`}
                       chain={JB_CHAINS[row.chainId as JBChainId]?.chain}
@@ -208,13 +216,16 @@ export function V6AutoIssuanceSubtab({ projects }: { projects: ProjectItem[] }) 
                       withEnsName
                     />
                   </TableCell>
-                  <TableCell className="whitespace-nowrap tabular-nums">
+                  <TableCell className="whitespace-nowrap tabular-nums max-sm:block max-sm:min-w-0 max-sm:px-0 max-sm:py-1 max-sm:whitespace-normal">
+                    <span className="block text-xs text-zinc-500 sm:hidden">Amount</span>
                     <TokenAmount value={BigInt(row.count)} decimals={18} symbol={tokenSymbol} />
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">
+                  <TableCell className="whitespace-nowrap max-sm:block max-sm:min-w-0 max-sm:px-0 max-sm:py-1 max-sm:whitespace-normal">
+                    <span className="block text-xs text-zinc-500 sm:hidden">Unlock date</span>
                     {row.startsAt ? formatShortDateTime(row.startsAt * 1000) : "—"}
                   </TableCell>
-                  <TableCell className="whitespace-nowrap">
+                  <TableCell className="whitespace-nowrap max-sm:block max-sm:min-w-0 max-sm:px-0 max-sm:py-1 max-sm:whitespace-normal">
+                    <span className="block text-xs text-zinc-500 sm:hidden">Distribute</span>
                     {row.distributedTxn ? (
                       <div className="flex items-center gap-1 text-zinc-400">
                         <EtherscanLink

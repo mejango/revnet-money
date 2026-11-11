@@ -208,11 +208,12 @@ describe("ChangeSplitRecipientsDialog Sticky hook", () => {
     const dialog = within(await openDialog(0));
     const kind = dialog.getByRole("combobox", { name: "Recipient type" });
     expect(optionsOf(kind)).toEqual(["Address", "Hook"]);
-    expect(dialog.queryByRole("combobox", { name: "Hook type" })).toBeNull();
+    expect(dialog.queryByText("Sticky")).toBeNull();
 
     fireEvent.change(kind, { target: { value: "hook" } });
-    const hook = await dialog.findByRole("combobox", { name: "Hook type" });
-    expect(optionsOf(hook)).toEqual(["Sticky"]);
+    // One hook type exists, so it is plain text, not a dropdown.
+    expect(await dialog.findByText("Sticky")).toBeInTheDocument();
+    expect(dialog.queryByRole("combobox", { name: "Hook type" })).toBeNull();
     expect(dialog.getByRole("textbox", { name: "Sticky token" })).toBeInTheDocument();
   });
 
@@ -234,7 +235,7 @@ describe("ChangeSplitRecipientsDialog Sticky hook", () => {
     ];
     const dialog = within(await openDialog(0));
     expect(dialog.getByRole("combobox", { name: "Recipient type" })).toHaveValue("hook");
-    expect(dialog.getByRole("combobox", { name: "Hook type" })).toHaveValue("sticky");
+    expect(dialog.getByText("Sticky")).toBeInTheDocument();
     expect(dialog.getByRole("textbox", { name: "Sticky token" })).toHaveValue(BENEFICIARY);
   });
 });

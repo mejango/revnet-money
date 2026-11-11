@@ -185,8 +185,8 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
     <div>
       {rulesetReads.isLoading ? <TableSkeleton rows={4} columns={3} /> : null}
       <p className="text-md text-black font-light italic mb-2">
-        A share of tokens goes to the recipients listed below. These shares are called splits. The
-        revnet operator can change the recipients, but cannot raise a stage&apos;s fixed share.
+        Splits send a share of new tokens to the recipients listed below. The revnet operator can
+        change the recipients, but cannot raise a stage&apos;s fixed share.
       </p>
 
       <div className="text-sm font-medium text-zinc-500 mt-2 border-l border-zinc-300 pl-2 py-1">
@@ -262,15 +262,15 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
               </div>
               <div>
                 <div>
-                  <Table>
-                    <TableHeader>
+                  <Table className="max-sm:block">
+                    <TableHeader className="max-sm:hidden">
                       <TableRow>
                         <TableHead className="w-auto md:w-1/2">Account</TableHead>
                         <TableHead>Percentage</TableHead>
                         <TableHead>Pending splits</TableHead>
                       </TableRow>
                     </TableHeader>
-                    <TableBody>
+                    <TableBody className="max-sm:block">
                       {!hasStage ? (
                         <TableRow>
                           <TableCell colSpan={3} className="text-center text-zinc-400">
@@ -309,8 +309,11 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                           const isBurn = split.beneficiary.toLowerCase() === BURN_SENTINEL;
                           const shown = routesToHook ? split.hook : split.beneficiary;
                           return (
-                            <TableRow key={`${shown}-${i}`}>
-                              <TableCell>
+                            <TableRow
+                              key={`${shown}-${i}`}
+                              className="max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2"
+                            >
+                              <TableCell className="max-sm:block max-sm:min-w-0 max-sm:px-0 max-sm:py-1 max-sm:col-span-2">
                                 {isStickyHook(split.hook, c.chainId) ? (
                                   <span className="text-sm">
                                     <StickyRecipient split={split} chainId={c.chainId} />
@@ -331,7 +334,10 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                                   </span>
                                 )}
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="max-sm:block max-sm:min-w-0 max-sm:px-0 max-sm:py-1">
+                                <span className="block text-xs text-zinc-500 sm:hidden">
+                                  Percentage
+                                </span>
                                 {splitLimitBps !== undefined ? (
                                   <>
                                     {effectiveSplitPercent(BigInt(split.percent), splitLimitBps)}%
@@ -343,7 +349,10 @@ export function V6SplitsSubtab({ projects }: { projects: ProjectItem[] }) {
                                   `${formatUnits(BigInt(split.percent), 7)}% of limit`
                                 )}
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="max-sm:block max-sm:min-w-0 max-sm:px-0 max-sm:py-1">
+                                <span className="block text-xs text-zinc-500 sm:hidden">
+                                  Pending splits
+                                </span>
                                 {pending !== undefined ? (
                                   // THIS split's share of the chain's pending reserved balance.
                                   <TokenAmount

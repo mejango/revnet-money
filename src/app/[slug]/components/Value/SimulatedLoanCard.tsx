@@ -31,7 +31,7 @@ export function SimulatedLoanCard({
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
-          <div className="mb-2 p-3 bg-zinc-50 rounded-md border border-zinc-200 cursor-help">
+          <div className="mb-2 p-3 border border-melon-300 cursor-help">
             <div className="space-y-1 text-sm text-zinc-600">
               <p>
                 <span className="font-semibold">

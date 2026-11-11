@@ -47,6 +47,9 @@ function payoutContext(review: ReviewedPayout) {
   }));
 }
 
+const optionLabel = (option: PayoutOption) =>
+  `${option.symbol}, limit in ${payoutCurrencyLabel(option)}`;
+
 function defaultMinimum(option: PayoutOption, amount: string): string {
   try {
     const expected = payoutTokenAmount(option, payoutAmount(amount, option.decimals));
@@ -168,11 +171,11 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
     <section className="border border-zinc-200 bg-melon-50 p-4">
       <h3 className="font-medium text-zinc-900">Payouts</h3>
       <p className="mt-1 text-sm text-zinc-500">
-        Send the amount allowed by the project&apos;s rules to its listed recipients on each chain.
-        Any share without a recipient goes to that chain&apos;s project owner.
+        Send each chain&apos;s allowed payout to its listed recipients. Any share without a
+        recipient goes to that chain&apos;s project owner.
       </p>
       {pending ? (
-        <div className="mt-3 border border-amber-300 bg-amber-50 p-3 text-sm">
+        <div className="mt-3 border border-amber-300 p-3 text-sm">
           <p>
             Saved payout progress: {pending.completed}/{pending.total} complete.
           </p>
@@ -186,7 +189,7 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
           </ButtonWithWallet>
         </div>
       ) : null}
-      <div className="mt-3 flex gap-3">
+      <div className="mt-3 flex flex-wrap gap-3">
         <Button
           size="sm"
           variant="outline"
@@ -233,7 +236,7 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
                   }}
                 />
                 <ChainLogo chainId={row.chainId} width={16} height={16} />
-                Project #{String(row.projectId)} on {chainName(row.chainId)}
+                {chainName(row.chainId)}
               </label>
               {row.error ? (
                 <p className="mt-1 text-sm text-red-600">Could not verify payouts: {row.error}</p>
@@ -244,7 +247,7 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
                   {row.options.length > 1 ? (
                     <select
                       aria-label={`Payout asset on ${chainName(row.chainId)}`}
-                      className="mt-2 w-full border border-zinc-200 p-2 text-sm"
+                      className="mt-2 block h-9 max-w-full border-2 border-melon-300 bg-melon-25 px-2 py-0 pr-8 text-md hover:border-melon-400 focus:border-melon-600 focus:outline-none focus:ring-0"
                       value={option.key}
                       disabled={busy || Boolean(pending)}
                       onChange={(event) =>
@@ -253,15 +256,20 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
                     >
                       {row.options.map((candidate) => (
                         <option key={candidate.key} value={candidate.key}>
-                          {candidate.symbol}, limit in {payoutCurrencyLabel(candidate)}, terminal{" "}
-                          {candidate.terminal}
+                          {optionLabel(candidate)}
+                          {row.options.some(
+                            (other) =>
+                              other !== candidate && optionLabel(other) === optionLabel(candidate),
+                          )
+                            ? `, ${candidate.terminal.slice(0, 6)}…${candidate.terminal.slice(-4)}`
+                            : ""}
                         </option>
                       ))}
                     </select>
                   ) : null}
                   <p className="mt-1 text-xs text-zinc-500">
                     Available {formatUnits(option.availableAmount, option.decimals)}{" "}
-                    {payoutCurrencyLabel(option)}, terminal balance{" "}
+                    {payoutCurrencyLabel(option)}, balance{" "}
                     {formatUnits(option.balance, option.decimals)} {option.symbol}
                   </p>
                   {selected.has(row.chainId) ? (
@@ -281,21 +289,41 @@ export function PayoutsCard({ chains }: { chains: ChainProject[] }) {
                           }
                         />
                       </label>
-                      <label className="text-xs text-zinc-600">
-                        Minimum terminal tokens ({option.symbol}, before fees)
-                        <Input
-                          aria-label={`Minimum payout on ${chainName(row.chainId)}`}
-                          inputMode="decimal"
-                          disabled={busy || Boolean(pending)}
-                          value={minimumFor(option)}
-                          onChange={(event) =>
-                            setMinimums((current) => ({
-                              ...current,
-                              [option.key]: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
+                      <div>
+                        <label className="flex items-center gap-2 text-sm font-medium text-zinc-800">
+                          <input
+                            type="checkbox"
+                            aria-label={`Set minimum received on ${chainName(row.chainId)}`}
+                            className="h-4 w-4"
+                            disabled={busy || Boolean(pending)}
+                            checked={minimums[option.key] !== undefined}
+                            onChange={(event) => {
+                              const next = { ...minimums };
+                              if (event.target.checked) next[option.key] = minimumFor(option);
+                              else delete next[option.key];
+                              setMinimums(next);
+                            }}
+                          />
+                          Set minimum received
+                        </label>
+                        {minimums[option.key] !== undefined ? (
+                          <label className="mt-1 block text-xs text-zinc-600">
+                            Minimum received ({option.symbol}, before fees)
+                            <Input
+                              aria-label={`Minimum payout on ${chainName(row.chainId)}`}
+                              inputMode="decimal"
+                              disabled={busy || Boolean(pending)}
+                              value={minimumFor(option)}
+                              onChange={(event) =>
+                                setMinimums((current) => ({
+                                  ...current,
+                                  [option.key]: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                        ) : null}
+                      </div>
                     </div>
                   ) : null}
                 </>

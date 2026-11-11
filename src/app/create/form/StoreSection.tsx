@@ -127,7 +127,10 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
         {store.items.length > 0 ? (
           <div className="mt-5 flex flex-col gap-5">
             {store.items.map((item, index) => (
-              <div key={index} className="bg-melon-50 p-4 max-sm:-mx-4 sm:p-5">
+              <div
+                key={index}
+                className="border border-melon-300 p-4 max-sm:-mx-4 max-sm:border-x-0 sm:p-5"
+              >
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-zinc-800">Item {index + 1}</span>
                   <button

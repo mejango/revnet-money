@@ -433,14 +433,7 @@ export function AddStageDialog({
                                       <XIcon className="h-4 w-4" />
                                     </Button>
                                     {isStickyRow(split) ? (
-                                      <select
-                                        aria-label="Hook type"
-                                        value="sticky"
-                                        onChange={() => {}}
-                                        className="h-9 border-2 border-melon-300 bg-melon-25 px-2 py-0 pr-8 text-md hover:border-melon-400 focus:border-melon-600 focus:outline-none focus:ring-0"
-                                      >
-                                        <option value="sticky">Sticky</option>
-                                      </select>
+                                      <span className="flex h-9 items-center">Sticky</span>
                                     ) : null}
                                     <div
                                       className={`flex min-w-40 flex-1 flex-col gap-2 ${

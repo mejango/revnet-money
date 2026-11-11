@@ -1,7 +1,7 @@
 import { chainDisplayName } from "@/app/constants";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
-import { TxProgress } from "@/components/ui/TxProgress";
+import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import {
   Dialog,
   DialogContent,
@@ -117,7 +117,12 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
     [balances],
   );
   const defaultBalance = selectableBalances[0] ?? balances?.[0];
-  const hasOnlyOneProjectChain = balances?.length === 1;
+  // One usable network is plain text, not a one-option dropdown.
+  const hasOnlyChosenChain =
+    !!cashOutChainId &&
+    (balances?.length === 1 ||
+      (selectableBalances.length === 1 &&
+        selectableBalances[0].chainId === Number(cashOutChainId)));
 
   // Handle chain selection - exactly like RedeemDialog
   const handleChainSelect = useCallback(
@@ -208,20 +213,20 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
         <DialogHeader>
           <DialogTitle>New loan</DialogTitle>
           <DialogDescription>
-            Use tokens to back a loan from the revnet. This backing is called collateral. The tokens
-            are removed from supply; repay before 10 years to create them again.
+            Use tokens to back a loan from the revnet. The tokens are removed from supply; repay
+            before 10 years to create them again.
           </DialogDescription>
         </DialogHeader>
-        <div className="mb-5 w-[65%]">
+        <div className="mb-5">
           <span className="text-sm text-black font-medium">Your {tokenSymbol}</span>
-          <div className="mt-1 border border-melon-300 p-3 bg-melon-25">
+          <div className="mt-1 grid grid-cols-2 gap-3 border border-melon-300 p-3">
             {balances?.map((balance) => (
-              <div key={balance.chainId} className="flex justify-between gap-2">
-                {chainDisplayName(balance.chainId as JBChainId)}
-                <span className="font-medium">
-                  {balance.balance?.format(8)} {tokenSymbol}
-                </span>
-              </div>
+              <SummaryRow
+                key={balance.chainId}
+                label={chainDisplayName(balance.chainId as JBChainId)}
+              >
+                {balance.balance?.format(8)} {tokenSymbol}
+              </SummaryRow>
             ))}
           </div>
         </div>
@@ -231,18 +236,16 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           <Label htmlFor="collateral-amount" className="text-zinc-900">
             How much {tokenSymbol} do you want to use for this loan?
           </Label>
-          <div className="grid grid-cols-7 gap-2">
-            <div className="col-span-3">
-              {hasOnlyOneProjectChain && cashOutChainId ? (
-                <div className="flex h-10 w-full items-center border-2 border-melon-300 bg-melon-25 px-3 py-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <ChainLogo chainId={Number(cashOutChainId) as JBChainId} />
-                    <span>{chainDisplayName(Number(cashOutChainId) as JBChainId)}</span>
-                  </div>
+          <div className="flex gap-2">
+            <div className="shrink-0">
+              {hasOnlyChosenChain ? (
+                <div className="flex h-10 w-fit items-center gap-2 border border-melon-300 bg-melon-25 px-3 text-sm text-zinc-700">
+                  <ChainLogo chainId={Number(cashOutChainId) as JBChainId} />
+                  {chainDisplayName(Number(cashOutChainId) as JBChainId)}
                 </div>
               ) : (
                 <Select onValueChange={handleChainSelect} value={cashOutChainId || ""}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-fit gap-2">
                     <SelectValue placeholder="Choose network">
                       {cashOutChainId && (
                         <div className="flex items-center gap-2">
@@ -265,7 +268,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                 </Select>
               )}
             </div>
-            <div className="col-span-4">
+            <div className="min-w-0 flex-1">
               <div className="relative">
                 <Input
                   id="collateral-amount"
@@ -333,7 +336,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                       pct === 100 ? "max" : `${pct}%`,
                     );
                   }}
-                  className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
+                  className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 bg-white hover:bg-zinc-100"
                 >
                   {pct === 100 ? "Max" : `${pct}%`}
                 </button>
@@ -355,17 +358,13 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
           />
         ) : null}
         {minimumBorrowAmountPreview !== undefined && selectedChainTokenConfig ? (
-          <div className="border border-melon-300 bg-melon-25 p-3 text-sm">
-            <div className="flex justify-between gap-3">
-              <span className="text-zinc-600">Minimum borrowed</span>
-              <span className="font-medium">
-                {formatUnits(minimumBorrowAmountPreview, selectedChainTokenConfig.decimals)}{" "}
-                {selectedChainTokenSymbol}
-              </span>
-            </div>
+          <div className="border border-melon-300 p-3">
+            <SummaryRow label="Minimum borrowed">
+              {formatUnits(minimumBorrowAmountPreview, selectedChainTokenConfig.decimals)}{" "}
+              {selectedChainTokenSymbol}
+            </SummaryRow>
             <p className="mt-1 text-xs text-zinc-500">
-              The loan cannot borrow less than 99% of the latest quote. The quote refreshes before
-              you submit.
+              Stops if the loan would borrow less. The quote refreshes before you submit.
             </p>
           </div>
         ) : null}
@@ -395,13 +394,13 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
             displayMonths={displayMonths}
           />
         )}
-        {/* How loan backing works toggleable section */}
+        {/* What happens to the tokens, toggleable section */}
         <button
           type="button"
           onClick={() => setShowInfo(!showInfo)}
           className="flex items-center gap-2 text-left text-zinc-700 text-sm font-bold mb-2"
         >
-          <span>How loan backing works</span>
+          <span>What happens to your tokens</span>
           <span className={`transform transition-transform ${showInfo ? "rotate-90" : "rotate-0"}`}>
             ▶
           </span>
@@ -447,8 +446,7 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                     {
                       key: "permission",
                       title: "Let the loan contract remove your tokens from supply",
-                      detail:
-                        "This is called burning. Repayment creates the tokens again and returns them to you.",
+                      detail: "Repayment creates the tokens again and returns them to you.",
                     },
                   ]
                 : []),

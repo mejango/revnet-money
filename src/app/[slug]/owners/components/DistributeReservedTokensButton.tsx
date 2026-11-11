@@ -39,11 +39,11 @@ export function DistributeReservedTokensButton({
   const scope = `reserved-distribution:${projects.map(distributionProjectKey).sort().join("|")}`;
 
   return (
-    <div className="my-4 space-y-3 border border-zinc-200 p-3">
+    <div className="my-4 space-y-3">
       <p className="text-sm text-zinc-600">
-        Distribute pending reserved tokens to each selected chain’s current split recipients.
+        Send pending split tokens to each selected chain’s current recipients.
       </p>
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
         {projects.map((project) => {
           const key = distributionProjectKey(project);
           return (
@@ -56,7 +56,7 @@ export function DistributeReservedTokensButton({
                   setSelection((previous) => ({ ...previous, [key]: event.target.checked }))
                 }
               />
-              {chainDisplayName(project.chainId)}, project {String(project.projectId)}
+              {chainDisplayName(project.chainId)}
               {project.pending !== undefined ? (
                 <span>
                   (<TokenAmount value={project.pending} decimals={18} symbol={tokenSymbol} />)
