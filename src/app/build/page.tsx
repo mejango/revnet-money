@@ -76,7 +76,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       "Describe the revnet to an assistant and let it do the setup. You review what it prepared and sign.",
     paragraphs: [
       "Connect it to the [Juicebox MCP](https://juicebox.center/mcp). It reads revnets, models stages with you, pins the name and logo to IPFS once you approve the upload, and prepares the exact deployFor transaction for each chain. It holds no keys and signs nothing.",
-      "Or have it write a .jb draft. A .jb file is JSON: the [launch form](/create)'s fields in the units you see on screen (days, percentages from 0 to 100, whole token amounts). Import it at the top of the launch form, check every section, and launch from there. Every live revnet's Extras tab exports one rebuilt from the chain, the easiest way to compare what launched with what you meant.",
+      "Or have it write a .jb draft, a JSON file of the [launch form](/create)'s fields in the units you see on screen (days, percentages from 0 to 100, whole token amounts). Import it at the top of the launch form, check every section, and launch from there. Every live revnet's Extras tab exports one rebuilt from the chain, the easiest way to compare what launched with what you meant.",
     ],
     points: [
       {
@@ -133,7 +133,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       ],
     },
     paragraphs: [
-      "Issuance is the tokens created per ETH or USD paid; later stages can inherit it. An issuance cut lowers it on a schedule (default 10% every 30 days). The cash out tax sets how much of a cash out stays behind (a value from 0 to 1: the form offers 0 to 0.8 in steps of 0.05, default 0.2; contracts allow anything below 1). The split sends a share of new tokens to contributors. On Juicebox the same idea is called reserved tokens, and the contract field is splitPercent. Auto issuance sets aside fixed amounts to claim without paying.",
+      "Issuance creates tokens per ETH or USD paid; later stages can inherit the rate. An issuance cut lowers it on a schedule (default 10% every 30 days). The cash out tax sets how much of a cash out stays behind (a value from 0 to 1: the form offers 0 to 0.8 in steps of 0.05, default 0.2; contracts allow anything below 1). The split sends a share of new tokens to contributors. Juicebox calls the same idea reserved tokens, and the contract field is splitPercent. Auto issuance sets aside fixed amounts to claim without paying.",
     ],
     note: "Stage starts must increase, a split above 0% needs a recipient, and issuance cuts should be at least a day apart. The form sets the first start ten minutes after you prepare the launch; you can pick a later time. If the launch executes after that start, cash outs and loans lock for seven days.",
     links: [
@@ -410,7 +410,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       ],
     },
     paragraphs: [
-      "Stages are Juicebox rulesets. Backing counts open loans: while a loan can be repaid, its debt and the collateral repayment would restore both count. After 3,650 days anyone can liquidate it, which removes both.",
+      "The contracts store each stage as a Juicebox ruleset. Backing counts open loans: while a loan can be repaid, its debt and the collateral repayment would restore both count. After 3,650 days anyone can liquidate it, which removes both.",
     ],
     links: [
       {

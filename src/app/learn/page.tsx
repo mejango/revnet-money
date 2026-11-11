@@ -48,8 +48,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     id: "how-money-flows",
     part: "The basics",
     title: "How money flows",
-    summary:
-      "People pay in, then use their tokens to take money out or borrow. Returning tokens for money is called cashing out.",
+    summary: "People pay in, then cash out their tokens for money or borrow against them.",
     diagrams: [
       {
         label: "The loop",
@@ -104,7 +103,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "The basics",
     title: "Stages",
     summary:
-      "A revnet's rules change on a schedule fixed at launch. Each period is a stage, and the whole schedule is public from day one.",
+      "A revnet's rules change in stages, on a schedule fixed at launch. The whole schedule is public from day one.",
     paragraphs: [
       "Like Bitcoin's halvings, issuance cuts are scheduled in advance. Earlier supporters get more tokens for the same money, and everyone can see when the next cut lands.",
     ],
@@ -241,7 +240,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Going deeper",
     title: "Splits: tokens for contributors",
     summary:
-      "A revnet can send part of every new batch of tokens to contributors, partners, or other revnets. This is its split.",
+      "A revnet's split sends part of every new batch of tokens to contributors, partners, or other revnets.",
     paragraphs: [
       "With a 30% split, a payment that creates 1,000 tokens gives 700 to the payer and 300 to the split recipients. Recipients get tokens, never money from the balance sheet.",
       "Each stage's split percentage is fixed at launch. The operator can change who receives it, unless a recipient is locked, but never how much. Recipients can differ by chain; the percentage can't.",
@@ -253,7 +252,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Going deeper",
     title: "Markets and buybacks",
     summary:
-      "People can deposit tokens and money into a shared market, called a liquidity pool, for others to trade against. When you pay a revnet, it checks that pool and buys existing tokens for you when they're cheaper than new ones.",
+      "People can deposit tokens and money into a shared liquidity pool for others to trade against. When you pay a revnet, it checks that pool and buys existing tokens for you when they're cheaper than new ones.",
     paragraphs: [
       "Money spent in the pool goes to the sellers, not into the balance sheet. Tokens bought this way still go through the revnet's split. You can also trade on the pool directly, which skips the split. Shop items have to be bought through a payment.",
       "Cash outs work the same way in reverse: if selling to the pool pays more, the cash out sells there, and the review shows which route it takes.",
@@ -265,7 +264,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     part: "Going deeper",
     title: "Loans",
     summary:
-      "Borrow against your tokens and get them back when you repay. The tokens you borrow against, your collateral, are burned while the loan is open.",
+      "Borrow against your tokens and get them back when you repay. The tokens you put up as collateral are burned while the loan is open.",
     diagrams: [
       {
         label: "Loan lifecycle",
