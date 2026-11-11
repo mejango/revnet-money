@@ -15,12 +15,14 @@ import { requireNoViewAs } from "@/lib/view-as";
 import { answerHeldRefusal, isHeldRefusal, writeHolds } from "@/lib/write-hold";
 import type { ReviewedCall, ReviewedPlan } from "@bananapus/nana-sdk-core/review";
 import {
+  CONFIRMATION_QUEUED_LINE,
   discardReviewedSequence,
   findReviewedSequence,
   openStepHold,
   REVIEWED_ENGINE_LOAD_LINE,
   type WriteHoldClient,
 } from "@bananapus/nana-sdk-core/review";
+import { ConfirmationQueuedError } from "@bananapus/nana-sdk-core/review/locks";
 import {
   useReviewedRun,
   type UseReviewedRunDeps,
@@ -156,7 +158,15 @@ export function useReviewedAction() {
       // Sent, its receipt still verifying: pending (the hook's `receipt` phase), never failed or a
       // reason to resend, until its hold ends the run, or `dismiss` ends the wait (null) and the
       // hold keeps following it.
-      const ended = result?.status === "receipt" ? await result.ended() : result;
+      let ended: ReviewedRunResult;
+      try {
+        ended = result?.status === "receipt" ? await result.ended() : result;
+      } catch (cause) {
+        // Confirmed, its record queued behind this run's locks: nothing is sent again, and a
+        // retry closes on that success.
+        if (!(cause instanceof ConfirmationQueuedError)) throw cause;
+        return { status: "failed", error: CONFIRMATION_QUEUED_LINE, failure: cause };
+      }
       if (ended?.status === "done")
         for (const id of rows) if (id) settleSubmittedWrite(id, "success");
       if (ended?.status === "failed") {

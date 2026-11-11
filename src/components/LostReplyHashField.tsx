@@ -4,12 +4,6 @@ import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { isHash, type Hex } from "viem";
 
-/** A hash whose transaction was read and is not the held send's. */
-export const NOT_THAT_TRANSACTION = "This hash is not that transaction. Check it in your wallet.";
-/** A hash whose transaction couldn't be read yet (not indexed, or the network didn't answer). */
-export const LOST_REPLY_HASH_UNVERIFIED =
-  "Couldn't verify this transaction yet. Try again shortly.";
-
 /**
  * The hash of a send whose wallet reply was lost, given by the user: checked against the exact
  * send it is for, never sent again. `onCheck` says why a hash was refused, or nothing when it

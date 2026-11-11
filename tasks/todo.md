@@ -1792,3 +1792,16 @@ Two real defects fixed with regression tests (false loan failure on a second loa
 - [x] Run wrapper owns its own preparation: a failed Safe peer check or policy chunk returns core's `REVIEWED_ENGINE_LOAD_LINE` as a failed result (nothing sent), so no flow catches it; the pay card's not-started branch and line are gone. Failing-first test through the real wrapper on the burn flow (`test/reviewed-action-not-started.test.tsx`).
 - [x] Codex pass 1 #1: a payment whose confirm was dismissed while followed stays pending (Pay disabled); its settlement opens the confirm on the result and clears what was paid. Dismissal test extended through confirmation and closing again (failing first).
 - [x] Codex pass 1 #5: an unreadable lost-reply hash says `LOST_REPLY_HASH_UNVERIFIED`, a mismatch only once read. #2-#4 are lost-lock keep cases owned by SDK 6.3.0, listed in the PR body.
+
+## 2026-11-11 — Finish revnet on SDK core 6.3.0
+
+- **Objective:** Move #125 to core 6.3.0 and delete what it owns: `keptOutcomes`, the client hash lines and read-first check, and the pay card's pending-payment hold. Handle `ConfirmationQueuedError`. Recheck Codex pass 1 #2-#4 and pass 2 against 6.3.0.
+- **System fit:** Core keeps lost-lock wallet answers (callbacks rerun under retaken locks; `keepOutcome` for the client's own outcome writes), owns the dismissal and own-success rules, and reports `hashCheck`. revnet keeps fenced journals and its wording.
+- **Verification:** Regressions through the SDK path with `lapsingLocksForTests`, each seen failing first; full `npm run check`.
+
+- [x] Bump core 6.3.0
+- [x] Delete `keptOutcomes`; Markee and batch callbacks are fenced writes core keeps; relayr outcome writes use `keepOutcome`; a late kept hash starts the bundle observer
+- [x] Hash field uses `HELD_HASH_*_LINE` and `attachHash(...).hashCheck`
+- [x] Pay card: client pending hold deleted for the SDK dismissal rule; a Safe proposal is not dismissed
+- [x] `ConfirmationQueuedError` from `ended()` returns `CONFIRMATION_QUEUED_LINE`
+- [x] Full check, push, Codex until MERGE

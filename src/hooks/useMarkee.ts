@@ -7,7 +7,7 @@ import {
   SafeProposalPendingError,
   useReviewedAction,
 } from "@/hooks/useReviewedAction";
-import { fence, keptOutcomes, type TabLocks } from "@/lib/fence";
+import { fence, type TabLocks } from "@/lib/fence";
 import { confirmCheckedIt, confirmHeldWriteExit, confirmUnreadableExit } from "@/lib/flow-choice";
 import * as markee from "@/lib/markee";
 import { recoverMarkeeSubmission } from "@/lib/markee-recovery";
@@ -209,13 +209,6 @@ export function useMarkee(initialBoardAddress?: Address) {
   /** The Markee lock `act` holds: every journal and activity write checks it first. */
   const held = useRef<TabLocks>([]);
   const write = (journal: () => void) => fence(held.current, journal)();
-  /** The wallet's answers `act` could not save under a lapsed lock, saved once it is free. */
-  const kept = useRef(keptOutcomes(RECOVERY_KEY));
-  /** Whether the journal still holds `step` unsent: the attempt a kept answer is for. */
-  const stillUnsent = (step: Pending) => {
-    const saved = loadRecovery();
-    return saved?.pending?.id === step.id && !saved.pending.hash;
-  };
   /** The Markee journal's record of the step at the wallet boundary, before the wallet opens. */
   const beforeWallet = async () => {
     const current = active.current;
@@ -244,27 +237,23 @@ export function useMarkee(initialBoardAddress?: Address) {
     requireTransactionActivityPersistence();
     setPending(true);
   };
-  /** Nothing was sent (a gate refused, or the wallet said no): the step is no longer held. */
-  const onUnsent = async () => {
-    const current = active.current;
-    if (!current) return;
+  /**
+   * Nothing was sent for `step` (a gate refused, or the wallet said no): it is no longer held.
+   * Refused for a lapsed lock, core runs it again once the lock is taken back.
+   */
+  const unsent = async (step: Pending) => {
     const saved = loadRecovery();
-    if (saved?.pending?.id !== current.pending.id || saved.pending.hash) return;
-    // The wallet said no: kept under a lapsed lock, never dropped.
-    await kept.current.save(
-      held.current,
-      () => stillUnsent(current.pending),
-      () => {
-        const now = loadRecovery()!;
-        delete now.pending;
-        saveRecovery(now);
-        updateTransactionActivity(current.pending.id, {
-          status: "failed",
-          manualVerificationRequired: false,
-          message: "Nothing was sent.",
-        });
-      },
-    );
+    if (saved?.pending?.id !== step.id || saved.pending.hash) return;
+    await write(() => {
+      const now = loadRecovery()!;
+      delete now.pending;
+      saveRecovery(now);
+      updateTransactionActivity(step.id, {
+        status: "failed",
+        manualVerificationRequired: false,
+        message: "Nothing was sent.",
+      });
+    });
     setPending(false);
   };
 
@@ -451,25 +440,21 @@ export function useMarkee(initialBoardAddress?: Address) {
         await active.current.guard();
       },
       beforeWallet,
-      onUnsent,
-      // The hash is the Markee journal's before its receipt is awaited.
+      onUnsent: () => unsent(step),
+      // The hash is the Markee journal's before its receipt is awaited. Refused for a lapsed
+      // lock, core saves it once the lock is taken back.
       onSubmitted: async (_call, _step, hash) => {
-        const unsent = { ...step };
         step.hash = hash;
         recovery.pending = step;
-        // The hash is never dropped: kept under a lapsed lock, saved once it is free.
-        await kept.current.save(
-          held.current,
-          () => stillUnsent(unsent),
-          () => {
-            const now = loadRecovery()!;
-            now.pending = { ...now.pending!, hash };
-            saveRecovery(now);
-            updateTransactionActivity(step.id, {
-              message: "Submitted. Verifying the exact Markee result.",
-            });
-          },
-        );
+        await write(() => {
+          const now = loadRecovery()!;
+          if (now.pending?.id !== step.id) return;
+          now.pending = { ...now.pending, hash };
+          saveRecovery(now);
+          updateTransactionActivity(step.id, {
+            message: "Submitted. Verifying the exact Markee result.",
+          });
+        });
       },
       calls: [
         reviewedCall(
@@ -512,7 +497,6 @@ export function useMarkee(initialBoardAddress?: Address) {
     } finally {
       running.current = false;
       held.current = [];
-      void kept.current.apply().catch(() => undefined);
       active.current = undefined;
       setBusy(false);
     }

@@ -69,6 +69,9 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
   useReviewedAction: () => ({
     run: async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
+      const { keepOutcome } = await import("@bananapus/nana-sdk-core/review");
+      // Core's wallet answers: a callback refused for a lapsed lock runs again once it is taken back.
+      const answer = (callback: () => unknown) => keepOutcome(action.locks, callback);
       const call = action.calls[0]!;
       mocks.options = {
         reverify: () => action.reverify!(call, 0, undefined),
@@ -76,7 +79,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
           await action.beforeWallet!(call, 0);
         },
         onSubmissionRejected: async () => {
-          await action.onUnsent!(call, 0);
+          await answer(() => action.onUnsent!(call, 0));
         },
       };
       let sent: Hex;
@@ -85,7 +88,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
       } catch (cause) {
         return { status: "failed", error: (cause as Error).message, failure: cause };
       }
-      await action.onSubmitted!(call, 0, sent, { safe: false, adopted: false });
+      await answer(() => action.onSubmitted!(call, 0, sent, { safe: false, adopted: false }));
       // The confirm closed while the step's hold followed it: the run's wait ends null.
       if (mocks.dismissed) return null;
       return { status: "done", hashes: [sent], receipts: [] };
@@ -671,31 +674,13 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
     expect(localStorage.getItem("revnet:markee-rent:board:v1")).toBeNull();
   });
   it("saves the wallet's hash once the lock is free again when the lock lapsed while the wallet was open", async () => {
-    const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
-    let lapsed = false;
-    let taken = 0;
-    Object.defineProperty(navigator, "locks", {
-      configurable: true,
-      value: {
-        request: async (name: string, _options: unknown, callback: (lock: object) => unknown) => {
-          // The first lock lapses while the wallet is open; the next one is this tab's again.
-          const first = taken++ === 0;
-          return callback({
-            name,
-            mode: "exclusive",
-            signal: new AbortController().signal,
-            held: async () => !(first && lapsed),
-            assertHeld: async () => {
-              if (first && lapsed) throw new LockLostError(name);
-            },
-          });
-        },
-      },
-    });
+    const { lapsingLocksForTests } = await import("@bananapus/nana-sdk-core/testing");
+    const { locks, lapse } = lapsingLocksForTests();
+    Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
     mocks.write.mockImplementationOnce(async () => {
       await mocks.options!.reverify();
       await mocks.options!.beforeSubmission();
-      lapsed = true;
+      lapse();
       return hash;
     });
     const { result } = renderHook(() => useMarkee());
@@ -705,6 +690,26 @@ describe("wallet-action:markee-rent reviewed Markee execution", () => {
       expect(JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1")!).pending.hash).toBe(
         hash,
       ),
+    );
+  });
+  it("releases the step once the lock is free again when the wallet said no after the lock lapsed", async () => {
+    const { lapsingLocksForTests } = await import("@bananapus/nana-sdk-core/testing");
+    const { locks, lapse } = lapsingLocksForTests();
+    Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
+    mocks.write.mockImplementationOnce(async () => {
+      await mocks.options!.reverify();
+      await mocks.options!.beforeSubmission();
+      lapse();
+      await mocks.options!.onSubmissionRejected();
+      throw Object.assign(new Error("User rejected the request."), { code: 4001 });
+    });
+    const { result } = renderHook(() => useMarkee());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(() => result.current.createBoard());
+    await waitFor(() =>
+      expect(
+        JSON.parse(localStorage.getItem("revnet:markee-rent:recovery:v1") ?? "{}").pending,
+      ).toBeUndefined(),
     );
   });
   it("refuses a lifecycle already owned by another tab", async () => {

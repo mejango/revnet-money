@@ -254,6 +254,9 @@ export function liveReviewedAction(
         settled: null,
         held: state.held as Parameters<typeof reviewedRunStatus>[0]["held"],
       }),
+      // Core follows a sent step left at its receipt or a Safe proposal; dismissing either resets
+      // the view, as core's does.
+      following: state.phase === "receipt" || state.phase === "proposed",
       reset: () => set({ ...blank }),
       dismiss: () => (set({ ...blank }), true),
       run,

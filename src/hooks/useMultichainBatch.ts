@@ -12,7 +12,7 @@ import {
 } from "@/hooks/useReviewedRelayr";
 import { activityJournal } from "@/lib/activity-journal";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
-import { fence, keptOutcomes, type TabLocks } from "@/lib/fence";
+import { fence, type TabLocks } from "@/lib/fence";
 import {
   batchCallKey,
   batchCallScope,
@@ -442,12 +442,9 @@ export function useMultichainBatch() {
         beforeFirstSend,
         onCall,
         locks,
-        kept,
       }: {
         /** The batch lock: each journal write, and the wallet, check it first. */
         locks: TabLocks;
-        /** Where the wallet's answers wait when the batch lock lapsed. */
-        kept: ReturnType<typeof keptOutcomes>;
         title: string;
         context?: readonly ReviewContextRow[];
         progress: (message: string) => void;
@@ -466,25 +463,19 @@ export function useMultichainBatch() {
         onCall(index);
       };
       /**
-       * What the wallet answered for a call: never dropped under a lapsed lock, but kept and saved
-       * once the lock is free, while the journal still holds that call being submitted unsent.
+       * What the wallet answered for a call, merged into the saved batch while it still holds that
+       * call being submitted unsent. Refused for a lapsed lock, core saves it once the lock is
+       * taken back.
        */
       const answered = async (index: number, patch: Partial<FrozenBatchCall>) => {
         Object.assign(batch.calls[index], patch);
-        await kept.save(
-          locks,
-          () => {
-            const call = readMultichainBatches().find((saved) => saved.id === batch.id)?.calls[
-              index
-            ];
-            return call?.state === "submitting" && !call.hash;
-          },
-          () => {
-            const saved = readMultichainBatches().find((item) => item.id === batch.id)!;
-            Object.assign(saved.calls[index]!, patch);
-            saveMultichainBatch(saved);
-          },
-        );
+        await fence(locks, () => {
+          const saved = readMultichainBatches().find((item) => item.id === batch.id);
+          const call = saved?.calls[index];
+          if (call?.state !== "submitting" || call.hash) return;
+          Object.assign(call, patch);
+          saveMultichainBatch(saved!);
+        })();
         onCall(index);
       };
       const result = await run({
@@ -571,7 +562,6 @@ export function useMultichainBatch() {
       const lock = `revnet:multichain:${account.toLowerCase()}`;
       if (running.has(lock))
         throw new Error("Another multichain batch is already being processed.");
-      const kept = keptOutcomes(lock);
       const execute = async (locks: TabLocks): Promise<BatchResult> => {
         // Every batch and activity write under the batch lock checks this tab still holds it.
         const activity = activityJournal(locks);
@@ -1064,7 +1054,6 @@ export function useMultichainBatch() {
             }
             const sent = await sendDirectCalls(batch, sending, {
               locks,
-              kept,
               title: input.calls.every((call) => call.expectedRouterPending)
                 ? "Retry payments"
                 : `Review ${input.label}`,
@@ -1146,7 +1135,6 @@ export function useMultichainBatch() {
         })) as Awaited<ReturnType<typeof execute>>;
       } finally {
         running.delete(lock);
-        void kept.apply().catch(() => undefined);
       }
     },
     [config, getRelayrTxQuote, sendRelayrTx, sendDirectCalls],

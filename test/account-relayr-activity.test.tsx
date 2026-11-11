@@ -1,9 +1,10 @@
 import { AccountActivity } from "@/app/account/[id]/components/AccountActivity";
-import { LOST_REPLY_HASH_UNVERIFIED, NOT_THAT_TRANSACTION } from "@/components/LostReplyHashField";
 import type { TransactionActivity } from "@/lib/transaction-activity";
 import { erc2771ForwarderAbi, jbContractAddress } from "@bananapus/nana-sdk-core";
 import {
   checkedItLabel,
+  HELD_HASH_MISMATCH_LINE,
+  HELD_HASH_UNVERIFIED_LINE,
   SAVED_ATTEMPT_CHECK_LINE,
   SAVED_ATTEMPT_CHECK_WARNING,
   SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
@@ -385,12 +386,15 @@ describe("the account's held writes", () => {
   it("takes the hash of a held write whose wallet reply was lost, attached only if it is that send", async () => {
     /** The node's word on the given hash: unread until it indexes it. */
     let given: object | null = null;
+    let rateLimited = false;
     const node = {
       getChainId: async () => 8453,
       getBlockNumber: async () => 100n,
       getBlock: async () => ({ number: 100n, hash: `0x${"bb".repeat(32)}` }),
       getTransactionCount: async () => 3,
       getTransaction: async () => {
+        if (rateLimited)
+          throw Object.assign(new Error("HTTP request failed. Status: 429"), { status: 429 });
         if (given) return given;
         throw new Error("not found");
       },
@@ -426,8 +430,8 @@ describe("the account's held writes", () => {
     fireEvent.change(field!, { target: { value: other } });
     // Not readable yet: a retry, never a mismatch.
     check();
-    expect(await screen.findByText(LOST_REPLY_HASH_UNVERIFIED)).toBeVisible();
-    expect(screen.queryByText(NOT_THAT_TRANSACTION)).toBeNull();
+    expect(await screen.findByText(HELD_HASH_UNVERIFIED_LINE)).toBeVisible();
+    expect(screen.queryByText(HELD_HASH_MISMATCH_LINE)).toBeNull();
     // Read, and another call: a mismatch.
     given = {
       hash: other,
@@ -439,7 +443,14 @@ describe("the account's held writes", () => {
       chainId: 8453,
       blockNumber: null,
     };
+    // Rate limited: still a retry, never a mismatch.
+    rateLimited = true;
     check();
-    expect(await screen.findByText(NOT_THAT_TRANSACTION)).toBeVisible();
+    await waitFor(() => expect(screen.queryByText(HELD_HASH_UNVERIFIED_LINE)).toBeNull());
+    expect(await screen.findByText(HELD_HASH_UNVERIFIED_LINE)).toBeVisible();
+    expect(screen.queryByText(HELD_HASH_MISMATCH_LINE)).toBeNull();
+    rateLimited = false;
+    check();
+    expect(await screen.findByText(HELD_HASH_MISMATCH_LINE)).toBeVisible();
   });
 });

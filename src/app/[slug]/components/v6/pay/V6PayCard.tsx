@@ -642,8 +642,11 @@ export function V6PayCard() {
 
   const busy =
     phase === "safe-proposed" ||
-    phase === "pending" ||
-    (confirmOpen && (phase === "approving-token" || phase === "simulating" || phase === "signing"));
+    (confirmOpen &&
+      (phase === "approving-token" ||
+        phase === "simulating" ||
+        phase === "signing" ||
+        phase === "pending"));
 
   const creditOnlyCheckout = mode === "pay" && cartCount > 0 && cartAmountDue === 0n;
 
@@ -677,7 +680,7 @@ export function V6PayCard() {
   });
 
   const openConfirm = () => {
-    if (phase === "safe-proposed" || phase === "pending") return;
+    if (phase === "safe-proposed") return;
     if (!selected) return;
     if (amountRaw <= 0n && !creditOnlyCheckout) return;
     if (!pairVerified) return;
@@ -1029,17 +1032,13 @@ export function V6PayCard() {
     for (const item of chainCartItems) cart.remove(item.tierId, item.chainId);
   };
 
-  // Followed with its confirm closed: a Safe proposal, or a sent payment whose confirm was closed.
-  // A closed payment's result opens its confirm again, so it is seen before anything is paid next.
-  const followedClosed = phase === "pending" && !confirmOpen;
   useEffect(() => {
-    if (phase !== "safe-proposed" && !followedClosed) return;
+    if (phase !== "safe-proposed") return;
     if ((pay.status === "done" || pay.settledStep === 0) && proposedApproval) {
       // The Safe ran the approval: the payment is still to send, from a fresh review.
       dispatch({ type: "prepare", notice: SAFE_APPROVAL_DONE });
     } else if (pay.status === "done") {
       dispatch({ type: "done" });
-      if (followedClosed) dispatch({ type: "show", open: true });
       setPayerSlippage(null);
       setAmount("");
       setDebouncedAmount("");
@@ -1047,16 +1046,13 @@ export function V6PayCard() {
       for (const item of chainCartItems) cart.remove(item.tierId, item.chainId);
     } else if (pay.error) {
       dispatch({ type: "failed", error: pay.error });
-      if (followedClosed) dispatch({ type: "show", open: true });
     } else if (pay.held?.exit) {
-      // Its result can't be confirmed: the payment is no longer awaited here.
+      // Its result can't be confirmed: the payment is no longer awaiting the Safe here.
       dispatch({ type: "failed", error: heldLineOf(pay.held) ?? null });
-      if (followedClosed) dispatch({ type: "show", open: true });
     }
   }, [
     cart,
     chainCartItems,
-    followedClosed,
     phase,
     proposedApproval,
     prepared?.mode,
@@ -1677,9 +1673,10 @@ export function V6PayCard() {
           open={confirmOpen}
           following={pay.following}
           onOpenChange={(open) => {
-            // A sent payment only followed until its hold settles closes; the hold keeps it unpaid
-            // again until then.
-            if (!open && pay.following && !pay.dismiss()) return;
+            // A sent payment only followed until its hold settles closes: the SDK remembers it, so
+            // Pay again follows it, or closes on its success, never sending it twice. A Safe
+            // proposal's run already returned: closing hides it, and the card keeps following it.
+            if (!open && pay.following && phase !== "safe-proposed" && !pay.dismiss()) return;
             // Closing the review abandons a loosened tolerance.
             dispatch({ type: "show", open });
             if (!open) setPayerSlippage(null);

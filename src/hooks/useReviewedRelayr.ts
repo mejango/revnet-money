@@ -5,7 +5,7 @@ import { ReviewRefusal } from "@/lib/review-refusal";
 import { activityJournal } from "@/lib/activity-journal";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { formatShortDateTime } from "@/lib/date";
-import { fence, keptOutcomes, type TabLocks } from "@/lib/fence";
+import { fence, type TabLocks } from "@/lib/fence";
 import { confirmRelayrDiscard } from "@/lib/flow-choice";
 import {
   batchCallScope,
@@ -70,6 +70,7 @@ import {
   assertLocksHeld,
   browserLocks,
   gasWithHeadroom,
+  keepOutcome,
   relayrDiscardLine,
   ReviewedCallRevertedError,
   relayrHeldMessage as sharedHeldMessage,
@@ -2414,7 +2415,16 @@ export function useSendRelayrTx() {
           throw safeRecoveryError(cause);
         }
       }
+      /** The payment's work under its lock ended: a hash saved after this is a kept one. */
+      let ended = false;
       const submit = async (lock: LockHandle | null) => {
+        try {
+          return await pay(lock);
+        } finally {
+          ended = true;
+        }
+      };
+      const pay = async (lock: LockHandle | null) => {
         // Every journal write and the wallet itself check this tab still holds the payment's lock.
         const locks = lock ? [lock] : [];
         const activity = activityJournal(locks);
@@ -2521,24 +2531,17 @@ export function useSendRelayrTx() {
           walletOpened = true;
           options?.onMessage?.("Confirm the network-fee payment in your wallet.");
         };
-        /** The journal still holds this attempt submitting, with no payment saved since. */
-        const thisAttempt = () => {
-          const row = journal();
-          return (
-            row?.relayrPaymentStatus === "submitted" && sentPayments(row).length === sent.length
-          );
-        };
+        // Refused for a lapsed lock, core saves the hash once the lock is taken back; the bundle
+        // is then followed from that saved hash, as the payment's own work could not prove it.
         const onSent = async (submitted: Hex) => {
           hash ??= submitted;
           fundedBundles.add(remembered.bundleUuid);
-          // The hash is never dropped: kept under a lapsed lock, saved once it is free.
-          await kept.save(locks, thisAttempt, () =>
-            updateTransactionActivity(activityId, {
-              ...sentAs(submitted),
-              message: "Payment submitted. Do not pay again while its receipt is pending.",
-            }),
-          );
           options?.onMessage?.("Checking the submitted network-fee payment.");
+          await activity.update(activityId, {
+            ...sentAs(submitted),
+            message: "Payment submitted. Do not pay again while its receipt is pending.",
+          });
+          if (ended) void waitForRelayrBundle(remembered.bundleUuid).catch(() => undefined);
         };
         // A quote's first payment under the plan that reviewed its round's fee bound pays within
         // that bound with no prompt. A retry, or a quote reviewed apart from a plan, reviews the
@@ -2637,8 +2640,9 @@ export function useSendRelayrTx() {
               (planned ? cause instanceof RelayrPaymentNotSentError : !ready))
           ) {
             // A gate refused before the wallet: this exact marker belongs to a wallet call never
-            // invoked. A changed record may hold another attempt's evidence.
-            await activity.restoreUnsent(submitting!, previousPayment!);
+            // invoked. A changed record may hold another attempt's evidence. Kept under a lapsed
+            // lock, restored once it is taken back.
+            await keepOutcome(locks, () => activity.restoreUnsent(submitting!, previousPayment!));
             throw cause instanceof RelayrPaymentNotSentError
               ? cause
               : new RelayrPaymentNotSentError(cause);
@@ -2651,9 +2655,9 @@ export function useSendRelayrTx() {
               sending: true,
               paid: sent.length > 0,
             });
-            // The wallet's answer: kept under a lapsed lock, saved once it is free.
-            await kept.save(locks, thisAttempt, () =>
-              updateTransactionActivity(
+            // The wallet's answer: kept under a lapsed lock, saved once it is taken back.
+            await keepOutcome(locks, () =>
+              activity.update(
                 activityId,
                 outcome === "reverted"
                   ? PAYMENT_REVERTED
@@ -2684,22 +2688,20 @@ export function useSendRelayrTx() {
           if (receipt.transactionHash.toLowerCase() !== mined.toLowerCase()) {
             mined = receipt.transactionHash;
             const sped = mined;
-            await kept.save(
-              locks,
-              () => journal()?.hash === hash,
-              () => updateTransactionActivity(activityId, sentAs(sped)),
-            );
+            await keepOutcome(locks, () => activity.update(activityId, sentAs(sped)));
           }
           await provePayment(remembered.bundleUuid, locks);
         } catch (error) {
           if (!(error instanceof RelayrVerificationError)) {
-            await activity.update(activityId, {
-              status: "pending",
-              message:
-                "Payment was submitted, but confirmation is uncertain. Do not pay again; check this hash and bundle.",
-            });
-            // Keep proving this saved payment even if an immediate RPC read failed.
+            // Keep proving this payment even if an immediate read failed or the lock lapsed.
             void waitForRelayrBundle(remembered.bundleUuid).catch(() => undefined);
+            await keepOutcome(locks, () =>
+              activity.update(activityId, {
+                status: "pending",
+                message:
+                  "Payment was submitted, but confirmation is uncertain. Do not pay again; check this hash and bundle.",
+              }),
+            );
           }
           throw new Error(
             `Payment ${mined} was submitted, but confirmation is uncertain. Do not pay again.`,
@@ -2716,7 +2718,6 @@ export function useSendRelayrTx() {
       if (paymentInflight.has(remembered.callKey))
         throw new Error("This payment is already in progress. Do not pay again.");
       paymentInflight.add(remembered.callKey);
-      const kept = keptOutcomes(`revnet:relayr:${remembered.callKey}`);
       try {
         const mined = (await browserLocks().request(
           `revnet:relayr:${remembered.callKey}`,
@@ -2727,7 +2728,6 @@ export function useSendRelayrTx() {
         return mined;
       } finally {
         paymentInflight.delete(remembered.callKey);
-        void kept.apply().catch(() => undefined);
       }
     },
     [address, config, switchChainAsync],

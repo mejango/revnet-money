@@ -1,5 +1,9 @@
 import { V6PayCard } from "@/app/[slug]/components/v6/pay/V6PayCard";
-import { registerReviewHandler, type ReviewPrompt } from "@bananapus/nana-sdk-core/review";
+import {
+  registerReviewHandler,
+  WRITE_HOLD_PENDING_LINE,
+  type ReviewPrompt,
+} from "@bananapus/nana-sdk-core/review";
 import {
   resetSafeRelayrForTests,
   resetWriteHoldsForTests,
@@ -330,7 +334,7 @@ describe("the pay card at the real reviewed send's submission boundary", () => {
     }
   });
 
-  it("lets the payer close a payment its hold still follows, then shows it paid once it confirms, never offered again", async () => {
+  it("lets the payer close a payment its hold still follows; Pay again follows it, then closes on its success, never sending twice", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       mocks.watchReceipt.mockRejectedValue(new Error("The receipt watcher was dropped."));
@@ -345,25 +349,24 @@ describe("the pay card at the real reviewed send's submission boundary", () => {
         expect(screen.queryByRole("dialog", { name: "Confirm payment" })).toBeNull(),
       );
       expect(mocks.submit).toHaveBeenCalledTimes(1);
-      // Still followed with its confirm closed: the card offers no payment meanwhile.
-      expect(screen.getByRole("button", { name: "Pay" })).toBeDisabled();
 
-      // It confirms: the card shows it paid and clears what was paid, as in its confirm.
+      // Pay again while it still confirms: its hold refuses it with its line, nothing is sent.
+      const pay = screen.getByRole("button", { name: "Pay" });
+      await waitFor(() => expect(pay).toBeEnabled());
+      fireEvent.click(pay);
+      const again = await screen.findByRole("dialog", { name: "Confirm payment" });
+      await within(again).findByText("You get at least");
+      fireEvent.click(within(again).getByRole("button", { name: "Pay" }));
+      await within(again).findByText(WRITE_HOLD_PENDING_LINE);
+      expect(mocks.submit).toHaveBeenCalledTimes(1);
+
+      // It confirms; Pay again closes on its success instead of paying twice.
       mineThePayment();
       await vi.advanceTimersByTimeAsync(10_000);
-      const paid = await screen.findByRole("dialog", { name: "Payment confirmed" });
-      await within(paid).findByText("Your payment went through.");
-      expect(screen.getByLabelText("Amount")).toHaveValue("");
-
-      // Closed again, the card has no payment to offer: nothing is sent twice.
-      fireEvent.keyDown(paid, { key: "Escape" });
-      await waitFor(() =>
-        expect(screen.queryByRole("dialog", { name: "Payment confirmed" })).toBeNull(),
+      fireEvent.click(within(again).getByRole("button", { name: "Pay" }));
+      await within(await screen.findByRole("dialog", { name: "Payment confirmed" })).findByText(
+        "Your payment went through.",
       );
-      const pay = screen.getByRole("button", { name: "Pay" });
-      expect(pay).toBeDisabled();
-      fireEvent.click(pay);
-      expect(screen.queryByRole("dialog", { name: "Confirm payment" })).toBeNull();
       expect(mocks.submit).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();

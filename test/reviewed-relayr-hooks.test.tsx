@@ -2112,29 +2112,11 @@ describe("reviewed Relayr payment hook", () => {
 
   it("saves the payment's hash once its lock is free again when the lock lapsed while the wallet was open", async () => {
     const { result } = await quotedPayment();
-    const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
-    let lapsed = false;
-    let paymentLocks = 0;
-    Object.defineProperty(navigator, "locks", {
-      configurable: true,
-      value: {
-        // The payment's first lock lapses once the wallet is open; the next one is this tab's.
-        request: async (name: string, _options: unknown, callback: (lock: object) => unknown) => {
-          const first = name.startsWith("revnet:relayr:") && paymentLocks++ === 0;
-          return callback({
-            name,
-            mode: "exclusive",
-            signal: new AbortController().signal,
-            held: async () => !(first && lapsed),
-            assertHeld: async () => {
-              if (first && lapsed) throw new LockLostError(name);
-            },
-          });
-        },
-      },
-    });
+    const { lapsingLocksForTests } = await import("@bananapus/nana-sdk-core/testing");
+    const { locks, lapse } = lapsingLocksForTests();
+    Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
     mocks.sendTransaction.mockImplementationOnce(async () => {
-      lapsed = true;
+      lapse();
       return HASH;
     });
     try {
@@ -2147,6 +2129,52 @@ describe("reviewed Relayr payment hook", () => {
         ) as { hash?: string }[];
         expect(rows.some((row) => row.hash === HASH)).toBe(true);
       });
+      // The bundle is still followed: the kept hash goes on to its proven payment.
+      await waitFor(
+        () => {
+          const rows = JSON.parse(
+            window.localStorage.getItem("revnet:transaction-activities:v1") ?? "[]",
+          ) as { hash?: string; relayrPaymentStatus?: string }[];
+          expect(rows.find((row) => row.hash === HASH)?.relayrPaymentStatus).toBe("confirmed");
+        },
+        { timeout: 15_000 },
+      );
+    } finally {
+      Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+    }
+  });
+
+  it("restores the unpaid quote once its lock is free again when the lock lapsed before the wallet opened", async () => {
+    const { result } = await quotedPayment();
+    const before = () =>
+      (
+        JSON.parse(window.localStorage.getItem("revnet:transaction-activities:v1") ?? "[]") as {
+          bundleUuid?: string;
+          relayrPaymentStatus?: string;
+        }[]
+      ).find((row) => row.bundleUuid)?.relayrPaymentStatus;
+    const unpaid = before();
+    let saved: string | undefined;
+    const { lapsingLocksForTests } = await import("@bananapus/nana-sdk-core/testing");
+    const { locks, lapse } = lapsingLocksForTests();
+    Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
+    try {
+      await act(async () => {
+        // Saved submitting, the lease lapses as the wallet is asked: core's last check refuses.
+        await result.current
+          .sendRelayrTx(payment(), {
+            onMessage: (message) => {
+              if (/in your wallet/.test(message)) {
+                saved = before();
+                lapse();
+              }
+            },
+          })
+          .catch(() => undefined);
+      });
+      expect(saved).toBe("submitted");
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+      await waitFor(() => expect(before()).toBe(unpaid));
     } finally {
       Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
     }

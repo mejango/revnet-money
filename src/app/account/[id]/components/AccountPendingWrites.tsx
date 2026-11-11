@@ -1,11 +1,7 @@
 "use client";
 
 import { chainDisplayName } from "@/app/constants";
-import {
-  LOST_REPLY_HASH_UNVERIFIED,
-  LostReplyHashField,
-  NOT_THAT_TRANSACTION,
-} from "@/components/LostReplyHashField";
+import { LostReplyHashField } from "@/components/LostReplyHashField";
 import {
   checkRelayrSession,
   discardRelayrSession,
@@ -24,6 +20,8 @@ import { SUPPORTED_CHAINS } from "@/lib/wagmiTransports";
 import { writeHolds } from "@/lib/write-hold";
 import {
   checkedItLabel,
+  HELD_HASH_MISMATCH_LINE,
+  HELD_HASH_UNVERIFIED_LINE,
   SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
   SAVED_ATTEMPT_UNREADABLE_LINE,
   type SavedAttemptCheck,
@@ -79,12 +77,13 @@ function HeldWritesOn({ chainId, account }: { chainId: number; account: Address 
               <LostReplyHashField
                 id={`held-hash-${key}`}
                 onCheck={async (hash) => {
-                  // A mismatch only once the transaction was read: unread, it is checked again.
-                  const sent = await client.getTransaction({ hash: hash! }).catch(() => null);
-                  if (!sent) return LOST_REPLY_HASH_UNVERIFIED;
-                  // The hold attaches it only when it is that exact send.
-                  const state = await handle.attachHash(client as WriteHoldClient, hash!);
-                  return state.status === "held-no-hash" ? NOT_THAT_TRANSACTION : null;
+                  // The hold attaches it only when it is that exact send; unread, it is retryable.
+                  const { hashCheck } = await handle.attachHash(client as WriteHoldClient, hash!);
+                  return hashCheck === "attached"
+                    ? null
+                    : hashCheck === "mismatch"
+                      ? HELD_HASH_MISMATCH_LINE
+                      : HELD_HASH_UNVERIFIED_LINE;
                 }}
               />
             </div>

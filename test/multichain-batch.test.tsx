@@ -157,8 +157,11 @@ vi.mock("@/lib/safe-connector", async (importOriginal) => ({
 // its reverify, simulation, beforeWallet, write gate and wallet, in order; a Safe proposes the
 // first and stops.
 vi.mock("@/hooks/useReviewedAction", async () => {
-  const { isDefiniteWalletRejection } = await import("@bananapus/nana-sdk-core/review");
+  const { isDefiniteWalletRejection, keepOutcome } =
+    await import("@bananapus/nana-sdk-core/review");
   const run = async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
+    // Core's wallet answers: a callback refused for a lapsed lock runs again once it is taken back.
+    const answer = (callback: () => unknown) => keepOutcome(action.locks, callback);
     try {
       await mocks.callReview(action.calls);
     } catch {
@@ -211,10 +214,12 @@ vi.mock("@/hooks/useReviewedAction", async () => {
       try {
         hash = await mocks.write({ ...call, address: call.to, chainId: call.chainId });
       } catch (failure) {
-        if (isDefiniteWalletRejection(failure)) await action.onUnsent?.(call, step);
+        if (isDefiniteWalletRejection(failure)) await answer(() => action.onUnsent?.(call, step));
         return failed(failure);
       }
-      await action.onSubmitted?.(call, step, hash, { safe: mocks.safe, adopted: false });
+      await answer(() =>
+        action.onSubmitted?.(call, step, hash, { safe: mocks.safe, adopted: false }),
+      );
       if (mocks.safe) return { status: "proposed" as const, step, safeTxHash: hash };
       hashes.push(hash);
     }
@@ -343,29 +348,12 @@ async function lostLocks() {
   });
 }
 
-/** Web Locks whose first lock lapses once `lapse()` is called; every later one is held. */
+/** Core's lapsing leases as this tab's Web Locks: `lapse()` lapses every lease held now. */
 async function lapsingLocks() {
-  const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
-  let lapsed = false;
-  let taken = 0;
-  Object.defineProperty(navigator, "locks", {
-    configurable: true,
-    value: {
-      request: async (name: string, _options: unknown, callback: (lock: object) => unknown) => {
-        const first = taken++ === 0;
-        return callback({
-          name,
-          mode: "exclusive",
-          signal: new AbortController().signal,
-          held: async () => !(first && lapsed),
-          assertHeld: async () => {
-            if (first && lapsed) throw new LockLostError(name);
-          },
-        });
-      },
-    },
-  });
-  return () => (lapsed = true);
+  const { lapsingLocksForTests } = await import("@bananapus/nana-sdk-core/testing");
+  const { locks, lapse } = lapsingLocksForTests();
+  Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
+  return lapse;
 }
 
 describe("a batch whose lock passed to another tab", () => {

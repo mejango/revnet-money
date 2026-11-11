@@ -2113,8 +2113,10 @@ function ChainPositionRows({
           open
           onClose={() => {
             setReviewed(null);
-            // A removal only followed until its hold settles closes too; it stays outstanding.
-            if (!removalOutstanding || removal.following) removal.dismiss();
+            // A removal only followed until its hold settles closes too; it stays outstanding. A
+            // Safe proposal's run already returned: closing keeps following it.
+            if (!removalOutstanding || (removal.following && removal.phase !== "proposed"))
+              removal.dismiss();
           }}
           title="Confirm removal"
           preparing={!reviewed}
