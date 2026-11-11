@@ -63,8 +63,12 @@ export default function Page() {
             Shape that stands the test of time.
           </h2>
           <p className="mt-4 text-center font-medium md:text-left">
-            A revnet receives money and shares incentives with the people who take part. Those
-            incentives let holders claim money from its balance under rules set at launch.
+            <span className="block">
+              A revnet receives money and shares incentives with the people who take part.
+            </span>
+            <span className="mt-2 block">
+              Those incentives let holders claim money from its balance under rules set at launch.
+            </span>
           </p>
           <ol className="mt-6 ml-8 list-outside list-decimal space-y-3 marker:font-semibold marker:text-teal-700 sm:ml-10 [&>li]:pl-2">
             <li>
@@ -86,7 +90,7 @@ export default function Page() {
               more incentives.
             </li>
           </ol>
-          <p className="mt-4">
+          <p className="mt-4 text-center md:text-left">
             <Link href="/learn" className="underline">
               Learn how the pieces fit together
             </Link>
