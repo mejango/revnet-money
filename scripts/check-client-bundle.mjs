@@ -74,6 +74,7 @@ const account = `0x${"1".repeat(40)}`;
 // SDK core 6.3.0 (lost-lock keeping, dismissal rules) measures create 567.4, project 595.4, terms 594.7,
 // owners 633.2, shop 602.2, extras 611.7, account projects 434.1, route-referenced 929.8 and all client
 // JS 2787.1 KiB; round only those up.
+// SDK core 6.3.1 (a success left settled while away is shown, not adopted) measures route-referenced 930.04 KiB; round only that up.
 const routes = [
   { route: "/", path: "/", kib: 397 },
   { route: "/learn", path: "/learn", kib: 359 },
@@ -104,7 +105,7 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
 // All JS 2730 -> 2754: the R stack on SDK 4.0.0 (core reviewed runs and Relayr rounds), measured 2752.4 locally and 2753.1 on CI.
 // SDK 4.0.0 measures 921.2 KiB route-referenced (919.7 before); the ceiling moves up 1 KiB.
 // Next 16.4.2 measures 923.0 KiB; the ceiling moves to 924.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 930);
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 931);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
