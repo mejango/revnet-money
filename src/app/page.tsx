@@ -121,7 +121,7 @@ export default function Page() {
           >
             <span className="block">Simple enough for startups.</span>
             <span className="block">
-              Powerful enough for <span className="whitespace-nowrap">decentralized orgs.</span>
+              Powerful enough for <span className="whitespace-nowrap">anons and agents.</span>
             </span>
           </h2>
 
