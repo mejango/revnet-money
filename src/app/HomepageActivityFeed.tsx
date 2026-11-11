@@ -5,7 +5,7 @@ import { DateRelative } from "@/components/DateRelative";
 import { IpfsImage } from "@/components/IpfsImage";
 import { IssuanceFingerprint } from "@/components/IssuanceFingerprint";
 import { ProjectLink } from "@/components/ProjectLink";
-import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { HomepageLoadMore } from "./HomepageLoadMore";
 import { formatEthAddress } from "@/lib/utils";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useCallback, useMemo, useState } from "react";
@@ -108,7 +108,6 @@ export function HomepageActivityFeed({
       setLoading(false);
     }
   }, [events.length, hasMore, loading]);
-  const markerRef = useInfiniteScroll(loadMore, hasMore && !loading);
 
   // One line item per transaction (per project): fold same-tx rows together.
   const eventGroups: HomepageRawActivity[][] = [];
@@ -251,11 +250,7 @@ export function HomepageActivityFeed({
           </li>
         );
       })}
-      {hasMore || loading ? (
-        <li className="h-12" aria-hidden>
-          <div ref={markerRef} className="h-px" />
-        </li>
-      ) : null}
+      <HomepageLoadMore loadMore={loadMore} hasMore={hasMore} loading={loading} />
     </ol>
   );
 }

@@ -3,7 +3,7 @@
 import { IpfsImage } from "@/components/IpfsImage";
 import { IssuanceFingerprint } from "@/components/IssuanceFingerprint";
 import { ProjectLink } from "@/components/ProjectLink";
-import { useInfiniteScroll } from "@/hooks/useInfiniteScroll";
+import { HomepageLoadMore } from "./HomepageLoadMore";
 import { useCallback, useState } from "react";
 
 export type TopProject = {
@@ -49,7 +49,6 @@ export function TopProjectsFeed({
       setLoading(false);
     }
   }, [hasMore, loading, projects.length]);
-  const markerRef = useInfiniteScroll(loadMore, hasMore && !loading);
 
   return (
     <ol className="min-w-0 divide-y divide-teal-100">
@@ -90,11 +89,7 @@ export function TopProjectsFeed({
           </ProjectLink>
         </li>
       ))}
-      {hasMore || loading ? (
-        <li className="h-12" aria-hidden>
-          <div ref={markerRef} className="h-px" />
-        </li>
-      ) : null}
+      <HomepageLoadMore loadMore={loadMore} hasMore={hasMore} loading={loading} />
     </ol>
   );
 }
