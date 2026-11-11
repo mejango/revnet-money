@@ -62,7 +62,7 @@ export default function Page() {
           >
             Shape that stands the test of time.
           </h2>
-          <p className="mt-4 text-center font-semibold md:text-left">
+          <p className="mt-4 text-center font-medium md:text-left">
             A revnet receives money and shares incentives with the people who take part. Those
             incentives let holders claim money from its balance under rules set at launch.
           </p>
