@@ -116,7 +116,9 @@ export default function Page() {
             className="text-center text-[min(1.5rem,calc((100vw_-_3rem)/16.6))] font-semibold md:text-left md:text-3xl"
           >
             <span className="block">Simple enough for startups.</span>
-            <span className="block">Powerful enough for decentralized organizations.</span>
+            <span className="block">
+              Powerful enough for <span className="whitespace-nowrap">decentralized orgs.</span>
+            </span>
           </h2>
 
           <ol className="mt-8 ml-8 list-outside list-decimal space-y-5 marker:font-semibold marker:text-teal-700 sm:ml-10">
