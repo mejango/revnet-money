@@ -121,27 +121,30 @@ describe("useReviewedAction", () => {
     expect(returned).toBe(done);
   });
 
-  it("says a confirmation queued behind the run's locks is confirmed, keeps its row pending, and lets it be retried", async () => {
-    const { ConfirmationQueuedError } = await import("@bananapus/nana-sdk-core/review/locks");
-    const { CONFIRMATION_QUEUED_LINE } = await import("@bananapus/nana-sdk-core/review");
+  it("shows a confirmation queued behind the run's locks until the next run, keeping its row pending", async () => {
+    const { ConfirmationQueuedError, CONFIRMATION_QUEUED_LINE } =
+      await import("@bananapus/nana-sdk-core/review");
     mocks.run.mockImplementationOnce(async (action: ReviewedAction) => {
       await action.onSubmitted?.(call(1), 0, HASH, { safe: false, adopted: false });
       return {
         status: "receipt",
         step: 0,
         hash: HASH,
-        ended: () => Promise.reject(new ConfirmationQueuedError(0)),
+        // Core's end of a receipt whose notice waits behind the run's own locks.
+        ended: async () => ({
+          status: "failed",
+          error: CONFIRMATION_QUEUED_LINE,
+          failure: new ConfirmationQueuedError(0),
+        }),
       };
     });
     const { result } = renderHook(() => useReviewedAction(), { wrapper });
-    let returned: unknown;
-    await act(async () => {
-      returned = await result.current.run({ account: REVIEWED, calls: [call(1)] });
-    });
-    expect(returned).toMatchObject({ status: "failed", error: CONFIRMATION_QUEUED_LINE });
-    expect(refreshTransactionActivities()[0]).toMatchObject({ hash: HASH, status: "pending" });
-    // A retry runs again: core closes it on that success.
     await act(() => result.current.run({ account: REVIEWED, calls: [call(1)] }));
+    expect(result.current.error).toBe(CONFIRMATION_QUEUED_LINE);
+    expect(refreshTransactionActivities()[0]).toMatchObject({ hash: HASH, status: "pending" });
+    // The next run clears it: core closes that run on the success.
+    await act(() => result.current.run({ account: REVIEWED, calls: [call(1)] }));
+    expect(result.current.error).toBeNull();
     expect(mocks.run).toHaveBeenCalledTimes(2);
   });
 

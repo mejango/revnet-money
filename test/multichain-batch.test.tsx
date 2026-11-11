@@ -157,11 +157,9 @@ vi.mock("@/lib/safe-connector", async (importOriginal) => ({
 // its reverify, simulation, beforeWallet, write gate and wallet, in order; a Safe proposes the
 // first and stops.
 vi.mock("@/hooks/useReviewedAction", async () => {
-  const { isDefiniteWalletRejection, keepOutcome } =
-    await import("@bananapus/nana-sdk-core/review");
+  const { isDefiniteWalletRejection } = await import("@bananapus/nana-sdk-core/review");
+  const { coreKept, coreUnsent } = await import("./support/reviewed-action");
   const run = async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
-    // Core's wallet answers: a callback refused for a lapsed lock runs again once it is taken back.
-    const answer = (callback: () => unknown) => keepOutcome(action.locks, callback);
     try {
       await mocks.callReview(action.calls);
     } catch {
@@ -207,17 +205,18 @@ vi.mock("@/hooks/useReviewedAction", async () => {
       try {
         mocks.finalGuard();
       } catch (failure) {
-        await action.onUnsent?.(call, step);
+        await coreUnsent(action.locks, () => action.onUnsent?.(call, step));
         return failed(failure);
       }
       let hash: Hex;
       try {
         hash = await mocks.write({ ...call, address: call.to, chainId: call.chainId });
       } catch (failure) {
-        if (isDefiniteWalletRejection(failure)) await answer(() => action.onUnsent?.(call, step));
+        if (isDefiniteWalletRejection(failure))
+          await coreUnsent(action.locks, () => action.onUnsent?.(call, step));
         return failed(failure);
       }
-      await answer(() =>
+      await coreKept(action.locks, () =>
         action.onSubmitted?.(call, step, hash, { safe: mocks.safe, adopted: false }),
       );
       if (mocks.safe) return { status: "proposed" as const, step, safeTxHash: hash };

@@ -71,6 +71,7 @@ import {
   browserLocks,
   gasWithHeadroom,
   keepOutcome,
+  LockLostError,
   relayrDiscardLine,
   ReviewedCallRevertedError,
   relayrHeldMessage as sharedHeldMessage,
@@ -2543,6 +2544,22 @@ export function useSendRelayrTx() {
           });
           if (ended) void waitForRelayrBundle(remembered.bundleUuid).catch(() => undefined);
         };
+        /** Nothing was sent after the submitting marker was saved (a 4001, or a gate before the wallet). */
+        let unsent = false;
+        /** The restore refused: the saved record is no longer this marker. */
+        let unrestored: unknown;
+        // Restores the exact record the marker replaced; refused for a lapsed lock, core runs it
+        // again once the lock is taken back.
+        const onUnsent = async () => {
+          if (!submitting || !previousPayment) return;
+          unsent = true;
+          try {
+            await activity.restoreUnsent(submitting, previousPayment);
+          } catch (cause) {
+            if (cause instanceof LockLostError) throw cause;
+            unrestored = cause;
+          }
+        };
         // A quote's first payment under the plan that reviewed its round's fee bound pays within
         // that bound with no prompt. A retry, or a quote reviewed apart from a plan, reviews the
         // payment on its own, on the SDK's retry rule.
@@ -2572,6 +2589,7 @@ export function useSendRelayrTx() {
                 account: address,
                 ...planned,
                 locks,
+                onUnsent,
                 // Core's own gates follow and refuse as not sent.
                 onSending: async () => {
                   await recheck();
@@ -2608,6 +2626,7 @@ export function useSendRelayrTx() {
                 locks,
                 reverify: recheck,
                 beforeWallet: async () => saveSubmitting(),
+                onUnsent: () => onUnsent(),
                 assertWriteState: () => {
                   requireAccount();
                   relayrPaymentDetails(payment, {
@@ -2639,10 +2658,8 @@ export function useSendRelayrTx() {
             (cause instanceof WalletNotInvokedError ||
               (planned ? cause instanceof RelayrPaymentNotSentError : !ready))
           ) {
-            // A gate refused before the wallet: this exact marker belongs to a wallet call never
-            // invoked. A changed record may hold another attempt's evidence. Kept under a lapsed
-            // lock, restored once it is taken back.
-            await keepOutcome(locks, () => activity.restoreUnsent(submitting!, previousPayment!));
+            // A gate refused before the wallet: `onUnsent` restored the exact marker it saved.
+            if (unrestored) throw unrestored;
             throw cause instanceof RelayrPaymentNotSentError
               ? cause
               : new RelayrPaymentNotSentError(cause);
@@ -2655,26 +2672,28 @@ export function useSendRelayrTx() {
               sending: true,
               paid: sent.length > 0,
             });
-            // The wallet's answer: kept under a lapsed lock, saved once it is taken back.
-            await keepOutcome(locks, () =>
-              activity.update(
-                activityId,
-                outcome === "reverted"
-                  ? PAYMENT_REVERTED
-                  : outcome === "unpaid"
-                    ? {
-                        status: "pending",
-                        relayrPaymentStatus: "unfunded",
-                        message:
-                          "The wallet declined payment. The existing signed quote can still be funded once before it expires.",
-                      }
-                    : {
-                        status: "pending",
-                        message:
-                          "The wallet's funding result is uncertain. Do not pay again; inspect wallet activity and this bundle.",
-                      },
-              ),
-            );
+            // The wallet's answer, kept under a lapsed lock and saved once it is taken back. One
+            // that sent nothing is `onUnsent`'s.
+            if (!unsent)
+              await keepOutcome(locks, () =>
+                activity.update(
+                  activityId,
+                  outcome === "reverted"
+                    ? PAYMENT_REVERTED
+                    : outcome === "unpaid"
+                      ? {
+                          status: "pending",
+                          relayrPaymentStatus: "unfunded",
+                          message:
+                            "The wallet declined payment. The existing signed quote can still be funded once before it expires.",
+                        }
+                      : {
+                          status: "pending",
+                          message:
+                            "The wallet's funding result is uncertain. Do not pay again; inspect wallet activity and this bundle.",
+                        },
+                ),
+              );
             throw error;
           } else throw cause;
         }

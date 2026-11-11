@@ -15,14 +15,13 @@ import { requireNoViewAs } from "@/lib/view-as";
 import { answerHeldRefusal, isHeldRefusal, writeHolds } from "@/lib/write-hold";
 import type { ReviewedCall, ReviewedPlan } from "@bananapus/nana-sdk-core/review";
 import {
-  CONFIRMATION_QUEUED_LINE,
+  ConfirmationQueuedError,
   discardReviewedSequence,
   findReviewedSequence,
   openStepHold,
   REVIEWED_ENGINE_LOAD_LINE,
   type WriteHoldClient,
 } from "@bananapus/nana-sdk-core/review";
-import { ConfirmationQueuedError } from "@bananapus/nana-sdk-core/review/locks";
 import {
   useReviewedRun,
   type UseReviewedRunDeps,
@@ -31,7 +30,7 @@ import {
 import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
 import { canonicalSafeTxHash, SAFE_NONCE_GUIDANCE } from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { Address, Hex } from "viem";
 import { useAccount, useConfig } from "wagmi";
 import { getAccount, getPublicClient } from "wagmi/actions";
@@ -93,8 +92,12 @@ export function useReviewedAction() {
   const latest = useRef(runner);
   latest.current = runner;
 
+  /** A confirmed step whose notice waits behind this run's own locks (core's queued line). */
+  const [queuedLine, setQueuedLine] = useState<string | null>(null);
+
   const runOnce = useCallback(
     async (action: ReviewedActionInput): Promise<ReviewedRunResult> => {
+      setQueuedLine(null);
       // Its own preparation, before any review or wallet: a failure here is every flow's
       // "nothing was sent", not a throw each caller must catch.
       let requirePriceBasedShopVoting: typeof import("@/lib/shop-voting-policy").requirePriceBasedShopVoting;
@@ -158,15 +161,11 @@ export function useReviewedAction() {
       // Sent, its receipt still verifying: pending (the hook's `receipt` phase), never failed or a
       // reason to resend, until its hold ends the run, or `dismiss` ends the wait (null) and the
       // hold keeps following it.
-      let ended: ReviewedRunResult;
-      try {
-        ended = result?.status === "receipt" ? await result.ended() : result;
-      } catch (cause) {
-        // Confirmed, its record queued behind this run's locks: nothing is sent again, and a
-        // retry closes on that success.
-        if (!(cause instanceof ConfirmationQueuedError)) throw cause;
-        return { status: "failed", error: CONFIRMATION_QUEUED_LINE, failure: cause };
-      }
+      const ended = result?.status === "receipt" ? await result.ended() : result;
+      // Confirmed, its notice queued behind this run's own locks: its line shows until the next
+      // run or a reset, nothing is sent again, and a retry closes on that success.
+      if (ended?.status === "failed" && ended.failure instanceof ConfirmationQueuedError)
+        setQueuedLine(ended.error);
       if (ended?.status === "done")
         for (const id of rows) if (id) settleSubmittedWrite(id, "success");
       if (ended?.status === "failed") {
@@ -233,8 +232,18 @@ export function useReviewedAction() {
     run,
     /** The wallet, chains and hold the run sends through, for core's Safe service sends. */
     deps,
-    /** The line to show: a site's own refusal as it is, else core's. */
-    error: failure instanceof ReviewRefusal ? failure.message : runner.error,
+    /** The line to show: a queued confirmation's, a site's own refusal as it is, else core's. */
+    error: queuedLine ?? (failure instanceof ReviewRefusal ? failure.message : runner.error),
+    /** Closes the confirm (core's `dismiss`); a queued confirmation's line goes with it. */
+    dismiss: () => {
+      const closed = runner.dismiss();
+      if (closed) setQueuedLine(null);
+      return closed;
+    },
+    reset: () => {
+      setQueuedLine(null);
+      runner.reset();
+    },
     /**
      * A step before the last that settled after its run ended (a Safe's approval): the run is idle
      * and running the action again continues from the next step.

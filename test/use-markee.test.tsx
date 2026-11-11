@@ -69,9 +69,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
   useReviewedAction: () => ({
     run: async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
-      const { keepOutcome } = await import("@bananapus/nana-sdk-core/review");
-      // Core's wallet answers: a callback refused for a lapsed lock runs again once it is taken back.
-      const answer = (callback: () => unknown) => keepOutcome(action.locks, callback);
+      const { coreKept, coreUnsent } = await import("./support/reviewed-action");
       const call = action.calls[0]!;
       mocks.options = {
         reverify: () => action.reverify!(call, 0, undefined),
@@ -79,7 +77,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
           await action.beforeWallet!(call, 0);
         },
         onSubmissionRejected: async () => {
-          await answer(() => action.onUnsent!(call, 0));
+          await coreUnsent(action.locks, () => action.onUnsent!(call, 0));
         },
       };
       let sent: Hex;
@@ -88,7 +86,9 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => ({
       } catch (cause) {
         return { status: "failed", error: (cause as Error).message, failure: cause };
       }
-      await answer(() => action.onSubmitted!(call, 0, sent, { safe: false, adopted: false }));
+      await coreKept(action.locks, () =>
+        action.onSubmitted!(call, 0, sent, { safe: false, adopted: false }),
+      );
       // The confirm closed while the step's hold followed it: the run's wait ends null.
       if (mocks.dismissed) return null;
       return { status: "done", hashes: [sent], receipts: [] };
