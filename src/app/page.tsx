@@ -66,7 +66,7 @@ export default function Page() {
             A revnet receives money and shares incentives with the people who take part. Those
             incentives let holders claim money from its balance under rules set at launch.
           </p>
-          <ol className="mt-6 ml-8 list-outside list-decimal space-y-3 sm:ml-10">
+          <ol className="mt-6 ml-8 list-outside list-decimal space-y-3 marker:font-semibold marker:text-teal-700 sm:ml-10 [&>li]:pl-2">
             <li>
               Payments from fundraising, sales, and other sources create new tokenized incentives,
               or buyback better ones from the market if available.
@@ -143,7 +143,7 @@ export default function Page() {
           <h2 id="join-us" className="text-center text-[min(1.5rem,calc((100vw_-_3rem)/16.6))] font-semibold md:text-left md:text-3xl">
             Join us
           </h2>
-          <p className="mt-4">
+          <p className="mt-4 text-center md:text-left">
             <ProjectLink href="/eth:3#project-top" className="underline">
               Participate in REV
             </ProjectLink>
