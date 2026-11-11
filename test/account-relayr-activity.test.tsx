@@ -3,6 +3,8 @@ import type { TransactionActivity } from "@/lib/transaction-activity";
 import { erc2771ForwarderAbi, jbContractAddress } from "@bananapus/nana-sdk-core";
 import {
   checkedItLabel,
+  HELD_HASH_MISMATCH_LINE,
+  HELD_HASH_UNVERIFIED_LINE,
   SAVED_ATTEMPT_CHECK_LINE,
   SAVED_ATTEMPT_CHECK_WARNING,
   SAVED_ATTEMPT_CONTINUE_ANYWAY_LABEL,
@@ -379,5 +381,76 @@ describe("the account's held writes", () => {
     expect(
       await screen.findByText("Your earlier transaction hasn't confirmed yet. Check your wallet."),
     ).toBeVisible();
+  });
+
+  it("takes the hash of a held write whose wallet reply was lost, attached only if it is that send", async () => {
+    /** The node's word on the given hash: unread until it indexes it. */
+    let given: object | null = null;
+    let rateLimited = false;
+    const node = {
+      getChainId: async () => 8453,
+      getBlockNumber: async () => 100n,
+      getBlock: async () => ({ number: 100n, hash: `0x${"bb".repeat(32)}` }),
+      getTransactionCount: async () => 3,
+      getTransaction: async () => {
+        if (rateLimited)
+          throw Object.assign(new Error("HTTP request failed. Status: 429"), { status: 429 });
+        if (given) return given;
+        throw new Error("not found");
+      },
+      getTransactionReceipt: async () => {
+        throw new Error("not found");
+      },
+      request: async () => null,
+    };
+    const { writeHolds } = await import("@/lib/write-hold");
+    await writeHolds
+      .open({
+        chainId: 8453,
+        account: ACCOUNT,
+        safe: false,
+        call: { to: ACCOUNT, data: "0x5678", value: 0n },
+      })
+      .send(node as never, async (gate) => {
+        await gate.beforeSend();
+        throw new Error("Wallet transport timed out");
+      })
+      .catch(() => undefined);
+    mocks.client = node;
+    await renderActivity();
+    const [field] = await screen.findAllByLabelText(
+      "Transaction hash, if the wallet reply was lost",
+    );
+    const check = () =>
+      fireEvent.click(field!.parentElement!.querySelector("button") as HTMLButtonElement);
+    fireEvent.change(field!, { target: { value: "0x1234" } });
+    check();
+    expect(await screen.findByText("Enter a complete transaction hash.")).toBeVisible();
+    const other = `0x${"cd".repeat(32)}`;
+    fireEvent.change(field!, { target: { value: other } });
+    // Not readable yet: a retry, never a mismatch.
+    check();
+    expect(await screen.findByText(HELD_HASH_UNVERIFIED_LINE)).toBeVisible();
+    expect(screen.queryByText(HELD_HASH_MISMATCH_LINE)).toBeNull();
+    // Read, and another call: a mismatch.
+    given = {
+      hash: other,
+      from: ACCOUNT,
+      to: ACCOUNT,
+      input: "0x9999",
+      value: 0n,
+      nonce: 3,
+      chainId: 8453,
+      blockNumber: null,
+    };
+    // Rate limited: still a retry, never a mismatch.
+    rateLimited = true;
+    check();
+    await waitFor(() => expect(screen.queryByText(HELD_HASH_UNVERIFIED_LINE)).toBeNull());
+    expect(await screen.findByText(HELD_HASH_UNVERIFIED_LINE)).toBeVisible();
+    expect(screen.queryByText(HELD_HASH_MISMATCH_LINE)).toBeNull();
+    rateLimited = false;
+    check();
+    expect(await screen.findByText(HELD_HASH_MISMATCH_LINE)).toBeVisible();
   });
 });

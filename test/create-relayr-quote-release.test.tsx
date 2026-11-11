@@ -1,6 +1,7 @@
 import type { QuotedStageStart } from "@/app/create/helpers/staleQuote";
 import type { RevnetFormData } from "@/app/create/types";
 import type { RelayrPostBundleResponse } from "@/lib/nana/types";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import type { Address, Hex } from "viem";
@@ -174,7 +175,11 @@ async function createPage() {
   ]);
   stopAnswering();
   answerReviews(async () => true, review);
-  render(<Page />);
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <Page />
+    </QueryClientProvider>,
+  );
   return { activity, relayr, staleQuote };
 }
 

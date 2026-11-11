@@ -2,8 +2,10 @@
 
 import { ReviewRefusal } from "@/lib/review-refusal";
 
+import { activityJournal } from "@/lib/activity-journal";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
 import { formatShortDateTime } from "@/lib/date";
+import { fence, type TabLocks } from "@/lib/fence";
 import { confirmRelayrDiscard } from "@/lib/flow-choice";
 import {
   batchCallScope,
@@ -55,7 +57,6 @@ import {
   recordTransactionActivity,
   refreshTransactionActivities,
   requireTransactionActivityPersistence,
-  restoreUnsentPaymentActivity,
   transactionActivitySnapshot,
   updateTransactionActivity,
   type RelayrExpectedTransaction,
@@ -66,13 +67,17 @@ import { requireNoViewAs } from "@/lib/view-as";
 import { savedAttempts } from "@/lib/write-hold";
 import { erc2771ForwarderAbi, jbContractAddress, type JBVersion } from "@bananapus/nana-sdk-core";
 import {
+  assertLocksHeld,
   browserLocks,
   gasWithHeadroom,
+  keepOutcome,
+  LockLostError,
   relayrDiscardLine,
   ReviewedCallRevertedError,
   relayrHeldMessage as sharedHeldMessage,
   WalletNotInvokedError,
   writeIntentKey,
+  type LockHandle,
   type ReviewedForwardRequest,
   type ReviewedPlan,
   type ReviewedPlanAction,
@@ -301,7 +306,10 @@ export function watchSafeBundleView(
 
 const authorizingAccounts = new Set<string>();
 
-async function withAuthorizationLock<T>(account: Address, action: () => Promise<T>): Promise<T> {
+async function withAuthorizationLock<T>(
+  account: Address,
+  action: (locks: TabLocks) => Promise<T>,
+): Promise<T> {
   const key = account.toLowerCase();
   if (authorizingAccounts.has(key))
     throw new Error("Another authorization is being prepared for this account.");
@@ -313,7 +321,7 @@ async function withAuthorizationLock<T>(account: Address, action: () => Promise<
       (lock) => {
         if (!lock)
           throw new Error("Another browser tab is preparing authorizations for this account.");
-        return action();
+        return action([lock]);
       },
     )) as T;
   } finally {
@@ -576,6 +584,8 @@ function payableQuote(
 async function releaseUnfundableQuote(
   config: Config,
   activity: TransactionActivity,
+  /** The locks its caller holds: its write checks them first. */
+  locks: TabLocks = [],
 ): Promise<boolean> {
   if (activity.relayrPaymentStatus !== "unfunded" || sentPayments(activity).length) return false;
   const { bundleUuid, options, destinationChainIds } = relayrSavedQuote(activity);
@@ -595,6 +605,7 @@ async function releaseUnfundableQuote(
     ))
   )
     return false;
+  await assertLocksHeld(locks);
   updateTransactionActivity(activity.id, {
     status: "failed",
     relayrPaymentStatus: "expired",
@@ -627,16 +638,19 @@ function paidInFlight(activity: TransactionActivity): boolean {
 async function reservationOf(
   config: Config,
   activity: TransactionActivity,
+  locks: TabLocks = [],
 ): Promise<"released" | "reserved"> {
   if (activity.relayrDiscardable === "ran") throw new RelayrDiscardError(activity.id, "ran");
   const verdict = await savedRequestsVerdict(config, activity);
-  if (!verdict) return (await releaseUnfundableQuote(config, activity)) ? "released" : "reserved";
+  if (!verdict)
+    return (await releaseUnfundableQuote(config, activity, locks)) ? "released" : "reserved";
   if (verdict.live) {
     if (paidInFlight(activity)) return "reserved";
     throw new Error(relayrHeldMessage(verdict.until));
   }
   const outcome = await relayrSessionOutcome(verdict, { nonces: activity.relayrNonces });
   if (outcome.kind !== "discard") throw new Error(relayrHeldMessage(0));
+  await assertLocksHeld(locks);
   const discard = discardableSession(activity, outcome.reason);
   if (outcome.reason === "ran") throw discard;
   return "released";
@@ -755,6 +769,8 @@ async function requireUnfunded(
   config: Config,
   quote: Pick<RememberedQuote, "bundleUuid" | "callKey" | "callKeys">,
   exempt?: string,
+  /** The locks its caller holds: a session it releases is written only under them. */
+  locks: TabLocks = [],
 ): Promise<void> {
   requireTransactionActivityPersistence();
   if (fundedBundles.has(quote.bundleUuid))
@@ -812,7 +828,7 @@ async function requireUnfunded(
       if (await relayrRequestsDead(clientFor(config), relayrSessionRequests(existing))) continue;
     } else if (
       existing.bundleUuid !== quote.bundleUuid &&
-      (await reservationOf(config, existing)) === "released"
+      (await reservationOf(config, existing, locks)) === "released"
     )
       continue;
     throw new RelayrRecoveryError(existing);
@@ -974,6 +990,7 @@ async function continueSession(
   saved: TransactionActivity,
   requests: ReviewedRelayrRequest[],
   chains: number[],
+  locks: TabLocks,
 ): Promise<Continuation | null> {
   const verdict = await savedRequestsVerdict(config, saved);
   // A paid bundle still running is the reservation checks' to refuse while one of
@@ -1013,7 +1030,9 @@ async function continueSession(
   const quote = !released && payableQuote(saved, chains);
   if (!verdict) {
     if (quote) return { kind: "quote", quote };
-    return released || (await releaseUnfundableQuote(config, saved)) ? { kind: "fresh" } : null;
+    return released || (await releaseUnfundableQuote(config, saved, locks))
+      ? { kind: "fresh" }
+      : null;
   }
   if (verdict.live) {
     if (verdict.mayHaveRun) throw new Error(relayrHeldMessage(verdict.until));
@@ -1035,7 +1054,10 @@ async function continueSession(
     recheck: () => recheck(targets, account),
   });
   if (outcome.kind === "re-sign") return { kind: "sign" };
-  if (outcome.kind === "discard") throw discardableSession(saved, outcome.reason, outcome.error);
+  if (outcome.kind === "discard") {
+    await assertLocksHeld(locks);
+    throw discardableSession(saved, outcome.reason, outcome.error);
+  }
   if (outcome.kind === "unchecked") throw new Error(UNCHECKED, { cause: outcome.error });
   throw new Error(relayrHeldMessage(0));
 }
@@ -1547,14 +1569,17 @@ async function verifyDestinationReceipts(
  * A proof the SDK cannot make for now (no RPC for the chain, a read that
  * failed) throws, so the caller keeps checking.
  */
-async function provePayment(bundleUuid: string): Promise<void> {
+async function provePayment(bundleUuid: string, locks: TabLocks = []): Promise<void> {
   const activity = transactionActivitySnapshot().find((item) => item.bundleUuid === bundleUuid);
   if (!activity?.account || !sentPayments(activity).length)
     throw new RelayrVerificationError(
       "The original funding transaction cannot be verified. Do not pay again; inspect the existing bundle and wallet activity.",
     );
   const { wagmiConfig } = await import("@/lib/wagmiConfig");
+  const update = fence(locks, updateTransactionActivity);
   let proven: boolean;
+  // Core tells of a revert without awaiting: it is written, under the locks, once the proof returns.
+  let reverted = false;
   try {
     proven = await proveSavedRelayrPayment(
       clientFor(wagmiConfig),
@@ -1562,15 +1587,17 @@ async function provePayment(bundleUuid: string): Promise<void> {
       activity.account,
       () => {
         fundedBundles.delete(bundleUuid);
-        updateTransactionActivity(activity.id, PAYMENT_REVERTED);
+        reverted = true;
       },
     );
   } catch (error) {
     if (error instanceof RelayrProofError) throw new RelayrVerificationError(error.message);
     throw error;
+  } finally {
+    if (reverted) await update(activity.id, PAYMENT_REVERTED);
   }
   if (!proven) throw new Error("The funding RPC is unavailable.");
-  updateTransactionActivity(activity.id, { relayrPaymentStatus: "confirmed" });
+  await update(activity.id, { relayrPaymentStatus: "confirmed" });
 }
 
 /** Never from a cache: a stale answer could hide a payment or a destination result. */
@@ -1860,7 +1887,9 @@ export function useGetRelayrTxQuote() {
           setIsPending(false);
         }
       }
-      return withAuthorizationLock(address, async () => {
+      return withAuthorizationLock(address, async (locks) => {
+        // Every journal write and signature under it checks this tab still holds the lock.
+        const activity = activityJournal(locks);
         options?.signal?.throwIfAborted();
         requireWalletContext();
         requests = requests.map((request) => ({ ...request, data: { ...request.data } }));
@@ -1913,7 +1942,7 @@ export function useGetRelayrTxQuote() {
         // Ruling R114: this action's own saved session, classified before its recheck.
         const saved = savedSessionOf(address, callKey);
         const continuation = saved
-          ? await continueSession(config, address, saved, requests, [...requestChains])
+          ? await continueSession(config, address, saved, requests, [...requestChains], locks)
           : null;
         if (saved && !continuation) throw new RelayrRecoveryError(saved);
         if (saved && continuation?.kind === "quote") {
@@ -1923,8 +1952,9 @@ export function useGetRelayrTxQuote() {
             config,
             { bundleUuid: quote.bundle_uuid, callKey, callKeys: continuedKeys },
             saved.id,
+            locks,
           );
-          updateTransactionActivity(saved.id, {
+          await activity.update(saved.id, {
             relayrCallKeys: continuedKeys,
           });
           requireTransactionActivityPersistence();
@@ -1940,7 +1970,7 @@ export function useGetRelayrTxQuote() {
         );
         // Ruling R117: every other session that shares a call, a recovery scope or a
         // forwarder nonce reserves it while one of its requests can still run.
-        await requireUnfunded(config, { bundleUuid: "", callKey, callKeys }, continued?.id);
+        await requireUnfunded(config, { bundleUuid: "", callKey, callKeys }, continued?.id, locks);
         await requireForwarderNoncesFree(
           config,
           address,
@@ -2130,6 +2160,7 @@ export function useGetRelayrTxQuote() {
                 {
                   account: address,
                   plan,
+                  locks,
                   reverify: async () => {
                     requireWalletContext();
                     const { requirePriceBasedShopVoting } =
@@ -2186,7 +2217,12 @@ export function useGetRelayrTxQuote() {
           );
           // A response can be lost after Relayr receives executable signatures. Persist
           // the intent first; only authenticated unsigned routing remains freely retryable.
-          await requireUnfunded(config, { bundleUuid: "", callKey, callKeys }, continued?.id);
+          await requireUnfunded(
+            config,
+            { bundleUuid: "", callKey, callKeys },
+            continued?.id,
+            locks,
+          );
           options?.signal?.throwIfAborted();
           requireWalletContext();
           const publicationId = `relayr-publication:${callKey}`;
@@ -2212,11 +2248,13 @@ export function useGetRelayrTxQuote() {
             publication.message =
               "Unsigned routing calls were sent for a fee quote. No payment was sent. If no quote returns, review the currently ready payments again.";
           }
-          recordTransactionActivity(publication);
-          requireTransactionActivityPersistence();
           // The new publication carries the continued session's calls: its own
           // signatures again, or new ones once every request it published is dead.
-          if (continued && continued.id !== publicationId) supersede([continued]);
+          await fence(locks, () => {
+            recordTransactionActivity(publication);
+            if (continued && continued.id !== publicationId) supersede([continued]);
+          })();
+          requireTransactionActivityPersistence();
           options?.onMessage?.(
             unsignedRouting && requests.length > 1
               ? "Requesting the network-fee quote. This batch may take a few minutes."
@@ -2259,24 +2297,27 @@ export function useGetRelayrTxQuote() {
             value: binding.entry.value,
             transactionUuid: binding.txUuid,
           }));
-          recordTransactionActivity({
-            id: `relayr:${quote.bundle_uuid}`,
-            kind: "relayr-bundle",
-            title: "Transaction bundle ready for payment",
-            status: "pending",
-            message: unsignedRouting
-              ? "The selected routing attempts are ready. Choose a funding chain to pay this existing quote once."
-              : "The destination authorizations are signed. Choose a funding chain to pay this existing quote once.",
-            account: address,
-            callKey,
-            relayrCallKeys: callKeys,
-            bundleUuid: quote.bundle_uuid,
-            relayrPaymentStatus: "unfunded",
-            relayrExpectedTransactions: expectedTransactions,
-            relayrNonces: nonces,
-            relayrQuote: structuredClone(quote),
-          });
-          dismissTransactionActivity(publicationId);
+          // The ready quote replaces its publication in one write under the lock.
+          await fence(locks, () => {
+            recordTransactionActivity({
+              id: `relayr:${quote.bundle_uuid}`,
+              kind: "relayr-bundle",
+              title: "Transaction bundle ready for payment",
+              status: "pending",
+              message: unsignedRouting
+                ? "The selected routing attempts are ready. Choose a funding chain to pay this existing quote once."
+                : "The destination authorizations are signed. Choose a funding chain to pay this existing quote once.",
+              account: address,
+              callKey,
+              relayrCallKeys: callKeys,
+              bundleUuid: quote.bundle_uuid,
+              relayrPaymentStatus: "unfunded",
+              relayrExpectedTransactions: expectedTransactions,
+              relayrNonces: nonces,
+              relayrQuote: structuredClone(quote),
+            });
+            dismissTransactionActivity(publicationId);
+          })();
           options?.signal?.throwIfAborted();
           rememberQuote(quote, address, callKey, callKeys, expectedTransactions, planned);
 
@@ -2375,7 +2416,19 @@ export function useSendRelayrTx() {
           throw safeRecoveryError(cause);
         }
       }
-      const submit = async () => {
+      /** The payment's work under its lock ended: a hash saved after this is a kept one. */
+      let ended = false;
+      const submit = async (lock: LockHandle | null) => {
+        try {
+          return await pay(lock);
+        } finally {
+          ended = true;
+        }
+      };
+      const pay = async (lock: LockHandle | null) => {
+        // Every journal write and the wallet itself check this tab still holds the payment's lock.
+        const locks = lock ? [lock] : [];
+        const activity = activityJournal(locks);
         options?.onMessage?.("Preparing the network-fee payment.");
         const journal = () => refreshTransactionActivities().find((row) => row.id === activityId);
         // The SDK keeps no more payments for a quote than this, so none is sent beyond them.
@@ -2383,7 +2436,7 @@ export function useSendRelayrTx() {
           throw new Error(
             "This quote was paid too many times to pay again. Keep it pending; do not pay again.",
           );
-        await requireUnfunded(config, remembered);
+        await requireUnfunded(config, remembered, undefined, locks);
         const { amount: value } = relayrPaymentDetails(payment, {
           bundleUuid: remembered.bundleUuid,
           destinationChainIds: remembered.chainIds,
@@ -2441,16 +2494,16 @@ export function useSendRelayrTx() {
             bundleUuid: remembered.bundleUuid,
             destinationChainIds: remembered.chainIds,
           });
-          await requireUnfunded(config, remembered);
+          await requireUnfunded(config, remembered, undefined, locks);
           requireAccount();
         };
         /** Saves the attempt as submitted, last before the wallet. */
-        const saveSubmitting = () => {
+        const saveSubmitting = async () => {
           previousPayment = structuredClone(journal());
           if (!previousPayment)
             throw new Error("The saved payment disappeared. Recover the quote before paying.");
           submitting = structuredClone(
-            recordTransactionActivity({
+            await activity.record({
               id: activityId,
               kind: "relayr-bundle",
               title: "Multi-chain bundle",
@@ -2479,14 +2532,36 @@ export function useSendRelayrTx() {
           walletOpened = true;
           options?.onMessage?.("Confirm the network-fee payment in your wallet.");
         };
+        // Refused for a lapsed lock, core saves the hash once the lock is taken back; the bundle
+        // is then followed from that saved hash, as the payment's own work could not prove it.
         const onSent = async (submitted: Hex) => {
           hash ??= submitted;
           fundedBundles.add(remembered.bundleUuid);
-          updateTransactionActivity(activityId, {
+          options?.onMessage?.("Checking the submitted network-fee payment.");
+          await activity.update(activityId, {
             ...sentAs(submitted),
             message: "Payment submitted. Do not pay again while its receipt is pending.",
           });
-          options?.onMessage?.("Checking the submitted network-fee payment.");
+          if (ended) void waitForRelayrBundle(remembered.bundleUuid).catch(() => undefined);
+        };
+        /** Nothing was sent after the submitting marker was saved (a 4001, or a gate before the wallet). */
+        let unsent = false;
+        /** The restore refused: the saved record is no longer this marker. */
+        let unrestored: unknown;
+        // Restores the exact record the marker replaced; refused for a lapsed lock, core runs it
+        // again once the lock is taken back.
+        const onUnsent = async () => {
+          if (!submitting || !previousPayment) return;
+          unsent = true;
+          try {
+            await activity.restoreUnsent(submitting, previousPayment);
+          } catch (cause) {
+            if (cause instanceof LockLostError) throw cause;
+            // The row changed since the marker (a check, a hash): the catch's merge write records
+            // the outcome instead, keeping what changed.
+            unsent = false;
+            unrestored = cause;
+          }
         };
         // A quote's first payment under the plan that reviewed its round's fee bound pays within
         // that bound with no prompt. A retry, or a quote reviewed apart from a plan, reviews the
@@ -2516,10 +2591,12 @@ export function useSendRelayrTx() {
               {
                 account: address,
                 ...planned,
+                locks,
+                onUnsent,
                 // Core's own gates follow and refuse as not sent.
                 onSending: async () => {
                   await recheck();
-                  saveSubmitting();
+                  await saveSubmitting();
                   ready = true;
                 },
                 onSent,
@@ -2549,8 +2626,10 @@ export function useSendRelayrTx() {
                   "This one payment funds the signed calls on every selected chain. Destination transactions confirm separately.",
                 confirmLabel: "Pay",
                 guard: requireNoViewAs,
+                locks,
                 reverify: recheck,
                 beforeWallet: async () => saveSubmitting(),
+                onUnsent: () => onUnsent(),
                 assertWriteState: () => {
                   requireAccount();
                   relayrPaymentDetails(payment, {
@@ -2582,9 +2661,8 @@ export function useSendRelayrTx() {
             (cause instanceof WalletNotInvokedError ||
               (planned ? cause instanceof RelayrPaymentNotSentError : !ready))
           ) {
-            // A gate refused before the wallet: this exact marker belongs to a wallet call never
-            // invoked. A changed record may hold another attempt's evidence.
-            restoreUnsentPaymentActivity(submitting!, previousPayment!);
+            // A gate refused before the wallet: `onUnsent` restored the exact marker it saved.
+            if (unrestored) throw unrestored;
             throw cause instanceof RelayrPaymentNotSentError
               ? cause
               : new RelayrPaymentNotSentError(cause);
@@ -2597,23 +2675,28 @@ export function useSendRelayrTx() {
               sending: true,
               paid: sent.length > 0,
             });
-            updateTransactionActivity(
-              activityId,
-              outcome === "reverted"
-                ? PAYMENT_REVERTED
-                : outcome === "unpaid"
-                  ? {
-                      status: "pending",
-                      relayrPaymentStatus: "unfunded",
-                      message:
-                        "The wallet declined payment. The existing signed quote can still be funded once before it expires.",
-                    }
-                  : {
-                      status: "pending",
-                      message:
-                        "The wallet's funding result is uncertain. Do not pay again; inspect wallet activity and this bundle.",
-                    },
-            );
+            // The wallet's answer, kept under a lapsed lock and saved once it is taken back. One
+            // that sent nothing is `onUnsent`'s.
+            if (!unsent)
+              await keepOutcome(locks, () =>
+                activity.update(
+                  activityId,
+                  outcome === "reverted"
+                    ? PAYMENT_REVERTED
+                    : outcome === "unpaid"
+                      ? {
+                          status: "pending",
+                          relayrPaymentStatus: "unfunded",
+                          message:
+                            "The wallet declined payment. The existing signed quote can still be funded once before it expires.",
+                        }
+                      : {
+                          status: "pending",
+                          message:
+                            "The wallet's funding result is uncertain. Do not pay again; inspect wallet activity and this bundle.",
+                        },
+                ),
+              );
             throw error;
           } else throw cause;
         }
@@ -2626,25 +2709,28 @@ export function useSendRelayrTx() {
             throw new Error("The payment receipt names no transaction hash.");
           if (receipt.transactionHash.toLowerCase() !== mined.toLowerCase()) {
             mined = receipt.transactionHash;
-            updateTransactionActivity(activityId, sentAs(mined));
+            const sped = mined;
+            await keepOutcome(locks, () => activity.update(activityId, sentAs(sped)));
           }
-          await provePayment(remembered.bundleUuid);
+          await provePayment(remembered.bundleUuid, locks);
         } catch (error) {
           if (!(error instanceof RelayrVerificationError)) {
-            updateTransactionActivity(activityId, {
-              status: "pending",
-              message:
-                "Payment was submitted, but confirmation is uncertain. Do not pay again; check this hash and bundle.",
-            });
-            // Keep proving this saved payment even if an immediate RPC read failed.
+            // Keep proving this payment even if an immediate read failed or the lock lapsed.
             void waitForRelayrBundle(remembered.bundleUuid).catch(() => undefined);
+            await keepOutcome(locks, () =>
+              activity.update(activityId, {
+                status: "pending",
+                message:
+                  "Payment was submitted, but confirmation is uncertain. Do not pay again; check this hash and bundle.",
+              }),
+            );
           }
           throw new Error(
             `Payment ${mined} was submitted, but confirmation is uncertain. Do not pay again.`,
             { cause: error },
           );
         }
-        updateTransactionActivity(activityId, {
+        await activity.update(activityId, {
           status: "pending",
           message: "Payment confirmed. Destination transactions are now pending.",
         });

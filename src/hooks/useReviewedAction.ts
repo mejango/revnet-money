@@ -15,9 +15,11 @@ import { requireNoViewAs } from "@/lib/view-as";
 import { answerHeldRefusal, isHeldRefusal, writeHolds } from "@/lib/write-hold";
 import type { ReviewedCall, ReviewedPlan } from "@bananapus/nana-sdk-core/review";
 import {
+  ConfirmationQueuedError,
   discardReviewedSequence,
   findReviewedSequence,
   openStepHold,
+  REVIEWED_ENGINE_LOAD_LINE,
   type WriteHoldClient,
 } from "@bananapus/nana-sdk-core/review";
 import {
@@ -27,7 +29,8 @@ import {
 } from "@bananapus/nana-sdk-core/review/react";
 import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
 import { canonicalSafeTxHash, SAFE_NONCE_GUIDANCE } from "@bananapus/nana-sdk-core/safe-service";
-import { useCallback, useMemo, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { Address, Hex } from "viem";
 import { useAccount, useConfig } from "wagmi";
 import { getAccount, getPublicClient } from "wagmi/actions";
@@ -63,6 +66,7 @@ export type ReviewedActionInput = Parameters<UseReviewedRunResult["run"]>[0];
  */
 export function useReviewedAction() {
   const config = useConfig();
+  const queryClient = useQueryClient();
   const { address } = useAccount();
   // The wallets running actions were reviewed on, each refused at the wallet if it changes.
   const reviewed = useRef(new Set<ReviewedWallet>());
@@ -79,17 +83,34 @@ export function useReviewedAction() {
       account: address,
       guard: requireNoViewAs,
       engine: loadEngine,
+      // A held step whose confirm was closed settled later: what it changed reads again.
+      onDismissedSettled: () => void queryClient.invalidateQueries(),
     }),
-    [config, address],
+    [config, address, queryClient],
   );
   const runner = useReviewedRun(deps);
   const latest = useRef(runner);
   latest.current = runner;
 
+  /** A confirmed step whose notice waits behind this run's own locks (core's queued line). */
+  const [queuedLine, setQueuedLine] = useState<string | null>(null);
+
   const runOnce = useCallback(
     async (action: ReviewedActionInput): Promise<ReviewedRunResult> => {
-      await safeWalletPeerSettled();
-      const { requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy");
+      setQueuedLine(null);
+      // Its own preparation, before any review or wallet: a failure here is every flow's
+      // "nothing was sent", not a throw each caller must catch.
+      let requirePriceBasedShopVoting: typeof import("@/lib/shop-voting-policy").requirePriceBasedShopVoting;
+      try {
+        await safeWalletPeerSettled();
+        ({ requirePriceBasedShopVoting } = await import("@/lib/shop-voting-policy"));
+      } catch (cause) {
+        return {
+          status: "failed",
+          error: REVIEWED_ENGINE_LOAD_LINE,
+          failure: Object.assign(new ReviewRefusal(REVIEWED_ENGINE_LOAD_LINE), { cause }),
+        };
+      }
       const safe = isSafeConnection(config);
       // Its sends are journaled under the account it was reviewed for, whatever the wallet shows.
       const account = action.account ?? getAccount(config).address;
@@ -137,17 +158,22 @@ export function useReviewedAction() {
         .finally(() => {
           if (wallet) reviewed.current.delete(wallet);
         });
-      if (result?.status === "done")
+      // Sent, its receipt still verifying: pending (the hook's `receipt` phase), never failed or a
+      // reason to resend, until its hold ends the run, or `dismiss` ends the wait (null) and the
+      // hold keeps following it.
+      const ended = result?.status === "receipt" ? await result.ended() : result;
+      // Confirmed, its notice queued behind this run's own locks: its line shows until the next
+      // run or a reset, nothing is sent again, and a retry closes on that success.
+      if (ended?.status === "failed" && ended.failure instanceof ConfirmationQueuedError)
+        setQueuedLine(ended.error);
+      if (ended?.status === "done")
         for (const id of rows) if (id) settleSubmittedWrite(id, "success");
-      if (result?.status === "failed") {
-        const step = revertedStep(result.failure);
+      if (ended?.status === "failed") {
+        const step = revertedStep(ended.failure);
         const id = step === undefined ? undefined : rows[step];
         if (id) settleSubmittedWrite(id, "failed");
       }
-      // Sent, its receipt still verifying: pending (the hook's `receipt` phase), never failed or a
-      // reason to resend, until its hold ends the run. Its rows follow the hold.
-      if (result?.status === "receipt") return result.ended();
-      return result;
+      return ended;
     },
     [config],
   );
@@ -206,8 +232,18 @@ export function useReviewedAction() {
     run,
     /** The wallet, chains and hold the run sends through, for core's Safe service sends. */
     deps,
-    /** The line to show: a site's own refusal as it is, else core's. */
-    error: failure instanceof ReviewRefusal ? failure.message : runner.error,
+    /** The line to show: a queued confirmation's, a site's own refusal as it is, else core's. */
+    error: queuedLine ?? (failure instanceof ReviewRefusal ? failure.message : runner.error),
+    /** Closes the confirm (core's `dismiss`); a queued confirmation's line goes with it. */
+    dismiss: () => {
+      const closed = runner.dismiss();
+      if (closed) setQueuedLine(null);
+      return closed;
+    },
+    reset: () => {
+      setQueuedLine(null);
+      runner.reset();
+    },
     /**
      * A step before the last that settled after its run ended (a Safe's approval): the run is idle
      * and running the action again continues from the next step.

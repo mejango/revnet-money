@@ -73,13 +73,14 @@ function walletAdapter(
   return {
     ...over(),
     account,
-    signMessage: (message) => over(finalCheck(), undefined, identity()).signMessage(message),
+    signMessage: (message, options) =>
+      over(finalCheck(), undefined, identity()).signMessage(message, options),
     sendTransaction: async (tx) => {
       const [state, pinned] = [finalCheck(), identity()];
       const require = await policy();
       return over(state, () => require(tx.data, tx.to), pinned).sendTransaction(tx);
     },
-    signTypedData: async (typedData) => {
+    signTypedData: async (typedData, options) => {
       const [state, pinned] = [finalCheck(), identity()];
       const require = await policy();
       return over(
@@ -92,9 +93,9 @@ function walletAdapter(
             ));
         },
         pinned,
-      ).signTypedData(typedData);
+      ).signTypedData(typedData, options);
     },
-    sendCalls: async (chainId, calls) => {
+    sendCalls: async (chainId, calls, options) => {
       const [state, pinned] = [finalCheck(), identity()];
       const require = await policy();
       return over(
@@ -103,7 +104,7 @@ function walletAdapter(
           for (const call of calls) require(call.data, call.to);
         },
         pinned,
-      ).sendCalls!(chainId, calls);
+      ).sendCalls!(chainId, calls, options);
     },
   };
 }

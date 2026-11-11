@@ -13,7 +13,7 @@ import {
 import type { SafeRelayrView } from "@bananapus/nana-sdk-core/review/safe-relayr";
 import { canonicalSafeTxHash, SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { JB_PROJECT_PAYER_DEPLOYER, jbProjectPayerDeployerAbi } from "@bananapus/nana-sdk-core/v6";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import {
   decodeFunctionData,
   encodeAbiParameters,
@@ -863,6 +863,36 @@ describe("reviewed Relayr authorization hook", () => {
       /recovery storage is unavailable/,
     );
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("signs, saves and publishes nothing once the authorization lock passed to another tab", async () => {
+    const { review, hooks } = await freshHarness();
+    review.answerReviews(async () => true);
+    const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: async (name: string, _options: unknown, callback: (lock: object) => unknown) =>
+          callback({
+            name,
+            mode: "exclusive",
+            signal: AbortSignal.abort(),
+            held: async () => false,
+            assertHeld: async () => {
+              throw new LockLostError(name);
+            },
+          }),
+      },
+    });
+    try {
+      const { result } = renderHook(() => hooks.useGetRelayrTxQuote());
+      await expect(result.current.getRelayrTxQuote([REQUEST])).rejects.toThrow();
+      expect(mocks.signTypedData).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem("revnet:transaction-activities:v1") ?? "[]").toBe("[]");
+    } finally {
+      Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+    }
   });
 
   it.each(["not json", "{}", "[null]"])(
@@ -2047,6 +2077,109 @@ describe("reviewed Relayr payment hook", () => {
     });
   });
 
+  it("marks no payment submitted and opens no wallet once the payment lock passed to another tab", async () => {
+    const { result } = await quotedPayment();
+    const before = window.localStorage.getItem("revnet:transaction-activities:v1");
+    const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        // Only the payment's own lock passed on; core's write holds are still this tab's.
+        request: async (name: string, _options: unknown, callback: (lock: object) => unknown) => {
+          const lost = name.startsWith("revnet:relayr:");
+          return callback({
+            name,
+            mode: "exclusive",
+            signal: lost ? AbortSignal.abort() : new AbortController().signal,
+            held: async () => !lost,
+            assertHeld: async () => {
+              if (lost) throw new LockLostError(name);
+            },
+          });
+        },
+      },
+    });
+    try {
+      await act(async () => {
+        await expect(result.current.sendRelayrTx(payment())).rejects.toThrow();
+      });
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+      expect(window.localStorage.getItem("revnet:transaction-activities:v1")).toBe(before);
+    } finally {
+      Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+    }
+  });
+
+  it("saves the payment's hash once its lock is free again when the lock lapsed while the wallet was open", async () => {
+    const { result } = await quotedPayment();
+    const { lapsingLocksForTests } = await import("@bananapus/nana-sdk-core/testing");
+    const { locks, lapse } = lapsingLocksForTests();
+    Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
+    mocks.sendTransaction.mockImplementationOnce(async () => {
+      lapse();
+      return HASH;
+    });
+    try {
+      await act(async () => {
+        await result.current.sendRelayrTx(payment()).catch(() => undefined);
+      });
+      await waitFor(() => {
+        const rows = JSON.parse(
+          window.localStorage.getItem("revnet:transaction-activities:v1") ?? "[]",
+        ) as { hash?: string }[];
+        expect(rows.some((row) => row.hash === HASH)).toBe(true);
+      });
+      // The bundle is still followed: the kept hash goes on to its proven payment.
+      await waitFor(
+        () => {
+          const rows = JSON.parse(
+            window.localStorage.getItem("revnet:transaction-activities:v1") ?? "[]",
+          ) as { hash?: string; relayrPaymentStatus?: string }[];
+          expect(rows.find((row) => row.hash === HASH)?.relayrPaymentStatus).toBe("confirmed");
+        },
+        { timeout: 15_000 },
+      );
+    } finally {
+      Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+    }
+  });
+
+  it("restores the unpaid quote once its lock is free again when the lock lapsed before the wallet opened", async () => {
+    const { result } = await quotedPayment();
+    const before = () =>
+      (
+        JSON.parse(window.localStorage.getItem("revnet:transaction-activities:v1") ?? "[]") as {
+          bundleUuid?: string;
+          relayrPaymentStatus?: string;
+        }[]
+      ).find((row) => row.bundleUuid)?.relayrPaymentStatus;
+    const unpaid = before();
+    let saved: string | undefined;
+    const { lapsingLocksForTests } = await import("@bananapus/nana-sdk-core/testing");
+    const { locks, lapse } = lapsingLocksForTests();
+    Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
+    try {
+      await act(async () => {
+        // Saved submitting, the lease lapses as the wallet is asked: core's last check refuses.
+        await result.current
+          .sendRelayrTx(payment(), {
+            onMessage: (message) => {
+              if (/in your wallet/.test(message)) {
+                saved = before();
+                lapse();
+              }
+            },
+          })
+          .catch(() => undefined);
+      });
+      expect(saved).toBe("submitted");
+      expect(mocks.sendTransaction).not.toHaveBeenCalled();
+      await waitFor(() => expect(before()).toBe(unpaid));
+    } finally {
+      Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+    }
+  });
+
   it("switches a wallet parked on another chain to the funding chain before it pays", async () => {
     const { result } = await quotedPayment();
     // The wallet moved after the quote was signed. The payment names chain 1.
@@ -2306,6 +2439,23 @@ describe("reviewed Relayr payment hook", () => {
       /already has a submitted payment/,
     );
     expect(mocks.sendTransaction).toHaveBeenCalledOnce();
+  });
+
+  it("lets a declined payment retry after a check changed its row while the wallet was open", async () => {
+    const { activity, result } = await quotedPayment();
+    mocks.sendTransaction.mockImplementationOnce(async () => {
+      const current = activity.transactionActivitySnapshot()[0];
+      activity.updateTransactionActivity(current.id, { message: "Checked the bundle." });
+      throw { code: 4001 };
+    });
+    await expect(result.current.sendRelayrTx(payment())).rejects.toMatchObject({
+      cause: { code: 4001 },
+    });
+    expect(activity.transactionActivitySnapshot()[0].relayrPaymentStatus).toBe("unfunded");
+    await act(async () => {
+      await expect(result.current.sendRelayrTx(payment())).resolves.toBe(HASH);
+    });
+    expect(mocks.sendTransaction).toHaveBeenCalledTimes(2);
   });
 
   it("retains a lock when wallet broadcast fails ambiguously, but permits explicit rejection retry", async () => {

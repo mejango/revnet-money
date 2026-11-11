@@ -37,6 +37,7 @@ const mocks = vi.hoisted(() => ({
     holdReview: () => () => void;
     run: { mock: { calls: { context?: unknown }[][] } };
     set: (patch: { phase?: string; held?: unknown; error?: string | null }) => void;
+    state: { phase: string };
   },
   verifiedPairs: [{ peerChainId: 1, projectId: 7n }] as {
     peerChainId: number;
@@ -836,6 +837,34 @@ describe("a payment bound to the account it was prepared for", () => {
     act(() => mocks.runner!.set({ held: { phase: "held", line: unconfirmed, exit: true } }));
     await within(confirm).findByText(unconfirmed);
     expect(within(confirm).queryByText(/The payment is proposed in Safe/)).toBeNull();
+  });
+
+  it("keeps following its own Safe proposal after Close and track status, and clears the paid amount once the Safe runs it", async () => {
+    mocks.end = () => ({
+      phase: "proposed",
+      held: { line: "Waiting for your Safe's approvals: 1 of 2.", exit: false },
+    });
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText(/The payment is proposed in Safe/);
+
+    fireEvent.click(within(confirm).getByRole("button", { name: "Close and track status" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Confirm payment" })).toBeNull(),
+    );
+    // Not dismissed: core's dismiss of a proposal would detach the card from it.
+    expect(mocks.runner!.state.phase).toBe("proposed");
+    // The Safe runs it: the card, still following it, takes its success.
+    act(() => mocks.runner!.set({ phase: "done", held: null }));
+    await waitFor(() => expect(screen.getByLabelText("Amount")).toHaveValue(""));
   });
 
   it("holds the payment when the wallet disconnects with its review open", async () => {

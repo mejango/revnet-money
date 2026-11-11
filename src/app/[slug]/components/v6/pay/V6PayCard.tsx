@@ -1671,7 +1671,12 @@ export function V6PayCard() {
       {confirmMounted ? (
         <V6PayConfirmDialog
           open={confirmOpen}
+          following={pay.following}
           onOpenChange={(open) => {
+            // A sent payment only followed until its hold settles closes: the SDK remembers it, so
+            // Pay again follows it, or closes on its success, never sending it twice. A Safe
+            // proposal's run already returned: closing hides it, and the card keeps following it.
+            if (!open && pay.following && phase !== "safe-proposed" && !pay.dismiss()) return;
             // Closing the review abandons a loosened tolerance.
             dispatch({ type: "show", open });
             if (!open) setPayerSlippage(null);

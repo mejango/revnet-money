@@ -1,5 +1,9 @@
 import { V6PayCard } from "@/app/[slug]/components/v6/pay/V6PayCard";
-import { registerReviewHandler, type ReviewPrompt } from "@bananapus/nana-sdk-core/review";
+import {
+  registerReviewHandler,
+  WRITE_HOLD_PENDING_LINE,
+  type ReviewPrompt,
+} from "@bananapus/nana-sdk-core/review";
 import {
   resetSafeRelayrForTests,
   resetWriteHoldsForTests,
@@ -211,6 +215,33 @@ async function sendFromReadyConfirm(queryClient: QueryClient) {
   return confirm;
 }
 
+/** The chain shows the sent payment mined, in its latest block, which is final. */
+function mineThePayment() {
+  const blockHash = `0x${"bb".repeat(32)}` as Hex;
+  mocks.mined = {
+    transaction: {
+      hash: HASH,
+      from: ACCOUNT,
+      to: FIRST,
+      nonce: 3,
+      chainId: 1,
+      blockNumber: 100n,
+      blockHash,
+      transactionIndex: 0,
+    },
+    receipt: {
+      status: "success",
+      transactionHash: HASH,
+      from: ACCOUNT,
+      to: FIRST,
+      blockNumber: 100n,
+      blockHash,
+      transactionIndex: 0,
+      logs: [],
+    },
+  };
+}
+
 /** The route moves to another terminal, or its quote stops verifying, and the card hears of it. */
 async function drift(queryClient: QueryClient, kind: "terminal" | "failed refresh") {
   if (kind === "terminal") mocks.terminal = MOVED;
@@ -292,31 +323,47 @@ describe("the pay card at the real reviewed send's submission boundary", () => {
       expect(within(confirm).queryByRole("button", { name: "Pay" })).toBeNull();
 
       // The chain shows the payment mined: its hold settles it, and the run ends done.
-      // In the chain's latest block, which is final.
-      const blockHash = `0x${"bb".repeat(32)}` as Hex;
-      mocks.mined = {
-        transaction: {
-          hash: HASH,
-          from: ACCOUNT,
-          to: FIRST,
-          nonce: 3,
-          chainId: 1,
-          blockNumber: 100n,
-          blockHash,
-          transactionIndex: 0,
-        },
-        receipt: {
-          status: "success",
-          transactionHash: HASH,
-          from: ACCOUNT,
-          to: FIRST,
-          blockNumber: 100n,
-          blockHash,
-          transactionIndex: 0,
-          logs: [],
-        },
-      };
+      mineThePayment();
       await vi.advanceTimersByTimeAsync(10_000);
+      await within(await screen.findByRole("dialog", { name: "Payment confirmed" })).findByText(
+        "Your payment went through.",
+      );
+      expect(mocks.submit).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets the payer close a payment its hold still follows; Pay again follows it, then closes on its success, never sending twice", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      mocks.watchReceipt.mockRejectedValue(new Error("The receipt watcher was dropped."));
+      const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      const confirm = await sendFromReadyConfirm(queryClient);
+      await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(200_000);
+      await within(confirm).findByText("Transaction submitted, awaiting confirmation…");
+
+      fireEvent.keyDown(confirm, { key: "Escape" });
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog", { name: "Confirm payment" })).toBeNull(),
+      );
+      expect(mocks.submit).toHaveBeenCalledTimes(1);
+
+      // Pay again while it still confirms: its hold refuses it with its line, nothing is sent.
+      const pay = screen.getByRole("button", { name: "Pay" });
+      await waitFor(() => expect(pay).toBeEnabled());
+      fireEvent.click(pay);
+      const again = await screen.findByRole("dialog", { name: "Confirm payment" });
+      await within(again).findByText("You get at least");
+      fireEvent.click(within(again).getByRole("button", { name: "Pay" }));
+      await within(again).findByText(WRITE_HOLD_PENDING_LINE);
+      expect(mocks.submit).toHaveBeenCalledTimes(1);
+
+      // It confirms; Pay again closes on its success instead of paying twice.
+      mineThePayment();
+      await vi.advanceTimersByTimeAsync(10_000);
+      fireEvent.click(within(again).getByRole("button", { name: "Pay" }));
       await within(await screen.findByRole("dialog", { name: "Payment confirmed" })).findByText(
         "Your payment went through.",
       );

@@ -1,5 +1,7 @@
 import type { ReviewModel } from "@bananapus/nana-sdk-core/review";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
+import type { ReactNode } from "react";
 import {
   encodeFunctionData,
   parseAbi,
@@ -60,6 +62,11 @@ import { useReviewedAction } from "@/hooks/useReviewedAction";
 import { reviewedCall } from "@/lib/reviewed-call";
 import { transactionActivitySnapshot } from "@/lib/transaction-activity";
 import { clearViewAs, setViewAs } from "@/lib/view-as";
+
+const queryClient = new QueryClient();
+const wrapper = ({ children }: { children: ReactNode }) => (
+  <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+);
 
 const ACCOUNT = "0x000000000000000000000000000000000000dEaD" as Address;
 const TOKEN = "0x0000000000000000000000000000000000001000" as Address;
@@ -122,7 +129,7 @@ beforeEach(async () => {
 
 /** The Safe batch a flow runs: every call reviewed once, proposed together. */
 async function proposeBatch(batch: ReturnType<typeof calls>, account: Address = ACCOUNT) {
-  const { result } = renderHook(() => useReviewedAction());
+  const { result } = renderHook(() => useReviewedAction(), { wrapper });
   let outcome!: Awaited<ReturnType<typeof result.current.run>>;
   await act(async () => {
     outcome = await result.current.run({
@@ -220,7 +227,7 @@ describe("one Safe proposal for a whole flow", () => {
   });
 
   it("keeps a run's wallet check when a later run on the same hook ends first", async () => {
-    const { result } = renderHook(() => useReviewedAction());
+    const { result } = renderHook(() => useReviewedAction(), { wrapper });
     const run = (batch: ReturnType<typeof calls>) =>
       result.current.run({
         account: ACCOUNT,

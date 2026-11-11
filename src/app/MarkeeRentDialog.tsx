@@ -1,7 +1,7 @@
 "use client";
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
-import { WalletConnectButton } from "@/components/WalletButton";
+import { LostReplyHashField } from "@/components/LostReplyHashField";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { WalletConnectButton } from "@/components/WalletButton";
 import { useMarkee } from "@/hooks/useMarkee";
 import {
   MARKEE_ADMIN,
@@ -53,7 +54,6 @@ export function MarkeeRentDialog({
   const [message, setMessage] = useState("");
   const [monthlyRate, setMonthlyRate] = useState("");
   const [preview, setPreview] = useState(false);
-  const [recoveryHash, setRecoveryHash] = useState("");
   const recommendedRate = markee.board
     ? recommendedTakeoverMonthlyRate(markee.board.minimumMonthlyRate, markee.board.effectiveTopRate)
     : undefined;
@@ -103,7 +103,7 @@ export function MarkeeRentDialog({
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
-        if (markee.busy && !nextOpen) return;
+        if (markee.busy && !nextOpen && !(markee.following && markee.dismiss())) return;
         onOpenChange(nextOpen);
       }}
     >
@@ -230,27 +230,13 @@ export function MarkeeRentDialog({
             </p>
           )}
           {markee.pending && (
-            <div className="space-y-2">
-              <label htmlFor="markee-recovery-hash" className="block text-sm">
-                Transaction hash, if the wallet reply was lost
-              </label>
-              <input
-                id="markee-recovery-hash"
-                value={recoveryHash}
-                onChange={(event) => setRecoveryHash(event.target.value)}
-                placeholder="0x…"
-                className="w-full border border-teal-200 bg-teal-25 p-2 font-mono text-sm"
-                disabled={markee.busy}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void markee.recover(recoveryHash.trim() || undefined)}
-                disabled={markee.busy}
-              >
-                Check existing transaction
-              </Button>
-            </div>
+            // Empty, it checks the saved submission; Markee's own check shows its line.
+            <LostReplyHashField
+              id="markee-recovery-hash"
+              busy={markee.busy}
+              optional
+              onCheck={(hash) => markee.recover(hash)}
+            />
           )}
           {markee.error && !markee.busy && (
             <Button type="button" variant="outline" onClick={() => void markee.refresh()}>

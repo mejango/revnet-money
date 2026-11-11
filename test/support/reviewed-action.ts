@@ -1,8 +1,21 @@
-import type { ReviewedCall } from "@bananapus/nana-sdk-core/review";
+import { keepOutcome, type ReviewedCall } from "@bananapus/nana-sdk-core/review";
+import { assertLocksHeld, type LockHandle } from "@bananapus/nana-sdk-core/review/locks";
 import { reviewedRunStatus } from "@bananapus/nana-sdk-core/review/machines";
 import { useEffect, useReducer } from "react";
 import type { Hex } from "viem";
 import { vi, type Mock } from "vitest";
+
+/** As core: a site's outcome callback refused for a lost lock is kept for when its locks are back. */
+export const coreKept = (locks: readonly LockHandle[] | undefined, write: () => unknown) =>
+  keepOutcome(locks, write);
+/** As core: nothing was sent, told only under the site's locks, kept for a lost one. */
+export const coreUnsent = (locks: readonly LockHandle[] | undefined, tell?: () => unknown) =>
+  coreKept(locks, async () => {
+    await assertLocksHeld(locks ?? []);
+    await tell?.();
+  }).catch((lost: { code?: string }) => {
+    if (lost?.code !== "LOCK_LOST") throw lost;
+  });
 
 /**
  * A stand-in for useReviewedAction's `run` that a site's test drives: it simulates then sends each
@@ -41,7 +54,9 @@ export function reviewedActionState(run: Mock) {
     busy: false,
     exitAction: null,
     sendAgainAction: null,
+    following: false,
     reset: () => undefined,
+    dismiss: () => true,
   };
 }
 
@@ -94,7 +109,9 @@ export function reviewedActionThrough(
       }
       // Core reports the one proposal once per step.
       for (const [step, call] of action.calls.entries())
-        await action.onSubmitted?.(call, step, hash, { safe: true, adopted: false });
+        await coreKept(action.locks, () =>
+          action.onSubmitted?.(call, step, hash, { safe: true, adopted: false }),
+        );
       state.phase = "proposed";
       state.held = { exit: { label: "Check it in Safe" } };
       return { status: "proposed" as const, step: 0, safeTxHash: hash };
@@ -115,12 +132,15 @@ export function reviewedActionThrough(
       try {
         hash = (await write({ ...call, address: call.to, account: action.account }, action)) as Hex;
       } catch (failure) {
-        if ((failure as { code?: number }).code === 4001) await action.onUnsent?.(call, step);
+        if ((failure as { code?: number }).code === 4001)
+          await coreUnsent(action.locks, () => action.onUnsent?.(call, step));
         state.phase = "idle";
         return { status: "failed" as const, error: (failure as Error).message, failure };
       }
       const proposed = !!options.proposed?.(hash);
-      await action.onSubmitted?.(call, step, hash, { safe: proposed, adopted: false });
+      await coreKept(action.locks, () =>
+        action.onSubmitted?.(call, step, hash, { safe: proposed, adopted: false }),
+      );
       if (proposed) {
         state.phase = "proposed";
         state.held = { exit: { label: "Check it in Safe" } };
@@ -200,13 +220,16 @@ export function liveReviewedAction(
         set({ phase: "signing" });
         hashes.push((await write(sent, action)) as Hex);
       } catch (failure) {
-        if ((failure as { code?: number }).code === 4001) await action.onUnsent?.(call, step);
+        if ((failure as { code?: number }).code === 4001)
+          await coreUnsent(action.locks, () => action.onUnsent?.(call, step));
         const error = (failure as Error).message;
         set({ phase: "idle", error });
         return { status: "failed" as const, error, failure };
       }
       const hash = hashes.at(-1)!;
-      await action.onSubmitted?.(call, step, hash, { safe: false, adopted: false });
+      await coreKept(action.locks, () =>
+        action.onSubmitted?.(call, step, hash, { safe: false, adopted: false }),
+      );
       const ended = end(hash);
       if (ended?.phase === "receipt") {
         set({ phase: "receipt" });
@@ -252,7 +275,11 @@ export function liveReviewedAction(
         settled: null,
         held: state.held as Parameters<typeof reviewedRunStatus>[0]["held"],
       }),
+      // Core follows a sent step left at its receipt or a Safe proposal; dismissing either resets
+      // the view, as core's does.
+      following: state.phase === "receipt" || state.phase === "proposed",
       reset: () => set({ ...blank }),
+      dismiss: () => (set({ ...blank }), true),
       run,
     };
   }

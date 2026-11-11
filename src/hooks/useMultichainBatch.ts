@@ -10,7 +10,9 @@ import {
   useSendRelayrTx,
   waitForRelayrBundle,
 } from "@/hooks/useReviewedRelayr";
+import { activityJournal } from "@/lib/activity-journal";
 import { mapConcurrentChecks } from "@/lib/concurrent-checks";
+import { fence, type TabLocks } from "@/lib/fence";
 import {
   batchCallKey,
   batchCallScope,
@@ -48,7 +50,6 @@ import { isSafeConnection } from "@/lib/safe-connector";
 import { safeTransactionRunsCalls } from "@/lib/safe-transactions";
 import {
   contractTransactionKey,
-  recordTransactionActivity,
   refreshTransactionActivities,
   requireTransactionActivityPersistence,
   updateTransactionActivity,
@@ -189,6 +190,8 @@ async function verifyDirectResult(
   client: PublicClient,
   batch: MultichainBatch,
   call: FrozenBatchCall,
+  /** The batch lock its result's row is written under. */
+  locks: TabLocks,
 ): Promise<
   | { hash: Hash; state: "success" | "reverted" }
   | {
@@ -235,7 +238,7 @@ async function verifyDirectResult(
             "The payment is pending again. Keep the original Safe proposal for reconciliation.",
           );
         const safeNonce = Number(proposal.nonce);
-        updateTransactionActivity(activity.id, {
+        await activityJournal(locks).update(activity.id, {
           status: "failed",
           manualVerificationRequired: false,
           obsoleteSafeNonce: safeNonce,
@@ -297,7 +300,7 @@ async function verifyDirectResult(
     throw new Error("The saved transaction does not match the exact reviewed call.");
   if (receipt.status !== "success") {
     if (!safe && call.expectedRouterPending && receipt.status === "reverted") {
-      updateTransactionActivity(`tx:${call.chainId}:${call.hash!.toLowerCase()}`, {
+      await activityJournal(locks).update(`tx:${call.chainId}:${call.hash!.toLowerCase()}`, {
         status: "failed",
         manualVerificationRequired: false,
         message:
@@ -319,7 +322,7 @@ async function verifyDirectResult(
     call.expectedPayout,
     call.expectedRouterPending,
   );
-  updateTransactionActivity(`tx:${call.chainId}:${call.hash!.toLowerCase()}`, {
+  await activityJournal(locks).update(`tx:${call.chainId}:${call.hash!.toLowerCase()}`, {
     status: "success",
     manualVerificationRequired: false,
     executionHash: safe ? hash : undefined,
@@ -377,7 +380,7 @@ export function useMultichainBatch() {
       const lock = `revnet:multichain:${account.toLowerCase()}`;
       if (running.has(lock))
         throw new Error("Another multichain batch is already being processed.");
-      const check = async () => {
+      const check = async (locks: TabLocks) => {
         setIsPending(true);
         let issue: string | undefined;
         try {
@@ -398,7 +401,7 @@ export function useMultichainBatch() {
                   ? [round.bundleUuid]
                   : [],
               );
-              resetUnpaidRoutingDraft(batch, released);
+              await fence(locks, resetUnpaidRoutingDraft)(batch, released);
             }
           }
         } catch (cause) {
@@ -414,7 +417,7 @@ export function useMultichainBatch() {
         return (await browserLocks().request(lock, { ifAvailable: true }, (acquired) => {
           if (!acquired)
             throw new Error("Another browser tab is already processing a multichain batch.");
-          return check();
+          return check([acquired]);
         })) as Awaited<ReturnType<typeof check>>;
       } finally {
         running.delete(lock);
@@ -438,7 +441,10 @@ export function useMultichainBatch() {
         progress,
         beforeFirstSend,
         onCall,
+        locks,
       }: {
+        /** The batch lock: each journal write, and the wallet, check it first. */
+        locks: TabLocks;
         title: string;
         context?: readonly ReviewContextRow[];
         progress: (message: string) => void;
@@ -450,9 +456,26 @@ export function useMultichainBatch() {
         await beforeFirstSend?.();
         return "done";
       }
-      const save = (index: number, patch: Partial<FrozenBatchCall>) => {
+      const saveBatch = fence(locks, saveMultichainBatch);
+      const save = async (index: number, patch: Partial<FrozenBatchCall>) => {
         Object.assign(batch.calls[index], patch);
-        saveMultichainBatch(batch);
+        await saveBatch(batch);
+        onCall(index);
+      };
+      /**
+       * What the wallet answered for a call, merged into the saved batch while it still holds that
+       * call being submitted unsent. Refused for a lapsed lock, core saves it once the lock is
+       * taken back.
+       */
+      const answered = async (index: number, patch: Partial<FrozenBatchCall>) => {
+        Object.assign(batch.calls[index], patch);
+        await fence(locks, () => {
+          const saved = readMultichainBatches().find((item) => item.id === batch.id);
+          const call = saved?.calls[index];
+          if (call?.state !== "submitting" || call.hash) return;
+          Object.assign(call, patch);
+          saveMultichainBatch(saved!);
+        })();
         onCall(index);
       };
       const result = await run({
@@ -463,6 +486,7 @@ export function useMultichainBatch() {
           "Calls are submitted in order on their selected chains. A Safe proposal must execute before the next call. Confirmed calls are skipped when resuming.",
         confirmLabel: "Agree & send",
         scope: batch.id,
+        locks,
         calls: indices.map((index) => {
           const call = batch.calls[index]!;
           return reviewedCall(
@@ -491,7 +515,7 @@ export function useMultichainBatch() {
             const sent = batch.calls[previous]!;
             const client = getPublicClient(config, { chainId: sent.chainId }) as PublicClient;
             try {
-              save(previous, await verifyDirectResult(client, batch, sent));
+              await save(previous, await verifyDirectResult(client, batch, sent, locks));
             } catch (cause) {
               throw new ReviewRefusal(
                 cause instanceof Error ? cause.message : "The previous call could not be verified.",
@@ -507,11 +531,11 @@ export function useMultichainBatch() {
           progress(
             `Call ${index + 1} of ${batch.calls.length} on chain ${batch.calls[index]!.chainId}.`,
           );
-          save(index, { state: "submitting" });
+          await save(index, { state: "submitting" });
         },
-        onUnsent: (_call, step) => save(indices[step]!, { state: "ready" }),
+        onUnsent: (_call, step) => answered(indices[step]!, { state: "ready" }),
         onSubmitted: (_call, step, hash, sent) =>
-          save(indices[step]!, { hash, state: sent.safe ? "safe" : "submitted" }),
+          answered(indices[step]!, { hash, state: sent.safe ? "safe" : "submitted" }),
       });
       if (result?.status === "proposed") return "proposed";
       if (result?.status === "done") return "done";
@@ -538,7 +562,10 @@ export function useMultichainBatch() {
       const lock = `revnet:multichain:${account.toLowerCase()}`;
       if (running.has(lock))
         throw new Error("Another multichain batch is already being processed.");
-      const execute = async (): Promise<BatchResult> => {
+      const execute = async (locks: TabLocks): Promise<BatchResult> => {
+        // Every batch and activity write under the batch lock checks this tab still holds it.
+        const activity = activityJournal(locks);
+        const saveBatch = fence(locks, saveMultichainBatch);
         setIsPending(true);
         let batch: MultichainBatch | undefined;
         let replacingDraft: MultichainBatch | undefined;
@@ -551,7 +578,9 @@ export function useMultichainBatch() {
         let commitFresh: (() => Promise<void>) | undefined;
         const progress = (message: string) => {
           input.onProgress?.(message);
-          if (batch) updateTransactionActivity(batch.id, { message });
+          // A line only: written while the lock reads as held, never awaited.
+          if (batch && !locks.some((held) => held.signal.aborted))
+            updateTransactionActivity(batch.id, { message });
         };
         // Bind the execution route; the adapter resolves the current wallet at invocation.
         const safe = isSafeConnection(config);
@@ -611,7 +640,7 @@ export function useMultichainBatch() {
           if (advance) {
             call.state = "skipped";
             call.skipReason = advance;
-            saveMultichainBatch(batch!);
+            await saveBatch(batch!);
             return true;
           }
           return false;
@@ -714,17 +743,21 @@ export function useMultichainBatch() {
                 requireAccount();
                 if (input.refreshBatchId && !canRefreshRoutingBatch(replacingDraft))
                   throw new Error("Saved submission or recovery evidence must be resumed.");
-                replaceRoutingDraft(replacingDraft, fresh, Boolean(input.refreshBatchId));
+                await fence(locks, replaceRoutingDraft)(
+                  replacingDraft,
+                  fresh,
+                  Boolean(input.refreshBatchId),
+                );
                 replacementCommitted = true;
-                updateTransactionActivity(replacingDraft.id, {
+                await activity.update(replacingDraft.id, {
                   status: input.refreshBatchId ? "pending" : "failed",
                   manualVerificationRequired: Boolean(input.refreshBatchId),
                   message: input.refreshBatchId
                     ? "A fresh routing review superseded this selection. The previous wallet result remains unknown."
                     : "The unsubmitted selection was replaced after a fresh review.",
                 });
-              } else saveMultichainBatch(fresh);
-              recordTransactionActivity({
+              } else await saveBatch(fresh);
+              await activity.record({
                 id: fresh.id,
                 kind: "direct",
                 title: input.label,
@@ -837,7 +870,7 @@ export function useMultichainBatch() {
                   activity?.relayrPaymentStatus === "expired"
                 ) {
                   round.state = "quoted";
-                  saveMultichainBatch(batch);
+                  await saveBatch(batch);
                 }
               }
               requireAccount();
@@ -897,13 +930,13 @@ export function useMultichainBatch() {
                 round.transactionUuids = quotedCalls?.map((call) => call.transactionUuid);
                 round.bundleUuid = quote.bundle_uuid;
                 round.state = "quoted";
-                saveMultichainBatch(batch);
+                await saveBatch(batch);
                 input.onBeforePayment?.();
                 progress("Choose a network for the fee payment.");
                 const payment = await chooseRelayrPayment(quote.payment_info, startChainId);
                 requireAccount();
                 round.state = "funding";
-                saveMultichainBatch(batch);
+                await saveBatch(batch);
                 try {
                   progress("Review the network-fee payment.");
                   await sendRelayrTx(payment, { onMessage: progress });
@@ -917,12 +950,12 @@ export function useMultichainBatch() {
                     activity?.relayrPaymentStatus === "expired"
                   ) {
                     round.state = "quoted";
-                    saveMultichainBatch(batch);
+                    await saveBatch(batch);
                   }
                   throw cause;
                 }
                 round.state = "pending";
-                saveMultichainBatch(batch);
+                await saveBatch(batch);
               }
               if (!round.bundleUuid)
                 throw new Error(
@@ -984,7 +1017,7 @@ export function useMultichainBatch() {
                 displayedCalls[index] = callProgress(call);
               }
               round.state = "success";
-              saveMultichainBatch(batch);
+              await saveBatch(batch);
               reportCalls();
             }
           } else {
@@ -998,8 +1031,8 @@ export function useMultichainBatch() {
                 PublicClient | undefined;
               if (!client) throw new Error("Destination RPC unavailable.");
               if (call.hash) {
-                Object.assign(call, await verifyDirectResult(client, batch, call));
-                saveMultichainBatch(batch);
+                Object.assign(call, await verifyDirectResult(client, batch, call, locks));
+                await saveBatch(batch);
                 displayedCalls[index] = callProgress(call);
                 reportCalls();
                 continue;
@@ -1020,6 +1053,7 @@ export function useMultichainBatch() {
               sending.push(index);
             }
             const sent = await sendDirectCalls(batch, sending, {
+              locks,
               title: input.calls.every((call) => call.expectedRouterPending)
                 ? "Retry payments"
                 : `Review ${input.label}`,
@@ -1041,16 +1075,16 @@ export function useMultichainBatch() {
               const call = batch.calls[index];
               if (call.state !== "submitted") continue;
               const client = getPublicClient(config, { chainId: call.chainId }) as PublicClient;
-              Object.assign(call, await verifyDirectResult(client, batch, call));
-              saveMultichainBatch(batch);
+              Object.assign(call, await verifyDirectResult(client, batch, call, locks));
+              await saveBatch(batch);
               displayedCalls[index] = callProgress(call);
               reportCalls();
             }
           }
           batch.status = "success";
-          saveMultichainBatch(batch);
+          await saveBatch(batch);
           reportCalls();
-          updateTransactionActivity(batch.id, {
+          await activity.update(batch.id, {
             status: batch.calls.some((call) => call.state === "reverted") ? "failed" : "success",
             manualVerificationRequired: false,
             message: batch.calls.some((call) => call.state === "reverted")
@@ -1074,13 +1108,13 @@ export function useMultichainBatch() {
                     account,
                     batchCallScope(batch, call, index),
                   );
-                removeUnsubmittedBatch(batch.id);
+                await fence(locks, removeUnsubmittedBatch)(batch.id);
                 discarded = true;
               } catch {
                 /* A published authorization or inaccessible journal must remain locked. */
               }
             }
-            updateTransactionActivity(batch.id, {
+            await activity.update(batch.id, {
               status: discarded ? "failed" : "pending",
               manualVerificationRequired: !discarded,
               message:
@@ -1097,7 +1131,7 @@ export function useMultichainBatch() {
         return (await browserLocks().request(lock, { ifAvailable: true }, (acquired) => {
           if (!acquired)
             throw new Error("Another browser tab is already processing a multichain batch.");
-          return execute();
+          return execute([acquired]);
         })) as Awaited<ReturnType<typeof execute>>;
       } finally {
         running.delete(lock);

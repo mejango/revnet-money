@@ -26,7 +26,7 @@ import {
   safeProposalFor,
   safeTransactionHash,
 } from "@bananapus/nana-sdk-core/safe-service";
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { Hex } from "viem";
 import {
   encodeAbiParameters,
@@ -158,6 +158,7 @@ vi.mock("@/lib/safe-connector", async (importOriginal) => ({
 // first and stops.
 vi.mock("@/hooks/useReviewedAction", async () => {
   const { isDefiniteWalletRejection } = await import("@bananapus/nana-sdk-core/review");
+  const { coreKept, coreUnsent } = await import("./support/reviewed-action");
   const run = async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
     try {
       await mocks.callReview(action.calls);
@@ -204,17 +205,20 @@ vi.mock("@/hooks/useReviewedAction", async () => {
       try {
         mocks.finalGuard();
       } catch (failure) {
-        await action.onUnsent?.(call, step);
+        await coreUnsent(action.locks, () => action.onUnsent?.(call, step));
         return failed(failure);
       }
       let hash: Hex;
       try {
         hash = await mocks.write({ ...call, address: call.to, chainId: call.chainId });
       } catch (failure) {
-        if (isDefiniteWalletRejection(failure)) await action.onUnsent?.(call, step);
+        if (isDefiniteWalletRejection(failure))
+          await coreUnsent(action.locks, () => action.onUnsent?.(call, step));
         return failed(failure);
       }
-      await action.onSubmitted?.(call, step, hash, { safe: mocks.safe, adopted: false });
+      await coreKept(action.locks, () =>
+        action.onSubmitted?.(call, step, hash, { safe: mocks.safe, adopted: false }),
+      );
       if (mocks.safe) return { status: "proposed" as const, step, safeTxHash: hash };
       hashes.push(hash);
     }
@@ -321,6 +325,85 @@ describe("durable multichain batch journal", () => {
       expect(readMultichainBatches()[0]).toEqual(job);
     },
   );
+});
+
+/** Web Locks whose lock another tab took over: its handle reads as lost. */
+async function lostLocks() {
+  const { LockLostError } = await import("@bananapus/nana-sdk-core/review/locks");
+  Object.defineProperty(navigator, "locks", {
+    configurable: true,
+    value: {
+      request: async (name: string, _options: unknown, callback: (lock: object) => unknown) =>
+        callback({
+          name,
+          mode: "exclusive",
+          signal: AbortSignal.abort(),
+          held: async () => false,
+          assertHeld: async () => {
+            throw new LockLostError(name);
+          },
+        }),
+    },
+  });
+}
+
+/** Core's lapsing leases as this tab's Web Locks: `lapse()` lapses every lease held now. */
+async function lapsingLocks() {
+  const { lapsingLocksForTests } = await import("@bananapus/nana-sdk-core/testing");
+  const { locks, lapse } = lapsingLocksForTests();
+  Object.defineProperty(navigator, "locks", { configurable: true, value: locks });
+  return lapse;
+}
+
+describe("a batch whose lock passed to another tab", () => {
+  afterEach(() => {
+    Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+  });
+  it("leaves a saved routing draft as it was on a re-check", async () => {
+    const draft = createMultichainBatch(ACCOUNT, "routing", "Routing", [retryCall(1)], "relayr");
+    draft.rounds[0] = {
+      ...draft.rounds[0],
+      state: "quoted",
+      bundleUuid: "quote",
+      transactionUuids: ["tx"],
+    };
+    saveMultichainBatch(draft);
+    mocks.releasedUnpaid.mockReturnValue(true);
+    await lostLocks();
+    const { result } = renderHook(() => useMultichainBatch());
+    await act(async () => {
+      await result.current.recheckPendingRoutingBatch("routing");
+    });
+    expect(readMultichainBatches()[0].rounds[0]).toMatchObject({ state: "quoted" });
+  });
+  it.each([
+    ["a hash", HASH, { hash: HASH, state: "submitted" }],
+    ["a definite rejection", null, { state: "ready" }],
+  ] as const)(
+    "saves the wallet's answer (%s) once the lock is free again when it lapsed while the wallet was open",
+    async (_kind, answer, saved) => {
+      const lapse = await lapsingLocks();
+      mocks.write.mockImplementationOnce(async () => {
+        lapse();
+        if (!answer) throw Object.assign(new Error("User rejected the request."), { code: 4001 });
+        return answer;
+      });
+      const { result } = renderHook(() => useMultichainBatch());
+      await result.current
+        .runBatch({ scope: "destination", label: "Distribute", calls: [call(1)] })
+        .catch(() => undefined);
+      await waitFor(() => expect(readMultichainBatches()[0]?.calls[0]).toMatchObject(saved));
+    },
+  );
+  it("saves and sends nothing for a fresh direct batch", async () => {
+    await lostLocks();
+    const { result } = renderHook(() => useMultichainBatch());
+    await expect(
+      result.current.runBatch({ scope: "destination", label: "Distribute", calls: [call(1)] }),
+    ).rejects.toThrow();
+    expect(readMultichainBatches()).toEqual([]);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
 });
 
 describe("read-only saved routing re-check", () => {

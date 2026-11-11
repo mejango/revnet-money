@@ -1,4 +1,6 @@
 import { V6PayCard } from "@/app/[slug]/components/v6/pay/V6PayCard";
+import { ReviewRefusal } from "@/lib/reviewed-call";
+import { REVIEWED_ENGINE_LOAD_LINE } from "@bananapus/nana-sdk-core/review";
 import {
   PAY_SWAP_QUOTE_FAILED_MESSAGE,
   PaySwapQuoteFailedError,
@@ -37,6 +39,7 @@ const mocks = vi.hoisted(() => ({
   // The wallet's send.
   submit: vi.fn(),
   resetRunner: () => undefined as void,
+  run: null as null | import("vitest").Mock,
 }));
 
 vi.mock("wagmi", async (importOriginal) => ({
@@ -64,6 +67,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
     mocks.cardSimulate,
   );
   mocks.resetRunner = runner.reset;
+  mocks.run = runner.run;
   return {
     ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
     useReviewedAction: runner.hook,
@@ -393,5 +397,19 @@ describe("a failed payment's reason and a looser minimum", () => {
     });
     expect(mocks.routeCalls.length).toBe(calls + 1);
     expect(screen.queryByText(new RegExp(PAY_SWAP_QUOTE_FAILED_MESSAGE))).toBeNull();
+  });
+
+  it("frees a payment whose send could not start, says so and offers it again, nothing sent", async () => {
+    // The reviewed send's own preparation failed before any wallet: its result says so.
+    mocks.run!.mockResolvedValueOnce({
+      status: "failed",
+      error: REVIEWED_ENGINE_LOAD_LINE,
+      failure: new ReviewRefusal(REVIEWED_ENGINE_LOAD_LINE),
+    });
+    const confirm = await payFromConfirm();
+    await within(confirm).findByText(REVIEWED_ENGINE_LOAD_LINE);
+    expect(mocks.submit).not.toHaveBeenCalled();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Pay" }));
+    await waitFor(() => expect(mocks.submit).toHaveBeenCalledTimes(1));
   });
 });
