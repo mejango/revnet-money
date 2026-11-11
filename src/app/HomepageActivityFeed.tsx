@@ -5,6 +5,7 @@ import { DateRelative } from "@/components/DateRelative";
 import { IpfsImage } from "@/components/IpfsImage";
 import { IssuanceFingerprint } from "@/components/IssuanceFingerprint";
 import { ProjectLink } from "@/components/ProjectLink";
+import { homepageRowKey } from "./homepageActivityRows";
 import { HomepageLoadMore } from "./HomepageLoadMore";
 import { formatEthAddress } from "@/lib/utils";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
@@ -96,7 +97,7 @@ export function HomepageActivityFeed({
     if (!hasMore || loading) return;
     setLoading(true);
     try {
-      const response = await fetch(`/api/homepage-activity?limit=8&offset=${events.length}`);
+      const response = await fetch(`/api/homepage-activity?rows=8&offset=${events.length}`);
       if (!response.ok) throw new Error("Activity unavailable");
       const data = (await response.json()) as { events: HomepageRawActivity[]; hasMore: boolean };
       setEvents((current) => {
@@ -114,7 +115,7 @@ export function HomepageActivityFeed({
   {
     const groups = new Map<string, HomepageRawActivity[]>();
     for (const event of events) {
-      const key = `${event.chainId}:${event.project?.projectId ?? ""}:${event.txHash}`;
+      const key = homepageRowKey(event);
       const group = groups.get(key);
       if (group) group.push(event);
       else {

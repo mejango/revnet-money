@@ -19,6 +19,7 @@ import { formatUnits, isAddress, type Address } from "viem";
 import { usdFromScaled } from "./[slug]/components/v6/extras/projectPayers";
 import { getSuckerGroup } from "./[slug]/getSuckerGroup";
 import { getHomepageActivityPage } from "./getHomepageActivity";
+import { readActivityRows } from "./homepageActivityRows";
 import { getHomepageReserves } from "./getHomepageReserves";
 import { HomeAuditPromptLink } from "./HomeAuditPromptLink";
 import { HomeCreateLink } from "./HomeCreateLink";
@@ -177,12 +178,9 @@ async function ReservesPanel() {
 }
 
 async function ActivityPanel() {
-  const activity = await getHomepageActivityPage(9);
+  const activity = await readActivityRows(getHomepageActivityPage, 8, 0);
   return (
-    <HomepageActivityFeed
-      initialEvents={activity.slice(0, 8)}
-      initialHasMore={activity.length > 8}
-    />
+    <HomepageActivityFeed initialEvents={activity.events} initialHasMore={activity.hasMore} />
   );
 }
 
