@@ -80,7 +80,7 @@
     },
     {
       "file": "src/hooks/useReviewedRelayr.ts",
-      "line": 2741,
+      "line": 2744,
       "api": "request",
       "boundary": "navigator.locks.request (Web Locks) for cross-tab coordination, never a wallet RPC.",
       "test": "test/reviewed-relayr-hooks.test.tsx"

@@ -2557,6 +2557,9 @@ export function useSendRelayrTx() {
             await activity.restoreUnsent(submitting, previousPayment);
           } catch (cause) {
             if (cause instanceof LockLostError) throw cause;
+            // The row changed since the marker (a check, a hash): the catch's merge write records
+            // the outcome instead, keeping what changed.
+            unsent = false;
             unrestored = cause;
           }
         };

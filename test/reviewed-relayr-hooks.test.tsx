@@ -2441,6 +2441,23 @@ describe("reviewed Relayr payment hook", () => {
     expect(mocks.sendTransaction).toHaveBeenCalledOnce();
   });
 
+  it("lets a declined payment retry after a check changed its row while the wallet was open", async () => {
+    const { activity, result } = await quotedPayment();
+    mocks.sendTransaction.mockImplementationOnce(async () => {
+      const current = activity.transactionActivitySnapshot()[0];
+      activity.updateTransactionActivity(current.id, { message: "Checked the bundle." });
+      throw { code: 4001 };
+    });
+    await expect(result.current.sendRelayrTx(payment())).rejects.toMatchObject({
+      cause: { code: 4001 },
+    });
+    expect(activity.transactionActivitySnapshot()[0].relayrPaymentStatus).toBe("unfunded");
+    await act(async () => {
+      await expect(result.current.sendRelayrTx(payment())).resolves.toBe(HASH);
+    });
+    expect(mocks.sendTransaction).toHaveBeenCalledTimes(2);
+  });
+
   it("retains a lock when wallet broadcast fails ambiguously, but permits explicit rejection retry", async () => {
     const { activity, result } = await quotedPayment();
     mocks.sendTransaction.mockRejectedValueOnce({ code: 4001 });
