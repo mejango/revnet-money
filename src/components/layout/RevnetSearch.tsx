@@ -3,7 +3,6 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { useEnsAddress } from "@/hooks/ens/useEnsAddress";
 import { useHydrated } from "@/hooks/useHydrated";
-import { useIsMobile } from "@/hooks/useIsMobile";
 import { ensAvatarUrlForAddress } from "@/lib/ensAvatarUrl";
 import type { JBChainId } from "@/lib/nana/types";
 import { rememberProjectNavigation } from "@/lib/project-navigation";
@@ -102,7 +101,6 @@ export function RevnetSearch({
   // The server form has no search action yet. Typing before its handlers attach
   // can lose the controlled value or submit back to the current project URL.
   const hydrated = useHydrated();
-  const compact = useIsMobile();
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
@@ -305,9 +303,17 @@ export function RevnetSearch({
             onFocus={() => {
               if (results.length > 0 || searching || hasAccountRow || isHandleQuery) setOpen(true);
             }}
-            placeholder={compact ? "Search" : "Search revnets"}
-            className="min-h-12 w-full border border-zinc-200 bg-white py-2 pl-11 pr-3 text-base text-zinc-900 placeholder:text-zinc-400 outline-none transition focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
+            // A blank placeholder keeps :placeholder-shown working; the visible hint is the
+            // span below, so its phone wording is right from the first paint.
+            placeholder=" "
+            className="peer min-h-12 w-full border border-zinc-200 bg-white py-2 pl-11 pr-3 text-base text-zinc-900 placeholder:text-zinc-400 outline-none transition focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
           />
+          <span
+            aria-hidden
+            className="pointer-events-none absolute left-11 right-3 top-1/2 hidden -translate-y-1/2 truncate text-base text-zinc-400 peer-placeholder-shown:block"
+          >
+            Search<span className="hidden md:inline"> revnets</span>
+          </span>
         </label>
       </form>
 

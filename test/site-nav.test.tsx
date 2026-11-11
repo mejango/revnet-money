@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const route = vi.hoisted(() => ({ pathname: "/" }));
@@ -88,15 +88,10 @@ describe("site navigation", () => {
     expect(screen.getByRole("searchbox")).toHaveFocus();
   });
 
-  it("uses the short placeholder at phone width only", async () => {
-    const { unmount } = render(<Nav />);
-    expect(screen.getByRole("searchbox")).toHaveAttribute("placeholder", "Search revnets");
-    unmount();
-
-    stubViewport(true);
-    await act(async () => {
-      render(<Nav />);
-    });
-    expect(screen.getByRole("searchbox")).toHaveAttribute("placeholder", "Search");
+  it("shortens the search hint at phone width in CSS, with no wait for a width read", () => {
+    render(<Nav />);
+    const hint = screen.getByText("Search", { selector: "span[aria-hidden]" });
+    expect(hint.textContent).toBe("Search revnets");
+    expect(within(hint).getByText("revnets").className).toContain("hidden md:inline");
   });
 });
