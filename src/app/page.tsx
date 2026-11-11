@@ -144,7 +144,10 @@ export default function Page() {
             loading="lazy"
             alt="Butterflies"
           />
-          <h2 id="join-us" className="text-center text-[min(1.5rem,calc((100vw_-_3rem)/16.6))] font-semibold md:text-left md:text-3xl">
+          <h2
+            id="join-us"
+            className="text-center text-[min(1.5rem,calc((100vw_-_3rem)/16.6))] font-semibold md:text-left md:text-3xl"
+          >
             Join us
           </h2>
           <p className="mt-4 text-center md:text-left">

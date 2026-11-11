@@ -5,8 +5,6 @@ import { DateRelative } from "@/components/DateRelative";
 import { IpfsImage } from "@/components/IpfsImage";
 import { IssuanceFingerprint } from "@/components/IssuanceFingerprint";
 import { ProjectLink } from "@/components/ProjectLink";
-import { homepageRowKey } from "./homepageActivityRows";
-import { HomepageLoadMore } from "./HomepageLoadMore";
 import { formatEthAddress } from "@/lib/utils";
 import { JB_CHAINS, type JBChainId } from "@bananapus/nana-sdk-core";
 import { useCallback, useMemo, useState } from "react";
@@ -16,6 +14,8 @@ import {
   type ActivityEventItem,
 } from "./[slug]/components/ActivityFeed/mapActivityEvents";
 import type { HomepageRawActivity } from "./getHomepageActivity";
+import { homepageRowKey } from "./homepageActivityRows";
+import { HomepageLoadMore } from "./HomepageLoadMore";
 
 type HomepageActivity = ReturnType<typeof mapActivityEvents>[number];
 

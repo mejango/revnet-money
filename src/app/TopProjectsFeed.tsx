@@ -3,8 +3,8 @@
 import { IpfsImage } from "@/components/IpfsImage";
 import { IssuanceFingerprint } from "@/components/IssuanceFingerprint";
 import { ProjectLink } from "@/components/ProjectLink";
-import { HomepageLoadMore } from "./HomepageLoadMore";
 import { useCallback, useState } from "react";
+import { HomepageLoadMore } from "./HomepageLoadMore";
 
 export type TopProject = {
   rank: number;

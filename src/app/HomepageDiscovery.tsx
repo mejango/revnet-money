@@ -19,11 +19,11 @@ import { formatUnits, isAddress, type Address } from "viem";
 import { usdFromScaled } from "./[slug]/components/v6/extras/projectPayers";
 import { getSuckerGroup } from "./[slug]/getSuckerGroup";
 import { getHomepageActivityPage } from "./getHomepageActivity";
-import { readActivityRows } from "./homepageActivityRows";
 import { getHomepageReserves } from "./getHomepageReserves";
 import { HomeAuditPromptLink } from "./HomeAuditPromptLink";
 import { HomeCreateLink } from "./HomeCreateLink";
 import { HomepageActivityFeed } from "./HomepageActivityFeed";
+import { readActivityRows } from "./homepageActivityRows";
 import { HomepageDiscoveryLayout } from "./HomepageDiscoveryLayout";
 import { MarkeeAdvertisement } from "./MarkeeAdvertisement";
 import { MarkeePlaceholder } from "./MarkeePlaceholder";
@@ -179,9 +179,7 @@ async function ReservesPanel() {
 
 async function ActivityPanel() {
   const activity = await readActivityRows(getHomepageActivityPage, 8, 0);
-  return (
-    <HomepageActivityFeed initialEvents={activity.events} initialHasMore={activity.hasMore} />
-  );
+  return <HomepageActivityFeed initialEvents={activity.events} initialHasMore={activity.hasMore} />;
 }
 
 async function TrendingPanel() {
