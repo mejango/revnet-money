@@ -75,8 +75,9 @@ const account = `0x${"1".repeat(40)}`;
 // owners 633.2, shop 602.2, extras 611.7, account projects 434.1, route-referenced 929.8 and all client
 // JS 2787.1 KiB; round only those up.
 // SDK core 6.3.1 (a success left settled while away is shown, not adopted) measures route-referenced 930.04 KiB; round only that up.
+// The homepage feeds page by row and end with a phone "More" cell: / measures 397.0 KiB (just over 397); round only that up.
 const routes = [
-  { route: "/", path: "/", kib: 397 },
+  { route: "/", path: "/", kib: 398 },
   { route: "/learn", path: "/learn", kib: 359 },
   { route: "/build", path: "/build", kib: 361 },
   { route: "/audit", path: "/audit", kib: 362 },

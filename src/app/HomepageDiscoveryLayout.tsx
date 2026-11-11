@@ -78,7 +78,8 @@ export function HomepageDiscoveryLayout({
   top: ReactNode;
   newProjects: ReactNode;
 }) {
-  const [activeFeed, setActiveFeed] = useState<Feed>("activity");
+  // Phones open on Top, which carries the Markee card, though Latest is the first tab.
+  const [activeFeed, setActiveFeed] = useState<Feed>("top");
   const [rankingFeed, setRankingFeed] = useState<RankingFeed>("top");
 
   return (

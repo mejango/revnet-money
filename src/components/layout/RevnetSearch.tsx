@@ -310,7 +310,7 @@ export function RevnetSearch({
           />
           <span
             aria-hidden
-            className="pointer-events-none absolute left-11 right-3 top-1/2 hidden -translate-y-1/2 truncate text-base text-zinc-400 peer-placeholder-shown:block"
+            className="pointer-events-none absolute left-11 right-3 top-1/2 hidden -translate-y-1/2 truncate text-base text-zinc-500 peer-placeholder-shown:block"
           >
             Search<span className="hidden md:inline"> revnets</span>
           </span>
