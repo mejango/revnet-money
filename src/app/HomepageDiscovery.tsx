@@ -276,9 +276,10 @@ function DashboardColumn({
       >
         {title}
       </h2>
+      {/* Phones run the card edge to edge, past the page gutter. */}
       <div
         data-scroll-container
-        className={`max-h-[70svh] min-h-[420px] overflow-y-auto border border-teal-100 bg-teal-50 md:h-[calc(100svh-12rem)] md:max-h-none md:min-h-[520px] ${panelClassName}`}
+        className={`max-sm:-mx-6 max-sm:border-x-0 max-h-[70svh] min-h-[420px] overflow-y-auto border border-teal-100 bg-teal-50 md:h-[calc(100svh-12rem)] md:max-h-none md:min-h-[520px] ${panelClassName}`}
       >
         {children}
       </div>
