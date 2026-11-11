@@ -148,6 +148,15 @@
   dialog.ui-dialog::backdrop {
     background-color: rgb(0 0 0 / 0.8);
   }
+
+  /* Phones run every dialog panel edge to edge, whatever width its owner asked for. */
+  @media (max-width: 639.98px) {
+    dialog.ui-dialog > div {
+      width: 100% !important;
+      max-width: none !important;
+      border-inline-width: 0 !important;
+    }
+  }
 }
 
 /*

@@ -99,7 +99,7 @@ export function TxProgress({
       className={
         host
           ? "w-full bg-melon-25"
-          : "w-full max-w-lg overflow-hidden border border-melon-700 bg-melon-25 shadow-2xl sm:my-auto"
+          : "w-full max-w-lg overflow-hidden border border-melon-700 bg-melon-25 shadow-2xl max-sm:max-w-none max-sm:border-x-0 sm:my-auto"
       }
     >
       <header className="flex items-start justify-between gap-4 border-b border-melon-300 bg-melon-25 px-5 py-4">
@@ -128,7 +128,7 @@ export function TxProgress({
         ) : (
           <>
             {rows && rows.length > 0 ? (
-              <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+              <div className="grid text-sm">
                 {rows.map((row, index) => (
                   <TxProgressRowItem key={index} row={row} />
                 ))}
@@ -193,7 +193,7 @@ export function TxProgress({
       onClose={onClose}
       dismissible={!busy}
       labelledBy={titleId}
-      className="items-start justify-center px-3 py-6"
+      className="items-start justify-center px-3 py-6 max-sm:px-0"
     >
       {section}
     </ModalDialog>
@@ -203,9 +203,9 @@ export function TxProgress({
 function TxProgressRowItem({ row }: { row: TxProgressRow }) {
   return (
     <>
-      <span className="text-zinc-500">{row.label}</span>
+      <span className="text-xs text-zinc-500 not-first:mt-3">{row.label}</span>
       <span
-        className={`min-w-0 text-right text-zinc-900 ${
+        className={`min-w-0 text-zinc-900 ${
           row.mono ? "break-all font-mono text-xs" : "break-words"
         } ${row.strong ? "font-medium" : ""}`}
       >
@@ -221,12 +221,12 @@ function TxProgressRowItem({ row }: { row: TxProgressRow }) {
   );
 }
 
-/** The pay confirm's row grammar: a label on the left, the value on the right. */
+/** The pay confirm's row grammar: a small label above its value. */
 export function SummaryRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-4">
-      <span className="shrink-0 text-sm text-zinc-500">{label}</span>
-      <span className="min-w-0 wrap-anywhere text-right text-sm text-zinc-900">{children}</span>
+    <div>
+      <span className="block text-xs text-zinc-500">{label}</span>
+      <span className="block min-w-0 wrap-anywhere text-sm text-zinc-900">{children}</span>
     </div>
   );
 }

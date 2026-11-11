@@ -590,12 +590,12 @@ function ReviewModal({
             </div>
           ) : null}
           {model.context.length ? (
-            <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+            <dl className="mt-4 grid text-sm">
               {model.context.map((row, index) => (
                 <Fragment key={index}>
-                  <dt className="text-zinc-500">{row.label}</dt>
+                  <dt className="text-xs text-zinc-500 not-first:mt-3">{row.label}</dt>
                   <dd
-                    className={`min-w-0 text-right text-zinc-900 ${
+                    className={`min-w-0 text-zinc-900 ${
                       row.mono ? "break-all font-mono text-xs" : "wrap-anywhere"
                     } ${row.strong ? "font-medium" : ""}`}
                   >
