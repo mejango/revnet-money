@@ -354,6 +354,7 @@ describe("store section", () => {
     const multi = { ...validRevnetForm(), chainIds: [sepolia.id, baseSepolia.id] };
     multi.store.items = [item()];
     renderStore(multi as RevnetFormData);
+    fireEvent.click(screen.getByLabelText("Limited supply (on each chain)"));
     fireEvent.click(screen.getByText("Set per chain"));
     fireEvent.change(screen.getByLabelText("Base Sepolia quantity"), { target: { value: "3" } });
     expect(storeState().items[0].perChainSupply[baseSepolia.id]).toBe("3");
@@ -383,7 +384,7 @@ describe("store section", () => {
 
     fireEvent.change(screen.getByLabelText("Item 1 category"), { target: { value: "add" } });
     fireEvent.change(screen.getByLabelText("New category name"), { target: { value: "Shirts" } });
-    fireEvent.click(screen.getByText("Add"));
+    fireEvent.blur(screen.getByLabelText("New category name"));
 
     expect(storeState().categories).toEqual([{ id: 1, name: "Shirts" }]);
     // The item lands in the category it just named, and the name travels in its metadata.

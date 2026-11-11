@@ -107,7 +107,7 @@ export function AddStageDialog({
   // A revnet deploys its ERC-20 at launch, so reserved tokens can always reach it.
   const stickyReason = stickyUnavailableReason(sortedChainIds);
   const perChainInputClassName =
-    "h-9 flex-1 border-2 border-melon-300 bg-melon-25 px-3 py-1.5 text-md placeholder:text-zinc-500 hover:border-melon-400 focus-visible:border-melon-600 focus-visible:outline-none focus-visible:ring-0";
+    "h-9 min-w-0 flex-1 border-2 border-melon-300 bg-melon-25 px-3 py-1.5 text-md placeholder:text-zinc-500 hover:border-melon-400 focus-visible:border-melon-600 focus-visible:outline-none focus-visible:ring-0";
 
   const [open, setOpen] = useState(false);
   // The server-rendered trigger cannot open a dialog until its handler is attached.
@@ -152,7 +152,7 @@ export function AddStageDialog({
       <DialogTrigger asChild>
         {cloneElement(children, { disabled: !hydrated || children.props.disabled })}
       </DialogTrigger>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[37rem] p-4 sm:p-6">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-[37rem] p-4 max-sm:w-full max-sm:border-x-0 sm:p-6">
         <DialogHeader className="text-left">
           <DialogTitle className="text-xl">Add stage</DialogTitle>
         </DialogHeader>
@@ -422,6 +422,16 @@ export function AddStageDialog({
                                         <option value="hook">Hook</option>
                                       ) : null}
                                     </select>
+                                    {/* Phones keep the remove button on the row's first line. */}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      aria-label="Remove split"
+                                      onClick={() => arrayHelpers.remove(index)}
+                                      className="ml-auto h-9 shrink-0 px-0 sm:order-last sm:ml-0 sm:px-3"
+                                    >
+                                      <XIcon className="h-4 w-4" />
+                                    </Button>
                                     {isStickyRow(split) ? (
                                       <select
                                         aria-label="Hook type"
@@ -432,49 +442,41 @@ export function AddStageDialog({
                                         <option value="sticky">Sticky</option>
                                       </select>
                                     ) : null}
-                                    <div className="flex min-w-40 flex-1 items-start gap-2">
-                                      <div className="flex min-w-0 flex-1 flex-col gap-2">
-                                        <Field
-                                          id={`splits.${index}.defaultBeneficiary`}
-                                          name={`splits.${index}.defaultBeneficiary`}
-                                          aria-label={
-                                            isStickyRow(split) ? "Sticky token" : undefined
-                                          }
-                                          className="h-9"
-                                          width="w-full min-w-0"
-                                          placeholder={
-                                            isStickyRow(split) ? "0x… (Sticky token)" : "0x"
-                                          }
-                                          required
-                                          defaultValue={
-                                            isStickyRow(split) ? undefined : namedOperator
-                                          }
-                                        />
-                                        {chainIds.length > 1 && !isStickyRow(split) && (
-                                          <label
-                                            className="flex w-fit items-center self-end gap-2 text-md italic text-zinc-400"
-                                            htmlFor={`perChainBeneficiary-${index}`}
-                                          >
-                                            adjust per chain
-                                            <input
-                                              type="checkbox"
-                                              id={`perChainBeneficiary-${index}`}
-                                              checked={(split.beneficiary?.length ?? 0) > 0}
-                                              onChange={(e) =>
-                                                toggleSplitPerChain(index, e.target.checked)
-                                              }
-                                            />
-                                          </label>
-                                        )}
-                                      </div>
-                                      <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={() => arrayHelpers.remove(index)}
-                                        className="h-9 shrink-0 px-0 sm:px-3"
-                                      >
-                                        <XIcon className="h-4 w-4" />
-                                      </Button>
+                                    <div
+                                      className={`flex min-w-40 flex-1 flex-col gap-2 ${
+                                        isStickyRow(split) ? "" : "max-sm:basis-full"
+                                      }`}
+                                    >
+                                      <Field
+                                        id={`splits.${index}.defaultBeneficiary`}
+                                        name={`splits.${index}.defaultBeneficiary`}
+                                        aria-label={isStickyRow(split) ? "Sticky token" : undefined}
+                                        className="h-9"
+                                        width="w-full min-w-0"
+                                        placeholder={
+                                          isStickyRow(split) ? "0x… (Sticky token)" : "0x"
+                                        }
+                                        required
+                                        defaultValue={
+                                          isStickyRow(split) ? undefined : namedOperator
+                                        }
+                                      />
+                                      {chainIds.length > 1 && !isStickyRow(split) && (
+                                        <label
+                                          className="flex w-fit items-center self-end gap-2 text-md italic text-zinc-400"
+                                          htmlFor={`perChainBeneficiary-${index}`}
+                                        >
+                                          adjust per chain
+                                          <input
+                                            type="checkbox"
+                                            id={`perChainBeneficiary-${index}`}
+                                            checked={(split.beneficiary?.length ?? 0) > 0}
+                                            onChange={(e) =>
+                                              toggleSplitPerChain(index, e.target.checked)
+                                            }
+                                          />
+                                        </label>
+                                      )}
                                     </div>
                                   </div>
                                   {isStickyRow(split) && stickyReason ? (
@@ -511,7 +513,7 @@ export function AddStageDialog({
                                                 key={chainId}
                                                 className="flex items-center gap-2 text-md text-zinc-600"
                                               >
-                                                <div className="flex w-40 shrink-0 items-center gap-2 text-sm">
+                                                <div className="flex w-28 shrink-0 items-center gap-2 text-sm sm:w-40">
                                                   <ChainLogo
                                                     chainId={chainId}
                                                     width={20}
@@ -661,38 +663,37 @@ export function AddStageDialog({
                                 >
                                   to
                                 </label>
-                                <div className="flex min-w-56 flex-1 items-start gap-2">
-                                  <div className="flex min-w-0 flex-1 flex-col gap-2">
-                                    <Field
-                                      id={`autoIssuance.${index}.beneficiary`}
-                                      name={`autoIssuance.${index}.beneficiary`}
-                                      className="h-9 w-full min-w-0"
-                                      placeholder="0x"
-                                      required
-                                    />
-                                    {chainIds.length > 1 && (
-                                      <div className="flex items-center gap-2 self-end">
-                                        <label>on</label>
-                                        <ChainSelector
-                                          value={
-                                            (autoissuance.chainId ?? sortedChainIds[0]) as JBChainId
-                                          }
-                                          onChange={(chainId) =>
-                                            setFieldValue(`autoIssuance.${index}.chainId`, chainId)
-                                          }
-                                          options={chainIds}
-                                        />
-                                      </div>
-                                    )}
-                                  </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => arrayHelpers.remove(index)}
-                                    className="h-9 shrink-0 px-0 sm:px-3"
-                                  >
-                                    <XIcon className="h-4 w-4" />
-                                  </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  aria-label="Remove auto issuance"
+                                  onClick={() => arrayHelpers.remove(index)}
+                                  className="ml-auto h-9 shrink-0 px-0 sm:order-last sm:ml-0 sm:px-3"
+                                >
+                                  <XIcon className="h-4 w-4" />
+                                </Button>
+                                <div className="flex min-w-56 flex-1 flex-col gap-2 max-sm:basis-full">
+                                  <Field
+                                    id={`autoIssuance.${index}.beneficiary`}
+                                    name={`autoIssuance.${index}.beneficiary`}
+                                    className="h-9 w-full min-w-0"
+                                    placeholder="0x"
+                                    required
+                                  />
+                                  {chainIds.length > 1 && (
+                                    <div className="flex items-center gap-2 self-end">
+                                      <label>on</label>
+                                      <ChainSelector
+                                        value={
+                                          (autoissuance.chainId ?? sortedChainIds[0]) as JBChainId
+                                        }
+                                        onChange={(chainId) =>
+                                          setFieldValue(`autoIssuance.${index}.chainId`, chainId)
+                                        }
+                                        options={chainIds}
+                                      />
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             ))}

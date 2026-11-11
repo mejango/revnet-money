@@ -1,9 +1,8 @@
 import { formatShortDateTime } from "@/lib/date";
 import { useFormContext } from "@/lib/forms";
 import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
-import { parseRevnetDraft } from "@/lib/revnet-draft";
+import { parseRevnetDraft, revnetDraftFileName } from "@/lib/revnet-draft";
 import Image from "next/image";
-import Link from "next/link";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { GoToProjectButton } from "../buttons/GoToProjectButton";
 import {
@@ -73,17 +72,8 @@ export function DeployRevnetForm({
         className="mx-auto mb-10 h-auto w-full max-w-[560px] md:col-span-3"
         alt="A figure holding a lightning bolt above the clouds"
       />
-      <div className="mb-16 flex flex-wrap items-center justify-between gap-3 md:col-span-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Create a revnet</h1>
-          <p className="mt-2 text-sm text-zinc-600">
-            Set its terms below. Find definitions in the{" "}
-            <Link href="/learn#glossary" className="underline underline-offset-4">
-              glossary
-            </Link>
-            .
-          </p>
-        </div>
+      <div className="mb-16 flex flex-col items-start gap-3 md:col-span-3">
+        <h1 className="text-2xl font-semibold">Create a revnet</h1>
         <DraftControls
           disabled={disabled}
           launchSubmitted={!!directDeployment}
@@ -129,6 +119,9 @@ export function DeployRevnetForm({
 
 const draftButtonClassName =
   "rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium hover:bg-zinc-50 disabled:opacity-50";
+/** The quiet pills that move a draft in and out of a file. */
+const draftPillClassName =
+  "inline-flex min-h-[28px] items-center gap-1 border border-zinc-300 px-3 text-xs font-medium text-zinc-600 hover:bg-zinc-50 disabled:opacity-50";
 
 function DraftControls({
   disabled,
@@ -175,7 +168,7 @@ function DraftControls({
   };
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex w-full flex-col items-start gap-1">
       <input
         ref={inputRef}
         type="file"
@@ -196,17 +189,40 @@ function DraftControls({
           }
         }}
       />
-      <button
-        type="button"
-        className={draftButtonClassName}
-        disabled={disabled}
-        onClick={() => inputRef.current?.click()}
-      >
-        Import .jb
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          className={draftPillClassName}
+          disabled={disabled}
+          onClick={() => inputRef.current?.click()}
+        >
+          <span aria-hidden>↑</span> Import .jb
+        </button>
+        <button
+          type="button"
+          className={draftPillClassName}
+          disabled={disabled}
+          onClick={() => {
+            // The same file shape the browser draft and the importer read. Media files stay behind.
+            const url = URL.createObjectURL(
+              new Blob([JSON.stringify({ v: 1, app: "revnet.money", data: values }, null, 2)], {
+                type: "application/json",
+              }),
+            );
+            const anchor = document.createElement("a");
+            anchor.href = url;
+            anchor.download = revnetDraftFileName(values.name);
+            anchor.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          <span aria-hidden>↓</span> Export
+        </button>
+        <span className="text-xs text-zinc-500">Your draft saves as you go.</span>
+      </div>
       {offer && !disabled ? (
-        <div className="mt-2 flex flex-col items-end gap-2">
-          <p className="max-w-sm text-right text-xs text-zinc-600">
+        <div className="mt-2 flex flex-col items-start gap-2">
+          <p className="max-w-sm text-xs text-zinc-600">
             Draft saved in this browser
             {offer.savedAt ? ` on ${formatShortDateTime(offer.savedAt)}` : ""}.
           </p>
@@ -239,7 +255,7 @@ function DraftControls({
           </div>
         </div>
       ) : null}
-      {status ? <p className="max-w-sm text-right text-xs text-zinc-600">{status}</p> : null}
+      {status ? <p className="max-w-sm text-xs text-zinc-600">{status}</p> : null}
     </div>
   );
 }

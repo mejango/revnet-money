@@ -6,7 +6,7 @@ import type { DraftItem } from "@/components/shop/itemDraft";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type JBChainId } from "@bananapus/nana-sdk-core";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 /** Sentinel option value; a category id can never be this. */
 const ADD_CATEGORY = "add";
@@ -20,6 +20,48 @@ export type ItemLimits = {
    *  `null` when it could not be read; a launching collection is always fixed. */
   transferabilityFixed?: boolean | null;
 };
+
+/** An optional setting behind a checkbox: unchecked hides and clears it. */
+function Optional({
+  title,
+  blurb,
+  on,
+  onClear,
+  disabled,
+  children,
+}: {
+  title: string;
+  blurb?: string;
+  on: boolean;
+  onClear: () => void;
+  disabled?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(on);
+  return (
+    <div>
+      <label className="flex items-center gap-2 text-sm font-medium text-zinc-800">
+        <input
+          type="checkbox"
+          checked={open}
+          onChange={() => {
+            if (open) onClear();
+            setOpen(!open);
+          }}
+          disabled={disabled}
+          className="h-4 w-4"
+        />
+        {title}
+      </label>
+      {open ? (
+        <>
+          {blurb ? <p className="mt-1 text-xs text-zinc-500">{blurb}</p> : null}
+          {children}
+        </>
+      ) : null}
+    </div>
+  );
+}
 
 /**
  * Every field of one shop item, shared by the create flow's store section and the operator's
@@ -54,6 +96,17 @@ export function ItemDraftFields({
 }) {
   const [namingCategory, setNamingCategory] = useState(false);
   const [newCategory, setNewCategory] = useState("");
+
+  const commitCategory = () => {
+    const name = newCategory.trim();
+    setNewCategory("");
+    setNamingCategory(false);
+    if (!name || !onAddCategory) return;
+    // A name already on the list is that category, not a second one. The name travels in this
+    // item's own metadata, which is where the shop reads category labels from.
+    const existing = categories.find((c) => c.name.toLowerCase() === name.toLowerCase());
+    onChange({ category: String(existing ? existing.id : onAddCategory(name)) });
+  };
 
   return (
     <>
@@ -104,17 +157,25 @@ export function ItemDraftFields({
                 className="mt-1 h-11 bg-white"
               />
             </div>
-            <div>
-              <Label className="text-xs">
-                Quantity{chains && chains.length > 1 ? " (on each chain)" : ""}
-              </Label>
+            <Optional
+              title={`Limited supply${chains && chains.length > 1 ? " (on each chain)" : ""}`}
+              on={
+                !!item.supply.trim() ||
+                Object.values(item.perChainSupply).some((value) => value?.trim())
+              }
+              onClear={() =>
+                onChange({ supply: "", perChainSupply: {}, perChainSupplyOpen: false })
+              }
+              disabled={disabled}
+            >
               <Input
+                aria-label={`Item ${index + 1} quantity`}
                 value={item.supply}
                 onChange={(e) => onChange({ supply: e.target.value })}
-                placeholder="Unlimited"
+                placeholder="Quantity"
                 inputMode="numeric"
                 disabled={disabled}
-                className="mt-1 h-11 bg-white"
+                className="mt-2 h-11 bg-white"
               />
               {chains && chains.length > 1 ? (
                 <>
@@ -158,7 +219,7 @@ export function ItemDraftFields({
                   ) : null}
                 </>
               ) : null}
-            </div>
+            </Optional>
           </div>
         </div>
       </div>
@@ -213,32 +274,21 @@ export function ItemDraftFields({
               {onAddCategory ? <option value={ADD_CATEGORY}>+ Add category…</option> : null}
             </select>
             {namingCategory && onAddCategory ? (
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <Input
-                  aria-label="New category name"
-                  value={newCategory}
-                  onChange={(event) => setNewCategory(event.target.value)}
-                  placeholder="Category name"
-                  disabled={disabled}
-                  className="h-10 w-56 bg-white"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    const name = newCategory.trim();
-                    if (!name) return;
-                    // The name travels in this item's own metadata, which is where the shop
-                    // reads category labels from.
-                    onChange({ category: String(onAddCategory(name)) });
-                    setNewCategory("");
-                    setNamingCategory(false);
-                  }}
-                  disabled={disabled || !newCategory.trim()}
-                  className="border border-dashed border-zinc-400 bg-white px-3 py-2 text-xs font-medium disabled:opacity-50"
-                >
-                  Add
-                </button>
-              </div>
+              <Input
+                aria-label="New category name"
+                value={newCategory}
+                onChange={(event) => setNewCategory(event.target.value)}
+                onBlur={commitCategory}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  commitCategory();
+                }}
+                placeholder="Category name"
+                autoFocus
+                disabled={disabled}
+                className="mt-2 h-10 w-56 bg-white"
+              />
             ) : null}
           </div>
 
@@ -312,11 +362,13 @@ export function ItemDraftFields({
             </button>
           </div>
 
-          <div>
-            <Label className="text-xs">Discount</Label>
-            <p className="mt-1 text-xs text-zinc-500">
-              Launch this item at a discount off its listed price.
-            </p>
+          <Optional
+            title="Add discount"
+            blurb="Launch this item at a discount off its listed price."
+            on={!!item.discountPct.trim()}
+            onClear={() => onChange({ discountPct: "" })}
+            disabled={disabled}
+          >
             <div className="mt-2 flex items-center gap-2">
               <Input
                 value={item.discountPct}
@@ -328,13 +380,15 @@ export function ItemDraftFields({
               />
               <span className="text-sm text-zinc-600">% off</span>
             </div>
-          </div>
+          </Optional>
 
-          <div>
-            <Label className="text-xs">Reserve inventory</Label>
-            <p className="mt-1 text-xs text-zinc-500">
-              Set aside some inventory for a specific wallet as others buy it.
-            </p>
+          <Optional
+            title="Reserve inventory"
+            blurb="Set aside some inventory for a specific wallet as others buy it."
+            on={!!item.reserveFrequency.trim() || !!item.reserveBeneficiary.trim()}
+            onClear={() => onChange({ reserveFrequency: "", reserveBeneficiary: "" })}
+            disabled={disabled}
+          >
             {limits.noNewTiersWithReserves ? (
               <p className="mt-2 text-xs text-zinc-500">
                 This collection no longer accepts new reserved items.
@@ -360,19 +414,14 @@ export function ItemDraftFields({
                 />
               </div>
             )}
-          </div>
+          </Optional>
 
-          <div>
-            <Label className="text-xs">Voting power</Label>
-            <p className="mt-1 text-xs text-zinc-500">
-              Each item's price determines its voting power.
+          {limits.noNewTiersWithVotes ? (
+            <p className="text-xs text-zinc-500">
+              Voting power: this collection only accepts free items because new voting power is
+              locked.
             </p>
-            {limits.noNewTiersWithVotes && (
-              <p className="mt-2 text-xs text-zinc-500">
-                This collection only accepts free items because new voting power is locked.
-              </p>
-            )}
-          </div>
+          ) : null}
 
           <div>
             <Label className="text-xs">Item rules</Label>
@@ -436,50 +485,6 @@ export function ItemDraftFields({
                 </label>
               ))}
             </div>
-          </div>
-
-          <div>
-            <Label className="text-xs">Use existing files (optional)</Label>
-            <p className="mt-1 text-xs text-zinc-500">
-              Two different jobs: metadata is used as-is and supplies the item&apos;s own name,
-              description, and media; a media link is wrapped in new metadata built from the fields
-              above.
-            </p>
-            <label className="mt-2 block text-xs text-zinc-500" htmlFor={`itemUri-${index}`}>
-              Metadata, already pinned
-            </label>
-            <Input
-              id={`itemUri-${index}`}
-              aria-label={`Item ${index + 1} metadata URI`}
-              value={item.uri}
-              onChange={(e) => onChange({ uri: e.target.value })}
-              placeholder="ipfs://Qm… metadata"
-              disabled={disabled}
-              className="mt-1 h-10 bg-white font-mono text-xs"
-            />
-            {item.uri.trim() ? (
-              <p className="mt-1 text-xs text-zinc-500">
-                This item ships with that metadata. Nothing else here is uploaded for it.
-              </p>
-            ) : (
-              <>
-                <label
-                  className="mt-3 block text-xs text-zinc-500"
-                  htmlFor={`itemMediaUri-${index}`}
-                >
-                  Media link, instead of uploading a file
-                </label>
-                <Input
-                  id={`itemMediaUri-${index}`}
-                  aria-label={`Item ${index + 1} media URI`}
-                  value={item.mediaUri}
-                  onChange={(e) => onChange({ mediaUri: e.target.value })}
-                  placeholder="ipfs://… or https://… media"
-                  disabled={disabled || !!item.mediaFile}
-                  className="mt-1 h-10 bg-white font-mono text-xs"
-                />
-              </>
-            )}
           </div>
         </div>
       ) : null}

@@ -1,6 +1,7 @@
 "use client";
 
 import { STICKY_MAX_CRITERIA_WEEKS, type StickyGroupDraft } from "@/lib/sticky";
+import { useState } from "react";
 
 const inputClassName =
   "h-9 border-2 border-melon-300 bg-melon-25 px-2 py-0 text-md hover:border-melon-400 focus:border-melon-600 focus:outline-none focus:ring-0";
@@ -15,6 +16,8 @@ export function StickyGroupFields({
   onChange: (patch: Partial<StickyGroupDraft>) => void;
   disabled?: boolean;
 }) {
+  // No maximum unless asked for: an unchecked box means any length of time.
+  const [maxOn, setMaxOn] = useState(value.stickyMaxWeeks !== "");
   const weeksInput = (
     field: "stickyMinWeeks" | "stickyMaxWeeks",
     label: string,
@@ -49,12 +52,32 @@ export function StickyGroupFields({
         {value.stickyGroup === "tenure" ? (
           <>
             {weeksInput("stickyMinWeeks", "Minimum weeks stuck", "4")}
-            <span>weeks, up to</span>
-            {weeksInput("stickyMaxWeeks", "Maximum weeks stuck (optional)", "any")}
             <span>weeks</span>
           </>
         ) : null}
       </div>
+      {value.stickyGroup === "tenure" ? (
+        <div className="flex min-h-9 flex-wrap items-center gap-2 text-md text-zinc-600">
+          <label className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={maxOn}
+              onChange={(e) => {
+                setMaxOn(e.target.checked);
+                if (!e.target.checked) onChange({ stickyMaxWeeks: "" });
+              }}
+              disabled={disabled}
+            />
+            {maxOn ? "up to" : "Set max time"}
+          </label>
+          {maxOn ? (
+            <>
+              {weeksInput("stickyMaxWeeks", "Maximum weeks stuck", "52")}
+              <span>weeks</span>
+            </>
+          ) : null}
+        </div>
+      ) : null}
       <p className="text-sm text-zinc-500">
         {value.stickyGroup === "all"
           ? "Pays every holder by voting power when each round starts."

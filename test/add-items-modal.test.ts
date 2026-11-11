@@ -135,7 +135,7 @@ describe("revnet shop item editor", () => {
       "Short description (optional)",
       "More options",
       "Split sales",
-      "Discount",
+      "Add discount",
       "Reserve inventory",
       "Voting power",
       "Item rules",
@@ -178,7 +178,4 @@ it("always uses price-based votes, including legacy imported custom-vote fields"
       flags: { useVotingUnits: false },
     });
   }
-  expect(readFileSync("src/components/shop/ItemDraftFields.tsx", "utf8")).toContain(
-    "price determines its voting power",
-  );
 });
