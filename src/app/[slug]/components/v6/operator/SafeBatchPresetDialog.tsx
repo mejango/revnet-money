@@ -3,31 +3,20 @@
 import { ChainLogo } from "@/components/ChainLogo";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/use-toast";
-import { addStepsToBatch, buildStep, describeStep, type BatchStep } from "@/lib/safe-batch";
-import {
-  MAX_TWAP_WINDOW,
-  resolvePreset,
-  SAFE_BATCH_PRESETS,
-  type PresetResolution,
-} from "@/lib/safe-batch-presets";
+import { addStepsToBatch, describeStep } from "@/lib/safe-batch";
+import { resolvePreset, SAFE_BATCH_PRESETS, type PresetResolution } from "@/lib/safe-batch-presets";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { chainName, publicClientFor, type ChainProjectRow } from "./operatorLib";
-
-const DIGITS = /^\d+$/;
-const isPoolStep = (step: BatchStep) =>
-  step.kind === "setPoolFor" || step.kind === "initializePoolFor";
-const MIN_TWAP_WINDOW = 300n;
 
 type Resolved = { row: ChainProjectRow; result: PresetResolution };
 
 /**
  * Resolve a preset against every project chain and stage its steps: a chain
- * checklist (available chains pre-checked), the resolved steps with an
- * editable TWAP window per carried pool, then one "Add N steps to batch".
+ * checklist (available chains pre-checked), the resolved steps, then one
+ * "Add N steps to batch".
  * Nothing is submitted here.
  */
 export function SafeBatchPresetDialog({
@@ -42,7 +31,6 @@ export function SafeBatchPresetDialog({
   const preset = SAFE_BATCH_PRESETS[0]!;
   const { toast } = useToast();
   const [unchecked, setUnchecked] = useState<Set<number>>(() => new Set());
-  const [windows, setWindows] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   const resolution = useQuery({
@@ -71,39 +59,13 @@ export function SafeBatchPresetDialog({
     (item): item is Resolved & { result: Extract<PresetResolution, { status: "ready" }> } =>
       item.result.status === "ready" && !unchecked.has(item.row.chainId),
   );
-  const windowKey = (step: BatchStep) => `${step.chainId}:${step.id}`;
-
-  const stagedSteps = (): BatchStep[] =>
-    ready.flatMap(({ result }) =>
-      result.steps.map((step) => {
-        const edited = windows[windowKey(step)];
-        if (!isPoolStep(step) || edited === undefined) return step;
-        if (!DIGITS.test(edited)) {
-          throw new Error(`${chainName(step.chainId)}: enter the TWAP window in whole seconds.`);
-        }
-        const twapWindow = BigInt(edited);
-        if (twapWindow < MIN_TWAP_WINDOW || twapWindow >= MAX_TWAP_WINDOW) {
-          throw new Error(
-            `${chainName(step.chainId)}: the hook accepts a TWAP window between ${MIN_TWAP_WINDOW} and ${MAX_TWAP_WINDOW - 1n} seconds.`,
-          );
-        }
-        return buildStep({
-          kind: step.kind,
-          chainId: step.chainId,
-          projectId: step.projectId,
-          values: { ...step.values, twapWindow },
-          to: step.to,
-        });
-      }),
-    );
   const count = ready.reduce((sum, item) => sum + item.result.steps.length, 0);
 
   const add = () => {
     setError(null);
     try {
-      const steps = stagedSteps();
       const chains = addStepsToBatch(
-        steps,
+        ready.flatMap(({ result }) => result.steps),
         ready.flatMap(({ result }) => result.dropped),
       );
       toast({
@@ -155,23 +117,6 @@ export function SafeBatchPresetDialog({
                         <span className="text-zinc-500">{index + 1}.</span>
                         <span className="font-medium text-zinc-900">{step.label}</span>
                         <span className="text-zinc-500">{describeStep(step)}</span>
-                        {isPoolStep(step) ? (
-                          <label className="block w-full">
-                            <span className="block text-zinc-500">TWAP window (seconds)</span>
-                            <Input
-                              inputMode="numeric"
-                              aria-label={`TWAP window on ${chainName(row.chainId)}`}
-                              value={windows[windowKey(step)] ?? String(step.values.twapWindow)}
-                              onChange={(event) =>
-                                setWindows((current) => ({
-                                  ...current,
-                                  [windowKey(step)]: event.target.value.replace(/[^0-9]/g, ""),
-                                }))
-                              }
-                              className="mt-1 h-8 w-24 text-xs tabular-nums"
-                            />
-                          </label>
-                        ) : null}
                       </li>
                     ))}
                     {result.notes.map((note) => (

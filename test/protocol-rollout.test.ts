@@ -44,6 +44,8 @@ describe("canonical router rollout", () => {
         readContract: vi.fn(async ({ functionName }: { functionName: string }) => {
           if (functionName === "isHookAllowed" || functionName === "isTerminalAllowed") return true;
           if (functionName === "hookOf" || functionName === "terminalOf") return zeroAddress;
+          if (functionName === "currentRulesetOf") return [{ id: 1 }, {}];
+          if (functionName === "splitsOf") return [];
           throw new Error(`Unexpected migration read: ${functionName}`);
         }),
       } as unknown as PresetReadClient;

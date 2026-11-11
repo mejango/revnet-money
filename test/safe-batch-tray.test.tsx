@@ -291,11 +291,8 @@ describe("SafeBatchTray", () => {
     const dialog = await screen.findByRole("dialog", { name: "Move to buyback 2.0.0 + gateway" });
     expect(dialog.textContent).toContain("Set buyback pool");
 
-    const windowInput = screen.getByRole("textbox", {
-      name: "TWAP window on Base",
-    }) as HTMLInputElement;
-    expect(windowInput.value).toBe("1800");
-    fireEvent.change(windowInput, { target: { value: "900" } });
+    // The preset's 30 minute TWAP window is fixed: nothing in the dialog edits it.
+    expect(screen.queryByRole("textbox", { name: /TWAP window/ })).toBeNull();
 
     // Both chains are pre-checked; drop Optimism and add Base's three.
     const optimism = screen.getByRole("checkbox", { name: "Optimism" });
@@ -303,7 +300,7 @@ describe("SafeBatchTray", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add 3 steps to batch" }));
 
     await waitFor(() => expect(readBatch(8453, 6)).toHaveLength(3));
-    expect(readBatch(8453, 6)[1]!.values.twapWindow).toBe(900n);
+    expect(readBatch(8453, 6)[1]!.values.twapWindow).toBe(1_800n);
     expect(mocks.submit).not.toHaveBeenCalled();
     expect(screen.getByRole("tab", { name: "Base (3)" })).toBeTruthy();
   });

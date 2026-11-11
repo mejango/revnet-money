@@ -67,6 +67,7 @@ function stubClient({
   prices = {},
   coverage = 1_800,
   meanTick = 0,
+  reservedSplits = [],
 }: {
   deployed?: Address[];
   allowed?: boolean;
@@ -82,6 +83,8 @@ function stubClient({
   coverage?: number;
   /** The old pool's mean tick over the observed window. */
   meanTick?: number;
+  /** The current stage's reserved splits. */
+  reservedSplits?: readonly object[];
 }): PresetReadClient {
   const lower = (value: unknown) => String(value).toLowerCase();
   return {
@@ -129,6 +132,10 @@ function stubClient({
             [0n, 0n],
           ];
         }
+        case "currentRulesetOf":
+          return [{ id: 1781587898 }, {}];
+        case "splitsOf":
+          return reservedSplits;
         default:
           throw new Error(`unexpected read ${functionName}`);
       }
@@ -221,6 +228,66 @@ describe("Move to buyback 2.0.0 + gateway", () => {
     );
     expect(mirrored.steps).toEqual([]);
     expect(mirrored.skipped).toHaveLength(3);
+  });
+
+  const OLD_LP_SPLIT_HOOK = "0x22988374af49507fec1ee78811fBc47d10D5e639" as Address;
+  const NEW_LP_SPLIT_HOOK = getAddress("0xef8993f50363461007bed2f54e98bbef9854148a");
+  const wholeSplitTo = (hook: Address, overrides: object = {}) => ({
+    percent: 1_000_000_000,
+    projectId: 0n,
+    beneficiary: zeroAddress,
+    preferAddToBalance: false,
+    lockedUntil: 0,
+    hook,
+    ...overrides,
+  });
+  const current = { hookOf: targets.hook, terminalOf: targets.terminal };
+
+  it("moves a reserved split from the old market maker hook to the current one", async () => {
+    const client = stubClient({
+      ...current,
+      deployed: [targets.hook, targets.terminal, NEW_LP_SPLIT_HOOK],
+      reservedSplits: [wholeSplitTo(OLD_LP_SPLIT_HOOK)],
+    });
+    const result = await resolvePreset(preset, { chainId: 84532, projectId: 4, client });
+    if (result.status !== "ready") throw new Error(result.message);
+    expect(result.steps.map((step) => [step.kind, step.label, step.contractName])).toEqual([
+      ["setReservedSplitHook", "Set reserved split hook", "JBController"],
+    ]);
+    expect(result.steps[0]!.values).toEqual({ rulesetId: 1781587898n, hook: NEW_LP_SPLIT_HOOK });
+    // Pinned in juicebox-money's preset test too: co-signers on either client must sign identical calldata.
+    expect(result.steps[0]!.data).toMatchInlineSnapshot(
+      `"0x8a36dffd0000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000006a30dfba000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000003b9aca000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ef8993f50363461007bed2f54e98bbef9854148a"`,
+    );
+  });
+
+  it.each([
+    ["is already on the current hook", [wholeSplitTo(NEW_LP_SPLIT_HOOK)]],
+    ["has no reserved split", []],
+    [
+      "shares the split with another recipient",
+      [
+        wholeSplitTo(OLD_LP_SPLIT_HOOK, { percent: 500_000_000 }),
+        wholeSplitTo(zeroAddress, { percent: 500_000_000, beneficiary: OLD_TERMINAL }),
+      ],
+    ],
+    ["locked the split", [wholeSplitTo(OLD_LP_SPLIT_HOOK, { lockedUntil: 1 })]],
+  ])("leaves the reserved split alone when the project %s", async (_name, reservedSplits) => {
+    const client = stubClient({
+      ...current,
+      deployed: [targets.hook, targets.terminal, NEW_LP_SPLIT_HOOK],
+      reservedSplits,
+    });
+    await expect(
+      resolvePreset(preset, { chainId: 84532, projectId: 4, client }),
+    ).resolves.toMatchObject({ status: "nothing" });
+  });
+
+  it("leaves the reserved split alone where the current hook has no code", async () => {
+    const client = stubClient({ ...current, reservedSplits: [wholeSplitTo(OLD_LP_SPLIT_HOOK)] });
+    await expect(
+      resolvePreset(preset, { chainId: 84532, projectId: 4, client }),
+    ).resolves.toMatchObject({ status: "nothing" });
   });
 
   it("reports nothing to do when the hook and gateway are already current", async () => {

@@ -5,6 +5,7 @@ import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import {
   jbBuybackHookAbi,
   jbBuybackHookRegistryAbi,
+  jbControllerAbi,
   jbRouterTerminalRegistryAbi,
   jbV6ContractAddress,
   NATIVE_TOKEN,
@@ -32,7 +33,8 @@ export type BatchStepKind =
   | "setTerminalFor"
   | "setTwapWindowOf"
   | "initializePoolFor"
-  | "setOperatorOf";
+  | "setOperatorOf"
+  | "setReservedSplitHook";
 
 /** The chain-agnostic inputs a step was built from: addresses as strings, numbers as bigint. */
 export type BatchStepValues = Record<string, Address | bigint>;
@@ -64,6 +66,8 @@ type StepKindDefinition = {
   functionName: string;
   /** Value names in argument order; every function takes the project id first. */
   inputs: readonly string[];
+  /** The arguments, where they are not the project id followed by the inputs. */
+  args?: (projectId: bigint, values: BatchStepValues) => readonly unknown[];
   /** Values (or the target) differ per chain, so mirroring re-resolves them there. */
   perChain?: boolean;
   describe: (values: BatchStepValues, chainId: number) => string;
@@ -147,10 +151,46 @@ const STEP_KINDS: Record<BatchStepKind, StepKindDefinition> = {
         ? "Relinquished (no operator)"
         : `Operator ${shortAddress(String(values.operator))}`,
   },
+  // The stage's whole reserved split goes to one hook: the only shape this step writes.
+  setReservedSplitHook: {
+    kind: "setReservedSplitHook",
+    label: "Set reserved split hook",
+    contract: "JBController",
+    abi: jbControllerAbi,
+    functionName: "setSplitGroupsOf",
+    inputs: ["rulesetId", "hook"],
+    perChain: true,
+    args: (projectId, values) => [
+      projectId,
+      values.rulesetId,
+      [
+        {
+          groupId: RESERVED_TOKEN_SPLIT_GROUP_ID,
+          splits: [
+            {
+              percent: 1_000_000_000,
+              projectId: 0n,
+              beneficiary: zeroAddress,
+              preferAddToBalance: false,
+              lockedUntil: 0,
+              hook: values.hook,
+            },
+          ],
+        },
+      ],
+    ],
+    describe: (values) => `100% to hook ${shortAddress(String(values.hook))}`,
+  },
 };
 
+/** `JBSplitGroupIds.RESERVED_TOKENS`. */
+export const RESERVED_TOKEN_SPLIT_GROUP_ID = 1n;
+
+// A kind with its own argument shape is built only by its preset, never from a card's write.
 const KIND_BY_FUNCTION = new Map(
-  Object.values(STEP_KINDS).map((definition) => [definition.functionName, definition.kind]),
+  Object.values(STEP_KINDS)
+    .filter((definition) => !definition.args)
+    .map((definition) => [definition.functionName, definition.kind]),
 );
 
 const DEPENDENCIES: readonly {
@@ -218,10 +258,13 @@ export function buildStep({
   if (!target) {
     throw new Error(`${definition.contract} is not deployed on ${chainDisplayName(chainId)}.`);
   }
-  const args = [BigInt(projectId), ...definition.inputs.map((name) => values[name])];
-  if (args.some((arg) => arg === undefined)) {
+  if (definition.inputs.some((name) => values[name] === undefined)) {
     throw new Error(`${definition.label}: missing a value.`);
   }
+  const args = definition.args?.(BigInt(projectId), values) ?? [
+    BigInt(projectId),
+    ...definition.inputs.map((name) => values[name]),
+  ];
   const step = {
     kind,
     chainId,

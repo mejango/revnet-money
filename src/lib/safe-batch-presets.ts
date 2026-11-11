@@ -11,6 +11,7 @@ import { rolloutAddress, rolloutTargets } from "@/lib/protocol-rollout";
 import {
   buildStep,
   contractAddressOn,
+  RESERVED_TOKEN_SPLIT_GROUP_ID,
   stepKey,
   type BatchStep,
   type BatchStepRef,
@@ -20,7 +21,9 @@ import {
 import {
   jbBuybackHookAbi,
   jbBuybackHookRegistryAbi,
+  jbControllerAbi,
   jbRouterTerminalRegistryAbi,
+  jbSplitsAbi,
   NATIVE_TOKEN,
   USDC_ADDRESSES,
 } from "@bananapus/nana-sdk-core";
@@ -30,7 +33,7 @@ export type SafeBatchPreset = {
   id: string;
   title: string;
   description: string;
-  steps: readonly ("setHookFor" | "setPoolFor" | "setTerminalFor")[];
+  steps: readonly ("setHookFor" | "setPoolFor" | "setTerminalFor" | "setReservedSplitHook")[];
 };
 
 export const SAFE_BATCH_PRESETS: readonly SafeBatchPreset[] = [
@@ -38,18 +41,24 @@ export const SAFE_BATCH_PRESETS: readonly SafeBatchPreset[] = [
     id: "buyback-2-0-0-gateway",
     title: "Move to buyback 2.0.0 + gateway",
     description:
-      "Points the project at the current buyback hook and router gateway, and opens its pool on the new hook at the old pool's price.",
-    steps: ["setHookFor", "setPoolFor", "setTerminalFor"],
+      "Points the project at the current buyback hook and router gateway, and opens its pool on the new hook at the old pool's price. A reserved split still on the old market maker hook moves to the current one.",
+    steps: ["setHookFor", "setPoolFor", "setTerminalFor", "setReservedSplitHook"],
   },
 ];
 
 /** `JBBuybackHook.MAX_TWAP_WINDOW`: the deployer default, which the hook stores as 30 minutes. */
-export const MAX_TWAP_WINDOW = 172_800n;
+const MAX_TWAP_WINDOW = 172_800n;
 /**
  * The window every migrated pool is registered with, whatever the old hook held.
  * Must match juicebox-money's preset: Safe co-signers on either client only meet on identical calldata.
  */
 const PRESET_TWAP_WINDOW = 1_800n;
+
+/**
+ * The LP split hook 1.0.0 clone, at one address on every chain. A reserved split still on it
+ * moves to `JBP6FeeLPSplitHook`. Must match juicebox-money's preset.
+ */
+const OLD_LP_SPLIT_HOOK = "0x22988374af49507fec1ee78811fBc47d10D5e639";
 
 export type PresetResolution =
   | { status: "unavailable"; message: string }
@@ -226,6 +235,48 @@ async function poolStepOn(
 }
 
 /**
+ * The current stage's reserved split hook, when the whole split goes to the old market maker
+ * hook and the current one is deployed here. Any other split shape is left alone.
+ */
+async function reservedSplitHookMove(
+  client: PresetReadClient,
+  chainId: number,
+  projectId: bigint,
+): Promise<BatchStepValues | null> {
+  const controller = contractAddressOn("JBController", chainId);
+  const splitsContract = contractAddressOn("JBSplits", chainId);
+  const hook = contractAddressOn("JBP6FeeLPSplitHook", chainId);
+  if (!controller || !splitsContract || !hook) return null;
+  const [{ id }] = await client.readContract({
+    address: controller,
+    abi: jbControllerAbi,
+    functionName: "currentRulesetOf",
+    args: [projectId],
+  });
+  const splits = await client.readContract({
+    address: splitsContract,
+    abi: jbSplitsAbi,
+    functionName: "splitsOf",
+    args: [projectId, BigInt(id), RESERVED_TOKEN_SPLIT_GROUP_ID],
+  });
+  const [split] = splits;
+  if (
+    splits.length !== 1 ||
+    !split ||
+    split.percent !== 1_000_000_000 ||
+    split.projectId !== 0n ||
+    split.preferAddToBalance ||
+    Number(split.lockedUntil) !== 0 ||
+    !isAddressEqual(split.beneficiary, zeroAddress) ||
+    !isAddressEqual(split.hook, OLD_LP_SPLIT_HOOK)
+  ) {
+    return null;
+  }
+  if (!(await hasCode(client, hook))) return null;
+  return { rulesetId: BigInt(id), hook };
+}
+
+/**
  * Resolve the preset against one chain's live state: skip what is already
  * applied, carry each existing pool onto the target hook, and say plainly
  * when the targets are not deployed there or nothing is left to do.
@@ -331,6 +382,13 @@ export async function resolvePreset(
     }
   }
 
+  if (preset.steps.includes("setReservedSplitHook")) {
+    const values = await reservedSplitHookMove(client, chainId, pid);
+    if (values) {
+      steps.push(buildStep({ kind: "setReservedSplitHook", chainId, projectId, values }));
+    }
+  }
+
   if (!steps.length) {
     return {
       status: "nothing",
@@ -377,6 +435,8 @@ export function stepResolverFor(clientFor: (chainId: number) => PresetReadClient
       // pool registrations after this selection are dropped with it.
       throw new Error(MIGRATION_MIRROR_LINE);
     }
+    // Its ruleset id is this chain's; the preset reads each chain's own.
+    if (step.kind === "setReservedSplitHook") throw new Error(MIGRATION_MIRROR_LINE);
     if (step.kind === "initializePoolFor") return null;
     const token = mapTerminalToken(step.values.terminalToken as Address, step.chainId, chainId);
     if (!token) return null;

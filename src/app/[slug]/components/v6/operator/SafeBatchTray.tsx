@@ -269,10 +269,10 @@ export function SafeBatchTray({
           preset.
         </p>
       )}
-      <div className="mt-3 flex flex-wrap gap-1">
+      <div className="mt-3 flex flex-wrap gap-2">
         {presetsAvailable ? (
           <Button
-            variant="ghost"
+            variant="secondary"
             size="sm"
             onClick={() => setDialog({ kind: "presets" })}
             onPointerEnter={() => void loadPresetDialog()}
@@ -282,13 +282,13 @@ export function SafeBatchTray({
           </Button>
         ) : null}
         {queued.length && rows.length > 1 && source ? (
-          <Button variant="ghost" size="sm" disabled={mirroring} onClick={() => void mirror()}>
+          <Button variant="secondary" size="sm" disabled={mirroring} onClick={() => void mirror()}>
             {mirroring ? "Copying…" : `Copy the ${chainName(source.chainId)} batch to every chain`}
           </Button>
         ) : null}
         {queued.length ? (
           <Button
-            variant="ghost"
+            variant="secondary"
             size="sm"
             onClick={() => rows.forEach((row) => clearBatch(row.chainId, row.projectId))}
           >

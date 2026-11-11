@@ -48,7 +48,17 @@ const DESCRIPTIONS: Record<keyof typeof JBPermissionIdsV6, string> = {
 
 export type PermissionInfo = { id: number; name: string; label: string; description: string };
 
+/** Plain names where the contract's own word would need explaining. */
+const LABELS: Record<string, string> = {
+  MAP_SUCKER_TOKEN: "Map bridge token",
+  DEPLOY_SUCKERS: "Add a chain",
+  SET_SUCKER_PEER: "Set bridge peer",
+  SUCKER_SAFETY: "Bridge safety controls",
+  SET_SUCKER_DEPRECATION: "Retire a bridge",
+};
+
 function labelFromName(name: string): string {
+  if (LABELS[name]) return LABELS[name];
   const words = name.toLowerCase().replace(/_/g, " ");
   return words.charAt(0).toUpperCase() + words.slice(1);
 }

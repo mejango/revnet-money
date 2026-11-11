@@ -95,69 +95,45 @@ export function ProjectMenu({
           <ProjectTabIcon label="Shop" />
           Shop
         </MenuOption>
+        {OVERFLOW_TABS.filter(
+          (tab) => overflowExpanded || (!mobileActivityActive && segment === tab.href),
+        ).map((tab) => (
+          <MenuOption
+            key={tab.href}
+            aliasNavigation={aliasNavigation}
+            href={tab.href}
+            forceInactive={mobileActivityActive}
+            onSelect={() => onMobileActivityChange?.(false)}
+          >
+            <ProjectTabIcon label={tab.label} />
+            {tab.label}
+          </MenuOption>
+        ))}
         <li className="flex shrink-0 items-start">
           <MoreProjectOptions
-            forceInactive={mobileActivityActive}
             expanded={overflowExpanded}
             onToggle={() => setOverflowExpanded((current) => !current)}
           />
         </li>
-        {overflowExpanded ? (
-          <>
-            <MenuOption
-              aliasNavigation={aliasNavigation}
-              href="extras"
-              forceInactive={mobileActivityActive}
-              onSelect={() => onMobileActivityChange?.(false)}
-            >
-              <ProjectTabIcon label="Extras" />
-              Extras
-            </MenuOption>
-            <MenuOption
-              aliasNavigation={aliasNavigation}
-              href="operator"
-              forceInactive={mobileActivityActive}
-              onSelect={() => onMobileActivityChange?.(false)}
-            >
-              <ProjectTabIcon label="Operator" />
-              Operator
-            </MenuOption>
-          </>
-        ) : null}
       </ul>
     </div>
   );
 }
 
-function MoreProjectOptions({
-  forceInactive,
-  expanded,
-  onToggle,
-}: {
-  forceInactive: boolean;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  const segment = useSelectedLayoutSegment();
-  const options = [
-    { href: "extras", label: "Extras" },
-    { href: "operator", label: "Operator" },
-  ];
-  const active = forceInactive ? undefined : options.find((option) => option.href === segment);
+/** The sections behind More. The current one stays in the row while the rest are hidden. */
+const OVERFLOW_TABS = [
+  { href: "extras", label: "Extras" },
+  { href: "operator", label: "Operator" },
+] as const;
 
+function MoreProjectOptions({ expanded, onToggle }: { expanded: boolean; onToggle: () => void }) {
   return (
     <button
       type="button"
-      aria-label={`More project sections${active ? `, current: ${active.label}` : ""}`}
+      aria-label="More project sections"
       aria-expanded={expanded}
-      aria-current={active && !expanded ? "page" : undefined}
       onClick={onToggle}
-      className={cn(
-        "-mb-px flex min-h-11 min-w-11 shrink-0 items-center justify-center border-b-2 px-3 pb-2 text-2xl leading-none transition-all",
-        active && !expanded
-          ? "border-teal-500 text-black"
-          : "border-transparent text-zinc-500 hover:text-zinc-800",
-      )}
+      className="-mb-px flex min-h-11 min-w-11 shrink-0 items-center justify-center border-b-2 border-transparent px-3 pb-2 text-2xl leading-none text-zinc-500 transition-all hover:text-zinc-800"
     >
       <span
         data-overflow-orientation={expanded ? "horizontal" : "vertical"}

@@ -1,6 +1,6 @@
 {
   "src/app/[slug]/components/ActivityFeed/ActivityItem.tsx": 1,
-  "src/app/[slug]/components/v6/operator/PermissionsCard.tsx": 2,
+  "src/app/[slug]/components/v6/operator/PermissionsCard.tsx": 1,
   "src/app/[slug]/components/v6/operator/operatorLib.ts": 1,
   "src/app/[slug]/components/v6/operator/permissionMeta.ts": 2,
   "src/app/[slug]/components/v6/owners/accounts/V6AllCard.tsx": 1,

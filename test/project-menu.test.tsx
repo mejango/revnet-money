@@ -52,18 +52,6 @@ describe("ProjectMenu", () => {
     expect(more.querySelector('[data-overflow-orientation="vertical"]')).toBeInTheDocument();
   });
 
-  it("names the active overflow section from the current route", () => {
-    mocks.segment = "operator";
-    mocks.slug = "base:42";
-    render(<ProjectMenu />);
-
-    expect(
-      screen.getByRole("button", {
-        name: "More project sections, current: Operator",
-      }),
-    ).toBeInTheDocument();
-  });
-
   it("keeps the pretty @handle URL while navigating between project tabs", () => {
     mocks.segment = null;
     mocks.slug = "@design.juicebox";
@@ -100,19 +88,21 @@ describe("ProjectMenu", () => {
     expect(screen.getByRole("link", { name: "Owners" })).not.toHaveAttribute("aria-current");
   });
 
-  it("marks More as current while it hides the current section, then the revealed tab", () => {
+  it("keeps the current overflow section in the row while More is collapsed", () => {
     mocks.segment = "operator";
     mocks.slug = "base:42";
     render(<ProjectMenu />);
-    const more = screen.getByRole("button", { name: /More project sections/ });
-    expect(more).toHaveAttribute("aria-current", "page");
+    const more = screen.getByRole("button", { name: "More project sections" });
+    expect(more).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: "Operator" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("link", { name: "Extras" })).not.toBeInTheDocument();
 
     fireEvent.click(more);
-    expect(more).not.toHaveAttribute("aria-current");
+    expect(screen.getByRole("link", { name: "Extras" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Operator" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("reveals the overflow tabs after More, so the next Tab reaches them", () => {
+  it("reveals the overflow tabs beside the others, before More", () => {
     mocks.segment = null;
     mocks.slug = "base:42";
     render(<ProjectMenu />);
@@ -120,8 +110,8 @@ describe("ProjectMenu", () => {
     fireEvent.click(more);
 
     expect(
-      more.compareDocumentPosition(screen.getByRole("link", { name: "Extras" })) &
-        Node.DOCUMENT_POSITION_FOLLOWING,
+      more.compareDocumentPosition(screen.getByRole("link", { name: "Operator" })) &
+        Node.DOCUMENT_POSITION_PRECEDING,
     ).toBeTruthy();
   });
 
