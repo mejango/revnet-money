@@ -1,7 +1,8 @@
+import { CodeBlock } from "@/components/guides/CodeBlock";
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-const INLINE_LINK = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+export const INLINE_LINK = /\[([^\]]+)\]\(([^)\s]+)\)/g;
 
 /** Guide prose may link a word with `[label](href)`; everything else renders as text. */
 export function Inline({ text }: { text: string }) {
@@ -30,6 +31,8 @@ type RevnetGuideCodePoint = {
   title: string;
   description?: string;
   code?: string;
+  /** The code's language, rendered as `language-<lang>` and as the markdown fence. */
+  lang?: "ts" | "bash" | "solidity" | "graphql" | "json";
   details?: readonly { key: string; value: string }[];
   links?: readonly { href: string; label: string }[];
 };
@@ -49,7 +52,7 @@ const slug = (text: string) =>
 
 type RevnetGuideAudience = "founders" | "frontend" | "contracts";
 
-const AUDIENCE_LABEL: Record<RevnetGuideAudience, string> = {
+export const AUDIENCE_LABEL: Record<RevnetGuideAudience, string> = {
   founders: "Project builders",
   frontend: "App builders",
   contracts: "Contract builders",
@@ -90,12 +93,16 @@ export type RevnetGuideSection = {
   links?: readonly { href: string; label: string }[];
 };
 
-type Props = {
-  eyebrow: string;
+/** A guide's content as data, shared by its page and its markdown route. */
+export type RevnetGuideContent = {
   title: string;
   introduction: string;
   sections: readonly RevnetGuideSection[];
   companion: { href: string; label: string; description: string };
+};
+
+type Props = RevnetGuideContent & {
+  eyebrow: string;
   afterIntroduction?: React.ReactNode;
   afterSections?: React.ReactNode;
 };
@@ -428,14 +435,11 @@ export function RevnetGuide({
                         ) : null}
 
                         {codePoint.code ? (
-                          <pre
-                            role="region"
-                            aria-label={`${codePoint.title}: code example`}
-                            className="mt-4 overflow-x-auto border border-black bg-zinc-900 p-4 text-sm leading-6 text-melon-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-melon-700"
-                            tabIndex={0}
-                          >
-                            <code>{codePoint.code}</code>
-                          </pre>
+                          <CodeBlock
+                            title={codePoint.title}
+                            code={codePoint.code}
+                            lang={codePoint.lang}
+                          />
                         ) : null}
 
                         {codePoint.links?.length ? (

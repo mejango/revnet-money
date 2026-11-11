@@ -76,10 +76,11 @@ const account = `0x${"1".repeat(40)}`;
 // JS 2787.1 KiB; round only those up.
 // SDK core 6.3.1 (a success left settled while away is shown, not adopted) measures route-referenced 930.04 KiB; round only that up.
 // The homepage feeds page by row and end with a phone "More" cell: / measures 397.0 KiB (just over 397); round only that up.
+// Guide code copy buttons: /learn measures 359.3 KiB and /build 361.1 KiB; round only those up.
 const routes = [
   { route: "/", path: "/", kib: 398 },
-  { route: "/learn", path: "/learn", kib: 359 },
-  { route: "/build", path: "/build", kib: 361 },
+  { route: "/learn", path: "/learn", kib: 360 },
+  { route: "/build", path: "/build", kib: 362 },
   // The audit prompts render in the page so a fetch can read them: /audit measures 362.0 KiB (just over 362).
   { route: "/audit", path: "/audit", kib: 363 },
   { route: "/discover", path: "/discover", kib: 344 },
@@ -255,7 +256,8 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 931);
 // The same artifact measures 2757.6 KiB total, +3.6 KiB (0.13%) over the previous ceiling.
 // The same frozen acquisition-fix artifact measures2759.3 KiB, +1.7 KiB over the prior artifact.
 // Explicit homepage availability and permission retry: measured 2760.4 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2788);
+// Guide code copy buttons and the stages endpoint: measured 2789.3 KiB, rounded up only.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2790);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");

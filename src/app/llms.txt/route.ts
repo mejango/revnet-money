@@ -55,6 +55,8 @@ identifier, description and logo.
 ## For agents
 
 - [Agent skill](${siteOrigin}/skill.md): how to launch, check, pay, cash out, and borrow here.
+- [Learn, as markdown](${siteOrigin}/learn.md): the whole Learn guide in one file.
+- [Build, as markdown](${siteOrigin}/build.md): the whole Build guide in one file.
 - [Juicebox MCP](${JUICEBOX_MCP_URL}): reads, quotes, metadata pinning, and unsigned
   transaction plans. Holds no keys; the user signs.
 - [MCP guide](${JUICEBOX_MCP_GUIDE_URL}): how to connect a client.
@@ -73,13 +75,14 @@ identifier, description and logo.
 
 ## JSON endpoints
 
-Read-only, no key required, cached at the edge. A revnet's stages are not in the page HTML or
-these endpoints; use \`jb_get_revnet\` on the MCP.
+Read-only, no key required, cached at the edge. A revnet's stages are not in the page HTML;
+read \`/api/stages\`, or use \`jb_get_revnet\` on the MCP.
 
 - \`GET /api/discover-projects\`: every indexed V6 revnet, one entry per sucker group.
 - \`GET /api/top-projects?limit=<1-32>&offset=<n>\`: revnets ranked by balance.
 - \`GET /api/search-projects?q=<text>\`: revnets matching a name, handle or id.
 - \`GET /api/project-name?chainId=<id>&projectId=<id>\`: canonical name and sucker group.
+- \`GET /api/stages?chainId=<id>&projectId=<id>\`: a revnet's stages in order and the current one: issuance per unit paid, cuts, split, cash out tax, auto issuance. Its \`units\` field states each unit. 404 if the project is not a revnet.
 - \`GET /api/homepage-activity\`: recent payments and cash outs.
 - \`GET /api/project-og/<chainId>/<projectId>\`: 1200x630 PNG link-preview card.
 

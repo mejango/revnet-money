@@ -15,7 +15,7 @@ describe("guide inline links", () => {
   });
 
   it("points every in-page link at a section or alias that exists", () => {
-    for (const page of ["src/app/build/page.tsx", "src/app/learn/page.tsx"]) {
+    for (const page of ["src/lib/build-guide.ts", "src/lib/learn-guide.ts"]) {
       const source = readFileSync(page, "utf8");
       const ids = new Set(
         [
