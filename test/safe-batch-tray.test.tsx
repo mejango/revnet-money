@@ -222,7 +222,7 @@ describe("SafeBatchTray", () => {
     expect(items[1]!.textContent).toContain("Set router terminal");
     expect(items[1]!.textContent).toContain("setTerminalFor(uint256, address)");
     expect(dialog.textContent).toContain("2 transactions from your wallet, in order");
-    expect(dialog.textContent).toContain("EOA");
+    expect(dialog.textContent).toContain("Wallet");
     expect(screen.getByRole("button", { name: "Send 2 transactions" })).not.toBeDisabled();
   });
 

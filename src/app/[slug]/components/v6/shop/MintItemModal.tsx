@@ -210,16 +210,13 @@ export function MintItemModal({
         <DialogHeader>
           <DialogTitle>Mint {itemName} without payment</DialogTitle>
           <DialogDescription>
-            Send inventory from item #{tierId} on {chainDisplayName(chainId)} to a beneficiary.
+            Send inventory on {chainDisplayName(chainId)} to a beneficiary.
           </DialogDescription>
         </DialogHeader>
 
         {phase === "done" || phase === "safe-proposed" ? (
           <div className="py-6 text-center">
-            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-teal-100 text-xl text-teal-700">
-              ✓
-            </span>
-            <p className="mt-4 text-sm font-medium text-zinc-900">
+            <p className="text-sm font-medium text-zinc-900">
               {phase === "safe-proposed" ? "Safe proposal submitted" : "Items minted"}
             </p>
             <p className="mx-auto mt-2 max-w-sm text-sm text-zinc-600">
@@ -236,10 +233,10 @@ export function MintItemModal({
           </div>
         ) : (
           <>
-            <div className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              Free minting consumes inventory and is irreversible. The tier must explicitly allow
-              revnet-operator mints; the contract checks this again before sending.
-            </div>
+            <p className="border border-amber-300 px-4 py-3 text-sm text-amber-900">
+              Free minting consumes inventory and is irreversible. The item must allow operator
+              mints, which is checked again before sending.
+            </p>
             <div className="space-y-4">
               <div>
                 <Label htmlFor="mint-item-beneficiary">Beneficiary address</Label>

@@ -208,7 +208,7 @@ export function SafeBatchDialog({
     route?.kind === "safe-signer" || route?.kind === "safe-app"
       ? "Safe"
       : route?.kind === "eoa"
-        ? "EOA"
+        ? "Wallet"
         : null;
 
   return (
@@ -267,7 +267,7 @@ export function SafeBatchDialog({
           {steps.map((step, index) => {
             const problem = problems.find((item) => item.index === index);
             return (
-              <li key={step.id} className="rounded border border-melon-200 bg-melon-50 p-3 text-xs">
+              <li key={step.id} className="border border-melon-200 p-3 text-xs">
                 <div className="flex items-start gap-2">
                   <span
                     aria-hidden="true"

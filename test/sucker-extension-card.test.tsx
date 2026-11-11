@@ -37,7 +37,7 @@ vi.mock("@/app/[slug]/components/v6/operator/suckerExtensionLib", async (importO
   ...(await importOriginal<
     typeof import("@/app/[slug]/components/v6/operator/suckerExtensionLib")
   >()),
-  buildSuckerExtensionWrites: () => [{ chainId: 1, label: "Deploy suckers" }],
+  buildSuckerExtensionWrites: () => [{ chainId: 1, label: "Extend to Base" }],
 }));
 vi.mock("@/lib/suckerExtensionSalt", () => ({
   saltForExtension: () => mocks.salt(),
@@ -87,8 +87,10 @@ async function openConfirm() {
     target: { value: "9" },
   });
   fireEvent.click(screen.getByRole("checkbox"));
-  fireEvent.click(screen.getByRole("button", { name: "Deploy suckers" }));
-  return (await screen.findByRole("dialog", { name: "Confirm suckers" })) as HTMLDialogElement;
+  fireEvent.click(screen.getByRole("button", { name: "Extend to Base" }));
+  return (await screen.findByRole("dialog", {
+    name: "Confirm the extension",
+  })) as HTMLDialogElement;
 }
 
 beforeEach(() => {
@@ -104,7 +106,7 @@ beforeEach(() => {
 describe("extend to another chain over sucker-group rows", () => {
   it("mentions bridging only when there are chains to bridge between", () => {
     const { rerender } = render(<SuckerExtensionCard rows={[{ chainId: 1, projectId: 4 }]} />);
-    expect(screen.getByText(/runs on 1 chain: /)).not.toHaveTextContent("Suckers bridge");
+    expect(screen.getByText(/runs on 1 chain: /)).not.toHaveTextContent("can bridge");
     rerender(
       <SuckerExtensionCard
         rows={[
@@ -114,7 +116,7 @@ describe("extend to another chain over sucker-group rows", () => {
       />,
     );
     expect(screen.getByText(/runs on 2 chains: /)).toHaveTextContent(
-      "Suckers bridge its token between them.",
+      "Its token can bridge between them.",
     );
   });
 
@@ -129,7 +131,7 @@ describe("extend to another chain over sucker-group rows", () => {
     });
     fireEvent.click(screen.getByRole("checkbox"));
     expect(screen.getByText("A project listed here isn't linked onchain.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Deploy suckers" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Extend to Base" })).toBeDisabled();
     expect(mocks.runWrites).not.toHaveBeenCalled();
   });
 });
@@ -150,7 +152,7 @@ describe("extend to another chain confirm", () => {
     fireEvent.click(close);
     fireEvent.keyDown(document, { key: "Escape" });
     fireEvent.pointerDown(confirm);
-    expect(screen.getByRole("dialog", { name: "Confirm suckers" })).toBe(confirm);
+    expect(screen.getByRole("dialog", { name: "Confirm the extension" })).toBe(confirm);
     expect(mocks.runWrites).not.toHaveBeenCalled();
 
     await act(async () => answer());
@@ -184,19 +186,19 @@ describe("extend to another chain confirm", () => {
 
   it("ends on Done when the deployment went to the Safe as a proposal", async () => {
     mocks.runWrites.mockRejectedValue(
-      Object.assign(new Error("Deploy suckers was proposed to Safe."), {
+      Object.assign(new Error("Extend to Base was proposed to Safe."), {
         name: "SafeProposalPendingError",
       }),
     );
     const confirm = await openConfirm();
 
     const done = await within(confirm).findByRole("button", { name: "Done" });
-    expect(confirm).toHaveTextContent("Deploy suckers was proposed to Safe.");
-    expect(within(confirm).queryByRole("button", { name: "Deploy suckers" })).toBeNull();
+    expect(confirm).toHaveTextContent("Extend to Base was proposed to Safe.");
+    expect(within(confirm).queryByRole("button", { name: "Extend to Base" })).toBeNull();
     fireEvent.click(done);
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(screen.getByText("Deploy suckers was proposed to Safe.")).toBeInTheDocument();
+    expect(screen.getByText("Extend to Base was proposed to Safe.")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
     expect(mocks.runWrites).toHaveBeenCalledOnce();
   });

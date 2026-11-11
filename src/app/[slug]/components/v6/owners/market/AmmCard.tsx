@@ -8,6 +8,7 @@ import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { ExternalLink } from "@/components/ExternalLink";
+import { Input } from "@/components/ui/input";
 import { Revalidating } from "@/components/ui/Revalidating";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import {
@@ -19,7 +20,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ErrorNote } from "@/components/ui/TxError";
-import { TxProgress } from "@/components/ui/TxProgress";
+import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useReviewedAction } from "@/hooks/useReviewedAction";
 import {
@@ -131,6 +132,14 @@ function formatPrice(price: number): string {
   return isFinite(price) && price > 0 ? formatPriceValue(price) : "—";
 }
 
+/** On phones a table row stacks: each cell is a small key above its value. */
+export const STACKED_ROW = "max-sm:grid max-sm:grid-cols-2 max-sm:gap-x-4 max-sm:py-2";
+export const STACKED_CELL =
+  "max-sm:block max-sm:min-w-0 max-sm:px-2 max-sm:py-1 max-sm:text-left max-sm:whitespace-normal";
+export function CellKey({ children }: { children: string }) {
+  return <span className="block text-xs font-normal text-zinc-500 sm:hidden">{children}</span>;
+}
+
 function MarketChainRow({
   state,
   tokenSymbol,
@@ -176,28 +185,22 @@ function MarketChainRow({
             1 {pool.pair.symbol} = {inverse ? formatPrice(inverse) : "—"} {tokenSymbol}
           </p>
           {issuance || cashOut ? (
-            <dl className="mt-4 space-y-1.5 border-t border-zinc-100 pt-3 text-sm">
+            <div className="mt-4 grid grid-cols-2 gap-3 border-t border-zinc-100 pt-3">
               {issuance ? (
-                <div className="flex items-baseline justify-between gap-3">
-                  <dt className="text-zinc-500">Current issuance price</dt>
-                  <dd className="font-medium text-zinc-900">
-                    <Revalidating pending={pending}>
-                      {formatPrice(issuance)} {pool.pair.symbol}
-                    </Revalidating>
-                  </dd>
-                </div>
+                <SummaryRow label="Current issuance price">
+                  <Revalidating pending={pending}>
+                    {formatPrice(issuance)} {pool.pair.symbol}
+                  </Revalidating>
+                </SummaryRow>
               ) : null}
               {cashOut ? (
-                <div className="flex items-baseline justify-between gap-3">
-                  <dt className="text-zinc-500">Current cash out price</dt>
-                  <dd className="font-medium text-zinc-900">
-                    <Revalidating pending={pending}>
-                      {formatPrice(cashOut)} {pool.pair.symbol}
-                    </Revalidating>
-                  </dd>
-                </div>
+                <SummaryRow label="Current cash out price">
+                  <Revalidating pending={pending}>
+                    {formatPrice(cashOut)} {pool.pair.symbol}
+                  </Revalidating>
+                </SummaryRow>
               ) : null}
-            </dl>
+            </div>
           ) : null}
           <p className="mt-3 text-xs text-zinc-400">
             Uniswap V4 pool, {pool.key.fee / 10_000}% fee.
@@ -1025,7 +1028,7 @@ export function AddLiquidityForm({
           Current ~{formatPrice(pool.price ?? NaN)} {pool.pair.symbol}/{tokenSymbol}
         </span>
       </div>
-      <div className="mt-2 flex flex-wrap gap-1 text-[11px]">
+      <div className="mt-2 flex flex-wrap gap-1">
         {(
           [
             ["market", "Make the market"],
@@ -1038,8 +1041,8 @@ export function AddLiquidityForm({
             type="button"
             className={
               mode === id
-                ? "bg-zinc-900 px-2 py-1 text-white"
-                : "border border-zinc-300 px-2 py-1 hover:bg-zinc-50"
+                ? "h-7 border border-teal-500 bg-teal-500 px-2 text-sm text-melon-950"
+                : "h-7 border border-zinc-300 bg-white px-2 text-sm text-zinc-700 hover:bg-zinc-100"
             }
             disabled={disabled}
             onClick={() => {
@@ -1098,10 +1101,10 @@ export function AddLiquidityForm({
       />
       {mode === "range" ? (
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <label className="text-[11px] text-zinc-500">
+          <label className="text-xs text-zinc-600">
             Min price
-            <input
-              className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+            <Input
+              className="mt-1"
               type="number"
               min="0"
               value={minText}
@@ -1112,10 +1115,10 @@ export function AddLiquidityForm({
               }}
             />
           </label>
-          <label className="text-[11px] text-zinc-500">
+          <label className="text-xs text-zinc-600">
             Max price
-            <input
-              className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+            <Input
+              className="mt-1"
               type="number"
               min="0"
               value={maxText}
@@ -1128,16 +1131,16 @@ export function AddLiquidityForm({
           </label>
         </div>
       ) : null}
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <label className="text-[11px] text-zinc-500">
-          <span className="flex items-center justify-between">
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <label className="text-xs text-zinc-600">
+          <span className="flex items-center justify-between gap-2">
             {mode === "market" ? `${tokenSymbol} to sell above the price` : tokenSymbol}
             {mode !== "amounts" && view.derived === "token" ? (
               <span className="text-zinc-400">≈ auto</span>
             ) : null}
           </span>
-          <input
-            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+          <Input
+            className="mt-1"
             type="number"
             min="0"
             placeholder="0"
@@ -1155,8 +1158,8 @@ export function AddLiquidityForm({
             </span>
           ) : null}
         </label>
-        <label className="text-[11px] text-zinc-500">
-          <span className="flex items-center justify-between">
+        <label className="text-xs text-zinc-600">
+          <span className="flex items-center justify-between gap-2">
             {mode === "market"
               ? `${pool.pair.symbol} to buy with below the price`
               : pool.pair.symbol}
@@ -1164,8 +1167,8 @@ export function AddLiquidityForm({
               <span className="text-zinc-400">≈ auto</span>
             ) : null}
           </span>
-          <input
-            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+          <Input
+            className="mt-1"
             type="number"
             min="0"
             placeholder="0"
@@ -1211,11 +1214,11 @@ export function AddLiquidityForm({
         />
       ) : null}
       {minted ? (
-        <div className="mt-2 border border-teal-300 bg-teal-50 p-2 text-xs" role="status">
+        <div className="mt-2 border border-teal-300 p-2 text-xs" role="status">
           <p className="font-medium text-teal-800">Liquidity added.</p>
           <p className="mt-1 text-[11px] text-zinc-600">
             The position is yours and now earns fees. It is listed under &ldquo;Your
-            liquidity&rdquo; below.
+            liquidity&rdquo;.
           </p>
           {explorerBaseUrl(chainId) ? (
             <ExternalLink
@@ -1303,8 +1306,8 @@ export function LiquidityManager({
           {/* Hidden rather than unmounted while empty so the per-chain queries
               keep watching for a position minted from the form above. */}
           <div className={allEmpty ? "hidden" : "mt-2 w-full min-w-0 overflow-auto"}>
-            <Table>
-              <TableHeader>
+            <Table className="max-sm:block">
+              <TableHeader className="max-sm:hidden">
                 <TableRow>
                   <TableHead>Chain</TableHead>
                   <TableHead>Position</TableHead>
@@ -1314,7 +1317,7 @@ export function LiquidityManager({
                   <TableHead />
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody className="max-sm:block">
                 {pooled.map((state) => (
                   <ChainPositionRows
                     key={state.chainId}
@@ -1830,7 +1833,8 @@ function ChainPositionRows({
   };
 
   const chainCell = (
-    <TableCell className="whitespace-nowrap">
+    <TableCell className={`whitespace-nowrap ${STACKED_CELL}`}>
+      <CellKey>Chain</CellKey>
       <span className="inline-flex items-center gap-1.5">
         <ChainLogo chainId={state.chainId} width={14} height={14} />
         {chainName(state.chainId)}
@@ -1840,9 +1844,9 @@ function ChainPositionRows({
 
   if (positions.isLoading) {
     return (
-      <TableRow>
+      <TableRow className={STACKED_ROW}>
         {chainCell}
-        <TableCell colSpan={5} className="text-xs text-zinc-400">
+        <TableCell colSpan={5} className={`text-xs text-zinc-400 ${STACKED_CELL}`}>
           Reading your positions…
         </TableCell>
       </TableRow>
@@ -1851,9 +1855,9 @@ function ChainPositionRows({
   // An incomplete log scan must not read as "you have no positions".
   if (positions.isError) {
     return (
-      <TableRow>
+      <TableRow className={STACKED_ROW}>
         {chainCell}
-        <TableCell colSpan={5} className="text-xs text-red-600">
+        <TableCell colSpan={5} className={`text-xs text-red-600 ${STACKED_CELL}`}>
           Could not verify the complete position history. Nothing has been hidden as an empty
           result.
         </TableCell>
@@ -1884,16 +1888,20 @@ function ChainPositionRows({
       editingMarket !== null ||
       removalOutstanding;
     return (
-      <TableRow key={position.tokenId.toString()} className="align-top">
+      <TableRow key={position.tokenId.toString()} className={`align-top ${STACKED_ROW}`}>
         {chainCell}
-        <TableCell className="font-mono text-xs">#{position.tokenId.toString()}</TableCell>
-        <TableCell className="whitespace-nowrap text-right tabular-nums">
+        <TableCell className={`font-mono text-xs ${STACKED_CELL}`}>
+          <CellKey>Position</CellKey>#{position.tokenId.toString()}
+        </TableCell>
+        <TableCell className={`whitespace-nowrap text-right tabular-nums ${STACKED_CELL}`}>
+          <CellKey>Holdings</CellKey>
           {fmtUnits(position.tokenAmount, 18)} {tokenSymbol}
           <span className="block text-xs text-zinc-500">
             {fmtUnits(position.pairAmount, pool.pair.decimals)} {pool.pair.symbol}
           </span>
         </TableCell>
-        <TableCell className="whitespace-nowrap text-right tabular-nums">
+        <TableCell className={`whitespace-nowrap text-right tabular-nums ${STACKED_CELL}`}>
+          <CellKey>Unclaimed fees</CellKey>
           {fees.isLoading || owed === undefined ? (
             <span className="text-zinc-400">Reading…</span>
           ) : !owed ? (
@@ -1909,7 +1917,8 @@ function ChainPositionRows({
             </>
           )}
         </TableCell>
-        <TableCell className="whitespace-nowrap text-right tabular-nums">
+        <TableCell className={`whitespace-nowrap text-right tabular-nums ${STACKED_CELL}`}>
+          <CellKey>Lifetime fees</CellKey>
           {(() => {
             // The pool forgets what a position already took, so lifetime is
             // only knowable where the index has been accumulating it.
@@ -1931,8 +1940,8 @@ function ChainPositionRows({
             );
           })()}
         </TableCell>
-        <TableCell className="whitespace-nowrap text-right">
-          <span className="inline-flex gap-2">
+        <TableCell className={`whitespace-nowrap text-right ${STACKED_CELL} max-sm:col-span-2`}>
+          <span className="inline-flex flex-wrap gap-2">
             <button
               type="button"
               className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
@@ -1994,21 +2003,24 @@ function ChainPositionRows({
     const key = `market:${group.tokenSide.tokenId.toString()}:${group.pairSide.tokenId.toString()}`;
     const pending = sides.some((side) => claiming === side.tokenId);
     return (
-      <TableRow key={key} className="align-top">
+      <TableRow key={key} className={`align-top ${STACKED_ROW}`}>
         {chainCell}
-        <TableCell className="whitespace-nowrap font-mono text-xs">
+        <TableCell className={`whitespace-nowrap font-mono text-xs ${STACKED_CELL}`}>
+          <CellKey>Position</CellKey>
           Market
           <span className="block text-zinc-500">
             #{group.tokenSide.tokenId.toString()} and #{group.pairSide.tokenId.toString()}
           </span>
         </TableCell>
-        <TableCell className="whitespace-nowrap text-right tabular-nums">
+        <TableCell className={`whitespace-nowrap text-right tabular-nums ${STACKED_CELL}`}>
+          <CellKey>Holdings</CellKey>
           {fmtUnits(tokenHeld, 18)} {tokenSymbol}
           <span className="block text-xs text-zinc-500">
             {fmtUnits(pairHeld, pool.pair.decimals)} {pool.pair.symbol}
           </span>
         </TableCell>
-        <TableCell className="whitespace-nowrap text-right tabular-nums">
+        <TableCell className={`whitespace-nowrap text-right tabular-nums ${STACKED_CELL}`}>
+          <CellKey>Unclaimed fees</CellKey>
           {fees.isLoading || !feesKnown ? (
             <span className="text-zinc-400">Reading…</span>
           ) : !feesUsable ? (
@@ -2024,7 +2036,8 @@ function ChainPositionRows({
             </>
           )}
         </TableCell>
-        <TableCell className="whitespace-nowrap text-right tabular-nums">
+        <TableCell className={`whitespace-nowrap text-right tabular-nums ${STACKED_CELL}`}>
+          <CellKey>Lifetime fees</CellKey>
           {!lifetimeKnown ? (
             <span className="text-zinc-400">—</span>
           ) : lifetimeToken <= 0n && lifetimePair <= 0n ? (
@@ -2038,8 +2051,8 @@ function ChainPositionRows({
             </>
           )}
         </TableCell>
-        <TableCell className="whitespace-nowrap text-right">
-          <span className="inline-flex gap-2">
+        <TableCell className={`whitespace-nowrap text-right ${STACKED_CELL} max-sm:col-span-2`}>
+          <span className="inline-flex flex-wrap gap-2">
             <button
               type="button"
               className="border border-zinc-300 px-2 py-1 text-xs hover:bg-zinc-50 disabled:opacity-50"
@@ -2272,8 +2285,8 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
         <h3 className="font-medium text-zinc-900">Trading pool</h3>
         <p className="mt-1 text-sm text-zinc-500">
           A payment can buy existing {tokenSymbol} here when it returns more than creating new
-          tokens. Traders can profit from differences between the market, new-token, and cash-out
-          prices. This can bring those prices closer; it does not guarantee a price range.
+          tokens. Trading can bring the market, new-token and cash-out prices closer. It does not
+          guarantee a price range.
         </p>
         <div className="mt-2">{content("market")}</div>
       </div>
@@ -2281,8 +2294,7 @@ export function AmmCard({ chains, tokenSymbol }: { chains: ChainProject[]; token
       <div className="border border-teal-200 bg-teal-50 p-4">
         <h3 className="font-medium text-zinc-900">Liquidity</h3>
         <p className="mt-1 text-sm text-zinc-500">
-          Tokens offered for trading are called liquidity. These amounts sit in price ranges that
-          include the current market price.
+          Tokens offered for trading, in price ranges that include the current market price.
         </p>
         <div className="mt-2">{content("liquidity")}</div>
       </div>

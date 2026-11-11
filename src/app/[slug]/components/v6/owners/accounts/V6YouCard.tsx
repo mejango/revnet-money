@@ -42,7 +42,13 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAccount, useReadContract, useReadContracts } from "wagmi";
 import { ProjectItem } from "../../shared";
-import { AddLiquidityForm, LiquidityManager } from "../market/AmmCard";
+import {
+  AddLiquidityForm,
+  CellKey,
+  LiquidityManager,
+  STACKED_CELL,
+  STACKED_ROW,
+} from "../market/AmmCard";
 import {
   fetchAmmPresence,
   fetchAmmReferences,
@@ -326,8 +332,8 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
         )
       ) : (
         <div className="overflow-auto">
-          <Table>
-            <TableHeader>
+          <Table className="max-sm:block">
+            <TableHeader className="max-sm:hidden">
               <TableRow>
                 <TableHead>Chain</TableHead>
                 <TableHead className="text-right">Your balance</TableHead>
@@ -341,7 +347,7 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                 <TableHead className="text-right">LP</TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="max-sm:block">
               {held.map((b) => (
                 <YouChainRow
                   key={b.chainId}
@@ -362,10 +368,13 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
               ))}
             </TableBody>
             {held.length > 1 && (
-              <TableFooter>
-                <TableRow>
-                  <TableCell>{balancesIncomplete ? "Partial total" : "Total"}</TableCell>
-                  <TableCell className="text-right tabular-nums">
+              <TableFooter className="max-sm:block">
+                <TableRow className={STACKED_ROW}>
+                  <TableCell className={STACKED_CELL}>
+                    {balancesIncomplete ? "Partial total" : "Total"}
+                  </TableCell>
+                  <TableCell className={`text-right tabular-nums ${STACKED_CELL}`}>
+                    <CellKey>Your balance</CellKey>
                     <CellWithSub
                       main={`${formatUnits(totalBalance, projectTokenDecimals, {
                         fractionDigits: 2,
@@ -373,7 +382,8 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                       sub={subFor(anyCredit, anyErc20)}
                     />
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className={`text-right tabular-nums ${STACKED_CELL}`}>
+                    <CellKey>Cash out value</CellKey>
                     {cashComplete ? (
                       <CellWithSub
                         main={fmtBase(totalCashout)}
@@ -383,10 +393,11 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                       "—"
                     )}
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">
+                  <TableCell className={`text-right tabular-nums ${STACKED_CELL}`}>
+                    <CellKey>Max loan</CellKey>
                     {locked ? "Locked" : loanComplete ? fmtBase(totalMaxLoan) : "—"}
                   </TableCell>
-                  <TableCell />
+                  <TableCell className="max-sm:hidden" />
                 </TableRow>
               </TableFooter>
             )}
@@ -540,7 +551,7 @@ function subFor(hasCredit: boolean, hasErc20: boolean) {
 
 function CellWithSub({ main, sub }: { main: string; sub?: string }) {
   return (
-    <span className="inline-flex flex-col items-end">
+    <span className="inline-flex flex-col items-end max-sm:items-start">
       <span>{main}</span>
       {sub && <span className="text-xs text-zinc-400">{sub}</span>}
     </span>
@@ -578,8 +589,8 @@ function LiquidityChainPill({
       type="button"
       className={
         selected
-          ? "flex items-center gap-1.5 bg-zinc-900 px-2.5 py-1.5 text-xs text-white"
-          : "flex items-center gap-1.5 border border-zinc-300 px-2.5 py-1.5 text-xs hover:bg-zinc-50"
+          ? "flex h-7 items-center gap-1.5 border border-teal-500 bg-teal-500 px-2 text-sm text-melon-950"
+          : "flex h-7 items-center gap-1.5 border border-zinc-300 bg-white px-2 text-sm text-zinc-700 hover:bg-zinc-100"
       }
       onClick={onSelect}
     >
@@ -587,7 +598,7 @@ function LiquidityChainPill({
       {chainName(state.chainId)}
       {hasLiquidity ? (
         <span
-          className="h-1.5 w-1.5 rounded-full bg-teal-400"
+          className="h-1.5 w-1.5 bg-teal-400"
           title="You have liquidity on this network"
           aria-label="You have liquidity on this network"
         />
@@ -724,14 +735,16 @@ function YouChainRow({
   };
 
   return (
-    <TableRow>
-      <TableCell className="whitespace-nowrap">
+    <TableRow className={STACKED_ROW}>
+      <TableCell className={`whitespace-nowrap ${STACKED_CELL}`}>
+        <CellKey>Chain</CellKey>
         <div className="flex items-center gap-2">
           <ChainLogo chainId={chainId} width={15} height={15} />
           <span>{chainDisplayName(chainId)}</span>
         </div>
       </TableCell>
-      <TableCell className="text-right tabular-nums whitespace-nowrap">
+      <TableCell className={`text-right tabular-nums whitespace-nowrap ${STACKED_CELL}`}>
+        <CellKey>Your balance</CellKey>
         <CellWithSub
           main={`${formatUnits(balanceValue, projectTokenDecimals, {
             fractionDigits: 2,
@@ -739,15 +752,20 @@ function YouChainRow({
           sub={credit != null ? subFor(credit > 0n, balanceValue > credit) : undefined}
         />
       </TableCell>
-      <TableCell className="text-right tabular-nums whitespace-nowrap">
+      <TableCell className={`text-right tabular-nums whitespace-nowrap ${STACKED_CELL}`}>
+        <CellKey>Cash out value</CellKey>
         {cashout != null ? (
           <CellWithSub main={fmtBase(cashout)} sub={locked ? "locked" : undefined} />
         ) : (
           "—"
         )}
       </TableCell>
-      <TableCell className="text-right tabular-nums whitespace-nowrap">{loanCell()}</TableCell>
-      <TableCell className="text-right whitespace-nowrap">
+      <TableCell className={`text-right tabular-nums whitespace-nowrap ${STACKED_CELL}`}>
+        <CellKey>Max loan</CellKey>
+        {loanCell()}
+      </TableCell>
+      <TableCell className={`text-right whitespace-nowrap ${STACKED_CELL}`}>
+        <CellKey>LP</CellKey>
         <YourLpCell ammState={ammState} onManage={onManage} />
       </TableCell>
     </TableRow>

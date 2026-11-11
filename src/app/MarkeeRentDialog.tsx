@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { SummaryRow } from "@/components/ui/TxProgress";
 import { WalletConnectButton } from "@/components/WalletButton";
 import { useMarkee } from "@/hooks/useMarkee";
 import {
@@ -116,7 +117,7 @@ export function MarkeeRentDialog({
         </DialogHeader>
 
         {!markee.board && !markee.loading && !markee.boardAddress && (
-          <div className="space-y-3 border border-teal-200 bg-teal-50 p-4 text-sm">
+          <div className="space-y-3 border border-teal-200 p-4 text-sm">
             <p>This advertisement needs to be set up before it can accept streams.</p>
             {markee.canCreateBoard ? (
               <Button
@@ -168,12 +169,12 @@ export function MarkeeRentDialog({
             />
           </div>
           {preview && (
-            <div className="border border-teal-200 bg-teal-50 p-4">
+            <div className="border border-teal-200 p-4">
               <p className="mb-2 text-xs text-teal-700">Preview</p>
               <p className="whitespace-pre-wrap break-words text-base">{message.trim()}</p>
             </div>
           )}
-          <div className="space-y-3 border border-teal-200 bg-teal-50 p-4">
+          <div className="space-y-3 border border-teal-200 p-4">
             <label htmlFor="markee-monthly-rate" className="block text-sm">
               Your rate
             </label>
@@ -190,21 +191,15 @@ export function MarkeeRentDialog({
               <span className="shrink-0 text-sm">ETH / month</span>
             </div>
             {markee.board && (
-              <dl className="space-y-1 text-xs text-teal-700">
-                <div className="flex flex-wrap justify-between gap-2">
-                  <dt>Minimum</dt>
-                  <dd>
-                    {formatEther(roundUpToNearestThousandth(markee.board.minimumMonthlyRate))} ETH /
-                    month
-                  </dd>
-                </div>
-                <div className="flex flex-wrap justify-between gap-2">
-                  <dt>Leading rate</dt>
-                  <dd>
-                    {formatEther(ratePerSecToMonthly(markee.board.effectiveTopRate))} ETH / month
-                  </dd>
-                </div>
-              </dl>
+              <div className="grid grid-cols-2 gap-3">
+                <SummaryRow label="Minimum">
+                  {formatEther(roundUpToNearestThousandth(markee.board.minimumMonthlyRate))} ETH /
+                  month
+                </SummaryRow>
+                <SummaryRow label="Leading rate">
+                  {formatEther(ratePerSecToMonthly(markee.board.effectiveTopRate))} ETH / month
+                </SummaryRow>
+              </div>
             )}
             <p className="text-xs leading-relaxed text-teal-700">
               The leading message is featured. Beneficiary proceeds stream as ETHx to team.rev.eth

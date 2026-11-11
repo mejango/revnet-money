@@ -73,6 +73,22 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
   );
   const [exportBusy, setExportBusy] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
+  /** A verified export whose warnings still need a yes before it downloads. */
+  const [warnedExport, setWarnedExport] = useState<Awaited<
+    ReturnType<typeof buildRevnetDraft>
+  > | null>(null);
+
+  const download = (file: Awaited<ReturnType<typeof buildRevnetDraft>>["file"]) => {
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(file, null, 2)], { type: "application/json" }),
+    );
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = revnetDraftFileName(file.data.name);
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setExportStatus("Exported .jb. Import it from Create a revnet to review and edit.");
+  };
 
   const exportDraft = async () => {
     if (exportBusy || !operator || !chainId) return;
@@ -106,22 +122,12 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
               ];
         }),
       });
-      if (
-        result.warnings.length &&
-        !window.confirm(`${result.warnings.join("\n\n")}\n\nExport this editable .jb anyway?`)
-      ) {
-        setExportStatus("Cancelled");
+      if (result.warnings.length) {
+        setExportStatus("");
+        setWarnedExport(result);
         return;
       }
-      const url = URL.createObjectURL(
-        new Blob([JSON.stringify(result.file, null, 2)], { type: "application/json" }),
-      );
-      const anchor = document.createElement("a");
-      anchor.href = url;
-      anchor.download = revnetDraftFileName(result.file.data.name);
-      anchor.click();
-      URL.revokeObjectURL(url);
-      setExportStatus("Exported .jb. Import it from Create a revnet to review and edit.");
+      download(result.file);
     } catch (error) {
       setExportStatus(
         error instanceof Error ? error.message : "Could not safely reconstruct this revnet.",
@@ -144,20 +150,49 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
           review and edit a copy before launching.
         </p>
         {exportStatus ? <p className="mt-3 text-sm text-zinc-600">{exportStatus}</p> : null}
-        <Button
-          className="mt-4"
-          variant="outline"
-          disabled={
-            exportBusy ||
-            !operator ||
-            !chainId ||
-            autoIssuancesQuery.isLoading ||
-            rulesetsQuery.isLoading
-          }
-          onClick={() => void exportDraft()}
-        >
-          {exportBusy ? "Verifying…" : "Export .jb"}
-        </Button>
+        {warnedExport ? (
+          <div role="alert" className="mt-3 space-y-3 text-sm text-zinc-900">
+            {warnedExport.warnings.map((warning) => (
+              <p key={warning}>{warning}</p>
+            ))}
+            <p>Export this editable .jb anyway?</p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  download(warnedExport.file);
+                  setWarnedExport(null);
+                }}
+              >
+                Export anyway
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setWarnedExport(null);
+                  setExportStatus("Cancelled");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            className="mt-4"
+            variant="outline"
+            disabled={
+              exportBusy ||
+              !operator ||
+              !chainId ||
+              autoIssuancesQuery.isLoading ||
+              rulesetsQuery.isLoading
+            }
+            onClick={() => void exportDraft()}
+          >
+            {exportBusy ? "Verifying…" : "Export .jb"}
+          </Button>
+        )}
         {!operator && !operatorQuery.isLoading ? (
           <p className="mt-2 text-xs text-zinc-500">
             The operator&apos;s records must load before these settings can be exported.

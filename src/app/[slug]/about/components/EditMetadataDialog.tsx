@@ -573,8 +573,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                 <DialogHeader>
                   <DialogTitle>Edit metadata</DialogTitle>
                   <DialogDescription>
-                    Apply your edits across the listed chains. Unchanged fields and custom
-                    properties on each chain are preserved.
+                    Saves on {chainNames}. Fields you leave unchanged stay as they are.
                   </DialogDescription>
                 </DialogHeader>
 
@@ -658,7 +657,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                     placeholder="Shown to supporters before they pay. Leave empty for none."
                   />
 
-                  <details className="border-2 border-melon-300 bg-melon-25 px-3 py-2">
+                  <details className="border border-melon-300 px-3 py-2">
                     <summary className="cursor-pointer select-none text-md font-semibold leading-6">
                       Advanced
                     </summary>
@@ -669,7 +668,7 @@ export function EditMetadataDialog({ projects, triggerVariant = "outline" }: Pro
                             id="customProperties"
                             name="customProperties"
                             label="Custom properties"
-                            description="Any other fields stored with this project, as JSON. This is the full set: remove a key to delete it, leave it empty for none."
+                            description="Other fields stored with this project, as JSON. Removing a key deletes it. Leaving this empty deletes them all."
                             component="textarea"
                             rows={6}
                             spellCheck={false}

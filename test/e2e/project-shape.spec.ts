@@ -540,7 +540,8 @@ test("deployment diagnostics are available from Extras without a wallet", async 
   await expect(dialog.getByRole("heading", { name: "Onchain deployment" })).toBeVisible();
   await expect(dialog.getByText("Project exists", { exact: false })).toBeVisible();
   await expect(dialog.getByRole("heading", { name: "Project data service" })).toBeVisible();
-  await expect(dialog.getByRole("textbox", { name: "Operator address (optional)" })).toBeVisible();
+  await dialog.getByRole("checkbox", { name: "Check an operator's shop permissions" }).check();
+  await expect(dialog.getByRole("textbox", { name: "Operator address" })).toBeVisible();
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await dialog.getByRole("button", { name: "Copy diagnostics" }).click();
   await expect(dialog.getByText("Diagnostics copied.")).toBeVisible();

@@ -80,6 +80,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
   const [error, setError] = useState<string | null>(null);
 
   const candidates = extensionCandidateChains(rows);
+  const extendLabel = targetChainId ? `Extend to ${chainName(Number(targetChainId))}` : "Extend";
   const existingChains = rows.map((row) => chainName(row.chainId)).join(", ");
   const context = [
     {
@@ -163,7 +164,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
       if (homeHash !== targetHash) {
         throw new Error(
           `Project #${projectId} on ${chainName(target)} was deployed with a DIFFERENT ` +
-            "configuration, so its suckers can never pair with this revnet's. Deploy the " +
+            "configuration, so it can never bridge with this revnet. Deploy the " +
             "revnet there with the byte-identical original configuration first.",
         );
       }
@@ -196,7 +197,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
       const result = await runWrites({
         writes,
         account: address,
-        label: "Deploy suckers",
+        label: extendLabel,
         context,
         onProgress: setStatus,
       });
@@ -204,7 +205,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
         // The proposals carry this salt; a retry must find them, not mint a new one.
         const queued = result.safeQueued + result.safeConfirmed;
         const message =
-          `Sucker deployment proposed to the operator Safe on ${queued} chain${queued === 1 ? "" : "s"}. ` +
+          `Extension proposed to the operator Safe on ${queued} chain${queued === 1 ? "" : "s"}. ` +
           "Every chain's proposal must execute for the peers to pair; the Safe queue card above lists them.";
         setStatus(message);
         toast({ title: "Proposed to the operator Safe", description: message });
@@ -213,7 +214,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
       }
       // Every chain landed, so the next extension should start from a new salt.
       clearExtensionSalt(address, projectId, target);
-      setStatus(`Suckers deployed on ${result.chains} chain${result.chains === 1 ? "" : "s"}.`);
+      setStatus(`Extended to ${chainName(target)}.`);
       toast({ title: `Extended to ${chainName(target)}` });
       setReview(false);
       setOpen(false);
@@ -240,7 +241,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
           This revnet runs on {rows.length} chain{rows.length === 1 ? "" : "s"}
           {rows.length > 0 ? ": " : ""}
           {rows.map((row) => chainName(row.chainId)).join(", ")}.
-          {rows.length > 1 ? " Suckers bridge its token between them." : null}
+          {rows.length > 1 ? " Its token can bridge between them." : null}
         </p>
         {candidates.length === 0 ? (
           <p className="mt-2 text-sm text-zinc-500">
@@ -260,7 +261,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
             Extend to another chain
           </Button>
         ) : (
-          <div className="mt-3 bg-melon-100 p-3">
+          <div className="mt-3 border-t border-melon-200 pt-3">
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm font-medium">Extend to another chain</p>
               <button
@@ -273,13 +274,12 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
               </button>
             </div>
             <p className="text-xs text-zinc-500 mt-2">
-              Only the revnet's operator can extend it, and its rules must allow new suckers. The
-              revnet must already be deployed on the target chain with its original configuration.
-              One transaction runs there and one on each existing chain, all from this wallet.
+              Only the revnet's operator can extend it, and its rules must allow it. Deploy the
+              revnet on the target chain with its original configuration first.
             </p>
-            <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="mt-3 grid gap-3">
               <Select value={targetChainId} onValueChange={(v) => setTargetChainId(v)}>
-                <SelectTrigger aria-label="Target chain">
+                <SelectTrigger aria-label="Target chain" className="w-fit gap-2">
                   <SelectValue placeholder="Target chain" />
                 </SelectTrigger>
                 <SelectContent>
@@ -293,19 +293,22 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
                   ))}
                 </SelectContent>
               </Select>
-              <ProjectIdInput
-                value={targetProjectId}
-                onChange={(value) => {
-                  setTargetProjectId(value);
-                  setError(null);
-                }}
-                chainId={Number(targetChainId) || undefined}
-                disabled={busy}
-                placeholder="Project ID on that chain"
-                ariaLabel="Project ID on the target chain"
-              />
+              <label className="block text-xs text-zinc-600">
+                Project ID on that chain
+                <ProjectIdInput
+                  value={targetProjectId}
+                  onChange={(value) => {
+                    setTargetProjectId(value);
+                    setError(null);
+                  }}
+                  chainId={Number(targetChainId) || undefined}
+                  disabled={busy}
+                  ariaLabel="Project ID on the target chain"
+                  className="mt-1"
+                />
+              </label>
             </div>
-            <label className="mt-3 flex items-start gap-2 border border-amber-300 bg-amber-50 rounded p-3">
+            <label className="mt-3 flex items-start gap-2 border border-amber-300 p-3">
               <input
                 type="checkbox"
                 checked={ack}
@@ -328,7 +331,7 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
                 onClick={beginReview}
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
-                Deploy suckers
+                {extendLabel}
               </ButtonWithWallet>
             </div>
             {status && !review ? <p className="text-xs text-zinc-500 mt-2">{status}</p> : null}
@@ -340,10 +343,10 @@ export function SuckerExtensionCard({ rows }: { rows: ChainProjectRow[] }) {
                   setReview(false);
                   setProposed(false);
                 }}
-                title="Confirm suckers"
+                title="Confirm the extension"
                 steps={[
                   {
-                    title: "Deploy suckers",
+                    title: extendLabel,
                     detail: `One transaction on ${chainName(Number(targetChainId))} and one on each existing chain, bundled together when the networks are all supported mainnets or all supported testnets. Safe and other networks need each chain deployed and confirmed separately.`,
                   },
                 ]}

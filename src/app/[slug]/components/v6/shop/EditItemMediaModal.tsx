@@ -81,7 +81,7 @@ export function EditItemMediaModal({
     setPhase("preparing");
     try {
       if (!file && !/^(?:ipfs:\/\/|https:\/\/)\S+$/u.test(uri.trim()))
-        throw new Error("Upload media or enter an HTTPS or IPFS media URI.");
+        throw new Error("Upload media or enter an https:// or ipfs:// link.");
       if (file && file.size > MAX_MEDIA_BYTES) throw new Error("Media must be 500 MB or smaller.");
       const destinations = chosen;
       if (!destinations.length) throw new Error("Choose at least one chain and item.");
@@ -158,8 +158,7 @@ export function EditItemMediaModal({
         <DialogHeader>
           <DialogTitle>Replace item media</DialogTitle>
           <DialogDescription>
-            Choose the matching item on each chain. Item names, attributes, prices and inventory
-            stay as they are; artwork is replaced.
+            Choose the matching item on each chain. Only the artwork changes.
           </DialogDescription>
         </DialogHeader>
         {phase === "done" ? (
@@ -168,7 +167,7 @@ export function EditItemMediaModal({
           <>
             <p className="text-sm">{tierDisplayName(media, tier.id)}</p>
             {pending || phase === "pending" ? (
-              <div className="space-y-2 bg-melon-50 p-3">
+              <div className="space-y-2 border border-zinc-200 p-3">
                 <p className="text-sm">
                   A saved media update is awaiting completion. Continue it without resubmitting
                   confirmed chains.
@@ -198,13 +197,13 @@ export function EditItemMediaModal({
                             return next;
                           })
                         }
+                        className="h-4 w-4"
                       />
-                      Project #{destination.projectId.toString()} on{" "}
                       {chainDisplayName(destination.chainId)}
                     </label>
                     {selected ? (
                       <select
-                        className="border border-zinc-300 bg-white p-2 text-sm"
+                        className="min-w-0 max-w-full border-2 border-melon-300 bg-melon-25 p-2 text-sm"
                         aria-label={`Item on ${chainDisplayName(destination.chainId)}`}
                         value={targets[key] ?? ""}
                         onChange={(event) =>
@@ -232,30 +231,34 @@ export function EditItemMediaModal({
                   Shop unavailable on {chainDisplayName(destination.chainId)}.
                 </p>
               ))}
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="cursor-pointer border border-zinc-300 bg-white px-3 py-2 text-xs font-medium hover:border-zinc-500">
+                  {file ? "Change media" : "Upload media"}
+                  <input
+                    className="sr-only"
+                    type="file"
+                    accept="image/*,video/*,audio/*,application/pdf,text/*"
+                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  />
+                </label>
+                {file ? <span className="min-w-0 text-xs wrap-anywhere">{file.name}</span> : null}
+              </div>
               <label className="block text-sm">
-                Upload replacement media
-                <input
-                  className="mt-2 block w-full text-sm"
-                  type="file"
-                  accept="image/*,video/*,audio/*,application/pdf,text/*"
-                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-                />
-              </label>
-              <label className="block text-sm">
-                Or use a media URI
+                Or use a link
                 <Input
                   aria-label="Replacement media URI"
                   value={uri}
                   onChange={(event) => setUri(event.target.value)}
                   placeholder="ipfs://… or https://…"
+                  className="mt-2"
                 />
               </label>
               {!file ? (
-                <label className="flex items-center gap-3 text-sm">
+                <label className="block text-sm">
                   Media type
                   <select
                     aria-label="Replacement media type"
-                    className="border border-zinc-300 bg-white p-2"
+                    className="mt-2 block border-2 border-melon-300 bg-melon-25 p-2"
                     value={mediaType}
                     onChange={(event) => setMediaType(event.target.value)}
                   >
@@ -298,7 +301,7 @@ export function EditItemMediaModal({
           steps={[
             {
               title: "Replace selected item media",
-              detail: "One reviewed call per selected collection.",
+              detail: "One transaction per selected chain.",
             },
           ]}
         />

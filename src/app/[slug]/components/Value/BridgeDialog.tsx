@@ -1,6 +1,7 @@
 "use client";
 
 import { chainDisplayName } from "@/app/constants";
+import { AllowedDecreaseField } from "@/components/AllowedDecreaseField";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
 import {
@@ -21,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TxProgress } from "@/components/ui/TxProgress";
+import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import { toast } from "@/components/ui/use-toast";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
@@ -37,7 +38,6 @@ import type { Project } from "@/lib/bendystraw/types";
 import {
   buildProtectedBridgePrepareTx,
   quoteBridgePrepare,
-  slippagePercentToBps,
   verifyBridgePrepareDestination,
 } from "@/lib/bridgePrepare";
 import { revalidateCacheTag } from "@/lib/cache";
@@ -72,7 +72,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
   // Where the amount came from: typed, a share option (Max), or the app's seed. The write's
   // intent keys an option by its name, since the amount it fills follows the balance.
   const [amount, setAmount] = useState<string>();
-  const [slippagePercent, setSlippagePercent] = useState("1");
+  const [slippageBps, setSlippageBps] = useState(100);
   const { token } = useJBTokenContext();
   const baseToken = useProjectBaseToken();
   const tokenSymbol = formatTokenSymbol(token);
@@ -123,13 +123,6 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       return undefined;
     }
   }, [amount, tokenDecimals]);
-  const slippageBps = useMemo(() => {
-    try {
-      return slippagePercentToBps(slippagePercent);
-    } catch {
-      return undefined;
-    }
-  }, [slippagePercent]);
   const terminalToken = useMemo(() => {
     try {
       return project.token ? getAddress(project.token) : undefined;
@@ -154,7 +147,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       viewedAddress,
       amountValue?.toString(),
       terminalToken,
-      slippageBps?.toString(),
+      slippageBps,
     ],
     enabled:
       !!publicClient &&
@@ -164,8 +157,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       !!viewedAddress &&
       !!suckerPair &&
       amountValue !== undefined &&
-      !!terminalToken &&
-      slippageBps !== undefined,
+      !!terminalToken,
     queryFn: async () => {
       if (
         !publicClient ||
@@ -179,15 +171,13 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       ) {
         throw new Error("The bridge quote is incomplete.");
       }
-      if (slippageBps === undefined) throw new Error("Enter a valid allowed decrease.");
-
       return quoteBridgePrepare(publicClient, {
         chainId: sourceChainId,
         projectId: BigInt(project.projectId),
         sucker: suckerPair.local,
         projectTokenCount: amountValue,
         terminalToken,
-        slippageBps,
+        slippageBps: BigInt(slippageBps),
         beneficiary: viewedAddress,
         destinationClient,
         destinationChainId: targetChainId,
@@ -458,7 +448,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         if (!open) {
           reset();
           setAmount(undefined);
-          setSlippagePercent("1");
+          setSlippageBps(100);
           setSourceChainId(sourceChains[0]);
           setTargetChainId(undefined);
           revalidateCacheTag("suckerTransactions", 8000).then(router.refresh);
@@ -470,8 +460,8 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
         <DialogHeader>
           <DialogTitle>Move between networks</DialogTitle>
           <DialogDescription>
-            Move your tokens and their share of revnet funds to another network. This transfer,
-            called bridging, takes more than one step.
+            Move your tokens and their share of revnet funds to another network. The move takes more
+            than one step.
           </DialogDescription>
         </DialogHeader>
 
@@ -495,7 +485,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                 }}
                 disabled={isDisabled}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-fit gap-2">
                   <SelectValue placeholder="Choose network..." id="sourceChainId">
                     <div className="flex items-center gap-2">
                       <ChainLogo chainId={sourceChainId} />
@@ -537,7 +527,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                 }}
                 disabled={isDisabled}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-fit gap-2">
                   <SelectValue placeholder="Choose network..." id="targetChainId">
                     {targetChainId && (
                       <div className="flex items-center gap-2">
@@ -569,7 +559,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                 </SelectContent>
               </Select>
             </div>
-            <div className="">
+            <div>
               <Label htmlFor="amount" className="text-zinc-900">
                 Amount
               </Label>
@@ -599,58 +589,39 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                         pct === 100 ? maxAmount : (Number(maxAmount) * (pct / 100)).toFixed(8),
                       );
                     }}
-                    className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 rounded-md bg-white hover:bg-zinc-100"
+                    className="h-10 px-3 text-sm text-zinc-700 border border-zinc-300 bg-white hover:bg-zinc-100"
                   >
                     {pct === 100 ? "Max" : `${pct}%`}
                   </button>
                 ))}
               </div>
             </div>
-            <div>
-              <Label htmlFor="bridge-slippage" className="text-zinc-900">
-                Allowed decrease
-              </Label>
-              <div className="relative">
-                <Input
-                  id="bridge-slippage"
-                  name="bridge-slippage"
-                  value={slippagePercent}
-                  onChange={(event) => setSlippagePercent(event.target.value.trim())}
-                  disabled={isDisabled}
-                  inputMode="decimal"
-                  min="0"
-                  max="5"
-                  step="0.1"
-                  type="number"
-                />
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 z-10">
-                  <span className="text-zinc-500 sm:text-md">%</span>
-                </div>
-              </div>
+            <fieldset disabled={isDisabled} className="min-w-0 sm:col-span-2">
+              <AllowedDecreaseField
+                bps={slippageBps}
+                onChange={setSlippageBps}
+                maxBps={500}
+                className=""
+              />
               <p className="mt-1 text-xs text-zinc-500">
                 The transfer stops if the amount falls below your minimum.
               </p>
-            </div>
-            <div
-              className="rounded-md border sm:col-span-2 border-zinc-200 bg-zinc-50 p-3 text-sm"
-              aria-live="polite"
-            >
+            </fieldset>
+            <div className="border border-melon-300 p-3 text-sm sm:col-span-2" aria-live="polite">
               {prepareQuote.isPending && prepareQuote.fetchStatus === "fetching" ? (
                 <span className="text-zinc-600">
                   Checking how much revnet funding moves with your tokens…
                 </span>
               ) : prepareQuote.data ? (
-                <div className="grid gap-1 sm:grid-cols-2">
-                  <span className="text-zinc-600">Estimated funding moved</span>
-                  <span className="font-medium sm:text-right">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <SummaryRow label="Estimated funding moved">
                     {formatUnits(
                       prepareQuote.data.netReclaimAmount,
                       prepareQuote.data.tokenDecimals,
                     )}{" "}
                     {backingTokenSymbol}
-                  </span>
-                  <span className="text-zinc-600">Minimum funding moved</span>
-                  <span className="font-medium sm:text-right">
+                  </SummaryRow>
+                  <SummaryRow label="Minimum funding moved">
                     {prepareQuote.data.minTokensReclaimed === 0n ? (
                       NO_FUNDING_MOVES
                     ) : (
@@ -662,19 +633,17 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                         {backingTokenSymbol}
                       </>
                     )}
-                  </span>
+                  </SummaryRow>
                 </div>
               ) : (
                 <span className="text-amber-700">
                   {prepareQuote.error instanceof Error
                     ? prepareQuote.error.message
-                    : slippageBps === undefined
-                      ? "Enter an allowed decrease from 0% to 5%."
-                      : !targetChainId || amountValue === undefined
-                        ? "Choose both networks and an amount to see the minimum funding moved."
-                        : !viewedAddress
-                          ? "Connect a wallet to see the minimum funding moved."
-                          : "Couldn't estimate a move between these networks."}
+                    : !targetChainId || amountValue === undefined
+                      ? "Choose both networks and an amount to see the minimum funding moved."
+                      : !viewedAddress
+                        ? "Connect a wallet to see the minimum funding moved."
+                        : "Couldn't estimate a move between these networks."}
                 </span>
               )}
             </div>
@@ -727,7 +696,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
                     {
                       key: "approve",
                       title: "Let the bridge use your tokens",
-                      detail: "This lets the bridge contract receive the amount shown.",
+                      detail: "Lets the bridge take the amount shown.",
                     },
                   ]
                 : []),

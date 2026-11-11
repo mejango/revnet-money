@@ -263,7 +263,7 @@ describe("operator Account and Safe queue loading", () => {
     const fetch = serveQueues();
     renderCards([1]);
 
-    expect(await section("Account").findByText("EOA", { exact: true })).toBeVisible();
+    expect(await section("Account").findByText("Wallet", { exact: true })).toBeVisible();
     await waitFor(() =>
       expect(screen.queryByRole("heading", { name: "Pending multisig transactions" })).toBeNull(),
     );

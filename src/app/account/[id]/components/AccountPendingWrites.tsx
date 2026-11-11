@@ -69,11 +69,11 @@ function HeldWritesOn({ chainId, account }: { chainId: number; account: Address 
     <>
       <HeldWritesNotice
         items={items}
-        className="space-y-2 border border-melon-200 bg-melon-50 p-3 text-xs text-zinc-700 [&_button]:font-medium [&_button]:text-teal-700 [&_button]:underline"
+        className="space-y-2 border border-melon-200 p-3 text-xs text-zinc-700 [&_button]:font-medium [&_button]:text-teal-700 [&_button]:underline"
       />
       {client
         ? unhashed.map(({ key, handle }) => (
-            <div key={key} className="border border-melon-200 bg-melon-50 p-3">
+            <div key={key} className="border border-melon-200 p-3">
               <LostReplyHashField
                 id={`held-hash-${key}`}
                 onCheck={async (hash) => {
@@ -120,9 +120,9 @@ function InFlightCard({ activity, isSelf }: { activity: TransactionActivity; isS
     activity.status !== "success" &&
     activity.relayrPaymentStatus !== "expired";
   return (
-    <div className="border border-melon-200 bg-melon-50 p-3">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+    <div className="border border-melon-200 p-3">
+      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+        <div className="min-w-0">
           <p className="text-[11px] font-bold uppercase text-melon-700">{statusLabel(activity)}</p>
           <p className="mt-0.5 text-sm font-medium text-zinc-800">
             {formatTransactionMessage(activity.title)}

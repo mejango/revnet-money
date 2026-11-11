@@ -11,6 +11,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -56,8 +57,8 @@ export function V6BurnTokensDialog({
         <DialogHeader>
           <DialogTitle>Burn tokens</DialogTitle>
           <DialogDescription>
-            Permanently remove tokens from supply without receiving treasury funds. Credits are
-            burned before claimed ERC-20 tokens. This cannot be undone.
+            Permanently remove tokens from supply. You receive no revnet funds. This cannot be
+            undone.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-3 mt-2">
@@ -103,6 +104,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
   };
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
+  const [memoOpen, setMemoOpen] = useState(false);
   const [isSuccess, setSuccess] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   // Busy from Confirm: the balance and controller reads before the wallet
@@ -194,7 +196,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
   }
 
   return (
-    <div className="border border-zinc-200 bg-zinc-50 p-3">
+    <div className="border border-zinc-200 p-3">
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="flex items-center gap-2">
           <ChainLogo chainId={row.chainId} width={16} height={16} />
@@ -208,20 +210,35 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
           Max {formatUnits(row.balance, JB_TOKEN_DECIMALS, { fractionDigits: 4 })}
         </button>
       </div>
-      <input
-        className="mt-2 w-full border border-zinc-300 bg-white px-3 py-2 text-sm"
+      <Input
+        className="mt-2"
         inputMode="decimal"
         placeholder={`Amount of ${tokenSymbol}`}
         value={amount}
         onChange={(event) => setAmount(event.target.value)}
       />
-      <input
-        className="mt-2 w-full border border-zinc-300 bg-white px-3 py-2 text-sm"
-        placeholder="Memo (optional)"
-        maxLength={256}
-        value={memo}
-        onChange={(event) => setMemo(event.target.value)}
-      />
+      <label className="mt-2 flex items-center gap-2 text-sm font-medium text-zinc-800">
+        <input
+          type="checkbox"
+          className="h-4 w-4"
+          checked={memoOpen}
+          onChange={() => {
+            if (memoOpen) setMemo("");
+            setMemoOpen(!memoOpen);
+          }}
+        />
+        Add a note
+      </label>
+      {memoOpen ? (
+        <Input
+          className="mt-2"
+          aria-label={`Note for the burn on ${chainName}`}
+          placeholder="Note"
+          maxLength={256}
+          value={memo}
+          onChange={(event) => setMemo(event.target.value)}
+        />
+      ) : null}
       <ButtonWithWallet
         targetChainId={row.chainId}
         className="mt-2 w-full"

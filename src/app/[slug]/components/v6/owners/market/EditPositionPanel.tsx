@@ -1,6 +1,8 @@
 "use client";
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { TxProgress } from "@/components/ui/TxProgress";
 import { useReviewedAction } from "@/hooks/useReviewedAction";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
@@ -437,16 +439,14 @@ export function EditPositionPanel({
     );
 
   return (
-    <div className="mt-2 border border-zinc-200 p-2 text-xs text-zinc-700">
+    <div className="mt-2 border border-zinc-200 p-2 text-xs text-zinc-700 max-sm:border-x-0 max-sm:px-0">
       <p className="font-medium">
         Edit position #{position.tokenId.toString()} on {chainName(state.chainId)}
       </p>
       <p className="mt-1 text-zinc-500">
-        Set what this position should hold and the band it covers. Anything added comes from your
-        wallet and anything freed returns to it, with unclaimed fees, in one transaction. The band
-        and the current price fix the ratio, so amounts are ceilings. Changing the band burns this
-        position and mints a new one; if the price moves too far before it lands, the whole edit
-        reverts and the position stays as it is.
+        Anything added comes from your wallet. Anything freed returns to it with unclaimed fees.
+        Amounts are upper limits: the band and the current price set the mix. Changing the band
+        replaces this position with a new one. If the price moves too far first, nothing changes.
       </p>
       <LiquidityRangePreview
         floor={state.reference.cashOut}
@@ -466,10 +466,10 @@ export function EditPositionPanel({
         }
       />
       <div className="mt-2 grid grid-cols-2 gap-2">
-        <label className="text-[11px] text-zinc-500">
+        <label className="text-xs text-zinc-600">
           Min price
-          <input
-            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+          <Input
+            className="mt-1"
             type="number"
             min="0"
             value={minText}
@@ -480,10 +480,10 @@ export function EditPositionPanel({
             }}
           />
         </label>
-        <label className="text-[11px] text-zinc-500">
+        <label className="text-xs text-zinc-600">
           Max price
-          <input
-            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+          <Input
+            className="mt-1"
             type="number"
             min="0"
             value={maxText}
@@ -495,11 +495,11 @@ export function EditPositionPanel({
           />
         </label>
       </div>
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <label className="text-[11px] text-zinc-500">
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <label className="text-xs text-zinc-600">
           {tokenSymbol} in position
-          <input
-            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+          <Input
+            className="mt-1"
             type="number"
             min="0"
             placeholder="0"
@@ -509,10 +509,10 @@ export function EditPositionPanel({
           />
           {inWallet(balances.data?.token, 18, tokenSymbol)}
         </label>
-        <label className="text-[11px] text-zinc-500">
+        <label className="text-xs text-zinc-600">
           {pool.pair.symbol} in position
-          <input
-            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+          <Input
+            className="mt-1"
             type="number"
             min="0"
             placeholder="0"
@@ -549,18 +549,12 @@ export function EditPositionPanel({
         </p>
       ) : null}
       <p className="mt-1 text-[11px] text-zinc-500">
-        Set both to 0 to remove the position. Keep the band and raise or lower the amounts to top up
-        or free part of it without a new position id.
+        Set both to 0 to remove the position. Keeping the band keeps the same position.
       </p>
       <div className="mt-3 flex justify-end gap-2">
-        <button
-          type="button"
-          className="border border-zinc-300 px-3 py-1.5 disabled:opacity-50"
-          disabled={busy}
-          onClick={onClose}
-        >
+        <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
           Cancel
-        </button>
+        </Button>
         <ButtonWithWallet
           targetChainId={state.chainId}
           loading={busy}

@@ -132,7 +132,7 @@ export default function Page() {
               value={search}
               onChange={(event) => setSearch(event.target.value)}
               placeholder="Search name, ticker, or project ID"
-              className="min-h-12 w-full rounded-lg border border-zinc-300 bg-white py-2 pl-10 pr-3 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-teal-500"
+              className="min-h-12 w-full border border-zinc-300 bg-white py-2 pl-10 pr-3 text-sm text-zinc-900 placeholder:text-zinc-400 outline-none focus:border-teal-500"
             />
           </label>
         </div>

@@ -316,7 +316,7 @@ const ACTIONS: Record<
   twap: {
     title: "Set TWAP window",
     description:
-      "Changes how far back the buyback hook averages the pool price to decide swap-vs-issue and to floor the swap. Written straight to the project's hook. Requires SET_BUYBACK_TWAP.",
+      "Changes how far back the buyback hook averages the pool price to decide swap-vs-issue and to floor the swap. Requires SET_BUYBACK_TWAP.",
     danger:
       "A longer window reacts slowly to price changes. The current buyback hook falls back to minting when a swap cannot meet the TWAP floor; previous hooks can still revert. A very short window is cheaper to manipulate. 300–172800 seconds.",
     fieldLabel: "Pair (terminal) token",
@@ -363,7 +363,7 @@ export function BuybackRouterCard({
     ) : stateQuery.isError ? (
       <p className="text-sm text-red-600 mt-3">Could not read the registries.</p>
     ) : (
-      <div className="mt-3 divide-y divide-melon-200 bg-melon-50 px-4">
+      <div className="mt-3 divide-y divide-melon-200">
         {kinds.map((kind) => (
           <ActionRow
             key={kind}
@@ -382,12 +382,8 @@ export function BuybackRouterCard({
         <div>
           <p className="text-sm text-zinc-500">
             Choose the hook that decides, on every payment, whether to issue tokens or buy them on
-            the AMM, then point it at a Uniswap pool and tune the pool&apos;s TWAP window. An
-            operator wallet signs one chain directly and runs several supported mainnets or several
-            supported testnets as one bundle. Other routes use a wallet transaction on each chain.
-            When the operator is a Safe, a connected signer proposes the call to each chain&apos;s
-            Safe queue for the other signers to confirm. Initialize pools one chain at a time with
-            Safe or other networks.
+            the AMM, then point it at a Uniswap pool. When the operator is a Safe, a connected
+            signer proposes each call for the other signers to confirm.
           </p>
           {body(["hook", "pool", "setPool", "twap"])}
         </div>
@@ -435,7 +431,7 @@ function ActionRow({
   const available = states.filter((state) => isKindAvailable(kind, state));
 
   return (
-    <div className="py-4">
+    <div className="py-4 first:pt-0 last:pb-0">
       <div className="min-w-0">
         <p className="text-sm font-medium">{action.title}</p>
         <p className="text-xs text-zinc-500 mt-1">{action.description}</p>
@@ -463,7 +459,7 @@ function ActionRow({
           const first = states[0];
           const { isAvailable, value } = cells[0];
           return (
-            <div className="mt-2 flex items-start gap-2 bg-melon-100 px-2.5 py-1.5">
+            <div className="mt-2 flex items-start gap-2 border border-melon-200 px-2.5 py-1.5">
               <div className="min-w-0">
                 {!isAvailable ? (
                   <p className="text-xs text-zinc-500">{unavailableNote(kind, true)}</p>
@@ -492,7 +488,7 @@ function ActionRow({
               return (
                 <div
                   key={state.chainId}
-                  className="flex items-start gap-2 bg-melon-100 px-2.5 py-1.5"
+                  className="flex items-start gap-2 border border-melon-200 px-2.5 py-1.5"
                 >
                   <ChainLogo chainId={state.chainId} width={14} height={14} className="mt-0.5" />
                   <div className="min-w-0">
@@ -838,7 +834,7 @@ function BuybackActionForm({
             },
         ...(kind === "pool" || kind === "setPool"
           ? [
-              { label: "Fee", value: `${fee} hundredths of a bip` },
+              { label: "Pool fee", value: `${Number(fee) / 10000}% (${fee})` },
               { label: "Tick spacing", value: String(tickSpacing) },
             ]
           : []),
@@ -929,8 +925,8 @@ function BuybackActionForm({
         <label className="block text-sm font-medium mb-1">{action.fieldLabel} per chain</label>
         <div className="space-y-2">
           {chosen.map((state) => (
-            <div key={state.chainId} className="flex items-center gap-2">
-              <span className="flex items-center gap-1.5 text-xs w-36 shrink-0">
+            <div key={state.chainId} className="grid gap-1">
+              <span className="flex items-center gap-1.5 text-xs">
                 <ChainLogo chainId={state.chainId} width={14} height={14} />
                 {chainName(state.chainId)}
               </span>
@@ -952,8 +948,8 @@ function BuybackActionForm({
         </div>
         {kind === "pool" || kind === "setPool" || kind === "twap" ? (
           <p className="text-xs text-zinc-500 mt-1">
-            Use the native-token sentinel ({NATIVE_TOKEN}) for native ETH pools; the hook stores
-            that pool key under address(0). USDC and other pair-token addresses can differ by chain.
+            For native ETH pools, enter <span className="break-all">{NATIVE_TOKEN}</span>. USDC and
+            other token addresses can differ by chain.
           </p>
         ) : null}
         {kind === "twap"
@@ -968,11 +964,11 @@ function BuybackActionForm({
       {kind === "pool" || kind === "setPool" ? (
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <NumberField
-            label="Fee (hundredths of a bip)"
+            label="Pool fee (3000 = 0.3%)"
             value={fee}
             onChange={setFee}
             disabled={busy}
-            placeholder="3000 = 0.3%"
+            placeholder="3000"
           />
           <NumberField
             label="Tick spacing"
@@ -1014,7 +1010,7 @@ function BuybackActionForm({
         </div>
       ) : null}
 
-      <label className="mt-3 flex items-start gap-2 border border-red-300 bg-red-50 rounded p-3">
+      <label className="mt-3 flex items-start gap-2 border border-red-300 p-3">
         <input
           type="checkbox"
           checked={ack}

@@ -132,17 +132,20 @@ describe("multichain deployment form", () => {
   it("wallet-action:project-payer freezes all selected factory calls with unique project IDs, per-chain beneficiaries, settings and factory directory evidence", async () => {
     setup();
     fireEvent.click(screen.getByRole("checkbox", { name: "Original payer" }));
-    fireEvent.change(screen.getByLabelText("Default beneficiary"), {
+    fireEvent.change(screen.getByLabelText("Beneficiary address"), {
       target: { value: beneficiary },
     });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Set the beneficiary per chain" }));
     fireEvent.change(screen.getByLabelText("beneficiary on Arbitrum"), {
       target: { value: peerBeneficiary },
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Editable" }));
-    fireEvent.change(screen.getByLabelText("Address admin"), { target: { value: owner } });
+    fireEvent.change(screen.getByLabelText("Admin address"), { target: { value: owner } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Add a memo to payments" }));
     fireEvent.change(screen.getByLabelText("Default memo"), {
       target: { value: " across chains " },
     });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Custom metadata" }));
     fireEvent.change(screen.getByLabelText("Default metadata"), { target: { value: "0x1234" } });
     fireEvent.click(screen.getByRole("button", { name: "Deploy payer addresses" }));
     await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledTimes(1));
@@ -213,6 +216,7 @@ describe("multichain deployment form", () => {
       total: 2,
     });
     setup();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Add a memo to payments" }));
     fireEvent.change(screen.getByLabelText("Default memo"), {
       target: { value: "different draft" },
     });

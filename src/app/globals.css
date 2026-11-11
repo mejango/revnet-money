@@ -151,7 +151,7 @@
 
   /* Phones run every dialog panel edge to edge, whatever width its owner asked for. */
   @media (max-width: 639.98px) {
-    dialog.ui-dialog > div {
+    dialog.ui-dialog > div:not([data-ui-select-portal]) {
       width: 100% !important;
       max-width: none !important;
       border-inline-width: 0 !important;

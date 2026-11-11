@@ -1082,12 +1082,12 @@ export function SafeQueueCard({
           </button>
         ) : null}
       </div>
-      <div className="mt-4 space-y-4">
+      <div className="mt-4 divide-y divide-melon-200">
         {queueQueries.map((query, index) =>
           !query.data ? (
             <div
               key={`loading:${queueTargets[index].chainId}:${queueTargets[index].safe}`}
-              className="border border-melon-200 bg-white p-3 text-sm"
+              className="py-3 text-sm first:pt-0 last:pb-0"
             >
               <span className="font-bold">
                 {queueTargets[index].handleOnly
@@ -1099,7 +1099,7 @@ export function SafeQueueCard({
           ) : null,
         )}
         {queue.data.map((row) => (
-          <div key={`${row.chainId}:${row.safe}`} className="border border-melon-200 bg-white p-3">
+          <div key={`${row.chainId}:${row.safe}`} className="py-3 first:pt-0 last:pb-0">
             <div className="flex items-center justify-between gap-3">
               <span className="text-sm font-bold">
                 {row.handleOnly ? "Ethereum handles" : chainName(row.chainId)}
@@ -1177,7 +1177,7 @@ export function SafeQueueCard({
                               : `Publish @${handleBinding.handle.handle} → ${handleBinding.source.chainId}:${handleBinding.source.projectId}`}
                           </p>
                         ) : null}
-                        <div className="mt-2 break-all bg-melon-50 p-2 font-mono">
+                        <div className="mt-2 break-all border border-melon-200 p-2 font-mono">
                           <p>To: {tx.to}</p>
                           <p>Value: {String(tx.value ?? 0)} wei</p>
                           <p>Data: {tx.data ?? "0x"}</p>
@@ -1342,7 +1342,7 @@ export function SafeQueueCard({
                   <label className="block text-sm">
                     Pay network fee on
                     <select
-                      className="mt-2 block w-full border border-melon-300 bg-white p-2"
+                      className="mt-2 block w-fit max-w-full border border-melon-300 bg-white p-2"
                       value={batch.paymentChainId ?? ""}
                       disabled={batch.running}
                       onChange={(event) =>

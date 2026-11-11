@@ -1,6 +1,10 @@
 "use client";
 
+import { chainDisplayName } from "@/app/constants";
+import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { SummaryRow } from "@/components/ui/TxProgress";
 import { loadProjectDiagnostics } from "@/lib/projectDiagnostics";
 import { projectIndexMessage, type ProjectIndexStatus } from "@/lib/projectIndexStatus";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
@@ -36,6 +40,7 @@ export function ProjectDiagnosticsProvider({
   projectId: bigint;
 }>) {
   const [open, setOpen] = useState(false);
+  const [operatorOn, setOperatorOn] = useState(false);
   const [operatorInput, setOperatorInput] = useState("");
   const [operator, setOperator] = useState<Address>();
   const [operatorError, setOperatorError] = useState(false);
@@ -94,10 +99,10 @@ export function ProjectDiagnosticsProvider({
         <DialogContent className="max-w-2xl">
           <DialogTitle>Check deployment</DialogTitle>
           <DialogDescription>
-            Read-only checks for project #{projectId.toString()} on chain {chainId}.
+            Read-only checks for project #{projectId.toString()} on {chainDisplayName(chainId)}.
           </DialogDescription>
           <form
-            className="space-y-1 text-sm"
+            className="space-y-2 text-sm"
             onSubmit={(event) => {
               event.preventDefault();
               const value = operatorInput.trim();
@@ -112,29 +117,49 @@ export function ProjectDiagnosticsProvider({
               else setOperator(next);
             }}
           >
-            <label htmlFor="diagnostic-operator">Operator address (optional)</label>
-            <div className="flex flex-wrap gap-2">
+            <label className="flex items-center gap-2 font-medium">
               <input
-                id="diagnostic-operator"
-                value={operatorInput}
-                onChange={(event) => {
-                  setOperatorInput(event.target.value);
-                  setOperatorError(false);
+                type="checkbox"
+                checked={operatorOn}
+                onChange={() => {
+                  if (operatorOn) {
+                    setOperatorInput("");
+                    setOperatorError(false);
+                    setCopyState("idle");
+                    setOperator(undefined);
+                  }
+                  setOperatorOn(!operatorOn);
                 }}
-                placeholder="0x…"
-                className="min-h-11 min-w-0 flex-1 border border-zinc-300 px-2"
-                aria-invalid={operatorError}
-                aria-describedby={operatorError ? "diagnostic-operator-error" : undefined}
+                className="h-4 w-4"
               />
-              <button type="submit" className="min-h-11 underline" disabled={query.isFetching}>
-                Check operator
-              </button>
-            </div>
-            <p className="text-zinc-500">Include an address to check its shop permissions.</p>
-            {operatorError ? (
-              <p id="diagnostic-operator-error" role="alert">
-                Enter a valid operator address.
-              </p>
+              Check an operator&apos;s shop permissions
+            </label>
+            {operatorOn ? (
+              <>
+                <label htmlFor="diagnostic-operator" className="block text-xs text-zinc-500">
+                  Operator address
+                </label>
+                <Input
+                  id="diagnostic-operator"
+                  value={operatorInput}
+                  onChange={(event) => {
+                    setOperatorInput(event.target.value);
+                    setOperatorError(false);
+                  }}
+                  placeholder="0x…"
+                  className="h-11 font-mono text-xs"
+                  aria-invalid={operatorError}
+                  aria-describedby={operatorError ? "diagnostic-operator-error" : undefined}
+                />
+                {operatorError ? (
+                  <p id="diagnostic-operator-error" role="alert">
+                    Enter a valid operator address.
+                  </p>
+                ) : null}
+                <Button type="submit" variant="outline" disabled={query.isFetching}>
+                  Check operator
+                </Button>
+              </>
             ) : null}
           </form>
           {query.isFetching ? <p role="status">Checking deployment…</p> : null}
@@ -174,20 +199,16 @@ export function ProjectDiagnosticsProvider({
                         </p>
                         <p>{check.message}</p>
                         {check.actual !== undefined || check.expected !== undefined ? (
-                          <dl className="mt-1 break-all text-zinc-600">
+                          <div className="mt-2 space-y-2">
                             {check.actual !== undefined ? (
-                              <div>
-                                <dt className="inline">Actual: </dt>
-                                <dd className="inline">{checksummed(check.actual)}</dd>
-                              </div>
+                              <SummaryRow label="Actual">{checksummed(check.actual)}</SummaryRow>
                             ) : null}
                             {check.expected !== undefined ? (
-                              <div>
-                                <dt className="inline">Expected: </dt>
-                                <dd className="inline">{checksummed(check.expected)}</dd>
-                              </div>
+                              <SummaryRow label="Expected">
+                                {checksummed(check.expected)}
+                              </SummaryRow>
                             ) : null}
-                          </dl>
+                          </div>
                         ) : null}
                         {check.action ? <p className="mt-1">{check.action}</p> : null}
                       </li>

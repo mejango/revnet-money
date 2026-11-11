@@ -137,6 +137,7 @@ describe("project diagnostics", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry checks" }));
     await screen.findByText("The hook belongs to another project.");
     expect(mocks.load).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Check an operator's shop permissions" }));
     fireEvent.click(screen.getByRole("button", { name: "Check operator" }));
     await screen.findByText("The hook belongs to another project.");
     expect(mocks.load).toHaveBeenCalledTimes(3);
@@ -157,8 +158,9 @@ describe("project diagnostics", () => {
     await screen.findByText("The hook belongs to another project.");
     const operator = "0x1111111111111111111111111111111111111111";
     const otherOperator = "0x2222222222222222222222222222222222222222";
+    fireEvent.click(screen.getByRole("checkbox", { name: "Check an operator's shop permissions" }));
     for (const address of [operator, otherOperator, operator]) {
-      fireEvent.change(screen.getByRole("textbox", { name: "Operator address (optional)" }), {
+      fireEvent.change(screen.getByRole("textbox", { name: "Operator address" }), {
         target: { value: address },
       });
       fireEvent.click(screen.getByRole("button", { name: "Check operator" }));
@@ -326,7 +328,8 @@ describe("project diagnostics", () => {
     mount();
     fireEvent.click(screen.getByRole("button", { name: "Check deployment" }));
     await screen.findByText("The hook belongs to another project.");
-    const input = screen.getByRole("textbox", { name: "Operator address (optional)" });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Check an operator's shop permissions" }));
+    const input = screen.getByRole("textbox", { name: "Operator address" });
     fireEvent.change(input, { target: { value: "invalid" } });
     fireEvent.click(screen.getByRole("button", { name: "Check operator" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Enter a valid operator address.");

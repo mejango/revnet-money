@@ -200,8 +200,8 @@ describe("project handle ENS authorization", () => {
     expect(source).toContain("Publishing is blocked until the");
     expect(source).toContain("The current revnet operator could not be verified.");
     expect(source).toContain('placeholder="banny.eth"');
-    expect(source).toContain('title="ENS juicebox text record"');
-    expect(source).toContain('title="JBProjectHandles reverse claim"');
+    expect(source).toContain('title="Set the ENS text record"');
+    expect(source).toContain('title="Publish the handle"');
     expect(source).toContain("total={2}");
     expect(readFileSync(resolve(process.cwd(), "src/components/ui/TxSteps.tsx"), "utf8")).toContain(
       "Step {number} of {total}",

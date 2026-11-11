@@ -1,6 +1,8 @@
 "use client";
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { TxProgress } from "@/components/ui/TxProgress";
 import { useReviewedAction } from "@/hooks/useReviewedAction";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
@@ -425,15 +427,13 @@ export function MarketEditPanel({
           : []),
       ];
   return (
-    <div className="mt-2 border border-zinc-200 p-2 text-xs text-zinc-700">
+    <div className="mt-2 border border-zinc-200 p-2 text-xs text-zinc-700 max-sm:border-x-0 max-sm:px-0">
       <p className="font-medium">
         Edit market {ids} on {chainName(state.chainId)}
       </p>
       <p className="mt-1 text-zinc-500">
-        {tokenSymbol} sells from the current price up to the ceiling; {pool.pair.symbol} buys from
-        the current price down to the floor. Each side is its own position, so each amount is used
-        in full and a change on one side never touches the other. Anything added comes from your
-        wallet and anything freed returns to it, with unclaimed fees, in one transaction.
+        {tokenSymbol} sells above the current price and {pool.pair.symbol} buys below it. Anything
+        added comes from your wallet. Anything freed returns to it with unclaimed fees.
       </p>
       <LiquidityRangePreview
         floor={state.reference.cashOut}
@@ -444,11 +444,11 @@ export function MarketEditPanel({
         pairSymbol={pool.pair.symbol}
         tokenSymbol={tokenSymbol}
       />
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <label className="text-[11px] text-zinc-500">
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <label className="text-xs text-zinc-600">
           {tokenSymbol} to sell above the price
-          <input
-            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+          <Input
+            className="mt-1"
             type="number"
             min="0"
             placeholder="0"
@@ -458,10 +458,10 @@ export function MarketEditPanel({
           />
           {inWallet(balances.data?.token, 18, tokenSymbol)}
         </label>
-        <label className="text-[11px] text-zinc-500">
+        <label className="text-xs text-zinc-600">
           {pool.pair.symbol} to buy with below the price
-          <input
-            className="mt-1 w-full border border-zinc-200 px-2 py-1.5 text-xs"
+          <Input
+            className="mt-1"
             type="number"
             min="0"
             placeholder="0"
@@ -473,20 +473,20 @@ export function MarketEditPanel({
         </label>
       </div>
       {corridor ? (
-        <label className="mt-2 flex items-start gap-2 text-[11px] text-zinc-600">
+        <label className="mt-2 flex items-start gap-2 text-xs text-zinc-600">
           <input
             type="checkbox"
-            className="mt-0.5"
+            className="h-4 w-4 shrink-0"
             checked={refit}
             disabled={editing}
             onChange={(event) => setRefit(event.target.checked)}
           />
           <span>
-            Re-fit both sides to the current corridor ({formatPrice(corridor.floor)} –{" "}
+            Match both sides to the current floor and ceiling ({formatPrice(corridor.floor)} –{" "}
             {formatPrice(corridor.ceiling)} {pool.pair.symbol}/{tokenSymbol}).
             {moved
-              ? " The floor or ceiling moved since these positions were minted, so their edges are stale."
-              : " Not needed: the positions already match it."}
+              ? " They moved since these positions were made."
+              : " Not needed: the positions already match."}
           </span>
         </label>
       ) : (
@@ -508,14 +508,9 @@ export function MarketEditPanel({
         Set a side to 0 to remove that position. Both at 0 removes the market.
       </p>
       <div className="mt-3 flex justify-end gap-2">
-        <button
-          type="button"
-          className="border border-zinc-300 px-3 py-1.5 disabled:opacity-50"
-          disabled={busy}
-          onClick={onClose}
-        >
+        <Button type="button" variant="secondary" disabled={busy} onClick={onClose}>
           Cancel
-        </button>
+        </Button>
         <ButtonWithWallet
           targetChainId={state.chainId}
           loading={busy}

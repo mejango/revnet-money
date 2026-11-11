@@ -57,8 +57,8 @@ export function V6ClaimCreditsDialog({
         <DialogHeader>
           <DialogTitle>Claim credits</DialogTitle>
           <DialogDescription>
-            Claim selected balances into transferable {tokenSymbol} ERC-20 tokens in your wallet.
-            Credits and ERC-20s have the same value.
+            Move the selected credits into your wallet as transferable {tokenSymbol} tokens. Credits
+            and tokens have the same value.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2 mt-2">
@@ -70,20 +70,21 @@ export function V6ClaimCreditsDialog({
             return (
               <label
                 key={key}
-                className="flex items-center justify-between gap-3 border border-zinc-200 bg-zinc-50 p-3 text-sm"
+                className="flex items-center justify-between gap-3 border border-zinc-200 p-3 text-sm"
               >
-                <input
-                  type="checkbox"
-                  checked={row.credit > 0n && (selection[key] ?? true)}
-                  disabled={row.credit <= 0n}
-                  onChange={(event) =>
-                    setSelection((previous) => ({ ...previous, [key]: event.target.checked }))
-                  }
-                  aria-label={`Claim on ${chainDisplayName(row.chainId)}, project ${row.projectId}`}
-                />
-                <ChainLogo chainId={row.chainId} width={16} height={16} />
-                <span>
-                  {chainDisplayName(row.chainId)}, project {String(row.projectId)}
+                <span className="flex min-w-0 items-center gap-2">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={row.credit > 0n && (selection[key] ?? true)}
+                    disabled={row.credit <= 0n}
+                    onChange={(event) =>
+                      setSelection((previous) => ({ ...previous, [key]: event.target.checked }))
+                    }
+                    aria-label={`Claim on ${chainDisplayName(row.chainId)}, project ${row.projectId}`}
+                  />
+                  <ChainLogo chainId={row.chainId} width={16} height={16} />
+                  {chainDisplayName(row.chainId)}
                 </span>
                 <span className="tabular-nums">
                   {formatUnits(row.credit, JB_TOKEN_DECIMALS, { fractionDigits: 4 })} credits

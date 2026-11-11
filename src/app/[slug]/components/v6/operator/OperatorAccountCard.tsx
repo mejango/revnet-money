@@ -26,7 +26,8 @@ import { useOperatorWrites } from "./useOperatorWrites";
 
 type AccountRow = ChainProjectRow & {
   operator: Address | null;
-  accountType: "EOA" | "Safe multisig" | "Contract" | "Unknown" | "Checking…" | "Could not verify";
+  accountType:
+    "Wallet" | "Safe multisig" | "Contract" | "Unknown" | "Checking…" | "Could not verify";
   safe: { owners: readonly Address[]; threshold: number } | null;
 };
 
@@ -122,7 +123,7 @@ export function OperatorAccountCard({
       ...row,
       operator,
       accountType:
-        identity.kind === "eoa" || identity.kind === "delegated-eoa" ? "EOA" : "Contract",
+        identity.kind === "eoa" || identity.kind === "delegated-eoa" ? "Wallet" : "Contract",
       safe: null,
     };
   });
@@ -142,13 +143,13 @@ export function OperatorAccountCard({
         </p>
         <div className="mt-3 space-y-3">
           {differs ? (
-            <div className="border border-amber-300 bg-amber-50 text-amber-800 text-xs p-3 rounded">
+            <div className="border border-amber-300 text-amber-800 text-xs p-3">
               The revnet operator differs by chain. The transfer action below is scoped to each
               matching group so a change cannot silently target the wrong account.
             </div>
           ) : null}
           {groups.map((group) => (
-            <div key={group.key} className="bg-melon-50 p-4">
+            <div key={group.key} className="border-t border-melon-200 pt-3">
               <div className="flex flex-wrap items-center gap-3">
                 {group.rows.map((row) => (
                   <span
@@ -381,7 +382,7 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
   }
 
   return (
-    <div className="mt-3 bg-melon-100 p-3">
+    <div className="mt-3 border-t border-melon-200 pt-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium">Transfer revnet operator</p>
         <button
@@ -399,7 +400,8 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
           account, or one of its signers if it is a Safe.
         </p>
       ) : null}
-      <div className="mt-2">
+      <label className="mt-2 block text-xs text-zinc-600">
+        New revnet operator
         <Input
           value={destination}
           onChange={(e) => {
@@ -407,13 +409,16 @@ function TransferOperatorFlow({ group, onDone }: { group: AccountGroup; onDone: 
             setError(null);
           }}
           disabled={busy}
-          placeholder="0x… new revnet operator (zero address relinquishes)"
+          placeholder="0x…"
           aria-label="New revnet operator"
+          className="mt-1"
         />
-      </div>
-      <p className="text-xs text-zinc-500 mt-1">Applies on {chains}.</p>
+      </label>
+      <p className="text-xs text-zinc-500 mt-1">
+        Applies on {chains}. The zero address relinquishes the role.
+      </p>
       {gate.line ? <p className="text-xs text-zinc-600 mt-1">{gate.line}</p> : null}
-      <label className="mt-3 flex items-start gap-2 border border-red-300 bg-red-50 rounded p-3">
+      <label className="mt-3 flex items-start gap-2 border border-red-300 p-3">
         <input
           type="checkbox"
           checked={ack}

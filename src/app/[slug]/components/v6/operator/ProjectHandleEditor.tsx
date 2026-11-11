@@ -676,8 +676,8 @@ export function ProjectHandleEditor({
       const refreshed = await setupQuery.refetch();
       setStatus(
         refreshed.data?.verifiedHandle === parsed.handle.handle
-          ? "Both steps are complete. The existing JBProjectHandles reverse claim was preserved."
-          : "Step 1 of 2 complete: ENS points to this project. Continue with the JBProjectHandles reverse claim.",
+          ? "Both steps are complete. The handle was already published and is unchanged."
+          : "Step 1 of 2 complete: ENS points to this project. Continue by publishing the handle.",
       );
     } catch (cause) {
       const message = formatWalletError(cause, "Could not set the ENS project record.");
@@ -722,13 +722,13 @@ export function ProjectHandleEditor({
         throw new Error(`Set the ENS juicebox record to ${expectedRecord} before publishing.`);
       }
       if (fresh.verifiedHandle === parsed.handle.handle) {
-        setStatus("Step 2 of 2 is already complete: the reverse claim is published.");
+        setStatus("Step 2 of 2 is already complete: the handle is published.");
         setReview(null);
         await setupQuery.refetch();
         return;
       }
 
-      setStatus("Step 2 of 2: confirm the JBProjectHandles transaction in your wallet…");
+      setStatus("Step 2 of 2: confirm the handle transaction in your wallet…");
       // wallet-action:project-handle
       const handle = parsed.handle;
       const receipt = await sendStep(
@@ -840,7 +840,7 @@ export function ProjectHandleEditor({
     <div className="bg-melon-50 p-4">
       <p className="text-sm font-medium">Project handle</p>
       <p className="mt-1 text-xs text-zinc-500">
-        Create or resume the verified ENS route in two explicit Ethereum steps.
+        Link a .eth name to this revnet in two steps on Ethereum.
       </p>
       <Button variant="secondary" size="sm" className="mt-3" onClick={openEditor}>
         Set project handle
@@ -863,8 +863,8 @@ export function ProjectHandleEditor({
           <DialogHeader>
             <DialogTitle>Set project handle</DialogTitle>
             <DialogDescription>
-              First confirm the ENS juicebox text record, then publish the matching JBProjectHandles
-              reverse claim.
+              First set a text record on your .eth name, then publish the handle from the revnet
+              operator.
             </DialogDescription>
           </DialogHeader>
           <div className="min-w-0">
@@ -903,12 +903,11 @@ export function ProjectHandleEditor({
             ) : null}
 
             {operator && sourceSafe && mainnetSafeMissing ? (
-              <div className="mt-3 border border-amber-200 bg-amber-50 p-3 text-xs text-zinc-700">
+              <div className="mt-3 border border-amber-200 p-3 text-xs text-zinc-700">
                 <p className="font-medium">Prepare the operator Safe on Ethereum</p>
                 <p className="mt-1">
-                  This replays the Safe's original deterministic deployment only when its
-                  initializer, current owners, threshold, singleton, fallback handler, guard,
-                  modules, and EOA-owner policy all remain safe and consistent.
+                  Deploys the operator Safe at the same address on Ethereum. Available only when its
+                  owners, threshold and settings still match its original setup.
                 </p>
                 {!safeCreation ? (
                   <p className="mt-2 text-amber-700">
@@ -981,7 +980,7 @@ export function ProjectHandleEditor({
                   <dt className="text-zinc-500">ENS name</dt>
                   <dd>{parsed.handle.ensName}</dd>
                   <dt className="text-zinc-500">Required record</dt>
-                  <dd className="font-mono">
+                  <dd className="break-all font-mono">
                     {PROJECT_HANDLE_TEXT_KEY}={expectedRecord}
                   </dd>
                   <dt className="text-zinc-500">ENS controller</dt>
@@ -1007,11 +1006,11 @@ export function ProjectHandleEditor({
                         first; this app will not install or replace one.
                       </p>
                     ) : null}
-                    <ol className="space-y-3 rounded border border-melon-200 bg-melon-50 p-3">
+                    <ol className="space-y-3 border border-melon-200 p-3">
                       <TxStep
                         number={1}
                         total={2}
-                        title="ENS juicebox text record"
+                        title="Set the ENS text record"
                         status={stepStatus(
                           handleProgress.ensRecordComplete,
                           handleProgress.nextAction === "ens",
@@ -1024,19 +1023,15 @@ export function ProjectHandleEditor({
                         </p>
                         {!handleProgress.ensRecordComplete ? (
                           <p className="mt-1 text-zinc-500">
-                            Connect an account or Safe authorized by this resolver; it can differ
-                            from the revnet operator. The registered controller is
-                            {setupQuery.data?.ensController
-                              ? ` (${setupQuery.data.ensController})`
-                              : " unknown"}
-                            ; approved delegates can also submit.
+                            Connect an account or Safe that can edit this name. It can differ from
+                            the revnet operator.
                           </p>
                         ) : null}
                       </TxStep>
                       <TxStep
                         number={2}
                         total={2}
-                        title="JBProjectHandles reverse claim"
+                        title="Publish the handle"
                         status={stepStatus(
                           handleProgress.reverseClaimComplete,
                           handleProgress.nextAction === "publish",
@@ -1044,8 +1039,8 @@ export function ProjectHandleEditor({
                       >
                         <p className="mt-1 text-zinc-500">
                           {handleProgress.reverseClaimComplete
-                            ? "The current operator's reverse claim is confirmed."
-                            : "Publish the matching reverse claim from the current revnet operator."}
+                            ? "The current operator has published the handle."
+                            : "Publish the handle from the current revnet operator."}
                         </p>
                         {!handleProgress.reverseClaimComplete ? (
                           handleProgress.ensRecordComplete ? (
@@ -1126,11 +1121,11 @@ export function ProjectHandleEditor({
               : handleProgress.nextAction === "publish"
                 ? {
                     title: `Publish /@${parsed.handle?.handle ?? ""}`,
-                    detail: "Writes the reverse claim on JBProjectHandles from the operator.",
+                    detail: "Publishes the handle from the operator.",
                   }
                 : {
                     title: `Set ${parsed.handle?.ensName ?? "ENS"} record`,
-                    detail: "Writes the juicebox text record on the name's ENS resolver.",
+                    detail: "Sets the text record on your .eth name.",
                   },
           ]}
           activeIndex={busyAction ? 0 : -1}

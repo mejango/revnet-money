@@ -193,7 +193,7 @@ export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
   const fallbackSymbol = contextToken.data?.symbol ?? "";
 
   return (
-    <section className="mb-8 bg-melon-50 p-4">
+    <section className="mb-8 border border-melon-200 p-4 max-sm:-mx-4 max-sm:border-x-0">
       <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-melon-700">Token</h2>
 
       {!hydrated || tokenState.isLoading ? (
@@ -242,9 +242,8 @@ export function V6TokenPanel({ projects }: { projects: ProjectItem[] }) {
         <div className="max-w-3xl">
           <p className="font-medium text-black">No ERC-20 yet</p>
           <p className="mt-1 text-sm text-melon-700">
-            Juicebox records your token balance, and you can still cash it out. Creating a standard
-            token contract, called an ERC-20, lets holders claim tokens for use in wallets and
-            markets.
+            Juicebox records your token balance, and you can still cash it out. Creating an ERC-20
+            lets owners claim tokens for use in wallets and markets.
           </p>
         </div>
       )}
@@ -549,7 +548,7 @@ function TokenEditDialog({
     { label: "On", value: chainNames },
     {
       label: "Address",
-      value: deployed ? "Unchanged" : "Same deterministic address on every chain",
+      value: deployed ? "Unchanged" : "Same address on every chain",
     },
     ...(confirming === "pay" && selectedPayment
       ? [
@@ -653,15 +652,13 @@ function TokenEditDialog({
           <DialogDescription>
             {deployed
               ? `Renames the ERC-20 on ${states.length} chain${states.length === 1 ? "" : "s"}: ${chainNames}. The contract address stays the same.`
-              : `Deploys one ERC-20 at the same deterministic address on ${states.length} chain${states.length === 1 ? "" : "s"}: ${chainNames}.`}
+              : `Deploys one ERC-20 at the same address on ${states.length} chain${states.length === 1 ? "" : "s"}: ${chainNames}.`}
           </DialogDescription>
         </DialogHeader>
 
         <div
           className={`border px-3 py-2 text-sm ${
-            canManage
-              ? "border-melon-200 bg-melon-50 text-melon-700"
-              : "border-zinc-200 bg-zinc-50 text-zinc-600"
+            canManage ? "border-melon-200 text-melon-700" : "border-zinc-200 text-zinc-600"
           }`}
         >
           {!address

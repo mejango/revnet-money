@@ -86,12 +86,12 @@ const routes = [
   { route: "/discover", path: "/discover", kib: 344 },
   { route: "/create", path: "/create", kib: 568 },
   { route: "/[slug]", path: "/eth:1", kib: 596 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 595 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 596 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 634 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 603 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 612 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 430 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 613 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 431 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 420 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 435 },
   { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 394 },
@@ -108,7 +108,9 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
 // All JS 2730 -> 2754: the R stack on SDK 4.0.0 (core reviewed runs and Relayr rounds), measured 2752.4 locally and 2753.1 on CI.
 // SDK 4.0.0 measures 921.2 KiB route-referenced (919.7 before); the ceiling moves up 1 KiB.
 // Next 16.4.2 measures 923.0 KiB; the ceiling moves to 924.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 931);
+// The forms pass (checkbox-gated options, inline export confirm, stacked phone tables) measures terms 595.2,
+// extras 612.5, account 430.0 and route-referenced JS 932.4 KiB; round only those up.
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 933);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load

@@ -126,9 +126,9 @@ export function SafeBatchPresetDialog({
         ) : resolution.isError ? (
           <p className="text-sm text-red-600">Could not read the project's hook and gateway.</p>
         ) : (
-          <div className="space-y-3">
+          <div className="divide-y divide-melon-200">
             {resolved.map(({ row, result }) => (
-              <div key={row.chainId} className="bg-melon-50 p-3 text-xs">
+              <div key={row.chainId} className="py-3 text-xs first:pt-0 last:pb-0">
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
@@ -156,8 +156,8 @@ export function SafeBatchPresetDialog({
                         <span className="font-medium text-zinc-900">{step.label}</span>
                         <span className="text-zinc-500">{describeStep(step)}</span>
                         {isPoolStep(step) ? (
-                          <label className="flex items-center gap-1">
-                            <span className="text-zinc-500">TWAP window (s)</span>
+                          <label className="block w-full">
+                            <span className="block text-zinc-500">TWAP window (seconds)</span>
                             <Input
                               inputMode="numeric"
                               aria-label={`TWAP window on ${chainName(row.chainId)}`}
@@ -168,7 +168,7 @@ export function SafeBatchPresetDialog({
                                   [windowKey(step)]: event.target.value.replace(/[^0-9]/g, ""),
                                 }))
                               }
-                              className="h-7 w-24 text-xs tabular-nums"
+                              className="mt-1 h-8 w-24 text-xs tabular-nums"
                             />
                           </label>
                         ) : null}
