@@ -27,8 +27,7 @@ export function MarketPriceViewToggle({
             ? "Show time-weighted averages of the pool price"
             : "Show every exact post-trade pool price"
         }
-        className="w-[4.15rem] cursor-pointer appearance-none border-0 bg-none bg-transparent p-0 pr-4 text-xs font-medium text-current hover:underline focus:border-0 focus:ring-0 focus-visible:!outline-none focus-visible:underline data-[view=trades]:w-[6.4rem]"
-        data-view={value}
+        className="cursor-pointer appearance-none border-0 bg-none bg-transparent p-0 pr-4 text-xs font-medium text-current [field-sizing:content] hover:underline focus:border-0 focus:ring-0 focus-visible:!outline-none focus-visible:underline"
       >
         <option value="smooth">Smooth</option>
         <option value="trades">Every trade</option>

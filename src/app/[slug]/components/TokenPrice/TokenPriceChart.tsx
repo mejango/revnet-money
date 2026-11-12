@@ -326,7 +326,7 @@ export function TokenPriceChart({
           ariaLabel={`${tokenSymbol} price history`}
           description={`Issuance, ${marketPriceView === "smooth" ? "time-weighted pool" : "every post-trade pool"}, and cash out prices for ${tokenSymbol} over the selected ${range} range.${showCashOutAsymptote ? " The dotted line is the cash-out asymptote." : ""}`}
           className="mt-2 aspect-[4/3] sm:aspect-[2/1] lg:aspect-[5/2] w-full"
-          margin={{ left: 72, right: 20, top: 24, bottom: 36 }}
+          margin={{ left: 72, right: 4, top: 24, bottom: 36 }}
           xDomain={[firstTimestamp ?? 0, lastTimestamp ?? 1]}
           yDomain={[0, maxVisiblePrice > 0 ? maxVisiblePrice * 1.1 : 1]}
           formatXTick={(timestamp) => formatXAxis(timestamp, range)}
