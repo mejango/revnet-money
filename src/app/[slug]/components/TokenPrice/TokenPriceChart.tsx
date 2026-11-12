@@ -252,11 +252,6 @@ export function TokenPriceChart({
         ? "ETH"
         : (tokenSymbol ?? "the base currency");
 
-  const latestPrice = (key: "issuancePrice" | "ammPrice" | "floorPrice") => {
-    const point = [...chartData].reverse().find((entry) => entry[key] !== undefined);
-    return point ? `${formatPriceValue(point[key] as number)} ${axisSymbol}` : undefined;
-  };
-
   // An always-on methodological caveat, not a problem — so it sits behind an (!) rather than
   // as a banner. The two notices below it stay inline on purpose: those say data is MISSING or
   // a source is DOWN, which the reader has to see without hovering anything.
@@ -277,7 +272,6 @@ export function TokenPriceChart({
             active={showIssuance}
             colorVar="--chart-2"
             note={priceConcept("issuance", { baseSymbol: axisSymbol })}
-            value={latestPrice("issuancePrice")}
             onClick={() => setShowIssuance(!showIssuance)}
           />
           <ChartToggleButton
@@ -286,7 +280,6 @@ export function TokenPriceChart({
             disabled={!hasFloorData}
             colorVar="--chart-3"
             note={priceConcept("cashOut", { baseSymbol: axisSymbol })}
-            value={latestPrice("floorPrice")}
             onClick={() => setShowFloor(!showFloor)}
           />
           {hasPool && (
@@ -295,7 +288,6 @@ export function TokenPriceChart({
               active={showAmm}
               disabled={!hasAmmData}
               colorVar="--chart-4"
-              value={latestPrice("ammPrice")}
               note={
                 priceConcept("pool", { baseSymbol: axisSymbol }) +
                 (reserveBars.length
