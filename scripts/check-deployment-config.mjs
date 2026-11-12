@@ -40,7 +40,7 @@ if (!existsSync("package-lock.json") || packageManifest.packageManager !== "npm@
 }
 if (
   !dockerfile.startsWith(
-    "FROM node:26.12.1-bookworm-slim@sha256:28147155d47dc31abe0a46e0d12b59b2fb3d0a2dcc5dc65fce76a074180b16fe AS base",
+    "FROM node:26.13.1-bookworm-slim@sha256:5df79989ed685e09f0a98019db4cebfb22fb9df1a53c0161664a011f7ff6b0f1 AS base",
   ) ||
   !dockerfile.includes("npm install --global npm@12.0.1 --no-audit --no-fund") ||
   !dockerfile.includes("NODE_OPTIONS=--no-experimental-webstorage") ||
@@ -48,7 +48,7 @@ if (
   !npmConfig.includes("ignore-scripts=true")
 ) {
   throw new Error(
-    "The app must use Node 26.12.1/npm 12.0.1 with Web Storage and dependency scripts disabled",
+    "The app must use Node 26.13.1/npm 12.0.1 with Web Storage and dependency scripts disabled",
   );
 }
 if (
