@@ -109,7 +109,7 @@ export function ProjectMenu({
             {tab.label}
           </MenuOption>
         ))}
-        <li className="flex shrink-0 items-start">
+        <li className="-ml-5 flex shrink-0 items-start">
           <MoreProjectOptions
             expanded={overflowExpanded}
             onToggle={() => setOverflowExpanded((current) => !current)}
