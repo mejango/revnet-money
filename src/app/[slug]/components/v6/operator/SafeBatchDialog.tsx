@@ -22,6 +22,7 @@ import { Loader2 } from "lucide-react";
 import { useRef, useState } from "react";
 import type { AbiFunction, Address } from "viem";
 import { useAccount } from "wagmi";
+import { TextSelect } from "../pay/TextSelect";
 import { chainName, type ChainProjectRow } from "./operatorLib";
 import { useSafeBatchSubmit, type SafeBatchRoute } from "./useSafeBatchSubmit";
 
@@ -116,7 +117,7 @@ export function SafeBatchDialog({
   // The batch's row comes from the server sucker-group list: only a chain-verified pair sends.
   const gate = useGroupWriteGate([row]);
   const { address } = useAccount();
-  const { routeFor, submit } = useSafeBatchSubmit();
+  const { routeFor, noncesFor, submit } = useSafeBatchSubmit();
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
   // The batch went to the Safe as a proposal: nothing more to send from here.
@@ -134,6 +135,21 @@ export function SafeBatchDialog({
     queryFn: () => routeFor({ chainId: row.chainId, authority }),
   });
   const route = address ? routeQuery.data : undefined;
+  // A Safe service proposal takes the next free nonce unless a queued one is picked to replace.
+  const proposalSafe =
+    route?.kind === "safe-signer" && hasSafeService(row.chainId) ? route.safe : undefined;
+  const noncesQuery = useQuery({
+    queryKey: ["safe-batch-nonces", row.chainId, proposalSafe ?? ""],
+    enabled: open && !!proposalSafe,
+    staleTime: 15_000,
+    queryFn: () => noncesFor({ chainId: row.chainId, safe: proposalSafe! }),
+  });
+  const nonces = proposalSafe ? noncesQuery.data : undefined;
+  const [pickedNonce, setPickedNonce] = useState<number | null>(null);
+  const proposalNonce =
+    nonces && pickedNonce !== null && nonces.choices.includes(pickedNonce)
+      ? pickedNonce
+      : nonces?.next;
   const { problems } = checkBatchOrder(steps);
   const name = chainName(row.chainId);
   const update = (next: BatchStep[]) => writeBatch(row.chainId, row.projectId, next);
@@ -152,6 +168,7 @@ export function SafeBatchDialog({
         chainId: row.chainId,
         steps: submitted,
         route,
+        proposalNonce,
         onProgress: setStatus,
         onStep: (index) => {
           sent.current = index;
@@ -290,6 +307,23 @@ export function SafeBatchDialog({
         )}
       </SummaryRow>
       <SummaryRow label="Route">{routeSummary(route, steps.length, row.chainId)}</SummaryRow>
+      {nonces && proposalNonce !== undefined ? (
+        <SummaryRow label="Safe nonce">
+          <TextSelect
+            ariaLabel="Safe nonce"
+            value={String(proposalNonce)}
+            onChange={(value) => setPickedNonce(Number(value))}
+            disabled={busy || proposed}
+            options={nonces.choices.map((nonce) => ({
+              value: String(nonce),
+              label:
+                nonce === nonces.next
+                  ? `${nonce}, next available`
+                  : `${nonce}, replaces what is queued there`,
+            }))}
+          />
+        </SummaryRow>
+      ) : null}
       {steps.length ? (
         <ol className="space-y-2" aria-label="Batch steps">
           {steps.map((step, index) => {

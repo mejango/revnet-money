@@ -34,6 +34,7 @@ import {
   hasSafeService,
   listPendingSafeTransactions,
   onchainApprovalStep,
+  proposalNonceChoices,
   SAFE_EXEC_ABI,
   safeBatchProposalFor,
   safeExecutionArgs,
@@ -166,16 +167,39 @@ export function useSafeBatchSubmit() {
     });
   };
 
+  /**
+   * The Safe nonces a new proposal may take, ascending, the last being the next free one. A
+   * queued nonce offers the batch as a replacement of what is queued there.
+   */
+  const noncesFor = async ({
+    chainId,
+    safe,
+  }: {
+    chainId: number;
+    safe: Address;
+  }): Promise<{ choices: number[]; next: number }> => {
+    const nonce = await readBoundedSafeNonce(publicClientFor(chainId as JBChainId), safe);
+    if (nonce === null || nonce > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error(`The operator Safe's nonce on ${chainName(chainId)} could not be read.`);
+    }
+    const pending = await listPendingSafeTransactions(chainId, safe, Number(nonce));
+    const choices = proposalNonceChoices(Number(nonce), pending);
+    return { choices, next: choices[choices.length - 1]! };
+  };
+
   const submit = async ({
     chainId,
     steps,
     route,
+    proposalNonce,
     onProgress,
     onStep,
   }: {
     chainId: number;
     steps: readonly BatchStep[];
     route: SafeBatchRoute;
+    /** The Safe nonce to propose at (Safe service route). Default: the next free one. */
+    proposalNonce?: number;
     onProgress: (message: string) => void;
     /** The index of the step the wallet is on (direct writes only). */
     onStep: (index: number) => void;
@@ -386,7 +410,11 @@ export function useSafeBatchSubmit() {
         : safeBatchProposalFor(calls, Number(nonce)),
     );
     const pending = await listPendingSafeTransactions(chainId, safe, Number(nonce));
-    const queued = pending.some((tx) => safeTransactionMatchesCall(tx, shape));
+    const queued = pending.some(
+      (tx) =>
+        safeTransactionMatchesCall(tx, shape) &&
+        (proposalNonce === undefined || Number(tx.nonce) === proposalNonce),
+    );
     requireNoViewAs();
     const what = queued ? `already-queued batch on ${name}` : `batch proposal for ${name}`;
     onProgress(`Review the ${what}…`);
@@ -394,7 +422,15 @@ export function useSafeBatchSubmit() {
     const adapter = reviewedWalletAdapter(config, account, connector);
     // The proposal signs after its review, so View-as and the reviewed wallet are checked there.
     const { safeTxHash: hash } = await proposeReviewedSafeTransaction(
-      { chainId, safe, calls: reviewedSteps, context, title, origin: SAFE_PROPOSAL_ORIGIN },
+      {
+        chainId,
+        safe,
+        calls: reviewedSteps,
+        context,
+        title,
+        origin: SAFE_PROPOSAL_ORIGIN,
+        ...(proposalNonce === undefined ? {} : { nonce: proposalNonce }),
+      },
       {
         ...deps,
         adapter: {
@@ -420,5 +456,5 @@ export function useSafeBatchSubmit() {
     return { kind: "proposed", hash, calls: steps.length };
   };
 
-  return { routeFor, submit };
+  return { routeFor, noncesFor, submit };
 }

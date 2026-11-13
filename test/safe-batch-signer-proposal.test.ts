@@ -106,7 +106,7 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
     return service;
   }
 
-  async function submit() {
+  async function submit(proposalNonce?: number) {
     const { result } = renderHook(() => useSafeBatchSubmit());
     let outcome: Awaited<ReturnType<ReturnType<typeof useSafeBatchSubmit>["submit"]>>;
     await act(async () => {
@@ -119,6 +119,7 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
           owners: OPERATOR_SAFE.owners,
           threshold: 2,
         },
+        proposalNonce,
         onProgress: vi.fn(),
         onStep: vi.fn(),
       });
@@ -166,6 +167,25 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
     ]);
     // One call is proposed as itself, so its follow-up expects a direct call, not a MultiSend.
     expect(vi.mocked(recordSafeProposal).mock.calls.at(-1)?.[5]).toMatchObject({ batch: false });
+  });
+
+  it("offers each queued nonce then the next free one, and proposes at the one picked", async () => {
+    // Another call is queued at the Safe's nonce: the batch can replace it there or queue after it.
+    const stale = { ...batch(5), data: "0x12345678" as const };
+    const service = queue([
+      { ...stale, safeTxHash: safeTransactionHash(8453, OPERATOR_SAFE.address, stale) },
+    ]);
+    const { result } = renderHook(() => useSafeBatchSubmit());
+    await expect(
+      result.current.noncesFor({ chainId: 8453, safe: OPERATOR_SAFE.address }),
+    ).resolves.toEqual({ choices: [5, 6], next: 6 });
+
+    const outcome = await submit(5);
+    expect(outcome).toMatchObject({
+      kind: "proposed",
+      hash: safeTransactionHash(8453, OPERATOR_SAFE.address, batch(5)),
+    });
+    expect(service.posts[0]!.body).toMatchObject({ nonce: "5", data: steps[0]!.data });
   });
 
   it("signs nothing when View-as was turned on while the proposal sat in review", async () => {
