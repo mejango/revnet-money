@@ -371,6 +371,7 @@ vi.mock("@/lib/bendystraw", () => ({
   useBendystrawQuery: () => ({ data: undefined }),
 }));
 vi.mock("@/lib/nana/project", () => ({
+  useChain: () => undefined,
   useJBChainId: () => 1,
   useJBContractContext: () => ({
     contractAddress: () => "0x5555555555555555555555555555555555555555",
@@ -1218,6 +1219,9 @@ describe("holder dialogs tell why their button is off, and preview for the viewe
     fireEvent.change(amount, { target: { value: "1" } });
     expect(await screen.findByText(/You'll get/)).toBeTruthy();
     expect(mocks.routeHolder).toHaveBeenLastCalledWith(VIEWED);
+    // View as reads only: the send button is off and says how to get it back.
+    const stop = await screen.findByRole("button", { name: "Exit View as to cash out" });
+    expect((stop as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("quotes a cash out for the connected wallet outside View as", async () => {

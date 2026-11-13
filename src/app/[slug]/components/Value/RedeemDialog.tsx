@@ -2,6 +2,7 @@ import { chainDisplayName } from "@/app/constants";
 import { AllowedDecreaseField } from "@/components/AllowedDecreaseField";
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
+import EtherscanLink from "@/components/EtherscanLink";
 import {
   Dialog,
   DialogContent,
@@ -101,7 +102,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const { address } = useAccount();
   const wagmiConfig = useConfig();
   // Estimates read for the account on screen; the send below stays with the connected wallet.
-  const { address: viewedAddress } = useViewedAccount();
+  const { address: viewedAddress, isViewAs } = useViewedAccount();
   const { data: balances } = useSuckersUserTokenBalance();
   const [cashOutChainId, setCashOutChainId] = useState<string>();
   const cashOutableBalances = balances?.filter((balance) => balance.balance.value > 0n) ?? [];
@@ -597,7 +598,17 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
           <DialogDescription asChild>
             <div className="my-4">
               {isSuccess ? (
-                <div>Success! You can close this window.</div>
+                <div>
+                  <p>Your cash out is confirmed.</p>
+                  <EtherscanLink
+                    value={hash}
+                    type="tx"
+                    chain={selectedChainId ? JB_CHAINS[selectedChainId]?.chain : undefined}
+                    className="mt-2 inline-block underline"
+                  >
+                    View transaction
+                  </EtherscanLink>
+                </div>
               ) : (
                 <>
                   <p className="mb-4">
@@ -769,7 +780,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   (valid &&
                     (isQuoteFetching || directSellLoading || pairPending || !tokenToReceive))
                 }
-                disabled={!valid || !cashOutRoute || !pairVerified}
+                disabled={isViewAs || !valid || !cashOutRoute || !pairVerified}
                 onClick={() => {
                   setError(null);
                   // Pin the reviewed chain: a peer balance arriving later must not unselect it.
@@ -778,7 +789,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                 }}
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"
               >
-                {directSell ? "Sell on market" : "Cash out"}
+                {isViewAs ? "Exit View as to cash out" : directSell ? "Sell on market" : "Cash out"}
               </ButtonWithWallet>
             ) : null}
           </DialogFooter>
