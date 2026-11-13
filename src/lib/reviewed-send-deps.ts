@@ -186,3 +186,15 @@ export function reviewedWalletAdapter(
     requireUnchanged: () => requireWallet(config, reviewed),
   };
 }
+
+/** `adapter`, saying so as the wallet opens for a typed-data signature: the review is agreed by then. */
+export function announcingSign<T extends WalletAdapter>(adapter: T, onSign?: () => void): T {
+  if (!onSign) return adapter;
+  return {
+    ...adapter,
+    signTypedData: (typedData, options) => {
+      onSign();
+      return adapter.signTypedData(typedData, options);
+    },
+  };
+}

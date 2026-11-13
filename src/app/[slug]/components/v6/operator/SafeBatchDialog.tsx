@@ -1,6 +1,7 @@
 "use client";
 
 import { CallRow } from "@/components/ExactCallCard";
+import { Loader2 } from "@/components/ui/icons";
 import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
@@ -18,7 +19,6 @@ import {
 import { formatWalletError } from "@/lib/utils";
 import { hasSafeService } from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
 import { useRef, useState } from "react";
 import type { AbiFunction, Address } from "viem";
 import { useAccount } from "wagmi";

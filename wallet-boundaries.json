@@ -114,6 +114,13 @@
       "test": "test/safe-batch.test.tsx"
     },
     {
+      "file": "src/lib/reviewed-send-deps.ts",
+      "line": 197,
+      "api": "signTypedData",
+      "boundary": "announcingSign forwards unchanged to the guarded adapter it wraps, after telling the caller the wallet is opening. It adds no request of its own.",
+      "test": "test/safe-batch-signer-proposal.test.ts"
+    },
+    {
       "file": "src/lib/safe-relayr.ts",
       "line": 415,
       "api": "request",

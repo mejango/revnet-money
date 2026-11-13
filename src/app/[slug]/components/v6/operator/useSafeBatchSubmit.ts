@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  announcingSign,
   loadEngine,
   requireDone,
   requireProposedOrDone,
@@ -433,14 +434,8 @@ export function useSafeBatchSubmit() {
       },
       {
         ...deps,
-        adapter: {
-          ...adapter,
-          // The wallet opens only once the review is agreed to.
-          signTypedData: (typedData, options) => {
-            onProgress(`Sign the ${what} in your wallet…`);
-            return adapter.signTypedData(typedData, options);
-          },
-        },
+        // The wallet opens only once the review is agreed to.
+        adapter: announcingSign(adapter, () => onProgress(`Sign the ${what} in your wallet…`)),
       },
     );
     void queryClient.invalidateQueries({ queryKey: ["revnet-safe-queues"] });

@@ -3,6 +3,7 @@
 import { recordSubmittedWrite, settleSubmittedWrite } from "@/lib/held-rows";
 import { revertedStep, ReviewRefusal, type ReviewedRunResult } from "@/lib/reviewed-call";
 import {
+  announcingSign,
   loadEngine,
   reviewedSendDeps,
   reviewedWalletAdapter,
@@ -49,7 +50,7 @@ export {
   type ReviewedRunResult,
   type WriteRequest,
 } from "@/lib/reviewed-call";
-export { reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
+export { announcingSign, reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
 export type { ReviewedCall } from "@bananapus/nana-sdk-core/review";
 
 export { WALLET_CHANGED };
@@ -298,15 +299,7 @@ export function useSafeTransactionSignature() {
           },
           plan,
         },
-        {
-          adapter: {
-            ...adapter,
-            signTypedData: (typedData, options) => {
-              onSign?.();
-              return adapter.signTypedData(typedData, options);
-            },
-          },
-        },
+        { adapter: announcingSign(adapter, onSign) },
       );
       // A wallet prompt has no time bound: the wallet, the Safe and the signer are checked again
       // before the signature goes anywhere.
