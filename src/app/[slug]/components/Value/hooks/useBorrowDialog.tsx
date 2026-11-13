@@ -39,6 +39,10 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { borrowIntent, loanIntent } from "@bananapus/nana-sdk-core/review";
 import { hasPermissions, JBPermissionIdsV6 } from "@bananapus/nana-sdk-core/v6";
+import {
+  MIN_PREPAID_FEE_PERCENT,
+  REV_PREPAID_FEE_PERCENT,
+} from "@bananapus/nana-sdk-core/v6/loan-math";
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits, isAddressEqual, parseUnits } from "viem";
@@ -322,9 +326,12 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   const quoteRevnetId = loanSource?.revnetId ?? effectiveProjectId;
 
   // Calculate total fixed fees from contract values (in basis points)
-  const totalFixedFees =
-    (minPrepaidFeePercent ? Number(minPrepaidFeePercent) : 0) +
-    (revPrepaidFeePercent ? Number(revPrepaidFeePercent) : 0);
+  // Until the reads land, the protocol's own constants stand in: a fallback of 0 overstated
+  // "to your wallet after fees" by 3.5%.
+  const totalFixedFees = Number(
+    (minPrepaidFeePercent ?? MIN_PREPAID_FEE_PERCENT) +
+      (revPrepaidFeePercent ?? REV_PREPAID_FEE_PERCENT),
+  );
 
   // Used for estimating how much Native could be borrowed if both
   // the existing loan's collateral and new collateral were combined into one.

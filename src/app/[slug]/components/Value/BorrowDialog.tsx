@@ -204,7 +204,8 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
       : [];
 
   useEffect(() => {
-    if (["pending", "proposed", "reallocation-pending", "success"].includes(borrowStatus)) setReview(false);
+    if (["pending", "proposed", "reallocation-pending", "success"].includes(borrowStatus))
+      setReview(false);
   }, [borrowStatus]);
 
   return (

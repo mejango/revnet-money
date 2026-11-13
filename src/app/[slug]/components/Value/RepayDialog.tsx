@@ -955,7 +955,9 @@ export function RepayDialog({
                   <p className="text-sm text-zinc-500 mt-2">Checking repayment amounts...</p>
                 )}
                 {simulationError && shouldRunSimulation && (
-                  <p className="text-sm text-red-500 mt-2">Error: {simulationError.message}</p>
+                  <p className="text-sm text-red-500 mt-2">
+                    Couldn&apos;t check this repayment. {formatWalletError(simulationError)}
+                  </p>
                 )}
                 {!isSimulating &&
                   !simulationError &&

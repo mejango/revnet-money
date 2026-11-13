@@ -148,7 +148,8 @@ export function ReallocateDialog({
   const statusText = REALLOCATE_STATUS_TEXT[borrowStatus];
 
   useEffect(() => {
-    if (["pending", "proposed", "reallocation-pending", "success"].includes(borrowStatus)) setReview(false);
+    if (["pending", "proposed", "reallocation-pending", "success"].includes(borrowStatus))
+      setReview(false);
   }, [borrowStatus]);
 
   const refinanceContext = cashOutChainId

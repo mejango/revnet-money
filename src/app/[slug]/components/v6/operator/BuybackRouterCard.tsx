@@ -799,7 +799,8 @@ function BuybackActionForm({
 
   // The same calls the submit would send, queued in each chain's tray instead.
   const addToBatch = () => {
-    if (busy) return;
+    // A queued step is sent later with no second look at this warning.
+    if (busy || !ack) return;
     setError(null);
     try {
       const chains = addStepsToBatch(buildWrites().map(stepFromWrite));
@@ -1029,7 +1030,7 @@ function BuybackActionForm({
           variant="secondary"
           size="sm"
           className="h-11"
-          disabled={busy || gate.blocked || !chosen.length}
+          disabled={busy || gate.blocked || !ack || !chosen.length}
           onClick={addToBatch}
         >
           Add to batch
