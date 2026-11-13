@@ -190,12 +190,14 @@ export function useOperatorWrites() {
           isAddressEqual(confirmation.owner, account),
         );
         if (!confirmed) {
-          onProgress(`Sign the already-queued ${label} on ${name} in your wallet…`);
+          const what = `already-queued ${label} on ${name}`;
+          onProgress(`Review the ${what}…`);
           const signature = await signSafeTransactionAsync({
             chainId: write.chainId,
             safe: route.safe,
             tx: existing,
             reverify,
+            onSign: () => onProgress(`Sign the ${what} in your wallet…`),
           });
           await submitSafeConfirmation(write.chainId, route.safe, existing, signature);
         }
@@ -204,12 +206,13 @@ export function useOperatorWrites() {
       }
 
       const tx = safeProposalFor(call, nextProposalNonce(Number(nonce), pending));
-      onProgress(`Sign the ${label} proposal for ${name} in your wallet…`);
+      onProgress(`Review the ${label} proposal for ${name}…`);
       const signature = await signSafeTransactionAsync({
         chainId: write.chainId,
         safe: route.safe,
         tx,
         reverify,
+        onSign: () => onProgress(`Sign the ${label} proposal for ${name} in your wallet…`),
       });
       onProgress(`Queuing the proposal with the Safe service on ${name}…`);
       await proposeSafeTransaction(write.chainId, route.safe, tx, {

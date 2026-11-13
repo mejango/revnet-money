@@ -18,6 +18,7 @@ import {
 import { formatWalletError } from "@/lib/utils";
 import { hasSafeService } from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
 import { useRef, useState } from "react";
 import type { AbiFunction, Address } from "viem";
 import { useAccount } from "wagmi";
@@ -243,11 +244,21 @@ export function SafeBatchDialog({
             }
             onClick={() => void confirm()}
           >
+            {busy || routeQuery.isLoading || gate.pending ? (
+              <Loader2 aria-hidden className="mr-2 inline h-4 w-4 animate-spin" />
+            ) : null}
             {actionLabel(route, steps.length, row.chainId)}
           </button>
         </div>
       }
-      status={status ?? (gate.pending ? "Confirming this project's chains onchain…" : null)}
+      status={
+        status ??
+        (gate.pending
+          ? "Confirming this project's chains onchain…"
+          : routeQuery.isLoading
+            ? "Checking who can sign…"
+            : null)
+      }
       error={error ?? gate.line ?? (route?.kind === "refused" ? route.message : null)}
     >
       <SummaryRow label="On">{name}</SummaryRow>

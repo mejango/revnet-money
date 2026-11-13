@@ -388,16 +388,24 @@ export function useSafeBatchSubmit() {
     const pending = await listPendingSafeTransactions(chainId, safe, Number(nonce));
     const queued = pending.some((tx) => safeTransactionMatchesCall(tx, shape));
     requireNoViewAs();
-    onProgress(
-      queued
-        ? `Sign the already-queued batch on ${name} in your wallet…`
-        : `Sign the batch proposal for ${name} in your wallet…`,
-    );
+    const what = queued ? `already-queued batch on ${name}` : `batch proposal for ${name}`;
+    onProgress(`Review the ${what}…`);
     const { proposeReviewedSafeTransaction } = await loadEngine();
+    const adapter = reviewedWalletAdapter(config, account, connector);
     // The proposal signs after its review, so View-as and the reviewed wallet are checked there.
     const { safeTxHash: hash } = await proposeReviewedSafeTransaction(
       { chainId, safe, calls: reviewedSteps, context, title, origin: SAFE_PROPOSAL_ORIGIN },
-      { ...deps, adapter: reviewedWalletAdapter(config, account, connector) },
+      {
+        ...deps,
+        adapter: {
+          ...adapter,
+          // The wallet opens only once the review is agreed to.
+          signTypedData: (typedData, options) => {
+            onProgress(`Sign the ${what} in your wallet…`);
+            return adapter.signTypedData(typedData, options);
+          },
+        },
+      },
     );
     void queryClient.invalidateQueries({ queryKey: ["revnet-safe-queues"] });
     if (queued) return { kind: "confirmed", hash, calls: steps.length };

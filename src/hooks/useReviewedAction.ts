@@ -268,12 +268,15 @@ export function useSafeTransactionSignature() {
       tx,
       reverify,
       plan,
+      onSign,
     }: {
       chainId: number;
       safe: Address;
       tx: SafeQueuedTransaction;
       reverify?: (account: Address) => Promise<void>;
       plan?: ReviewedPlan;
+      /** Runs as the wallet opens, once the review is agreed to. */
+      onSign?: () => void;
     }): Promise<Hex> => {
       const { address: account, connector } = getAccount(config);
       if (!account) throw new Error("Connect a wallet first.");
@@ -295,7 +298,15 @@ export function useSafeTransactionSignature() {
           },
           plan,
         },
-        { adapter },
+        {
+          adapter: {
+            ...adapter,
+            signTypedData: (typedData, options) => {
+              onSign?.();
+              return adapter.signTypedData(typedData, options);
+            },
+          },
+        },
       );
       // A wallet prompt has no time bound: the wallet, the Safe and the signer are checked again
       // before the signature goes anywhere.
