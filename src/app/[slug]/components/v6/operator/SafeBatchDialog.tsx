@@ -25,11 +25,26 @@ import { useAccount } from "wagmi";
 import { chainName, type ChainProjectRow } from "./operatorLib";
 import { useSafeBatchSubmit, type SafeBatchRoute } from "./useSafeBatchSubmit";
 
-function formatArgument(value: unknown): string {
-  if (typeof value === "bigint") return value.toString();
-  if (typeof value === "string") return value;
-  return JSON.stringify(value, (_key, item: unknown) =>
-    typeof item === "bigint" ? item.toString() : item,
+/** One argument: a scalar as a `name: value` row, a tuple or array as its rows indented below. */
+function ArgumentRow({ label, value }: { label: string; value: unknown }) {
+  if (value === null || typeof value !== "object") {
+    return <CallRow label={label}>{String(value)}</CallRow>;
+  }
+  const entries = Array.isArray(value)
+    ? value.map((item, index) => [`${index + 1}`, item] as const)
+    : Object.entries(value);
+  if (!entries.length) return <CallRow label={label}>[]</CallRow>;
+  return (
+    <div>
+      <dt className="text-zinc-500">{label}:</dt>
+      <dd>
+        <dl className="ml-1 space-y-0.5 border-l border-melon-200 pl-2">
+          {entries.map(([name, item]) => (
+            <ArgumentRow key={name} label={name} value={item} />
+          ))}
+        </dl>
+      </dd>
+    </div>
   );
 }
 
@@ -49,9 +64,11 @@ function DecodedCall({ step }: { step: BatchStep }) {
           : step.data.slice(0, 10)}
       </CallRow>
       {fn?.inputs.map((input, index) => (
-        <CallRow key={`${input.name ?? index}`} label={input.name || `argument ${index + 1}`}>
-          {formatArgument(step.args[index])}
-        </CallRow>
+        <ArgumentRow
+          key={`${input.name ?? index}`}
+          label={input.name || `argument ${index + 1}`}
+          value={step.args[index]}
+        />
       ))}
     </dl>
   );
