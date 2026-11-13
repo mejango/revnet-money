@@ -6,7 +6,8 @@ jango: "make sure revnet money is also aligned with juicebox money, though be mi
 - [x] R2 Loans: a Safe proposal ends as proposed in Borrow, Reallocate and Repay, never as done.
 - [x] R3 Buyback router card: Add to batch needs the danger acknowledgement, like Send.
 - [x] R4 Loan fee total falls back to the SDK protocol constants when the onchain read is missing; repay check errors read plainly.
-- [ ] R5 Still open: net "You receive" row on cash out, separate approval review for ERC-20 repay, registry read failures shown as unset, view-as on liquidity, success and receipt surfaces, reclaim token source.
+- [x] R5a Cash out ends on a confirmed state with a transaction link and stops under View as; the buyback card says when a registry read failed instead of "Not set".
+- [ ] R5 Still open: net "You receive" row on cash out, separate approval review for ERC-20 repay, view-as on liquidity, burn and Safe proposal end states, reclaim token source read onchain, ENS in buyback address fields.
 - [ ] R6 Not yet compared: pay card, read surface and home, operator metadata, splits and permissions, send modes and shell, launch form and guides.
 
 ## Plan refinement
