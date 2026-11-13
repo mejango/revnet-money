@@ -58,6 +58,8 @@ type BuybackChainState = ChainProjectRow & {
   terminal: Address | null;
   defaultHook: Address | null;
   defaultTerminal: Address | null;
+  /** A read threw: the values above are unknown, not unset. */
+  readFailed: boolean;
   /** Pair tokens with an initialized pool on this chain, and their TWAP window. */
   pools: { label: string; token: Address; twap: number; fee: number; tickSpacing: number }[];
   poolSummary: string;
@@ -196,9 +198,14 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
     row.chainId,
   );
 
+  let readFailed = false;
+  const unread = () => {
+    readFailed = true;
+    return null;
+  };
   const [hook, terminal, defaultHook, defaultTerminal] = await Promise.all([
-    resolveBuybackHook(row).catch(() => null),
-    resolveRouterTerminal(row).catch(() => null),
+    resolveBuybackHook(row).catch(unread),
+    resolveRouterTerminal(row).catch(unread),
     buybackRegistry
       ? client
           .readContract({
@@ -206,7 +213,7 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
             abi: jbBuybackHookRegistryAbi,
             functionName: "defaultHook",
           })
-          .catch(() => null)
+          .catch(unread)
       : Promise.resolve(null),
     routerRegistry
       ? client
@@ -215,7 +222,7 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
             abi: jbRouterTerminalRegistryAbi,
             functionName: "defaultTerminal",
           })
-          .catch(() => null)
+          .catch(unread)
       : Promise.resolve(null),
   ]);
 
@@ -271,10 +278,15 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
     terminal,
     defaultHook,
     defaultTerminal,
+    readFailed,
     pools,
     poolSummary,
   };
 }
+
+/** Shown when a chain's registry reads failed, so unknown never reads as unset. Same line as juicebox.money. */
+export const READ_FAILED_LINE =
+  "Could not verify registry availability or the project’s current selection.";
 
 type ActionKind = "hook" | "terminal" | "pool" | "setPool" | "twap";
 
@@ -447,11 +459,13 @@ function ActionRow({
         // When every chain reads the same, one value + a note beats four cards.
         const cells = states.map(cell);
         const summaries = states.map((state, i) =>
-          !cells[i].isAvailable
-            ? "unavailable"
-            : showsPool
-              ? state.poolSummary
-              : (cells[i].value ?? "unset").toLowerCase(),
+          state.readFailed
+            ? "unread"
+            : !cells[i].isAvailable
+              ? "unavailable"
+              : showsPool
+                ? state.poolSummary
+                : (cells[i].value ?? "unset").toLowerCase(),
         );
         const allSame = states.length > 1 && summaries.every((s) => s === summaries[0]);
 
@@ -461,7 +475,9 @@ function ActionRow({
           return (
             <div className="mt-2 flex items-start gap-2 border border-melon-200 px-2.5 py-1.5">
               <div className="min-w-0">
-                {!isAvailable ? (
+                {first.readFailed ? (
+                  <p className="text-xs text-zinc-500">{READ_FAILED_LINE}</p>
+                ) : !isAvailable ? (
                   <p className="text-xs text-zinc-500">{unavailableNote(kind, true)}</p>
                 ) : showsPool ? (
                   <p className="text-xs text-zinc-600">{first.poolSummary}</p>
@@ -473,7 +489,7 @@ function ActionRow({
                     className="text-xs font-mono"
                   />
                 ) : (
-                  <p className="text-xs text-zinc-500">Not set or unavailable</p>
+                  <p className="text-xs text-zinc-500">Not set</p>
                 )}
                 <p className="text-xs text-zinc-500 mt-0.5">Same on all chains</p>
               </div>
@@ -493,7 +509,9 @@ function ActionRow({
                   <ChainLogo chainId={state.chainId} width={14} height={14} className="mt-0.5" />
                   <div className="min-w-0">
                     <p className="text-xs font-medium text-zinc-700">{chainName(state.chainId)}</p>
-                    {!isAvailable ? (
+                    {state.readFailed ? (
+                      <p className="text-xs text-zinc-500">{READ_FAILED_LINE}</p>
+                    ) : !isAvailable ? (
                       <p className="text-xs text-zinc-500">{unavailableNote(kind, false)}</p>
                     ) : showsPool ? (
                       <p className="text-xs text-zinc-600">{state.poolSummary}</p>
@@ -505,7 +523,7 @@ function ActionRow({
                         className="text-xs font-mono"
                       />
                     ) : (
-                      <p className="text-xs text-zinc-500">Not set or unavailable</p>
+                      <p className="text-xs text-zinc-500">Not set</p>
                     )}
                   </div>
                 </div>
