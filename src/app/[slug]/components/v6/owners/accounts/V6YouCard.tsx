@@ -250,6 +250,8 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   const held = useMemo(() => (balances ?? []).filter((b) => b.balance.value > 0n), [balances]);
   const totalBalance = held.reduce((acc, b) => acc + b.balance.value, 0n);
 
+  // An open claim stays mounted while its credits settle to zero.
+  const [claimOpen, setClaimOpen] = useState(false);
   const creditRows: CreditRow[] = useMemo(
     () =>
       held.flatMap((b) => {
@@ -446,8 +448,9 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
           </BridgeDialog>
         )}
 
-        {hasErc20 && (
+        {hasErc20 && (creditRows.length > 0 || claimOpen) && (
           <V6ClaimCreditsDialog
+            onOpenChange={setClaimOpen}
             creditRows={creditRows}
             tokenSymbol={tokenSymbol}
             batchScope={projects

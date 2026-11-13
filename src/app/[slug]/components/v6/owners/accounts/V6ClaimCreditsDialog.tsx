@@ -39,8 +39,14 @@ export function V6ClaimCreditsDialog({
   creditRows,
   tokenSymbol,
   batchScope,
+  onOpenChange,
   children,
-}: PropsWithChildren<{ creditRows: CreditRow[]; tokenSymbol: string; batchScope: string }>) {
+}: PropsWithChildren<{
+  creditRows: CreditRow[];
+  tokenSymbol: string;
+  batchScope: string;
+  onOpenChange?: (open: boolean) => void;
+}>) {
   const { address } = useAccount();
   const { contractAddress } = useJBContractContext();
   const queryClient = useQueryClient();
@@ -51,7 +57,7 @@ export function V6ClaimCreditsDialog({
   const scope = `claim-credits:${batchScope}`;
 
   return (
-    <Dialog>
+    <Dialog onOpenChange={onOpenChange}>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent className="max-w-lg">
         <DialogHeader>
