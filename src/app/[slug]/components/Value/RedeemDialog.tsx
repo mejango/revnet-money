@@ -35,6 +35,7 @@ import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { ProjectOperation, SuckerGroupOperation, useBendystrawQuery } from "@/lib/bendystraw";
 import {
   cashOutExecutionErrorMessage,
+  cashOutMinimumDropped,
   cashOutPoolBufferBps,
   resolveCashOutChainId,
 } from "@/lib/cashOutQuote";
@@ -57,6 +58,7 @@ import {
 import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
 import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
+import { isSafeConnection } from "@/lib/safe-connector";
 import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import {
@@ -69,6 +71,7 @@ import {
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
 import { approvalIntent, cashOutIntent } from "@bananapus/nana-sdk-core/review";
+import { swapDeadline } from "@bananapus/nana-sdk-core/safe-service";
 import {
   getTokenAddress,
   prepareHookAwareCashOut,
@@ -77,7 +80,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { PropsWithChildren, useEffect, useState } from "react";
 import { erc20Abi, type Address, type PublicClient } from "viem";
-import { useAccount, usePublicClient } from "wagmi";
+import { useAccount, useConfig, usePublicClient } from "wagmi";
 import { readPoolSnapshot } from "../v6/owners/market/lib";
 
 interface Props {
@@ -96,6 +99,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const [slippageBps, setSlippageBps] = useState(100);
 
   const { address } = useAccount();
+  const wagmiConfig = useConfig();
   // Estimates read for the account on screen; the send below stays with the connected wallet.
   const { address: viewedAddress } = useViewedAccount();
   const { data: balances } = useSuckersUserTokenBalance();
@@ -481,7 +485,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
             quote: directSell,
             amount: redeemAmountBN,
             recipient: address,
-            deadline: BigInt(Math.floor(Date.now() / 1000) + 1_800),
+            // A Safe sale waits for its signers: 30 minutes would expire before most proposals execute.
+            deadline: swapDeadline(isSafeConnection(wagmiConfig)),
           }),
           { dependsOnPrior: approvals.length > 0, intent: cashOut, legacyIntents: legacy },
         );
@@ -498,6 +503,12 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
         });
         if (prepared.route.expectedReturn <= 0n) {
           throw new Error("The cash-out quote is no longer available. Review and try again.");
+        }
+        // The review shows the minimum from the form's quote. The call carries the fresh one: when that is
+        // lower, the row "Stops if you would receive less than" would no longer be true.
+        if (cashOutMinimumDropped(cashOutRoute?.minimumReturn, prepared.route.minimumReturn)) {
+          void refetchCashOutRoute();
+          throw new ReviewRefusal("The cash out estimate dropped. Review the new estimate.");
         }
         saleCall = reviewedCall(prepared.transaction, { intent: cashOut, legacyIntents: legacy });
       }

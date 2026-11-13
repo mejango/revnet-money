@@ -51,6 +51,8 @@ export type LoanStatus =
   | "granting-permission"
   | "waiting-signature"
   | "pending"
+  // Proposed to a Safe: nothing is created until the Safe executes it.
+  | "proposed"
   | "success"
   | "error"
   | "reallocation-pending"
@@ -78,7 +80,7 @@ function loanStatus(attempt: LoanAttempt, run: ReviewedAction): LoanStatus {
       return "pending";
     // A proposed grant waits for its Safe; a proposed loan whose result can't be known is not failed.
     case "proposed":
-      return run.held?.exit && attempt.prompt !== "grant" ? "safe-unconfirmed" : "pending";
+      return run.held?.exit && attempt.prompt !== "grant" ? "safe-unconfirmed" : "proposed";
     case "done":
       return "success";
     // Ended without a send: failed, or closed until the send returns.

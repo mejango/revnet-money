@@ -151,7 +151,7 @@ describe("a permission step that went to the Safe as a proposal", () => {
     await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
     await act(() => result.current.handleBorrow());
 
-    expect(result.current.borrowStatus).toBe("pending");
+    expect(result.current.borrowStatus).toBe("proposed");
     expect(mocks.toast).toHaveBeenCalledExactlyOnceWith({
       title: "Safe permission proposal submitted",
       description: SAFE_PROPOSAL_PENDING_LINE,

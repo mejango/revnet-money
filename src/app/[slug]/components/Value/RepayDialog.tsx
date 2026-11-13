@@ -44,12 +44,21 @@ import {
 } from "wagmi";
 
 type RepayStatus =
-  "idle" | "approving" | "waiting-signature" | "pending" | "success" | "error" | "safe-unconfirmed";
+  | "idle"
+  | "approving"
+  | "waiting-signature"
+  | "pending"
+  // Proposed to a Safe: nothing is repaid until the Safe executes it.
+  | "proposed"
+  | "success"
+  | "error"
+  | "safe-unconfirmed";
 
 const REPAY_STATUS_TEXT: Record<Exclude<RepayStatus, "idle">, string> = {
   "waiting-signature": "Waiting for wallet confirmation...",
   approving: "Approving token use...",
   pending: "Repayment pending...",
+  proposed: SAFE_PROPOSAL_PENDING_LINE,
   success: "Repayment confirmed.",
   error: "Repayment failed.",
   "safe-unconfirmed": SAFE_PROPOSAL_UNCONFIRMED_LINE,
@@ -489,7 +498,8 @@ export function RepayDialog({
   }, [open, loanData, projectTokenDecimals]);
 
   useEffect(() => {
-    if (repayStatus === "pending" || repayStatus === "success") setReview(null);
+    if (repayStatus === "pending" || repayStatus === "proposed" || repayStatus === "success")
+      setReview(null);
   }, [repayStatus]);
 
   // What the review shows first; read when the repayment runs, after every value is set.
@@ -560,7 +570,7 @@ export function RepayDialog({
     }
     if (result?.status === "failed") throw new ReviewRefusal(failedLine(result));
     if (result?.status === "proposed") {
-      setRepayStatus("pending");
+      setRepayStatus("proposed");
       toast({ title: "Safe proposal submitted", description: SAFE_PROPOSAL_PENDING_LINE });
     }
     return result;
@@ -994,7 +1004,10 @@ export function RepayDialog({
               <ButtonWithWallet
                 targetChainId={chainId as JBChainId}
                 loading={
-                  isRepaying || repayStatus === "waiting-signature" || repayStatus === "pending"
+                  isRepaying ||
+                  repayStatus === "waiting-signature" ||
+                  repayStatus === "pending" ||
+                  repayStatus === "proposed"
                 }
                 onClick={() => setReview("repay")}
                 disabled={
