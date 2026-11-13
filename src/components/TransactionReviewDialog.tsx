@@ -403,24 +403,29 @@ function SignatureView({
   signature,
   index,
   total,
+  headerAction,
 }: {
   signature: ReviewSignatureModel;
   index: number;
   total: number;
+  headerAction?: ReactNode;
 }) {
   return (
     <section className="border border-melon-200 bg-melon-50 p-4 sm:p-5">
       <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
         {total > 1 ? `Signature ${index + 1} of ${total}` : "Signature"}
       </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="flex items-center gap-1.5 border border-melon-300 bg-melon-100 px-2.5 py-1 text-xs font-medium leading-none text-melon-800">
-          {isSupportedChainId(signature.chainId) ? (
-            <ChainLogo chainId={signature.chainId} width={16} height={16} />
-          ) : null}
-          {chainDisplayName(signature.chainId)}
-        </span>
-        <span className="font-mono text-[11px] text-zinc-500">chain {signature.chainId}</span>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex items-center gap-1.5 border border-melon-300 bg-melon-100 px-2.5 py-1 text-xs font-medium leading-none text-melon-800">
+            {isSupportedChainId(signature.chainId) ? (
+              <ChainLogo chainId={signature.chainId} width={16} height={16} />
+            ) : null}
+            {chainDisplayName(signature.chainId)}
+          </span>
+          <span className="font-mono text-[11px] text-zinc-500">chain {signature.chainId}</span>
+        </div>
+        {headerAction}
       </div>
       <h3 className="mt-3 text-base font-medium text-zinc-900">
         {SIGNATURE_KINDS[signature.kind]}
@@ -532,6 +537,21 @@ function ReviewModal({
     window.setTimeout(() => setCopyState("idle"), 2200);
   };
 
+  // One audit prompt per review, on its first signature or, with none, its first call.
+  const copyButton = (
+    <button
+      type="button"
+      onClick={copyPrompt}
+      className="min-h-[36px] border border-melon-600 bg-melon-100 px-4 text-xs font-bold hover:bg-melon-200"
+    >
+      {copyState === "copied"
+        ? "Prompt copied — paste into your LLM"
+        : copyState === "failed"
+          ? "Could not copy prompt"
+          : "[copy tx audit prompt]"}
+    </button>
+  );
+
   const titleId = `transaction-review-title-${pending.id}`;
   const descriptionId = `transaction-review-description-${pending.id}`;
   if (model.warnings.some((warning) => warning.code === "unreadable")) {
@@ -616,6 +636,7 @@ function ReviewModal({
                 signature={signature}
                 index={index}
                 total={model.signatures.length}
+                headerAction={index === 0 ? copyButton : null}
               />
             ))}
             {model.calls.map((call, index) => (
@@ -624,21 +645,7 @@ function ReviewModal({
                 call={call}
                 index={index}
                 total={model.calls.length}
-                headerAction={
-                  index === 0 ? (
-                    <button
-                      type="button"
-                      onClick={copyPrompt}
-                      className="min-h-[36px] border border-melon-600 bg-melon-100 px-4 text-xs font-bold hover:bg-melon-200"
-                    >
-                      {copyState === "copied"
-                        ? "Prompt copied — paste into your LLM"
-                        : copyState === "failed"
-                          ? "Could not copy prompt"
-                          : "[copy tx audit prompt]"}
-                    </button>
-                  ) : null
-                }
+                headerAction={index === 0 && !model.signatures.length ? copyButton : null}
               />
             ))}
           </div>
