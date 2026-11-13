@@ -584,11 +584,6 @@ function ReviewModal({
               {model.description}
             </p>
           </div>
-          {commitment ? (
-            <div className="mt-3 border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
-              {COMMITMENT_TEXT[commitment].banner}
-            </div>
-          ) : null}
           {model.context.length ? (
             <dl className="mt-4 grid text-sm">
               {model.context.map((row, index) => (
@@ -648,6 +643,11 @@ function ReviewModal({
             ))}
           </div>
 
+          {commitment ? (
+            <div className="mt-4 border border-amber-300 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-900">
+              {COMMITMENT_TEXT[commitment].banner}
+            </div>
+          ) : null}
           <details className="mt-4 overflow-hidden border border-melon-300 bg-melon-50">
             <summary className="cursor-pointer px-4 py-3 text-xs font-medium text-zinc-700 hover:bg-melon-100">
               Raw transaction payload
