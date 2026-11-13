@@ -24,30 +24,37 @@
     },
     {
       "file": "src/components/TransactionReviewProvider.tsx",
-      "line": 81,
+      "line": 86,
       "api": "registerReviewHandler",
       "boundary": "The one review dialog answers core's prompts: it returns core's confirmation for the model it showed, or null. It never signs or sends.",
       "test": "test/transaction-review-provider.test.tsx"
     },
     {
       "file": "src/components/TransactionReviewProvider.tsx",
-      "line": 82,
+      "line": 87,
       "api": "request",
       "boundary": "Core's review dialog queue (createReviewQueue) shows a review; it resolves the person's answer and never signs, sends or calls a wallet RPC.",
       "test": "test/transaction-review-provider.test.tsx"
     },
     {
       "file": "src/components/TransactionReviewProvider.tsx",
-      "line": 94,
+      "line": 99,
       "api": "request",
       "boundary": "Core's review dialog queue (createReviewQueue) shows a flow choice; it resolves the person's answer and never signs, sends or calls a wallet RPC.",
       "test": "test/transaction-review-provider.test.tsx"
     },
     {
       "file": "src/components/TransactionReviewProvider.tsx",
-      "line": 104,
+      "line": 109,
       "api": "request",
       "boundary": "Core's review dialog queue (createReviewQueue) shows a funding chain choice; it resolves the person's answer and never signs, sends or calls a wallet RPC.",
+      "test": "test/transaction-review-provider.test.tsx"
+    },
+    {
+      "file": "src/components/TransactionReviewProvider.tsx",
+      "line": 124,
+      "api": "request",
+      "boundary": "Core's review dialog queue (createReviewQueue) shows a Safe nonce choice; it resolves the person's answer and never signs, sends or calls a wallet RPC.",
       "test": "test/transaction-review-provider.test.tsx"
     },
     {

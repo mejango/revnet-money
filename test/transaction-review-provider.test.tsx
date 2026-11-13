@@ -2,6 +2,7 @@ import { TransactionReviewProvider } from "@/components/TransactionReviewProvide
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import type { ChainPayment } from "@/lib/nana/types";
 import { protocolQueueLabel } from "@/lib/protocol-queue-label";
+import { chooseSafeNonce } from "@/lib/safe-nonce-choice";
 import { queuedSafeReviewCall } from "@/lib/safe-queue-review";
 import {
   chooseRelayrPayment,
@@ -154,6 +155,36 @@ describe("TransactionReviewProvider", () => {
 
     await cancelled;
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("asks for a Safe nonce only when a queued proposal could be replaced", async () => {
+    render(<TransactionReviewProvider>{null}</TransactionReviewProvider>);
+    // Nothing queued: the next free nonce, with no prompt.
+    await expect(chooseSafeNonce({ chainName: "Ethereum", choices: [7] })).resolves.toBe(7);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    const choice = chooseSafeNonce({ chainName: "Ethereum", choices: [7, 8, 9] });
+    await screen.findByRole("dialog", { name: "Choose the Safe nonce" });
+    const select = screen.getByRole("combobox", { name: "Safe nonce" });
+    expect(select).toHaveValue("9");
+    expect(
+      within(select)
+        .getAllByRole("option")
+        .map((option) => option.textContent),
+    ).toEqual([
+      "7, replaces what is queued there",
+      "8, replaces what is queued there",
+      "9, next available",
+    ]);
+    fireEvent.change(select, { target: { value: "7" } });
+    fireEvent.click(screen.getByRole("button", { name: "Continue to review" }));
+    await expect(choice).resolves.toBe(7);
+
+    const closed = chooseSafeNonce({ chainName: "Ethereum", choices: [7, 8] });
+    const cancelled = expect(closed).rejects.toBeInstanceOf(TransactionReviewCancelledError);
+    await screen.findByRole("dialog", { name: "Choose the Safe nonce" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await cancelled;
   });
 
   it("queues the funding choice behind an open review", async () => {

@@ -9,13 +9,14 @@ import {
 import { submittedViaSafe } from "@/lib/held-rows";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { isSafeConnection } from "@/lib/safe-connector";
+import { chooseSafeNonce } from "@/lib/safe-nonce-choice";
 import { SAFE_PROPOSAL_ORIGIN } from "@/lib/safe-transactions";
 import { chooseRelayrPayment } from "@/lib/transaction-review";
 import { gasWithHeadroom, type ReviewContextRow } from "@bananapus/nana-sdk-core/review";
 import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
   listPendingSafeTransactions,
-  nextProposalNonce,
+  proposalNonceChoices,
   proposeSafeTransaction,
   safeProposalFor,
   safeTransactionMatchesCall,
@@ -205,7 +206,14 @@ export function useOperatorWrites() {
         continue;
       }
 
-      const tx = safeProposalFor(call, nextProposalNonce(Number(nonce), pending));
+      // Queued proposals offer their nonces for replacement; an empty queue asks nothing.
+      const tx = safeProposalFor(
+        call,
+        await chooseSafeNonce({
+          chainName: name,
+          choices: proposalNonceChoices(Number(nonce), pending),
+        }),
+      );
       onProgress(`Review the ${label} proposal for ${name}…`);
       const signature = await signSafeTransactionAsync({
         chainId: write.chainId,

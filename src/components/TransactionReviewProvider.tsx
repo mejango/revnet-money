@@ -9,6 +9,7 @@ import {
 } from "@/components/TransactionReviewScope";
 import { ModalDialog } from "@/components/ui/ModalShell";
 import { registerFlowChoiceHandler, type FlowChoice } from "@/lib/flow-choice";
+import { registerSafeNonceHandler, type SafeNonceRequest } from "@/lib/safe-nonce-choice";
 import {
   registerFundingChainSelectionHandler,
   type FundingChainOption,
@@ -40,13 +41,16 @@ export type PendingFundingChainSelection = {
   initialChainId: number | null;
 };
 
+export type PendingSafeNonceSelection = { kind: "nonce"; id: number; request: SafeNonceRequest };
+
 /** A choice a flow asks for mid-action, such as sending a held write again. */
 type PendingFlowChoice = { kind: "choice"; id: number; choice: FlowChoice };
 
-type PendingDialog = PendingReview | PendingFundingChainSelection | PendingFlowChoice;
+type PendingDialog =
+  PendingReview | PendingFundingChainSelection | PendingSafeNonceSelection | PendingFlowChoice;
 
 /** The dialogs the lazily loaded review module draws. */
-type PendingReviewDialog = PendingReview | PendingFundingChainSelection;
+type PendingReviewDialog = PendingReview | PendingFundingChainSelection | PendingSafeNonceSelection;
 
 export type TransactionReviewDialogProps = {
   pending: PendingReviewDialog;
@@ -58,6 +62,7 @@ type Answer = boolean | number | null;
 type Payload =
   | Omit<PendingReview, "id">
   | Omit<PendingFundingChainSelection, "id">
+  | Omit<PendingSafeNonceSelection, "id">
   | Omit<PendingFlowChoice, "id">;
 const approves = (result: Answer) => result === true || typeof result === "number";
 
@@ -107,6 +112,17 @@ export function TransactionReviewProvider({ children }: PropsWithChildren) {
             options: options.map((option) => ({ ...option })),
             initialChainId,
           },
+          { declined: null, approves },
+        );
+        return typeof chosen === "number" ? chosen : null;
+      }),
+    [queue],
+  );
+  useEffect(
+    () =>
+      registerSafeNonceHandler(async (request) => {
+        const chosen = await queue.request(
+          { kind: "nonce", request: { ...request, choices: [...request.choices] } },
           { declined: null, approves },
         );
         return typeof chosen === "number" ? chosen : null;
