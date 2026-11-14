@@ -42,8 +42,15 @@ vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
   useAccount: () => ({ address: mocks.address, isConnected: true }),
-  // ERC-20 allowance reads answer zero, so every ERC-20 payment needs an approval.
-  usePublicClient: () => ({ simulateContract: mocks.simulate, readContract: async () => 0n }),
+  // Allowance reads answer zero, and the account has code: a contract wallet approves the
+  // terminal for the exact amount.
+  usePublicClient: () => ({
+    simulateContract: mocks.simulate,
+    readContract: async ({ functionName, args }: { functionName: string; args: unknown[] }) =>
+      functionName === "allowance" && args.length === 3 ? [0n, 0, 0] : 0n,
+    getBlock: async () => ({ timestamp: 1_700_000_000n }),
+    getCode: async () => "0x60",
+  }),
   // The chain's own receipt read, which a Safe proposal never makes.
   useWaitForTransactionReceipt: () => ({
     data: undefined,

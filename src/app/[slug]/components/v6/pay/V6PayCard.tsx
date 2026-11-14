@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useOpenedOnce } from "@/hooks/useOpenedOnce";
-import { useReviewedAction } from "@/hooks/useReviewedAction";
+import { signPayAuthorization, useReviewedAction } from "@/hooks/useReviewedAction";
 import { useSecondsUntil } from "@/hooks/useSecondsUntil";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
@@ -23,6 +23,7 @@ import {
 } from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
 import { ACCOUNT_CHANGED, failedLine, revertedStep, reviewedCall } from "@/lib/reviewed-call";
+import { isSafeConnection } from "@/lib/safe-connector";
 import { Token } from "@/lib/token";
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import {
@@ -33,6 +34,7 @@ import {
   payTokenKey,
   V6PayMode,
 } from "@/lib/v6/pay";
+import { wagmiConfig } from "@/lib/wagmiConfig";
 import { heldLineOf } from "@/lib/write-hold";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
@@ -45,6 +47,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { approvalIntent, payIntent } from "@bananapus/nana-sdk-core/review";
 import {
+  addPermit2PayMetadata,
   buildPayTx,
   decodePayFailure,
   effectiveTierPrice,
@@ -53,8 +56,12 @@ import {
   PAY_SWAP_QUOTE_FAILED_MESSAGE,
   payRetrySlippageBps,
   PaySwapQuoteFailedError,
+  PERMIT2_ADDRESS,
+  permit2PayAuthorizationReusable,
+  planErc20PayAuthorization,
   prepareUserPay,
   resolvePaymentTerminal,
+  type SignedPermit2PayAuthorization,
   type UserPayTiers,
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
@@ -62,8 +69,9 @@ import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } fro
 import {
   Address,
   encodeFunctionData,
-  erc20Abi,
   formatUnits,
+  type Hex,
+  maxUint256,
   parseUnits,
   PublicClient,
   zeroAddress,
@@ -147,6 +155,8 @@ export function V6PayCard() {
   // preparation is sent only while it still matches both.
   const currentPayRef = useRef<CurrentPay>({ identity: "", quoteTerminal: null });
   const pay = useReviewedAction();
+  /** A signed pay authorization, kept while its payment retries. */
+  const signedAuthorization = useRef<SignedPermit2PayAuthorization | null>(null);
 
   const projectToken = useJBTokenContext().token.data;
   const projectTokenLabel = projectToken?.symbol
@@ -643,7 +653,8 @@ export function V6PayCard() {
   const busy =
     phase === "safe-proposed" ||
     (confirmOpen &&
-      (phase === "approving-token" ||
+      (phase === "authorizing" ||
+        phase === "approving-token" ||
         phase === "simulating" ||
         phase === "signing" ||
         phase === "pending"));
@@ -741,13 +752,13 @@ export function V6PayCard() {
         });
         const terminal = request.address;
         const abi = quote.routeType === "swap" ? jbRouterTerminalRegistryAbi : jbMultiTerminalAbi;
-        const tokenApprovalNeeded = await needsApproval(
-          client,
-          selected.token,
-          address,
-          terminal,
-          amountRaw,
-        );
+        const authorization = await payAuthorizationOf(client, {
+          chainId,
+          owner: address,
+          token: selected,
+          entry: terminal,
+          amount: amountRaw,
+        });
         next = {
           identity: payIdentity,
           account: address,
@@ -761,26 +772,9 @@ export function V6PayCard() {
           reservedTokens: quote.reservedTokenCount,
           minReturned: quote.minReturned,
           quoteFailed: quote.quoteFailed,
-          needsApproval: tokenApprovalNeeded,
+          needsApproval: !!authorization.tokenApproval,
           tokenApprovalComplete: false,
-          tokenApproval: tokenApprovalNeeded
-            ? {
-                kind: "token-approval",
-                label: `Approve ${selected.symbol} access`,
-                request: {
-                  address: selected.token,
-                  abi: erc20ApproveAbi,
-                  functionName: "approve",
-                  args: [terminal, amountRaw],
-                  value: 0n,
-                },
-                calldata: encodeFunctionData({
-                  abi: erc20ApproveAbi,
-                  functionName: "approve",
-                  args: [terminal, amountRaw],
-                }),
-              }
-            : null,
+          ...authorization,
           cartRows,
           request: {
             address: request.address,
@@ -802,13 +796,13 @@ export function V6PayCard() {
         const terminal = jbV6ContractAddress[JBCoreContracts.JBMultiTerminal][chainId];
         const args = [projectId, selected.token, amountRaw, false, memo.trim(), "0x"] as const;
         const value = isNativePayToken(selected.token) ? amountRaw : 0n;
-        const tokenApprovalNeeded = await needsApproval(
-          client,
-          selected.token,
-          address,
-          terminal,
-          amountRaw,
-        );
+        const authorization = await payAuthorizationOf(client, {
+          chainId,
+          owner: address,
+          token: selected,
+          entry: terminal,
+          amount: amountRaw,
+        });
         next = {
           identity: payIdentity,
           account: address,
@@ -822,26 +816,9 @@ export function V6PayCard() {
           reservedTokens: null,
           minReturned: 0n,
           quoteFailed: false,
-          needsApproval: tokenApprovalNeeded,
+          needsApproval: !!authorization.tokenApproval,
           tokenApprovalComplete: false,
-          tokenApproval: tokenApprovalNeeded
-            ? {
-                kind: "token-approval",
-                label: `Approve ${selected.symbol} access`,
-                request: {
-                  address: selected.token,
-                  abi: erc20ApproveAbi,
-                  functionName: "approve",
-                  args: [terminal, amountRaw],
-                  value: 0n,
-                },
-                calldata: encodeFunctionData({
-                  abi: erc20ApproveAbi,
-                  functionName: "approve",
-                  args: [terminal, amountRaw],
-                }),
-              }
-            : null,
+          ...authorization,
           cartRows: [],
           request: {
             address: terminal,
@@ -925,6 +902,50 @@ export function V6PayCard() {
       prepared.tokenApproval && !prepared.tokenApprovalComplete ? prepared.tokenApproval : null;
     try {
       requireCurrent(prepared, currentPayRef.current);
+      let request = prepared.request;
+      if (prepared.authorization) {
+        // The free signature comes first: declining it sends nothing and leaves no approval behind.
+        dispatch({ type: "send", phase: "authorizing" });
+        let signed: SignedPermit2PayAuthorization;
+        try {
+          const plan = await planErc20PayAuthorization(publicClient as PublicClient, {
+            chainId: prepared.chainId,
+            owner: prepared.account,
+            token: prepared.token.token,
+            entry: prepared.request.address,
+            amount: prepared.amount,
+            isSafe: isSafeConnection(wagmiConfig),
+          });
+          // The wallet or its approvals changed since the review was built: build it again.
+          if (plan.kind !== "permit2" || plan.needsTokenApproval !== !!approval) {
+            dispatch({ type: "prepare", notice: PAYMENT_CHANGED });
+            return;
+          }
+          const kept = signedAuthorization.current;
+          signed = permit2PayAuthorizationReusable(kept, plan.authorization)
+            ? kept
+            : {
+                authorization: plan.authorization,
+                signature: await signPayAuthorization(
+                  wagmiConfig,
+                  plan.authorization,
+                  prepared.account,
+                ),
+              };
+          signedAuthorization.current = signed;
+        } catch (err) {
+          dispatch({ type: "failed", error: formatWalletError(err) });
+          return;
+        }
+        requireCurrent(prepared, currentPayRef.current);
+        // The payment carries the signed allowance in its metadata, its last argument.
+        const args = [...prepared.request.args];
+        args[args.length - 1] = addPermit2PayMetadata({
+          metadata: args.at(-1) as Hex | undefined,
+          ...signed,
+        });
+        request = { ...prepared.request, args };
+      }
       // In flight from here: the confirm holds, and a changed payment is caught by the write gate.
       dispatch({ type: "send", phase: approval ? "approving-token" : "simulating" });
       // The review's rows load with the confirm that called this, never with the card.
@@ -943,7 +964,7 @@ export function V6PayCard() {
                     intent: approvalIntent(intent, {
                       step: "erc20",
                       token: prepared.token.token,
-                      spender: prepared.request.address,
+                      spender: approval.request.args[0] as Address,
                     }),
                   },
                 ),
@@ -952,8 +973,8 @@ export function V6PayCard() {
           reviewedCall(
             {
               chainId: prepared.chainId,
-              ...prepared.request,
-              args: prepared.request.args as readonly unknown[],
+              ...request,
+              args: request.args as readonly unknown[],
             },
             {
               intent,
@@ -1702,21 +1723,66 @@ export function V6PayCard() {
   );
 }
 
-async function needsApproval(
+/**
+ * What the payer still owes before `entry` can take `amount`, by the SDK's one rule: nothing, an
+ * exact approval of the entry (a Safe or other contract wallet), or a free Permit2 signature after
+ * one approval of Permit2 itself.
+ */
+async function payAuthorizationOf(
   client: PublicClient,
-  token: Address,
-  owner: Address,
-  spender: Address,
-  amount: bigint,
-): Promise<boolean> {
-  if (isNativePayToken(token) || amount === 0n) return false;
-  const allowance = await client.readContract({
-    address: token,
-    abi: erc20Abi,
-    functionName: "allowance",
-    args: [owner, spender],
+  {
+    chainId,
+    owner,
+    token,
+    entry,
+    amount,
+  }: {
+    chainId: JBChainId;
+    owner: Address;
+    token: PreparedV6Pay["token"];
+    entry: Address;
+    amount: bigint;
+  },
+): Promise<Pick<PreparedV6Pay, "tokenApproval" | "authorization">> {
+  if (isNativePayToken(token.token) || amount === 0n) {
+    return { tokenApproval: null, authorization: null };
+  }
+  const plan = await planErc20PayAuthorization(client, {
+    chainId,
+    owner,
+    token: token.token,
+    entry,
+    amount,
+    isSafe: isSafeConnection(wagmiConfig),
   });
-  return allowance < amount;
+  const approve = (spender: Address, approved: bigint, label: string) => {
+    const args = [spender, approved] as const;
+    return {
+      kind: "token-approval" as const,
+      label,
+      request: {
+        address: token.token,
+        abi: erc20ApproveAbi,
+        functionName: "approve" as const,
+        args,
+        value: 0n,
+      },
+      calldata: encodeFunctionData({ abi: erc20ApproveAbi, functionName: "approve", args }),
+    };
+  };
+  if (plan.kind === "none") return { tokenApproval: null, authorization: null };
+  if (plan.kind === "approve") {
+    return {
+      tokenApproval: approve(plan.spender, plan.amount, `Approve ${token.symbol} access`),
+      authorization: null,
+    };
+  }
+  return {
+    tokenApproval: plan.needsTokenApproval
+      ? approve(PERMIT2_ADDRESS, maxUint256, `Let Permit2 move your ${token.symbol} (one time)`)
+      : null,
+    authorization: plan.authorization,
+  };
 }
 
 const PAYMENT_CHANGED = "The payment changed. Review it again.";

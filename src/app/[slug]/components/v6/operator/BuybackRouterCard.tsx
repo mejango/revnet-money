@@ -12,26 +12,24 @@ import { ErrorNote } from "@/components/ui/TxError";
 import { TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
 import { useGroupWriteGate } from "@/lib/nana/groupWriteGate";
-import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import { PROTOCOL_CONCEPTS } from "@/lib/protocolConcepts";
 import { isSafeProposalPendingError, reviewClosed } from "@/lib/reviewed-call";
 import { addStepsToBatch, stepFromWrite } from "@/lib/safe-batch";
 import { formatWalletError } from "@/lib/utils";
 import {
   JBBuybackHookContracts,
-  JBCoreContracts,
   JBRouterTerminalContracts,
   JB_CHAINS,
   NATIVE_TOKEN,
-  RevnetCoreContracts,
   USDC_ADDRESSES,
   jbBuybackHookAbi,
   jbBuybackHookRegistryAbi,
-  jbControllerAbi,
-  jbDirectoryAbi,
-  jbOmnichainDeployerAbi,
   jbRouterTerminalRegistryAbi,
 } from "@bananapus/nana-sdk-core";
+import {
+  resolveProjectBuybackHook,
+  resolveProjectRouterTerminal,
+} from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Address, isAddress, zeroAddress } from "viem";
@@ -69,124 +67,6 @@ type BuybackChainState = ChainProjectRow & {
 const MIN_TWAP_WINDOW = 300;
 const MAX_TWAP_WINDOW = 172_800;
 
-const sameAddress = (a?: string | null, b?: string | null) =>
-  !!a && !!b && a.toLowerCase() === b.toLowerCase();
-
-/**
- * Resolve the project's real buyback hook on a chain. hookOf/defaultHook must
- * NOT be trusted alone (the registry resolves a default even for projects that
- * don't route through it) — recognition goes through the ruleset DATA HOOK:
- * JBDirectory.controllerOf → currentRulesetOf → metadata.dataHook, unwrapping
- * the known singleton wrappers (REVOwner, the registry itself, and
- * JBOmnichainDeployer's extraDataHookOf indirection).
- */
-async function resolveBuybackHook(row: ChainProjectRow): Promise<Address | null> {
-  const client = publicClientFor(row.chainId);
-  const directory = v6ContractAddress(JBCoreContracts.JBDirectory, row.chainId);
-  const registry = v6ContractAddress(JBBuybackHookContracts.JBBuybackHookRegistry, row.chainId);
-  const revOwner = v6ContractAddress(RevnetCoreContracts.REVOwner, row.chainId);
-  const omni = v6ContractAddress("JBOmnichainDeployer", row.chainId);
-  const concrete = v6ContractAddress(JBBuybackHookContracts.JBBuybackHook, row.chainId);
-  if (!directory) return null;
-  const projectId = BigInt(row.projectId);
-
-  const controller = await client.readContract({
-    address: directory,
-    abi: jbDirectoryAbi,
-    functionName: "controllerOf",
-    args: [projectId],
-  });
-  if (!controller || controller === zeroAddress) return null;
-
-  const [ruleset, metadata] = await client.readContract({
-    address: controller,
-    abi: jbControllerAbi,
-    functionName: "currentRulesetOf",
-    args: [projectId],
-  });
-  let dataHook: Address = metadata.dataHook;
-  if (omni && sameAddress(dataHook, omni)) {
-    const config = await client
-      .readContract({
-        address: omni,
-        abi: jbOmnichainDeployerAbi,
-        functionName: "extraDataHookOf",
-        args: [projectId, BigInt(ruleset.id)],
-      })
-      .catch(() => null);
-    if (!config) return null;
-    dataHook = config.dataHook;
-  }
-  if (!dataHook || dataHook === zeroAddress) return null;
-  if (sameAddress(dataHook, registry) || sameAddress(dataHook, revOwner)) {
-    if (!registry) return null;
-    const hook = await client
-      .readContract({
-        address: registry,
-        abi: jbBuybackHookRegistryAbi,
-        functionName: "hookOf",
-        args: [projectId],
-      })
-      .catch(() => null);
-    return hook && hook !== zeroAddress ? hook : null;
-  }
-  if (concrete && sameAddress(dataHook, concrete)) return dataHook;
-  const historical = rolloutChain(row.chainId)?.history.JBBuybackHook;
-  if (historical && Object.values(historical).some((hook) => sameAddress(dataHook, hook)))
-    return dataHook;
-  return null; // 721 tiers, croptop, defifa, unknown — no buyback pool.
-}
-
-/**
- * The project's router terminal: terminals are a LIST, so gate on
- * JBDirectory.isTerminalOf before trusting the registry's terminalOf (which
- * also resolves a default for non-users).
- */
-async function resolveRouterTerminal(row: ChainProjectRow): Promise<Address | null> {
-  const client = publicClientFor(row.chainId);
-  const directory = v6ContractAddress(JBCoreContracts.JBDirectory, row.chainId);
-  const registry = v6ContractAddress(
-    JBRouterTerminalContracts.JBRouterTerminalRegistry,
-    row.chainId,
-  );
-  const direct = v6ContractAddress(JBRouterTerminalContracts.JBRouterTerminal, row.chainId);
-  if (!directory) return null;
-  const projectId = BigInt(row.projectId);
-  const isTerminal = (address?: Address) =>
-    address
-      ? client
-          .readContract({
-            address: directory,
-            abi: jbDirectoryAbi,
-            functionName: "isTerminalOf",
-            args: [projectId, address],
-          })
-          .catch(() => false)
-      : Promise.resolve(false);
-
-  if (await isTerminal(registry)) {
-    const terminal = await client
-      .readContract({
-        address: registry!,
-        abi: jbRouterTerminalRegistryAbi,
-        functionName: "terminalOf",
-        args: [projectId],
-      })
-      .catch(() => null);
-    return terminal && terminal !== zeroAddress ? terminal : null;
-  }
-  const deployments = [
-    rolloutAddress("JBRouterTerminalGateway", row.chainId),
-    ...Object.values(rolloutChain(row.chainId)?.history.JBRouterTerminalGateway ?? {}),
-    direct,
-    ...Object.values(rolloutChain(row.chainId)?.history.JBRouterTerminal ?? {}),
-  ];
-  for (const deployed of deployments) {
-    if (deployed && (await isTerminal(deployed as Address))) return deployed as Address;
-  }
-  return null;
-}
-
 async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> {
   const client = publicClientFor(row.chainId);
   const buybackRegistry = v6ContractAddress(
@@ -204,8 +84,17 @@ async function readChainState(row: ChainProjectRow): Promise<BuybackChainState> 
     return null;
   };
   const [hook, terminal, defaultHook, defaultTerminal] = await Promise.all([
-    resolveBuybackHook(row).catch(unread),
-    resolveRouterTerminal(row).catch(unread),
+    // Both go through the SDK's rules: the hook the current ruleset calls when paid, and the
+    // router terminal the project's own terminal list names. A registry default is neither.
+    resolveProjectBuybackHook(client, { chainId: row.chainId, projectId: BigInt(row.projectId) })
+      .then((resolved) => resolved.hook)
+      .catch(unread),
+    resolveProjectRouterTerminal(client, {
+      chainId: row.chainId,
+      projectId: BigInt(row.projectId),
+    })
+      .then((resolved) => resolved.terminal)
+      .catch(unread),
     buybackRegistry
       ? client
           .readContract({
