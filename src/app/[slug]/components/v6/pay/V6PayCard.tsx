@@ -922,9 +922,10 @@ export function V6PayCard() {
             return;
           }
           const kept = signedAuthorization.current;
-          signed = permit2PayAuthorizationReusable(kept, plan.authorization)
+          signed = permit2PayAuthorizationReusable(kept, plan.authorization, prepared.account)
             ? kept
             : {
+                owner: prepared.account,
                 authorization: plan.authorization,
                 signature: await signPayAuthorization(
                   wagmiConfig,
