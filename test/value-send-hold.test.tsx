@@ -3,6 +3,7 @@ import { BridgeDialog } from "@/app/[slug]/components/Value/BridgeDialog";
 import { ReallocateDialog } from "@/app/[slug]/components/Value/ReallocateDialog";
 import { RedeemDialog } from "@/app/[slug]/components/Value/RedeemDialog";
 import { RepayDialog } from "@/app/[slug]/components/Value/RepayDialog";
+import { netLoanProceeds } from "@/lib/feeHelpers";
 import { repayCeilingFor } from "@/lib/loanFees";
 import { clearViewAs, setViewAs } from "@/lib/view-as";
 import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
@@ -20,6 +21,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // the next open could send again.
 
 const mocks = vi.hoisted(() => ({
+  /** The selected chain reclaims USDC while the page's chain holds ETH. */
+  usdcReclaim: false,
+  /** The index has not answered yet. */
+  indexLoading: false,
+  /** What the selected chain's terminal states as its accounting contexts; null is a failed read. */
+  onchainContexts: null as { token: string; decimals: number; currency: number }[] | null,
   /** The connected wallet, or undefined for a visitor with none. */
   account: "0x1111111111111111111111111111111111111111" as string | undefined,
   /** The registry's active pairs from the home chain, when a test overrides them. */
@@ -320,7 +327,12 @@ vi.mock("@/hooks/useBorrowableAmountFrom", () => ({
   }),
 }));
 vi.mock("@/hooks/useCashOutRoute", () => {
-  const data = { expectedReturn: 10n ** 17n, minimumReturn: 9n * 10n ** 16n };
+  const data = {
+    expectedReturn: 10n ** 17n,
+    minimumReturn: 9n * 10n ** 16n,
+    route: "treasury",
+    treasuryProtocolFee: 25n * 10n ** 14n,
+  };
   return {
     useCashOutRoute: ({ holder }: { holder?: string }) => {
       mocks.routeHolder(holder);
@@ -368,7 +380,7 @@ vi.mock("@/lib/cashOutQuote", async (importOriginal) => ({
 vi.mock("@/lib/bendystraw", () => ({
   ProjectOperation: { id: "Project" },
   SuckerGroupOperation: { id: "SuckerGroup" },
-  useBendystrawQuery: () => ({ data: undefined }),
+  useBendystrawQuery: () => ({ data: undefined, isLoading: mocks.indexLoading }),
 }));
 vi.mock("@/lib/nana/project", () => ({
   useChain: () => undefined,
@@ -396,14 +408,18 @@ vi.mock("@/lib/nana/suckers", async (importOriginal) => ({
     isLoading: false,
   }),
 }));
-vi.mock("@/lib/tokenUtils", () => ({
-  getTokenConfigForChain: () => ({
-    token: "0x000000000000000000000000000000000000EEEe",
-    decimals: 18,
-    currency: 61166,
-    symbol: "ETH",
-  }),
-  getTokenSymbolFromAddress: () => "ETH",
+vi.mock("@/lib/tokenUtils", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tokenUtils")>()),
+  getTokenConfigForChain: () =>
+    mocks.usdcReclaim
+      ? { token: "0x00000000000000000000000000000000000000Cc", decimals: 6, currency: 3 }
+      : {
+          token: "0x000000000000000000000000000000000000EEEe",
+          decimals: 18,
+          currency: 61166,
+          symbol: "ETH",
+        },
+  getTokenSymbolFromAddress: () => (mocks.usdcReclaim ? "USDC" : "ETH"),
   isNativeToken: () => mocks.nativeBase,
 }));
 vi.mock("@/lib/token", () => ({
@@ -426,6 +442,10 @@ vi.mock("@/lib/loanTransactions", async (importOriginal) => ({
 }));
 vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
+  getAccountingContexts: async () => {
+    if (!mocks.onchainContexts) throw new Error("unreadable");
+    return mocks.onchainContexts;
+  },
   getTokenAddress: async () => "0x2222222222222222222222222222222222222222",
   hasPermissions: mocks.hasPermissions,
   prepareHookAwareCashOut: mocks.prepareCashOut,
@@ -465,6 +485,9 @@ beforeEach(() => {
   mocks.sent = [];
   mocks.writeHooks = 0;
   mocks.nativeBase = true;
+  mocks.usdcReclaim = false;
+  mocks.indexLoading = false;
+  mocks.onchainContexts = null;
   mocks.allowanceOnLoanChainOnly = false;
   mocks.bridgeAllowed = false;
   mocks.directSell = false;
@@ -504,7 +527,10 @@ async function confirmCashOut() {
   fireEvent.click(await screen.findByRole("combobox"));
   fireEvent.click(await screen.findByRole("option", { name: /Ethereum/ }));
   fireEvent.change(screen.getByLabelText("Tokens to cash out"), { target: { value: "1" } });
-  fireEvent.click(screen.getByRole("button", { name: "Cash out" }));
+  // Enabled once the chain's terminal has answered for its token.
+  const cashOut = screen.getByRole("button", { name: "Cash out" });
+  await waitFor(() => expect(cashOut).toBeEnabled());
+  fireEvent.click(cashOut);
   await confirmPanel();
 }
 
@@ -747,6 +773,100 @@ describe("a repayment's loan token, decimals and currency", () => {
       ),
     ).toBeTruthy();
     expect(mocks.write).not.toHaveBeenCalled();
+  });
+});
+
+describe("what a confirm says about fees", () => {
+  it("names the fee already taken out of a cash out from the revnet's funds", async () => {
+    await confirmCashOut();
+    const confirm = document.querySelector("[data-tx-confirm]")!;
+    expect(confirm.textContent).toMatch(/Fee\s*0\.0025 /);
+  });
+
+  it("states cash out amounts in the selected chain's token, not the page's", async () => {
+    mocks.usdcReclaim = true;
+    mocks.nativeBase = false;
+    await confirmCashOut();
+    const confirm = document.querySelector("[data-tx-confirm]")!;
+    // 2_500_000_000_000_000 raw at 6 decimals; at the page's 18 it read 0.0025 ETH.
+    expect(confirm.textContent).toMatch(/Fee\s*2,?500,?000,?000 USDC/);
+    expect(confirm.textContent).not.toContain("ETH");
+  });
+
+  it("takes the cash out token from the chain's terminal over the index", async () => {
+    // The index says ETH; the terminal says a 6 decimal token.
+    mocks.nativeBase = false;
+    mocks.onchainContexts = [
+      { token: "0x00000000000000000000000000000000000000Cc", decimals: 6, currency: 3 },
+    ];
+    await confirmCashOut();
+    const confirm = document.querySelector("[data-tx-confirm]")!;
+    expect(confirm.textContent).toMatch(/Fee\s*2,?500,?000,?000 /);
+    expect(mocks.prepareCashOut.mock.calls.at(-1)?.[1]).toMatchObject({
+      tokenToReclaim: "0x00000000000000000000000000000000000000Cc",
+    });
+  });
+
+  it("opens no review while the index that picks among the terminal's tokens is still loading", async () => {
+    mocks.indexLoading = true;
+    mocks.onchainContexts = [
+      { token: "0x000000000000000000000000000000000000EEEe", decimals: 18, currency: 61166 },
+      { token: "0x00000000000000000000000000000000000000Cc", decimals: 6, currency: 3 },
+    ];
+    renderWithQueries(
+      <RedeemDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open cash out</button>
+      </RedeemDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
+    fireEvent.click(await screen.findByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: /Ethereum/ }));
+    fireEvent.change(screen.getByLabelText("Tokens to cash out"), { target: { value: "1" } });
+    // The terminal has answered; the first context alone is not the answer.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByRole("button", { name: "Cash out" })).toBeDisabled();
+  });
+
+  it("keeps an open review on the token it opened with when the index answers differently later", async () => {
+    // The terminal lists two tokens; the index, failed for now, cannot pick, so the first stands.
+    mocks.onchainContexts = [
+      { token: "0x000000000000000000000000000000000000EEEe", decimals: 18, currency: 61166 },
+      { token: "0x00000000000000000000000000000000000000Cc", decimals: 6, currency: 3 },
+    ];
+    const client = new QueryClient();
+    const ui = () => (
+      <QueryClientProvider client={client}>
+        <RedeemDialog projectId={7n} tokenSymbol="REV">
+          <button type="button">Open cash out</button>
+        </RedeemDialog>
+      </QueryClientProvider>
+    );
+    const view = render(ui());
+    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
+    fireEvent.click(await screen.findByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: /Ethereum/ }));
+    fireEvent.change(screen.getByLabelText("Tokens to cash out"), { target: { value: "1" } });
+    const cashOut = screen.getByRole("button", { name: "Cash out" });
+    await waitFor(() => expect(cashOut).toBeEnabled());
+    fireEvent.click(cashOut);
+    const confirm = await confirmPanel();
+    expect(confirm.textContent).toMatch(/Fee\s*0\.0025 ETH/);
+
+    // The index recovers and names the other token.
+    mocks.usdcReclaim = true;
+    view.rerender(ui());
+    expect((await confirmPanel()).textContent).toMatch(/Fee\s*0\.0025 ETH/);
+    expect((await confirmPanel()).textContent).not.toContain("USDC");
+  });
+
+  it("names a loan's fees and what reaches the borrower after them", async () => {
+    await confirmBorrow();
+    const confirm = document.querySelector("[data-tx-confirm]")!;
+    expect(confirm.textContent).toContain("2.5% protocol + 1% revnet + 2.5% prepaid");
+    // The 1 token quote less the three fees, by the contracts' own arithmetic.
+    expect(confirm.textContent).toContain(
+      `You receive~${formatUnits(netLoanProceeds(10n ** 18n, 25n), 18)} `,
+    );
   });
 });
 

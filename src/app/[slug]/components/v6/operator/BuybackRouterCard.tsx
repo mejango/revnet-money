@@ -2,6 +2,7 @@
 
 import { ButtonWithWallet } from "@/components/ButtonWithWallet";
 import { ChainLogo } from "@/components/ChainLogo";
+import { EnsAddressInput } from "@/components/EnsAddressInput";
 import { EthereumAddress } from "@/components/EthereumAddress";
 import { Button } from "@/components/ui/button";
 import { ConceptTerm } from "@/components/ui/ConceptTerm";
@@ -32,7 +33,7 @@ import {
 } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Address, isAddress, zeroAddress } from "viem";
+import { Address, zeroAddress } from "viem";
 import { useAccount } from "wagmi";
 import {
   ChainProjectRow,
@@ -496,6 +497,8 @@ function BuybackActionForm({
   const [selected, setSelected] = useState<Set<number>>(
     () => new Set(available.map((state) => state.chainId)),
   );
+  // What each typed address or ENS name stands for; null while it stands for none.
+  const [resolved, setResolved] = useState<Record<number, Address | null>>({});
   const [addresses, setAddresses] = useState<Record<number, string>>(() =>
     Object.fromEntries(
       available.map((state) => [
@@ -530,6 +533,7 @@ function BuybackActionForm({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<ChainWrite[] | null>(null);
+  const [reviewShown, setReviewShown] = useState<Record<number, string>>({});
   // A send that went to the Safe as a proposal: nothing more to send from here.
   const [proposed, setProposed] = useState(false);
 
@@ -608,13 +612,12 @@ function BuybackActionForm({
     }
 
     const writes: ChainWrite[] = chosen.map((state) => {
-      const input = (addresses[state.chainId] ?? "").trim();
-      if (!isAddress(input)) {
+      const target = resolved[state.chainId];
+      if (!target) {
         throw new Error(
           `${chainName(state.chainId)}: enter a valid ${action.fieldLabel.toLowerCase()} address.`,
         );
       }
-      const target = input as Address;
       const projectId = BigInt(state.projectId);
       const authority = authorityByChain.get(state.chainId);
       if (kind === "hook") {
@@ -696,7 +699,12 @@ function BuybackActionForm({
     setStatus(null);
     setProposed(false);
     try {
-      setReview(buildWrites());
+      const writes = buildWrites();
+      // Frozen with the calls: a later ENS refresh must not rename what they carry.
+      setReviewShown(
+        Object.fromEntries(writes.map((write) => [write.chainId, shownAddress(write.chainId)])),
+      );
+      setReview(writes);
     } catch (e) {
       const message = formatWalletError(e) || "Could not complete this action.";
       setError(message);
@@ -723,21 +731,26 @@ function BuybackActionForm({
     }
   };
 
+  // The review names the address a call carries, with the ENS name it was typed as.
+  const shownAddress = (chainId: number) => {
+    const typed = (addresses[chainId] ?? "").trim();
+    const address = resolved[chainId] ?? typed;
+    return address.toLowerCase() === typed.toLowerCase() ? address : `${address} (${typed})`;
+  };
   const context = review
     ? [
         { label: "On", value: review.map((write) => chainName(write.chainId)).join(", ") },
-        new Set(review.map((write) => (addresses[write.chainId] ?? "").trim())).size === 1
+        new Set(review.map((write) => reviewShown[write.chainId])).size === 1
           ? {
               label: action.fieldLabel,
-              value: (addresses[review[0].chainId] ?? "").trim(),
+              value: reviewShown[review[0].chainId],
               mono: true,
             }
           : {
               label: action.fieldLabel,
               value: `${review.length} chains`,
               lines: review.map(
-                (write) =>
-                  `${chainName(write.chainId)}: ${(addresses[write.chainId] ?? "").trim()}`,
+                (write) => `${chainName(write.chainId)}: ${reviewShown[write.chainId]}`,
               ),
             },
         ...(kind === "pool" || kind === "setPool"
@@ -838,18 +851,21 @@ function BuybackActionForm({
                 <ChainLogo chainId={state.chainId} width={14} height={14} />
                 {chainName(state.chainId)}
               </span>
-              <Input
+              <EnsAddressInput
                 value={addresses[state.chainId] ?? ""}
-                onChange={(e) =>
-                  setAddresses((current) => ({
-                    ...current,
-                    [state.chainId]: e.target.value,
-                  }))
+                onChange={(value) =>
+                  setAddresses((current) => ({ ...current, [state.chainId]: value }))
+                }
+                onResolved={(address) =>
+                  setResolved((current) =>
+                    current[state.chainId] === address
+                      ? current
+                      : { ...current, [state.chainId]: address },
+                  )
                 }
                 disabled={busy}
-                placeholder={`0x… ${action.fieldLabel.toLowerCase()}`}
-                className="h-8 text-xs font-mono"
-                spellCheck={false}
+                placeholder={`0x… or name.eth ${action.fieldLabel.toLowerCase()}`}
+                ariaLabel={`${action.fieldLabel} on ${chainName(state.chainId)}`}
               />
             </div>
           ))}

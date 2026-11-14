@@ -683,4 +683,131 @@ describe("formatUsd", () => {
     expect(formatUsd(0.004)).toBe("<$0.01");
     expect(formatUsd(0)).toBe("$0.00");
   });
+  // A bridge send (`prepare`) cashes the sucker's tokens out inside the same transaction. The
+  // feed says where the tokens are going, once, and never "cashed out" by a contract.
+  describe("a bridge send and the cash out inside it", () => {
+    const SUCKER = "0x66766F2D20a9f4e8a2c51478b1506c07184286b3";
+    const base = { ...payItem({ payEvent: null }), txHash: "0xddd" };
+    const cashOutBy = (id: string, holder: string, txHash = "0xddd"): ActivityEventItem => ({
+      ...base,
+      id,
+      txHash,
+      cashOutTokensEvent: {
+        id: `${id}-event`,
+        timestamp: 1_700_000_000,
+        txHash,
+        from: "0x2222222222222222222222222222222222222222",
+        beneficiary: holder,
+        holder,
+        reclaimAmount: "2481435124398494",
+        reclaimAmountUsd: "0",
+        cashOutCount: "100130000000000000000",
+        metadata: "0x",
+        project: null,
+      },
+    });
+    const send: ActivityEventItem = {
+      ...base,
+      id: "send-1",
+      bridgeToOutboxEvent: {
+        txHash: "0xddd",
+        timestamp: 1_700_000_000,
+        caller: "0x5afe000000000000000000000000000000000000",
+        peerChainId: 8453,
+        projectTokenCount: "100130000000000000000",
+        sucker: SUCKER.toLowerCase(),
+      },
+    };
+    const context = () => ({ tokenSymbol: "ETH", decimals: 18 });
+
+    it("keeps the send, by whoever called the sucker, and drops the sucker's cash out", () => {
+      const events = mapActivityEvents([cashOutBy("inner", SUCKER), send], context);
+      expect(events.map((event) => [event.id, event.type])).toEqual([["send-1", "bridgeSend"]]);
+      expect(events[0]).toMatchObject({
+        beneficiary: "0x5afe000000000000000000000000000000000000",
+        tokenCount: "100.13",
+        detail: "Base",
+      });
+    });
+
+    it("keeps a holder's cash out, in that transaction or another", () => {
+      const events = mapActivityEvents(
+        [
+          cashOutBy("own", "0x2222222222222222222222222222222222222222"),
+          cashOutBy("elsewhere", SUCKER, "0xeee"),
+          send,
+        ],
+        context,
+      );
+      expect(events.map((event) => event.id).sort()).toEqual(["elsewhere", "own", "send-1"]);
+    });
+  });
+
+  describe("loans and bridge claims", () => {
+    const base = { ...payItem({ payEvent: null }), txHash: "0xeee" };
+    const at = { txHash: "0xeee", timestamp: 1_700_000_000 };
+    const BORROWER = "0x3333333333333333333333333333333333333333";
+    const context = () => ({ tokenSymbol: "ETH", decimals: 18 });
+    const row = (item: Partial<ActivityEventItem>) =>
+      mapActivityEvents([{ ...base, id: "row", ...item }], context)[0];
+
+    it("reads a loan by its collateral, for the borrower", () => {
+      const event = row({
+        borrowLoanEvent: {
+          ...at,
+          from: "0xrelayer",
+          beneficiary: BORROWER,
+          collateral: "73214660000000000000",
+        },
+      });
+      expect(event).toMatchObject({ type: "borrowLoan", beneficiary: BORROWER });
+      expect(combinedDescription(event, "REV")).toBe("borrowed against 73.21466 REV");
+    });
+
+    it("reads a repayment and a liquidation", () => {
+      const repaid = row({ repayLoanEvent: { ...at, caller: BORROWER } });
+      const liquidated = row({ liquidateLoanEvent: { ...at, caller: BORROWER } });
+      expect(combinedDescription(repaid, "REV")).toBe("repaid a loan");
+      expect(combinedDescription(liquidated, "REV")).toBe("liquidated a loan");
+      expect([repaid.type, liquidated.type]).toEqual(["repayLoan", "liquidateLoan"]);
+    });
+
+    it("keeps a Safe's repayment the row, by the Safe, when a deposit shares its transaction", () => {
+      const deposit: ActivityEventItem = {
+        ...base,
+        id: "deposit",
+        addToBalanceEvent: {
+          ...at,
+          from: "0x9999999999999999999999999999999999999999",
+          amount: "1000000000000000",
+          amountUsd: "0",
+          memo: "",
+          token: "0x000000000000000000000000000000000000eeee",
+          decimals: 18,
+          tokenSymbol: "ETH",
+        },
+      };
+      const repay: ActivityEventItem = {
+        ...base,
+        id: "repay",
+        repayLoanEvent: { ...at, caller: BORROWER },
+      };
+      const [folded] = groupSameTxEvents(mapActivityEvents([deposit, repay], context));
+      expect(folded).toMatchObject({ type: "repayLoan", beneficiary: BORROWER });
+      expect(folded.also?.map((entry) => entry.type)).toEqual(["addToBalance"]);
+    });
+
+    it("reads a bridge claim from its chain, for the account inside a 32-byte beneficiary", () => {
+      const event = row({
+        bridgeClaimEvent: {
+          ...at,
+          beneficiary: `0x${"0".repeat(24)}${BORROWER.slice(2)}`,
+          peerChainId: 1,
+          projectTokenCount: "100000000000000000000000",
+        },
+      });
+      expect(event).toMatchObject({ type: "bridgeClaim", beneficiary: BORROWER });
+      expect(combinedDescription(event, "REV")).toBe("claimed 100000 REV from Ethereum");
+    });
+  });
 });

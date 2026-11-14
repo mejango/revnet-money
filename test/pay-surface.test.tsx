@@ -14,12 +14,20 @@ const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
 }));
 vi.mock("wagmi", () => ({ usePublicClient: () => ({ readContract: mocks.readContract }) }));
-vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
-  getAccountingContexts: mocks.contexts,
-  getCurrentRuleset: mocks.ruleset,
-  prepareUserPay: mocks.prepare,
-}));
+vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => {
+  const { bestUserPayOver } = await import("./support/best-user-pay");
+  const actual = await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>();
+  return {
+    ...actual,
+    getAccountingContexts: mocks.contexts,
+    getCurrentRuleset: mocks.ruleset,
+    prepareUserPay: mocks.prepare,
+    prepareBestUserPay: bestUserPayOver(
+      (...args: never[]) => mocks.prepare(...args),
+      (error) => error instanceof actual.PaySwapQuoteFailedError,
+    ),
+  };
+});
 const ENTRY_A = "0x0000000000000000000000000000000000000001" as Address;
 const ENTRY_B = "0x0000000000000000000000000000000000000002" as Address;
 const DIRECT = "0x0000000000000000000000000000000000000003" as Address;

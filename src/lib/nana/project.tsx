@@ -78,6 +78,11 @@ export type JBRulesetContextData = {
 
 export type JBProjectMetadataContextData = {
   metadata: AsyncData<JBProjectMetadata>;
+  /**
+   * The full metadata file is still being read. `metadata.data` can already hold the page's first
+   * subset, which lacks fields such as the payment notice.
+   */
+  fullMetadataLoading: boolean;
 };
 
 type ProjectContextData = {
@@ -433,8 +438,10 @@ function MetadataProvider({
               : null,
         refetch: metadata.refetch,
       },
+      // The file is read through the controller, so that read being pending counts too.
+      fullMetadataLoading: metadata.isLoading || contracts.controller.isLoading,
     }),
-    [metadata, initialMetadata],
+    [metadata, initialMetadata, contracts.controller.isLoading],
   );
   return (
     <JBProjectMetadataContext.Provider value={value}>{children}</JBProjectMetadataContext.Provider>

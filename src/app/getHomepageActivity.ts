@@ -62,6 +62,7 @@ function relevant(event: HomepageRawActivity) {
     event.project?.isRevnet &&
     (event.payEvent ||
       event.cashOutTokensEvent ||
+      event.bridgeToOutboxEvent ||
       event.swapEvent ||
       event.sendPayoutsEvent ||
       event.rulesetQueuedEvent ||

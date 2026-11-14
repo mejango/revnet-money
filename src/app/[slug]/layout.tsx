@@ -14,6 +14,7 @@ import { ActivityFeed } from "./components/ActivityFeed/ActivityFeed";
 import { Header } from "./components/Header/Header";
 import { NewProjectNotice } from "./components/NewProjectNotice";
 import { PayCard } from "./components/PayCard/PayCard";
+import { ProjectContractWarning } from "./components/ProjectContractWarning";
 import { ProjectDataNotice, ProjectDiagnosticsProvider } from "./components/ProjectDiagnostics";
 import { PROJECT_SECTIONS_ID } from "./components/projectSections";
 import { ResponsiveProjectLayout } from "./components/ResponsiveProjectLayout";
@@ -276,6 +277,9 @@ async function ProjectLayoutContent({
                   />
                 </div>
               )}
+              <div className="w-full px-4 sm:container empty:hidden pt-4">
+                <ProjectContractWarning projects={projects} isRevnet={isRevnet} />
+              </div>
               <div className="w-full px-4 sm:container pt-6">
                 <Suspense
                   fallback={

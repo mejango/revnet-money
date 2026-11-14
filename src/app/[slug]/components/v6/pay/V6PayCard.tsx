@@ -14,7 +14,7 @@ import { useSecondsUntil } from "@/hooks/useSecondsUntil";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { legacyIntents } from "@/lib/legacy-intents";
-import { useJBTokenContext } from "@/lib/nana/project";
+import { useJBProjectMetadataContext, useJBTokenContext } from "@/lib/nana/project";
 import {
   hasSuckerPair,
   isPairCheckPending,
@@ -159,6 +159,10 @@ export function V6PayCard() {
   const signedAuthorization = useRef<SignedPermit2PayAuthorization | null>(null);
 
   const projectToken = useJBTokenContext().token.data;
+  const { metadata: projectMetadata, fullMetadataLoading } = useJBProjectMetadataContext();
+  const payDisclosure = (projectMetadata?.data as { payDisclosure?: unknown } | undefined)
+    ?.payDisclosure;
+  const projectNotice = typeof payDisclosure === "string" ? payDisclosure.trim() : "";
   const projectTokenLabel = projectToken?.symbol
     ? formatTokenSymbol(projectToken.symbol)
     : "tokens";
@@ -674,6 +678,8 @@ export function V6PayCard() {
     tiersKey,
     memo.trim(),
     slippageBps ?? "",
+    // A notice that arrives or changes after the review opened is reviewed again.
+    projectNotice,
   ].join("|");
   const quoteSettled = !!preview && !previewIsPrevious && !previewError && !previewLoading;
   const preparationChanged =
@@ -763,6 +769,7 @@ export function V6PayCard() {
         next = {
           identity: payIdentity,
           account: address,
+          projectNotice,
           mode,
           chainId,
           token: selected,
@@ -808,6 +815,7 @@ export function V6PayCard() {
         next = {
           identity: payIdentity,
           account: address,
+          projectNotice,
           mode,
           chainId,
           token: selected,
@@ -1112,6 +1120,8 @@ export function V6PayCard() {
   // with nothing explaining why.
   const payDisabled =
     busy ||
+    // The payment notice is in the full metadata file: no review opens before it is read.
+    fullMetadataLoading ||
     notStarted ||
     surfaceError ||
     // Paying in dollars is a purchase, not a send: it needs an amount and nothing else. The
