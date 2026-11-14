@@ -1937,3 +1937,10 @@ Runtime and deployment-policy checks pass under verified Node26.13.1. All non-ro
 - **Resource budget:** One branch, one full gate, review passes as needed.
 - **Authority and recovery:** Draft PR, merged on jango's word after SDK 6.8.0 is published. Three commits; each reverts alone.
 - **Agent-system impact:** None.
+
+### Review
+- Full `npm run check` steps green on the packed SDK tarball: 3211 unit tests, 160 browser tests on port 3188. Budgets raised by under 1 KiB each on the revnet routes for the warning card, and all client JavaScript 2805 to 2810 on a measured 2809.8.
+- Codex `gpt-6.1-sol` two passes: one finding fixed (a details edit dropped artwork whose digest is the media itself; the reader now keeps the reference), then CLEAN.
+- The pay route tests run the SDK's order through `test/support/best-user-pay.ts`, since a mocked SDK entry cannot reach the call the real rule makes inside the package.
+- Not rendered with a wallet: the three new dialog modes are covered by unit tests only.
+- New copy for jango: the `COPY` table in `EditItemMediaModal.tsx` ("Edit details", "Set discount", "Remove item", their review and done lines), the removal warning, "Enter a discount from 0 to 100, in steps of 0.5.", "This item cannot be removed on {chain}."
