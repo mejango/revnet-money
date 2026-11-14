@@ -23,6 +23,7 @@ import { ErrorNote } from "@/components/ui/TxError";
 import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import { useHydrated } from "@/hooks/useHydrated";
 import { useReviewedAction } from "@/hooks/useReviewedAction";
+import { useViewedAccount } from "@/hooks/useViewedAccount";
 import {
   liquidityMovePlan,
   poolSqrtPriceX96,
@@ -1257,7 +1258,7 @@ export function LiquidityManager({
   /** Section heading; null when a dialog title already names the view. */
   heading?: string | null;
 }) {
-  const { address } = useAccount();
+  const { address, isViewAs } = useViewedAccount();
   const pooled = states.filter(
     (state) => state.pool && POSITION_MANAGER_BY_CHAIN[Number(state.chainId)],
   );
@@ -1289,7 +1290,13 @@ export function LiquidityManager({
           Connect a wallet to manage the tokens it offers for trading.
         </p>
       ) : (
-        <>
+        // A viewed account's positions are shown; only its own wallet can act on them.
+        <fieldset disabled={isViewAs} className="m-0 min-w-0 border-0 p-0">
+          {isViewAs ? (
+            <p className="mt-1 text-xs text-zinc-500">
+              You&apos;re viewing another account. Connect as it to claim, edit, or remove.
+            </p>
+          ) : null}
           {pooled.map((state) => (
             <MovableLiquidity
               key={state.chainId}
@@ -1331,7 +1338,7 @@ export function LiquidityManager({
             </Table>
           </div>
           <div ref={setPanelHost} className="min-w-0" />
-        </>
+        </fieldset>
       )}
     </div>
   );
@@ -1350,7 +1357,7 @@ function MovableLiquidity({
   tokenSymbol: string;
   onStatus: (key: string, status: number | "loading" | "error") => void;
 }) {
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
   const wagmiConfig = useConfig();
   const chainId = Number(state.chainId);
   const pool = state.pool;
@@ -1584,7 +1591,7 @@ function ChainPositionRows({
   /** Where the edit/remove panels render, below the table's scroll wrapper. */
   panelHost: HTMLDivElement | null;
 }) {
-  const { address } = useAccount();
+  const { address } = useViewedAccount();
   const wagmiConfig = useConfig();
   const chainId = Number(state.chainId);
   const pool = state.pool;

@@ -10,10 +10,11 @@ import type {
   PoolSnapshot,
   UserLpPosition,
 } from "@/app/[slug]/components/v6/owners/market/lib";
+import { clearViewAs, setViewAs } from "@/lib/view-as";
 import { MarketEditPanel } from "@/app/[slug]/components/v6/owners/market/MarketEditPanel";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { zeroAddress, type Address, type Hex } from "viem";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,6 +36,7 @@ const ACCOUNT_CHANGED = "The connected account changed. Review again.";
 const mocks = vi.hoisted(() => ({
   address: "0x1111111111111111111111111111111111111111",
   write: vi.fn(),
+  reads: [] as string[],
   holdReview: null as null | (() => () => void),
 }));
 
@@ -101,7 +103,10 @@ vi.mock("@/app/[slug]/components/v6/owners/market/lib", async (importOriginal) =
     refreshPoolAndPosition: async (pool: PoolSnapshot) => ({ pool, position }),
     prepareEditLiquidity: () => editPlan,
     prepareMarketEdit: () => marketPlan,
-    readUserLpPositions: async () => [position],
+    readUserLpPositions: async (_pool: PoolSnapshot, owner: string) => {
+      mocks.reads.push(owner);
+      return [position];
+    },
     readLpPositionFees: async () => ({ tokenFees: 5n, pairFees: 5n }),
     refreshUserLpPosition: async () => position,
     prepareRemoveLiquidity: () => plan,
@@ -259,6 +264,20 @@ describe("a plan sent only from the account that reviewed it", () => {
 
     await screen.findByText(ACCOUNT_CHANGED);
     expect(mocks.write).not.toHaveBeenCalled();
+  });
+
+  it("shows a viewed account's positions and leaves their actions to its own wallet", async () => {
+    mocks.reads.length = 0;
+    act(() => setViewAs(B));
+    try {
+      renderFlow(() => <LiquidityManager states={[state]} tokenSymbol="ART" heading={null} />);
+      const remove = await screen.findByRole("button", { name: "Remove" });
+      expect(mocks.reads).toEqual([B]);
+      expect(remove).toBeDisabled();
+      expect(screen.getByText(/viewing another account/)).toBeInTheDocument();
+    } finally {
+      act(() => clearViewAs());
+    }
   });
 
   it("wallet-action:liquidity-management edit position refuses to send the reviewed edit from another account", async () => {
