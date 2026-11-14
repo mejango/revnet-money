@@ -1711,6 +1711,8 @@ export function V6PayCard() {
       {surface?.pausePay && mode === "pay" ? (
         <p className="mt-2 text-sm text-zinc-600">Payments are paused under the current rules.</p>
       ) : null}
+      {/* On the form, not in the review: the review opens over everything once a payment is prepared. */}
+      {mode === "pay" ? <PayNoticeNote view={noticeView} retry={retryNotice} /> : null}
       {addBalanceViaRouter ? (
         <p className="mt-2 text-sm text-zinc-600">
           This token can&apos;t be added to the balance. Pick another, or use Pay.
@@ -1781,7 +1783,6 @@ export function V6PayCard() {
           projectTokenSymbol={projectTokenLabel}
           txHash={txHash}
           onConfirm={confirm}
-          note={mode === "pay" ? <PayNoticeNote view={noticeView} retry={retryNotice} /> : null}
           onSwitchChain={switchChain}
           onDone={resetAfterSuccess}
         />

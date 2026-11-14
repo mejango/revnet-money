@@ -17,7 +17,6 @@ import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useStartOnce } from "@bananapus/nana-sdk-core/review/react";
 import type { Permit2SignatureAuthorization } from "@bananapus/nana-sdk-core/v6";
 import { PAY_MAX_SLIPPAGE_BPS, PAY_QUOTE_FAILED_MESSAGE } from "@bananapus/nana-sdk-core/v6";
-import type { ReactNode } from "react";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
@@ -115,7 +114,6 @@ export function V6PayConfirmDialog({
   txHash,
   onConfirm,
   onDone,
-  note,
   following = false,
 }: {
   open: boolean;
@@ -133,8 +131,6 @@ export function V6PayConfirmDialog({
   projectTokenSymbol: string;
   txHash: `0x${string}` | undefined;
   onConfirm: () => void;
-  /** A quiet line under the review: a notice that failed to load, or its other versions. */
-  note?: ReactNode;
   /** Retained for caller compatibility; chain selection belongs to the payment card. */
   onSwitchChain?: (chainId: string) => void;
   onDone: () => void;
@@ -266,7 +262,6 @@ export function V6PayConfirmDialog({
                           maxBps={Number(PAY_MAX_SLIPPAGE_BPS)}
                         />
                       ) : null}
-                      {note}
                     </div>
                   ) : error ? (
                     <p className="py-4 text-sm text-red-600">{error}</p>
