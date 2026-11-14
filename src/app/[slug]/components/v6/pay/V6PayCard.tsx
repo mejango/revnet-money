@@ -951,6 +951,7 @@ export function V6PayCard() {
       dispatch({ type: "send", phase: approval ? "approving-token" : "simulating" });
       // The review's rows load with the confirm that called this, never with the card.
       const { payContext } = await loadPayConfirm();
+      let paymentSubmitted = false;
       const result = await pay.run({
         account: prepared.account,
         title: "Review the payment",
@@ -985,6 +986,8 @@ export function V6PayCard() {
           ),
         ],
         scope: approval ? intent : undefined,
+        // A Safe takes the approval and the payment as one proposal, signed once and run together.
+        batch: true,
         // Sent only while it is still the payment on screen.
         assertWriteState: () => requireCurrent(prepared, currentPayRef.current),
         beforeWallet: async (_call, step) => {
@@ -995,6 +998,8 @@ export function V6PayCard() {
         },
         onSubmitted: (_call, step, hash) => {
           if (approval && step === 0) return;
+          // A Safe batch submits every step at once; a lone approval proposal never reaches the payment.
+          paymentSubmitted = true;
           dispatch({ type: "submitted", hash });
         },
       });
@@ -1007,7 +1012,7 @@ export function V6PayCard() {
         dispatch({
           type: "proposed",
           hash: result.safeTxHash,
-          approval: !!approval && result.step === 0,
+          approval: !!approval && result.step === 0 && !paymentSubmitted,
         });
         return;
       }

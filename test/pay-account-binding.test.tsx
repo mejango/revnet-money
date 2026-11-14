@@ -33,6 +33,8 @@ const mocks = vi.hoisted(() => ({
   shop: undefined as unknown,
   cart: [] as unknown[],
   erc20: false,
+  /** A Safe app is connected: a batch run is one proposal. */
+  safeBatch: false,
   /** How the run of a sent hash ends, as core's would. */
   end: (() => undefined) as (hash: `0x${string}`) => unknown,
   runner: null as null | {
@@ -146,6 +148,7 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
     mocks.write,
     (hash) => mocks.end(hash) as never,
     mocks.simulate,
+    () => mocks.safeBatch,
   );
   mocks.runner = runner as never;
   return {
@@ -250,6 +253,7 @@ beforeEach(() => {
   mocks.end = () => undefined;
   mocks.runner?.reset();
   mocks.plainWallet = false;
+  mocks.safeBatch = false;
   mocks.sign.mockReset().mockResolvedValue(`0x${"cd".repeat(65)}`);
   mocks.write.mockReset().mockResolvedValue(HASH);
   mocks.simulate.mockReset().mockResolvedValue({ request: {} });
@@ -826,6 +830,36 @@ describe("a payment bound to the account it was prepared for", () => {
       "Your Safe approved the token. Review the payment again to send it.",
     );
     await within(confirm).findByRole("button", { name: "Pay" });
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("proposes the token approval and the payment to a Safe as one batch, and takes its success", async () => {
+    mocks.erc20 = true;
+    mocks.safeBatch = true;
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText(/The payment is proposed in Safe/);
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+    expect(
+      (mocks.write.mock.calls[0]![0] as { batch: { functionName: string }[] }).batch.map(
+        (call) => call.functionName,
+      ),
+    ).toEqual(["approve", "pay"]);
+
+    // The Safe runs the batch: the payment is done, with nothing left to review.
+    act(() => mocks.runner!.set({ phase: "done", held: null }));
+    await waitFor(() => expect(screen.getByLabelText("Amount")).toHaveValue(""));
+    expect(
+      screen.queryByText("Your Safe approved the token. Review the payment again to send it."),
+    ).toBeNull();
     expect(mocks.write).toHaveBeenCalledTimes(1);
   });
 
