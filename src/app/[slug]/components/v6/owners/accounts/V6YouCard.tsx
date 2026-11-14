@@ -33,7 +33,6 @@ import {
   getRevnetLoanContract,
   JBCoreContracts,
   jbMultiTerminalAbi,
-  jbTokensAbi,
   RevnetCoreContracts,
   revOwnerAbi,
 } from "@bananapus/nana-sdk-core";
@@ -57,7 +56,6 @@ import {
 } from "../market/lib";
 import { chainName, chainProjectsKey, toChainProjects } from "../settlement/lib";
 import { BurnRow, V6BurnTokensDialog } from "./V6BurnTokensDialog";
-import { CreditRow, V6ClaimCreditsDialog } from "./V6ClaimCreditsDialog";
 
 const BorrowDialog = dynamic(() =>
   import("../../../Value/BorrowDialog").then((module) => module.BorrowDialog),
@@ -73,9 +71,9 @@ type ChainQuote = { cashout: bigint | undefined; maxLoan: bigint | undefined };
 
 /**
  * "You" card (website/ parity: renderYouCard + fetchYouPosition): the connected
- * wallet's per-chain position — Chain | Your balance (credits labeled) | Cash
+ * wallet's per-chain position — Chain | Your balance | Cash
  * out value | Max loan — plus the action buttons (Cash out, Get a loan, Move
- * between chains, Claim credits). While the revnet's cash out delay is active,
+ * between chains). While the revnet's cash out delay is active,
  * cash out values still compute (pure bonding-curve math) and are shown marked
  * "locked"; loans read 0 from the contract, so the would-be loan is estimated
  * by the cash out value, also marked locked.
@@ -147,34 +145,6 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
     { id: suckerGroupId ?? "" },
     { enabled: !!suckerGroupId, chainId: Number(chainId) },
   );
-  // Unclaimed credits per chain — drives the "Credits"/"Credits & ERC-20s"
-  // balance subtext and the Claim credits flow.
-  const creditContracts = useMemo(
-    () =>
-      address && balances
-        ? balances.map((b) => ({
-            chainId: b.chainId,
-            abi: jbTokensAbi,
-            address: contractAddress(JBCoreContracts.JBTokens, b.chainId),
-            functionName: "creditBalanceOf" as const,
-            args: [address, b.projectId] as const,
-          }))
-        : [],
-    [address, balances, contractAddress],
-  );
-  const { data: creditsData } = useReadContracts({
-    contracts: creditContracts,
-    query: { enabled: creditContracts.length > 0 },
-  });
-  const creditByChain = useMemo(() => {
-    const map = new Map<number, bigint>();
-    balances?.forEach((b, i) => {
-      const result = creditsData?.[i]?.result;
-      if (typeof result === "bigint") map.set(b.chainId, result);
-    });
-    return map;
-  }, [balances, creditsData]);
-
   // Per-chain accounting contexts read on-chain from the canonical
   // JBMultiTerminal — the authoritative (token, currency, decimals) for cash
   // out and loan quotes (e.g. Artizen's USDC context: currency
@@ -250,18 +220,6 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   const held = useMemo(() => (balances ?? []).filter((b) => b.balance.value > 0n), [balances]);
   const totalBalance = held.reduce((acc, b) => acc + b.balance.value, 0n);
 
-  // An open claim stays mounted while its credits settle to zero.
-  const [claimOpen, setClaimOpen] = useState(false);
-  const creditRows: CreditRow[] = useMemo(
-    () =>
-      held.flatMap((b) => {
-        const credit = creditByChain.get(b.chainId);
-        return credit && credit > 0n
-          ? [{ chainId: b.chainId as JBChainId, projectId: b.projectId, credit }]
-          : [];
-      }),
-    [held, creditByChain],
-  );
   const burnRows: BurnRow[] = held.map((b) => ({
     chainId: b.chainId as JBChainId,
     projectId: b.projectId,
@@ -306,12 +264,6 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   const loanComplete = homogeneous && held.every((b) => quotes[b.chainId]?.maxLoan !== undefined);
   const totalCashout = held.reduce((acc, b) => acc + (quotes[b.chainId]?.cashout ?? 0n), 0n);
   const totalMaxLoan = held.reduce((acc, b) => acc + (quotes[b.chainId]?.maxLoan ?? 0n), 0n);
-  const anyCredit = held.some((b) => (creditByChain.get(b.chainId) ?? 0n) > 0n);
-  const anyErc20 = held.some((b) => {
-    const credit = creditByChain.get(b.chainId);
-    return credit != null && b.balance.value > credit;
-  });
-
   const fmtBase = (value: bigint) =>
     `${formatUnits(value, baseDecimals, { fractionDigits: 5 })} ${baseSymbol}`;
 
@@ -356,7 +308,6 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                   chainId={b.chainId as JBChainId}
                   chainProjectId={b.projectId}
                   balanceValue={b.balance.value}
-                  credit={creditByChain.get(b.chainId)}
                   locked={locked}
                   tokenSymbol={tokenSymbol}
                   projectTokenDecimals={projectTokenDecimals}
@@ -381,7 +332,6 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
                       main={`${formatUnits(totalBalance, projectTokenDecimals, {
                         fractionDigits: 2,
                       })} ${tokenSymbol}`}
-                      sub={subFor(anyCredit, anyErc20)}
                     />
                   </TableCell>
                   <TableCell className={`text-right tabular-nums ${STACKED_CELL}`}>
@@ -446,25 +396,6 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
               Move between chains
             </Button>
           </BridgeDialog>
-        )}
-
-        {hasErc20 && (creditRows.length > 0 || claimOpen) && (
-          <V6ClaimCreditsDialog
-            onOpenChange={setClaimOpen}
-            creditRows={creditRows}
-            tokenSymbol={tokenSymbol}
-            batchScope={projects
-              .map((project) => `${project.chainId}:${project.projectId}`)
-              .sort()
-              .join("|")}
-          >
-            <Button
-              variant="outline"
-              className="border-teal-500 bg-teal-500 text-melon-950 hover:bg-teal-600 hover:text-melon-950"
-            >
-              Claim credits
-            </Button>
-          </V6ClaimCreditsDialog>
         )}
 
         {ammChains.length > 0 ? (
@@ -543,13 +474,6 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
       ) : null}
     </div>
   );
-}
-
-/** "Credits" (all unclaimed), "Credits & ERC-20s" (both), or none (all claimed). */
-function subFor(hasCredit: boolean, hasErc20: boolean) {
-  if (hasCredit && hasErc20) return "Credits & ERC-20s";
-  if (hasCredit) return "Credits";
-  return undefined;
 }
 
 function CellWithSub({ main, sub }: { main: string; sub?: string }) {
@@ -663,7 +587,6 @@ function YouChainRow({
   chainId,
   chainProjectId,
   balanceValue,
-  credit,
   locked,
   tokenSymbol,
   projectTokenDecimals,
@@ -677,7 +600,6 @@ function YouChainRow({
   chainId: JBChainId;
   chainProjectId: bigint;
   balanceValue: bigint;
-  credit: bigint | undefined;
   locked: boolean;
   tokenSymbol: string;
   projectTokenDecimals: number;
@@ -752,7 +674,6 @@ function YouChainRow({
           main={`${formatUnits(balanceValue, projectTokenDecimals, {
             fractionDigits: 2,
           })} ${tokenSymbol}`}
-          sub={credit != null ? subFor(credit > 0n, balanceValue > credit) : undefined}
         />
       </TableCell>
       <TableCell className={`text-right tabular-nums whitespace-nowrap ${STACKED_CELL}`}>

@@ -3,11 +3,10 @@
 import dynamic from "next/dynamic";
 
 import EtherscanLink from "@/components/EtherscanLink";
-import { useUserPermissions } from "@/hooks/useUserPermissions";
 import { useViewedAccount } from "@/hooks/useViewedAccount";
 import { cn } from "@/lib/utils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
-import { effectiveTierPrice, isRevnetOperator } from "@bananapus/nana-sdk-core/v6";
+import { effectiveTierPrice } from "@bananapus/nana-sdk-core/v6";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { PublicClient } from "viem";
@@ -26,7 +25,7 @@ import {
   TierMedia,
   useTierCart,
 } from "./shopLib";
-import { canAdjust721Tiers, canMint721Tiers, canSet721Metadata } from "./shopPermissions";
+import { canSet721Metadata } from "./shopPermissions";
 import { TierMediaPreview } from "./TierMediaPreview";
 
 // Each modal loads when it first opens; hover or focus on what opens it loads it a moment early.
@@ -77,7 +76,6 @@ export function InventorySection({
 }) {
   const { address } = useViewedAccount();
   const publicClient = usePublicClient({ chainId });
-  const { hasPermission } = useUserPermissions();
   const { count, total } = useTierCart(shop, chainId);
   const { data: credits } = usePayShopCredits(chainId, shop.hook);
 
@@ -89,49 +87,7 @@ export function InventorySection({
   const tierOf = (kind: "detail" | "mint" | "media") =>
     modal?.kind === kind ? (shop.tiers.find((tier) => tier.id === modal.tierId) ?? null) : null;
 
-  // Use both the indexed affordance and the hook's live permission semantics.
-  // The latter covers indexer lag and delegates authorized specifically to
-  // adjust this shop.
-  const { data: isOperator } = useQuery({
-    queryKey: ["v6RevnetOperator", chainId, projectId.toString(), address],
-    enabled: !!address && !!publicClient,
-    staleTime: 60_000,
-    retry: 1,
-    queryFn: () =>
-      isRevnetOperator(publicClient as PublicClient, {
-        chainId,
-        revnetId: projectId,
-        operator: address!,
-      }),
-  });
-  const { data: canManageLive } = useQuery({
-    queryKey: ["v6ShopAdjustPermission", chainId, projectId.toString(), shop.hook, address],
-    enabled: !!address && !!publicClient,
-    staleTime: 15_000,
-    retry: 1,
-    queryFn: () =>
-      canAdjust721Tiers(publicClient as PublicClient, {
-        chainId,
-        projectId,
-        hook: shop.hook,
-        operator: address!,
-      }),
-  });
-  const canAddItems =
-    hasPermission("ADJUST_721_TIERS") || hasPermission("ROOT") || !!isOperator || !!canManageLive;
-  const { data: canMintLive } = useQuery({
-    queryKey: ["v6ShopMintPermission", chainId, projectId.toString(), shop.hook, address],
-    enabled: !!address && !!publicClient,
-    staleTime: 15_000,
-    retry: 1,
-    queryFn: () =>
-      canMint721Tiers(publicClient as PublicClient, {
-        chainId,
-        projectId,
-        hook: shop.hook,
-        operator: address!,
-      }),
-  });
+  // Add items and free mint are shown to everyone; the modals refuse a wallet without the permission.
   const { data: canEditMedia } = useQuery({
     queryKey: ["v6ShopMetadataPermission", chainId, projectId.toString(), shop.hook, address],
     enabled: !!address && !!publicClient,
@@ -145,8 +101,6 @@ export function InventorySection({
         operator: address!,
       }),
   });
-  const canMintItems =
-    hasPermission("MINT_721") || hasPermission("ROOT") || !!isOperator || !!canMintLive;
 
   const categories = useMemo(() => {
     const ids = [...new Set(shop.tiers.map((tier) => tier.category))].sort((a, b) => a - b);
@@ -168,7 +122,7 @@ export function InventorySection({
   const mediaTier = tierOf("media");
   const mintTier = tierOf("mint");
   // An open item's Mint and Edit media actions open their modals from inside it.
-  const detailCanMint = !!(canMintItems && detailTier?.flags?.allowOwnerMint);
+  const detailCanMint = !!detailTier?.flags?.allowOwnerMint;
   const detailCanEditMedia = !!(detailTier && canEditMedia);
   useEffect(() => {
     if (detailCanMint) void loadMintItem();
@@ -180,18 +134,16 @@ export function InventorySection({
       <section className="bg-melon-50 p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Items</h2>
-          {canAddItems ? (
-            <button
-              type="button"
-              onClick={() => setModal({ kind: "add" })}
-              onPointerEnter={() => void loadAddItems()}
-              onFocus={() => void loadAddItems()}
-              className="min-h-10 bg-teal-500 px-4 text-sm font-medium text-melon-950 transition-colors hover:bg-teal-600"
-              title="Add items for sale (revnet operator only)"
-            >
-              + Add items
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={() => setModal({ kind: "add" })}
+            onPointerEnter={() => void loadAddItems()}
+            onFocus={() => void loadAddItems()}
+            className="min-h-10 bg-teal-500 px-4 text-sm font-medium text-melon-950 transition-colors hover:bg-teal-600"
+            title="Add items for sale (revnet operator only)"
+          >
+            + Add items
+          </button>
         </div>
 
         {address && shop.tiers.length > 0 && (credits ?? 0n) > 0n ? (
@@ -210,7 +162,7 @@ export function InventorySection({
         {shop.tiers.length === 0 ? (
           <p className="mt-4 text-sm text-zinc-500">
             No items being sold yet.
-            {canAddItems ? " Add the first one with the button above." : ""}
+            {" Add the first one with the button above."}
           </p>
         ) : (
           <>
@@ -325,7 +277,7 @@ export function InventorySection({
           tier={detailTier}
           media={mediaById?.[detailTier.id]}
           onMint={
-            canMintItems && detailTier.flags?.allowOwnerMint && detailTier.remaining > 0
+            detailTier.flags?.allowOwnerMint && detailTier.remaining > 0
               ? () => setModal({ kind: "mint", tierId: detailTier.id })
               : undefined
           }

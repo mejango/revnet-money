@@ -1,5 +1,4 @@
 import { V6AutoIssuanceSubtab } from "@/app/[slug]/components/v6/owners/V6AutoIssuanceSubtab";
-import { V6ClaimCreditsDialog } from "@/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog";
 import type { ProjectItem } from "@/app/[slug]/components/v6/shared";
 import { DistributeReservedTokensButton } from "@/app/[slug]/owners/components/DistributeReservedTokensButton";
 import { OwnerDistributionBatchButton } from "@/app/[slug]/owners/components/OwnerDistributionBatchButton";
@@ -400,46 +399,6 @@ describe("selected owner action destinations", () => {
       expect.objectContaining({ chainId: 8453, projectId: 12n }),
       holder,
     );
-  });
-
-  it("prepares only selected credit holders and keeps the stable project-group scope", async () => {
-    render(
-      <V6ClaimCreditsDialog
-        batchScope="10:91|8453:12"
-        creditRows={[
-          { chainId: 10, projectId: 91n, credit: 20n },
-          { chainId: 8453, projectId: 12n, credit: 30n },
-        ]}
-        tokenSymbol="REV"
-      >
-        <button>Open claims</button>
-      </V6ClaimCreditsDialog>,
-    );
-    fireEvent.click(screen.getAllByRole("checkbox")[1]);
-    fireEvent.click(screen.getByRole("button", { name: "Claim selected credits" }));
-    await waitFor(() => expect(state.runBatch).toHaveBeenCalled());
-    expect(state.prepareCredit).toHaveBeenCalledWith(
-      {},
-      expect.objectContaining({ chainId: 10, projectId: 91n }),
-      holder,
-    );
-    await waitFor(() =>
-      expect(state.runBatch).toHaveBeenCalledWith(
-        expect.objectContaining({ scope: "claim-credits:10:91|8453:12" }),
-      ),
-    );
-  });
-
-  it("keeps saved credit recovery reachable with no new balances", () => {
-    state.getPendingBatch.mockReturnValue({ label: "Claim", total: 2, completed: 1 });
-    render(
-      <V6ClaimCreditsDialog batchScope="10:91|8453:12" creditRows={[]} tokenSymbol="REV">
-        <button>Open claims</button>
-      </V6ClaimCreditsDialog>,
-    );
-    expect(
-      screen.getByRole("button", { name: "Resume saved batch (1/2 confirmed)" }),
-    ).toBeEnabled();
   });
 
   it("retains two distinct beneficiaries on one chain and combines duplicate stored allocation events", async () => {
