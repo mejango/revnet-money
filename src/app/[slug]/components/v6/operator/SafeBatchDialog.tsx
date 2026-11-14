@@ -16,6 +16,7 @@ import {
   writeBatch,
   type BatchStep,
 } from "@/lib/safe-batch";
+import { safeNonceLabel } from "@/lib/safe-nonce-choice";
 import { formatWalletError } from "@/lib/utils";
 import { hasSafeService } from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery } from "@tanstack/react-query";
@@ -316,10 +317,7 @@ export function SafeBatchDialog({
             disabled={busy || proposed}
             options={nonces.choices.map((nonce) => ({
               value: String(nonce),
-              label:
-                nonce === nonces.next
-                  ? `${nonce}, next available`
-                  : `${nonce}, replaces what is queued there`,
+              label: safeNonceLabel(nonce, nonces.next),
             }))}
           />
         </SummaryRow>
