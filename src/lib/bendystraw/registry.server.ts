@@ -86,8 +86,8 @@ const ACTIVITY_EVENT_FIELDS = `
   bridgeToOutboxEvent { txHash timestamp caller peerChainId projectTokenCount sucker }
   bridgeClaimEvent { txHash timestamp beneficiary peerChainId projectTokenCount }
   borrowLoanEvent { txHash timestamp from beneficiary collateral }
-  repayLoanEvent { txHash timestamp from }
-  liquidateLoanEvent { txHash timestamp from }
+  repayLoanEvent { txHash timestamp caller }
+  liquidateLoanEvent { txHash timestamp caller }
   addToBalanceEvent { txHash timestamp from amount amountUsd memo token decimals tokenSymbol }
   mintTokensEvent {
     id txHash timestamp from caller beneficiary beneficiaryTokenCount memo

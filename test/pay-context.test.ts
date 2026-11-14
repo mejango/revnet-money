@@ -11,19 +11,21 @@ const prepared = {
   cartRows: [],
   memo: "",
   account: "0x1111111111111111111111111111111111111111",
+  projectNotice: "No refunds.",
 };
 
 describe("payContext", () => {
   it("names who gets the tokens and shows the project's payment notice", () => {
-    const rows = payContext(prepared, "TKN", "No refunds.");
+    const rows = payContext(prepared, "TKN");
     expect(rows).toContainEqual({ label: "Beneficiary", value: prepared.account });
     expect(rows.at(-1)).toEqual({ label: "Project notice", value: "No refunds.", strong: true });
   });
 
   it("leaves both out when there is no notice and no tokens are issued", () => {
-    const labels = payContext({ ...prepared, mode: "addbalance" as const }, "TKN").map(
-      (row) => row.label,
-    );
+    const labels = payContext(
+      { ...prepared, mode: "addbalance" as const, projectNotice: "" },
+      "TKN",
+    ).map((row) => row.label);
     expect(labels).not.toContain("Beneficiary");
     expect(labels).not.toContain("Project notice");
   });

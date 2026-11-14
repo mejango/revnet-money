@@ -765,8 +765,8 @@ describe("formatUsd", () => {
     });
 
     it("reads a repayment and a liquidation", () => {
-      const repaid = row({ repayLoanEvent: { ...at, from: BORROWER } });
-      const liquidated = row({ liquidateLoanEvent: { ...at, from: BORROWER } });
+      const repaid = row({ repayLoanEvent: { ...at, caller: BORROWER } });
+      const liquidated = row({ liquidateLoanEvent: { ...at, caller: BORROWER } });
       expect(combinedDescription(repaid, "REV")).toBe("repaid a loan");
       expect(combinedDescription(liquidated, "REV")).toBe("liquidated a loan");
       expect([repaid.type, liquidated.type]).toEqual(["repayLoan", "liquidateLoan"]);

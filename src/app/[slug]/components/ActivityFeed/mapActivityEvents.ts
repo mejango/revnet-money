@@ -636,7 +636,8 @@ export function mapActivityEvents(
         type: event.repayLoanEvent ? "repayLoan" : "liquidateLoan",
         txHash: e.txHash,
         timestamp: e.timestamp,
-        beneficiary: e.from as Address,
+        // Who called the loans contract: a Safe here, not the account that executed for it.
+        beneficiary: e.caller as Address,
         chainId,
       });
     } else if (event.sendPayoutsEvent) {

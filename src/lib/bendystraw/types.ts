@@ -313,8 +313,9 @@ export type ActivityEventsQuery = {
         projectTokenCount: BigNumberish;
       } | null;
       borrowLoanEvent?: (ActivityBase & { beneficiary: string; collateral: BigNumberish }) | null;
-      repayLoanEvent?: ActivityBase | null;
-      liquidateLoanEvent?: ActivityBase | null;
+      /** `caller` called the loans contract: a Safe here, not the account that executed for it. */
+      repayLoanEvent?: { txHash: string; timestamp: number; caller: string } | null;
+      liquidateLoanEvent?: { txHash: string; timestamp: number; caller: string } | null;
       addToBalanceEvent:
         | (ActivityBase &
             EventToken & {
