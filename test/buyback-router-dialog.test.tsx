@@ -76,6 +76,13 @@ vi.mock("@/components/ButtonWithWallet", () => ({
 }));
 
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
+const ENS_TOKEN = "0x9999999999999999999999999999999999999999";
+vi.mock("@/hooks/ens/useEnsAddress", () => ({
+  useEnsAddress: (name: string | undefined) => ({
+    data: name === "pair.eth" ? ENS_TOKEN : null,
+    isLoading: false,
+  }),
+}));
 vi.mock("wagmi", () => ({
   useAccount: () => ({ address: `0x${"22".repeat(20)}`, chainId: 8453 }),
   useChainId: () => 8453,
@@ -176,6 +183,42 @@ describe("BuybackRouterCard", () => {
 
     await act(async () => finish({ chains: 1, safeQueued: 0, safeConfirmed: 0 }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("takes an ENS name for a per-chain address and sends the address it resolves to", async () => {
+    let finish!: (result: unknown) => void;
+    writes.runWrites.mockReset();
+    writes.runWrites.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    render(<BuybackRouterCard rows={[{ chainId: 8453, projectId: 6 }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Set TWAP window" }));
+    const dialog = await screen.findByRole("dialog", { name: "Set TWAP window" });
+    const field = within(dialog).getByRole("textbox", { name: /on Base/ });
+    const submit = () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Set TWAP window" }));
+    };
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /I verified every selected/ }));
+
+    // A name that resolves to nothing stops at the form.
+    fireEvent.change(field, { target: { value: "nobody.eth" } });
+    expect(within(dialog).getByText("Name not found")).toBeInTheDocument();
+    submit();
+    expect(await within(dialog).findByText(/enter a valid/)).toBeInTheDocument();
+    expect(writes.runWrites).not.toHaveBeenCalled();
+
+    fireEvent.change(field, { target: { value: "pair.eth" } });
+    expect(within(dialog).getByText(`→ ${ENS_TOKEN}`)).toBeInTheDocument();
+    submit();
+    await waitFor(() => expect(writes.runWrites).toHaveBeenCalledTimes(1));
+    // The review names the address with the name it was typed as; the call carries the address.
+    expect(dialog.querySelector("[data-tx-confirm]")?.textContent).toContain(
+      `${ENS_TOKEN} (pair.eth)`,
+    );
+    expect(
+      JSON.stringify(writes.runWrites.mock.calls[0], (_key, value) =>
+        typeof value === "bigint" ? value.toString() : value,
+      ),
+    ).toContain(ENS_TOKEN);
+    await act(async () => finish({ chains: 1, safeQueued: 0, safeConfirmed: 0 }));
   });
 
   it("ends on Done when the action went to the Safe as a proposal", async () => {

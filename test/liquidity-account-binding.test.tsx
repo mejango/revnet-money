@@ -10,8 +10,8 @@ import type {
   PoolSnapshot,
   UserLpPosition,
 } from "@/app/[slug]/components/v6/owners/market/lib";
-import { clearViewAs, setViewAs } from "@/lib/view-as";
 import { MarketEditPanel } from "@/app/[slug]/components/v6/owners/market/MarketEditPanel";
+import { clearViewAs, setViewAs } from "@/lib/view-as";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
