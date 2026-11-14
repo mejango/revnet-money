@@ -8,7 +8,8 @@ jango: "make sure revnet money is also aligned with juicebox money, though be mi
 - [x] R4 Loan fee total falls back to the SDK protocol constants when the onchain read is missing; repay check errors read plainly.
 - [x] R5a Cash out ends on a confirmed state with a transaction link and stops under View as; the buyback card says when a registry read failed instead of "Not set".
 - [x] R7 The shared `.jb` file, version 2 (rulings of 2026-11-14, needs SDK 6.8.0): `src/lib/jb-draft.ts` maps the SDK's `JbDraft` to and from the create form; a project file, or a revnet file holding what this form cannot express, is refused whole and by name. Import, export and the Extras export go through it; the browser's saved draft keeps the form's own shape. Shop item media pins when chosen and keeps its type. `/llms.txt`, the Build guide's Draft format link and `public/examples/revnet.jb` state the new format. No version 1 import.
-- [ ] R5 Still open: net "You receive" row on cash out, separate approval review for ERC-20 repay, view-as on liquidity, burn and Safe proposal end states, reclaim token source read onchain, ENS in buyback address fields.
+- [x] R5b Holder flows (2026-11-14): liquidity shows a viewed account's positions with the actions locked; buyback and router address fields take an ENS name and the review freezes the address it showed; the cash out confirm names the fee already taken out and the loan confirm its fees and "You receive"; cash out amounts use the selected chain's token decimals and symbol.
+- [ ] R5 Still open: burn and Safe proposal end states, reclaim token and terminal read onchain. For jango: one review for ERC-20 repay (the pre-send simulation cannot run without the allowance).
 - [x] R7 Round two, after jango's rulings of 2026-11-13: the 404 names the path after hydration (the prebuilt page said "/_not-found" and raised React 418); the shop shows "+ Add items" and free mint to everyone and the modals refuse a wallet without the permission; tickers without a dollar sign; the credits line, Claim credits and its batch code are removed, because REVDeployer deploys the ERC-20 in the launch transaction and JBTokens mints ERC-20 whenever a token exists, so a revnet holder never has credits.
 - [x] R8 SDK rules (needs SDK 6.6.0, PR Bananapus/juice-sdk-v4#307), as juicebox.money: ERC-20 pay asks a plain wallet for a free Permit2 signature after one approval of Permit2, and a Safe or contract wallet for the exact approval (`planErc20PayAuthorization`); the buyback card and the market resolve the hook and router terminal with `resolveProjectBuybackHook` and `resolveProjectRouterTerminal`; the revnet cash out fee uses the contract's rounding and skips when the fee revnet has no terminal for the token (`cashOutCountAfterRevnetFee`, `revnetCashOutFeeApplies`). Asked jango: whether the market floor shows the figure net of the revnet's fee.
 - [x] R9 Safe pay as one batch, as juicebox.money: an ERC-20 payment from a Safe app goes as one proposal of the approval and the payment (core's `batch`), and its execution is the payment's success. A resumed run still proposes step by step.
@@ -24,6 +25,21 @@ jango: "make sure revnet money is also aligned with juicebox money, though be mi
 - **Resource budget:** One worktree, one PR, edits in the main session. Replan if a fix needs an SDK release.
 - **Authority and recovery:** Local commits and a PR only. Merge when jango says so. Each fix is its own commit and can be reverted alone.
 - **Agent-system impact:** None.
+
+## Holder flows (R5b, 2026-11-14)
+
+## Plan refinement
+- **Objective:** Close the R5 holder gaps that need no ruling: view-as liquidity, ENS in buyback and router fields, fee rows in the cash out and loan confirms.
+- **System fit:** Reads follow `useViewedAccount`; writes stay behind `requireNoViewAs`. Fee numbers come from the SDK (`CashOutRoute.treasuryProtocolFee`, `netLoanProceeds`); the dialogs only display them.
+- **Reuse and simplicity:** Reuse `useEnsAddress`, the existing confirm row lists and the SDK fee helpers. One new component, `EnsAddressInput`, because two fields share it.
+- **Evidence and unknowns:** Gaps from the comparison reports, re-read in code. Codex pass 1 found a re-resolved name could rename the reviewed address (frozen at prepare); pass 2 found the Fee row used the page's token (now the selected chain's config, which is still the indexed one, not an onchain read).
+- **Verification:** A regression test per change (`liquidity-account-binding`, `buyback-router-dialog`, `value-send-hold`); full `npm run check`; Codex until clean.
+- **Resource budget:** One branch stacked on the `.jb` PR; all client JavaScript budget raised 2803 to 2804 KiB with the reason beside it.
+- **Authority and recovery:** Draft PR only, merged on jango's word. Each change is its own commit.
+- **Agent-system impact:** None.
+
+## Review
+Full `npm run check` green on c3b5b0f9: 332 files, 3189 tests, all budgets (all client JavaScript 2803.0 of 2804 KiB). Codex `gpt-6.1-sol` three passes: one finding, one finding, then CLEAN. Not rendered in a browser with a wallet. New copy for jango: "Looking up…", "Name not found", "Not a valid address", the "Fees" and "You receive" loan rows, the "Fee" cash out row, and the view-as note on liquidity.
 
 # Deliberate-backlog (D) items — revnet-money — 2026-07-28
 
