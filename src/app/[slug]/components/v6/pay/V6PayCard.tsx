@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 
-import { chainDisplayName } from "@/app/constants";
+import { chainDisplayName, chainSortIndex } from "@/app/constants";
 import { useOnRamp } from "@/components/GetFunds";
 import { ImageWithFallback } from "@/components/IpfsImage";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,6 @@ import {
   useSuckers,
 } from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
-import { payNoticeView } from "@/lib/payNotice";
 import { ACCOUNT_CHANGED, failedLine, revertedStep, reviewedCall } from "@/lib/reviewed-call";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { Token } from "@/lib/token";
@@ -56,6 +55,7 @@ import {
   PAY_DEFAULT_SLIPPAGE_BPS,
   PAY_QUOTE_FAILED_MESSAGE,
   PAY_SWAP_QUOTE_FAILED_MESSAGE,
+  payNoticeView,
   payRetrySlippageBps,
   PaySwapQuoteFailedError,
   PERMIT2_ADDRESS,
@@ -190,16 +190,21 @@ export function V6PayCard() {
       ) as Record<number, string | null>,
   });
   const pageFile = projectMetadata?.data as { payDisclosure?: unknown } | undefined;
-  const noticeView = payNoticeView(chainId, {
-    ...noticeRead.data,
-    // The page chain's full file is the source once it is read; a failed read falls to the indexer.
-    ...(pageChainId !== undefined && pageFile && !projectMetadata.error
-      ? {
-          [pageChainId]:
-            typeof pageFile.payDisclosure === "string" ? pageFile.payDisclosure.trim() : "",
-        }
-      : {}),
-  });
+  const byChainOrder = (a: number, b: number) => chainSortIndex(a) - chainSortIndex(b);
+  const noticeView = payNoticeView(
+    chainId,
+    {
+      ...noticeRead.data,
+      // The page chain's full file is the source once it is read; a failed read falls to the indexer.
+      ...(pageChainId !== undefined && pageFile && !projectMetadata.error
+        ? {
+            [pageChainId]:
+              typeof pageFile.payDisclosure === "string" ? pageFile.payDisclosure.trim() : "",
+          }
+        : {}),
+    },
+    byChainOrder,
+  );
   // Still reading is not a failed read.
   if (noticeRead.isFetching || fullMetadataLoading) noticeView.failed = false;
   const projectNotice = noticeView.notice;
@@ -563,6 +568,7 @@ export function V6PayCard() {
         amount: amountRaw,
         beneficiary,
         ...(slippageBps !== undefined ? { slippageBps: BigInt(slippageBps) } : {}),
+        ...(address ? { simulateFrom: address } : {}),
       });
       if (!route) throw new Error("No pay route with a live quote");
       return {

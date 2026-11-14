@@ -1961,3 +1961,20 @@ Runtime and deployment-policy checks pass under verified Node26.13.1. All non-ro
 - **Resource budget:** One branch, one pull request.
 - **Authority and recovery:** A pull request, merged on jango's word. One commit per item.
 - **Agent-system impact:** None.
+
+## 2026-11-14: Round 10, exact pay route choice and the shared notice rule (SDK 6.9.0)
+
+- [x] S1 The pay card passes the connected account to the route choice (`simulateFrom`): each native-token route is run as that account and the one that delivers the most tokens wins.
+- [x] S2 The payment notice rule comes from the SDK (`payNoticeView`); `src/lib/payNotice.ts` is removed. The site passes its chain order.
+- [ ] S3 Pin `@bananapus/nana-sdk-core` 6.9.0 once it is published; until then the branch is checked against the packed tarball.
+- [x] S4 Gate on the packed SDK tarball (2026-11-14): every stage of `npm run check` passes, 3,216 unit and 160 browser tests. Four budgets raised by under 1 KiB each with the measured numbers beside them (terms 603, operator 685, extras 622, all client JavaScript 2812 KiB).
+
+## Plan refinement
+- **Objective:** A payer is sent to the route that delivers the most, decided on what each route actually does, and the notice rule has one home.
+- **System fit:** The rule lives in the SDK; the pay card only passes the payer and the chain order.
+- **Reuse and simplicity:** Two call-site changes and one deleted module.
+- **Evidence and unknowns:** The SDK change is Codex-clean (four passes). An RPC without call overrides leaves the previews deciding, as before.
+- **Verification:** The full check on the packed SDK tarball; CI after 6.9.0 is published.
+- **Resource budget:** One draft pull request.
+- **Authority and recovery:** Draft pull request; merged on jango's word after the SDK release. Reverts alone.
+- **Agent-system impact:** None.

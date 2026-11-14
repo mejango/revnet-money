@@ -1,8 +1,8 @@
 "use client";
 
 import { chainDisplayName } from "@/app/constants";
-import type { PayNoticeView } from "@/lib/payNotice";
 import type { JBChainId } from "@bananapus/nana-sdk-core";
+import type { PayNoticeView } from "@bananapus/nana-sdk-core/v6";
 
 /**
  * Under the pay form: a notice that could not be read gets one quiet

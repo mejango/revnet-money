@@ -98,16 +98,18 @@ const routes = [
   // revnet route measures under 1 KiB more (601.6, 600.8, 683.2, 639.8, 607.3, 620.1). Rounded up only.
   // The pay review's per-chain notice with its other-versions toggle and Retry line: measured 602.4, 601.6,
   // 640.5 and 608.0 KiB on /[slug], terms, owners and shop. Rounded up only.
+  // SDK 6.9.0's pay route run as the payer (simulated payment, revert reading): terms measures just over
+  // 602.0, operator 684.4 and extras 621.4 KiB. Rounded up only.
   { route: "/[slug]", path: "/eth:1", kib: 603 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 602 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 684 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 603 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 685 },
   // Configured Safe service boundary with SDK 6.7.0 measures owners 637.7 and extras 618.3 KiB.
   // Round only these two incremental route costs up; static and aggregate ceilings stay unchanged.
   // Loans, bridge sends and claims in the shared activity rows, and the pay review's notice and beneficiary:
   // owners measures 638.4, shop 606.2, extras 619.1 and /account/[id] 432.2 KiB. Rounded up only.
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 641 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 609 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 621 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 622 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 433 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 422 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 435 },
@@ -289,7 +291,8 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 940);
 // The shop item dialog's details, discount and removal modes, the unknown contracts warning and its
 // on-demand audit chunk measure 2809.8 KiB all client JavaScript and 938.2 KiB route-referenced.
 // The per-chain pay notice (versions toggle, Retry) measures 2810.7 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2811);
+// SDK 6.9.0's pay route run as the payer measures 2811.2 KiB, rounded up only.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2812);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
