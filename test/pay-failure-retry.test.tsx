@@ -98,6 +98,7 @@ vi.mock("@/hooks/useTokenBalances", () => ({
   }),
 }));
 vi.mock("@/lib/nana/project", () => ({
+  useJBChainId: () => 1,
   useJBTokenContext: () => ({ token: { data: { symbol: "REV", decimals: 18 } } }),
   useJBProjectMetadataContext: () => ({ metadata: { data: { payDisclosure: "No refunds." } } }),
 }));

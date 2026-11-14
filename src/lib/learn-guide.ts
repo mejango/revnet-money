@@ -6,8 +6,8 @@ const GLOSSARY = (
       "Incentives",
       "what a revnet gives people who pay in or contribute. Here, incentives are tokens.",
     ],
-    ["Token", "a unit recorded for its holder and counted in the revnet's supply."],
-    ["Balance sheet / balance", "the money a revnet holds for its token holders."],
+    ["Token", "a unit recorded for its owner and counted in the revnet's supply."],
+    ["Balance sheet / balance", "the money a revnet holds for its owners."],
     [
       "Backing",
       "the balance sheet divided by the token supply. Loans and other chains count too, so it can differ from what one chain pays out right now.",
@@ -31,7 +31,7 @@ const GLOSSARY = (
       "the cash out price and the issuance price, the band the market trades between.",
     ],
     ["Cash out", "return tokens for a share of the balance sheet."],
-    ["Cash out tax", "how much of a cash out stays behind for remaining holders."],
+    ["Cash out tax", "how much of a cash out stays behind for remaining owners."],
     [
       "Pool / liquidity",
       "a shared market holding tokens and money for trades, and the amount available to trade.",
@@ -53,10 +53,6 @@ const GLOSSARY = (
       "Operator",
       "the person or contract that manages a revnet's details. It can't change the schedule or withdraw from the balance sheet.",
     ],
-    [
-      "Credits / ERC-20",
-      "two ways to hold tokens. Credits live inside the revnet; claiming turns them into ERC-20 tokens that wallets and markets use, one for one.",
-    ],
     ["Bridge", "a way to move tokens between chains."],
     ["Gas", "the network cost of processing a transaction, usually paid in ETH."],
     [
@@ -75,7 +71,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     summary: "Tokenized incentives backed by a balance sheet, on a schedule fixed at launch.",
     paragraphs: [
       "Customers and supporters pay the revnet. Each payment adds to its balance sheet and gives the payer tokens, either newly created or bought from a [market](#markets-and-buybacks) when that gets them more. Part of every new batch goes to contributors through the revnet's splits.",
-      "Holders can cash out, returning tokens for a share of the balance sheet, or [borrow](#loans) against their tokens. No team, founder, or [operator](#operator) can withdraw from it.",
+      "Owners can cash out, returning tokens for a share of the balance sheet, or [borrow](#loans) against their tokens. No team, founder, or [operator](#operator) can withdraw from it.",
       "An operator can manage day-to-day details: the name, contributor addresses, the shop, and market settings. The operator can't change the schedule or withdraw from the balance sheet.",
     ],
     links: [
@@ -105,13 +101,13 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           " └─▶ or the money buys existing",
           "     tokens from a market",
           "",
-          "2. Holders CASH OUT",
+          "2. Owners CASH OUT",
           " └─▶ return tokens for money;",
           "     those tokens are burned",
           " └─▶ the rules decide how much",
-          "     stays for other holders",
+          "     stays for other owners",
           "",
-          "3. Or holders BORROW against tokens",
+          "3. Or owners BORROW against tokens",
           "   instead of cashing out",
         ],
       },
@@ -189,7 +185,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Cash out tax",
-        text: "how much of a cash out stays behind for remaining holders.",
+        text: "how much of a cash out stays behind for remaining owners.",
       },
       {
         key: "Auto issuance",
@@ -218,7 +214,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         text: "the role to someone else, or to nobody. Handing it to nobody is permanent.",
       },
     ],
-    note: "The operator's choices about recipients, markets, and the shop still affect holders, so check who holds the role on each chain.",
+    note: "The operator's choices about recipients, markets, and the shop still affect owners, so check who holds the role on each chain.",
   },
   {
     id: "your-first-transaction",

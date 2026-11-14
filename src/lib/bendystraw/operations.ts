@@ -52,6 +52,7 @@ import type {
   ProjectOperatorQueryVariables,
   ProjectPayersQuery,
   ProjectPayersQueryVariables,
+  ProjectPayNoticeQuery,
   ProjectQuery,
   ProjectQueryVariables,
   ProjectsByOwnerQuery,
@@ -194,6 +195,11 @@ const projectVariables = variablesWith({
 
 export const ProjectOperation = operation<ProjectQuery, ProjectQueryVariables>(
   "project.v1",
+  projectVariables,
+  hasRoot("project", "nullable-object"),
+);
+export const ProjectPayNoticeOperation = operation<ProjectPayNoticeQuery, ProjectQueryVariables>(
+  "project-pay-notice.v1",
   projectVariables,
   hasRoot("project", "nullable-object"),
 );
@@ -530,6 +536,7 @@ export const RouterPendingCallsOperation = operation<
 export const BENDYSTRAW_OPERATIONS = [
   RouterPendingCallsOperation,
   ProjectOperation,
+  ProjectPayNoticeOperation,
   ProjectAccountingContextOperation,
   IndexedProjectsOperation,
   IndexedSuckerGroupOperation,
@@ -580,6 +587,7 @@ export const BENDYSTRAW_OPERATIONS = [
 export const BROWSER_BENDYSTRAW_OPERATIONS = [
   RouterPendingCallsOperation,
   ProjectOperation,
+  ProjectPayNoticeOperation,
   ProjectAccountingContextOperation,
   SuckerGroupOperation,
   ParticipantsOperation,

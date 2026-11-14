@@ -12,9 +12,11 @@ import { useOpenedOnce } from "@/hooks/useOpenedOnce";
 import { signPayAuthorization, useReviewedAction } from "@/hooks/useReviewedAction";
 import { useSecondsUntil } from "@/hooks/useSecondsUntil";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
+import { ProjectPayNoticeOperation } from "@/lib/bendystraw";
+import { queryBendystrawFromBrowser } from "@/lib/bendystraw/client";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { legacyIntents } from "@/lib/legacy-intents";
-import { useJBProjectMetadataContext, useJBTokenContext } from "@/lib/nana/project";
+import { useJBChainId, useJBProjectMetadataContext, useJBTokenContext } from "@/lib/nana/project";
 import {
   hasSuckerPair,
   isPairCheckPending,
@@ -22,6 +24,7 @@ import {
   useSuckers,
 } from "@/lib/nana/suckers";
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
+import { payNoticeView } from "@/lib/payNotice";
 import { ACCOUNT_CHANGED, failedLine, revertedStep, reviewedCall } from "@/lib/reviewed-call";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { Token } from "@/lib/token";
@@ -88,6 +91,7 @@ import {
   tokensForDollars,
 } from "./payCardLayout";
 import { PAY_FLOW_START, payFlow, payFlowView } from "./payFlow";
+import { PayNoticeNote } from "./PayNoticeNote";
 import { TextSelect } from "./TextSelect";
 import {
   BASE_CURRENCY_ETH,
@@ -160,9 +164,49 @@ export function V6PayCard() {
 
   const projectToken = useJBTokenContext().token.data;
   const { metadata: projectMetadata, fullMetadataLoading } = useJBProjectMetadataContext();
-  const payDisclosure = (projectMetadata?.data as { payDisclosure?: unknown } | undefined)
-    ?.payDisclosure;
-  const projectNotice = typeof payDisclosure === "string" ? payDisclosure.trim() : "";
+  const pageChainId = useJBChainId();
+  // Each chain keeps its own project file, so the notice is read per chain: the page's chain from
+  // its full file, the others from the indexer.
+  const noticeChainsKey = JSON.stringify(
+    chainOptions.map((s) => [s.peerChainId, Number(s.projectId)]),
+  );
+  const noticeRead = useQuery({
+    queryKey: ["payNotices", noticeChainsKey],
+    staleTime: 60_000,
+    queryFn: async () =>
+      Object.fromEntries(
+        await Promise.all(
+          (JSON.parse(noticeChainsKey) as [number, number][]).map(async ([cid, pid]) => {
+            const notice = await queryBendystrawFromBrowser(
+              ProjectPayNoticeOperation,
+              { chainId: cid, projectId: pid, version: 6 },
+              cid,
+            )
+              .then((data) => (data.project ? (data.project.payDisclosure ?? "").trim() : null))
+              .catch(() => null);
+            return [cid, notice] as const;
+          }),
+        ),
+      ) as Record<number, string | null>,
+  });
+  const pageFile = projectMetadata?.data as { payDisclosure?: unknown } | undefined;
+  const noticeView = payNoticeView(chainId, {
+    ...noticeRead.data,
+    // The page chain's full file is the source once it is read; a failed read falls to the indexer.
+    ...(pageChainId !== undefined && pageFile && !projectMetadata.error
+      ? {
+          [pageChainId]:
+            typeof pageFile.payDisclosure === "string" ? pageFile.payDisclosure.trim() : "",
+        }
+      : {}),
+  });
+  // Still reading is not a failed read.
+  if (noticeRead.isFetching || fullMetadataLoading) noticeView.failed = false;
+  const projectNotice = noticeView.notice;
+  const retryNotice = () => {
+    void noticeRead.refetch();
+    void projectMetadata.refetch?.();
+  };
   const projectTokenLabel = projectToken?.symbol
     ? formatTokenSymbol(projectToken.symbol)
     : "tokens";
@@ -1667,6 +1711,8 @@ export function V6PayCard() {
       {surface?.pausePay && mode === "pay" ? (
         <p className="mt-2 text-sm text-zinc-600">Payments are paused under the current rules.</p>
       ) : null}
+      {/* On the form, not in the review: the review opens over everything once a payment is prepared. */}
+      {mode === "pay" ? <PayNoticeNote view={noticeView} retry={retryNotice} /> : null}
       {addBalanceViaRouter ? (
         <p className="mt-2 text-sm text-zinc-600">
           This token can&apos;t be added to the balance. Pick another, or use Pay.
