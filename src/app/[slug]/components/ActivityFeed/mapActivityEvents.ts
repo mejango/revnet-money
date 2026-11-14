@@ -1,3 +1,4 @@
+import { chainDisplayName } from "@/app/constants";
 import type { ActivityEventsQuery, EventToken } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
 import { commaNumber, exactNumber, formatCompact, prettyNumber } from "@/lib/number";
@@ -120,6 +121,7 @@ const SAME_TX_ORDER: ActivityEvent["type"][] = [
   "autoIssue",
   "reserved",
   "reservedSplit",
+  "bridgeSend",
 ];
 
 function sameTxRank(type: ActivityEvent["type"]): number {
@@ -237,6 +239,9 @@ export function mapActivityEvents(
   // plumbing, not anyone's receipt.
   const sellSwapTxs = new Set<string>();
   const cashOutTxs = new Set<string>();
+  // A sucker cashes out its own tokens inside a bridge send; the send's row says what happened,
+  // so that cash out makes no row.
+  const bridgeSends = new Set<string>();
   const mintCountsByTx = new Map<string, bigint[]>();
   const manualMintCountsByTx = new Map<string, bigint[]>();
   const pushSorted = (map: Map<string, bigint[]>, key: string, value: bigint) => {
@@ -280,6 +285,9 @@ export function mapActivityEvents(
     }
     if (event.autoIssueEvent) autoIssueTxs.add(key);
     if (event.cashOutTokensEvent) cashOutTxs.add(key);
+    if (event.bridgeToOutboxEvent) {
+      bridgeSends.add(`${key}:${event.bridgeToOutboxEvent.sucker.toLowerCase()}`);
+    }
     if (event.swapEvent) {
       if (event.swapEvent.direction.toLowerCase() === "buy") {
         pushSorted(buySwapAmountsByTx, key, BigInt(event.swapEvent.projectTokenAmount));
@@ -388,6 +396,23 @@ export function mapActivityEvents(
         tokenCount,
         memo: event.payEvent.memo || undefined,
       });
+    } else if (event.bridgeToOutboxEvent) {
+      const send = event.bridgeToOutboxEvent;
+      events.push({
+        id: event.id,
+        type: "bridgeSend",
+        txHash: send.txHash,
+        timestamp: send.timestamp,
+        beneficiary: send.caller as Address,
+        chainId,
+        tokenCount: new JBProjectToken(BigInt(send.projectTokenCount)).format(6),
+        detail: chainDisplayName(send.peerChainId),
+      });
+    } else if (
+      event.cashOutTokensEvent?.holder &&
+      bridgeSends.has(`${txKey}:${event.cashOutTokensEvent.holder.toLowerCase()}`)
+    ) {
+      continue;
     } else if (event.cashOutTokensEvent) {
       const tokenCount = new JBProjectToken(BigInt(event.cashOutTokensEvent.cashOutCount)).format(
         6,

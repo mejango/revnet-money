@@ -683,4 +683,63 @@ describe("formatUsd", () => {
     expect(formatUsd(0.004)).toBe("<$0.01");
     expect(formatUsd(0)).toBe("$0.00");
   });
+  // A bridge send (`prepare`) cashes the sucker's tokens out inside the same transaction. The
+  // feed says where the tokens are going, once, and never "cashed out" by a contract.
+  describe("a bridge send and the cash out inside it", () => {
+    const SUCKER = "0x66766F2D20a9f4e8a2c51478b1506c07184286b3";
+    const base = { ...payItem({ payEvent: null }), txHash: "0xddd" };
+    const cashOutBy = (id: string, holder: string, txHash = "0xddd"): ActivityEventItem => ({
+      ...base,
+      id,
+      txHash,
+      cashOutTokensEvent: {
+        id: `${id}-event`,
+        timestamp: 1_700_000_000,
+        txHash,
+        from: "0x2222222222222222222222222222222222222222",
+        beneficiary: holder,
+        holder,
+        reclaimAmount: "2481435124398494",
+        reclaimAmountUsd: "0",
+        cashOutCount: "100130000000000000000",
+        metadata: "0x",
+        project: null,
+      },
+    });
+    const send: ActivityEventItem = {
+      ...base,
+      id: "send-1",
+      bridgeToOutboxEvent: {
+        txHash: "0xddd",
+        timestamp: 1_700_000_000,
+        caller: "0x5afe000000000000000000000000000000000000",
+        peerChainId: 8453,
+        projectTokenCount: "100130000000000000000",
+        sucker: SUCKER.toLowerCase(),
+      },
+    };
+    const context = () => ({ tokenSymbol: "ETH", decimals: 18 });
+
+    it("keeps the send, by whoever called the sucker, and drops the sucker's cash out", () => {
+      const events = mapActivityEvents([cashOutBy("inner", SUCKER), send], context);
+      expect(events.map((event) => [event.id, event.type])).toEqual([["send-1", "bridgeSend"]]);
+      expect(events[0]).toMatchObject({
+        beneficiary: "0x5afe000000000000000000000000000000000000",
+        tokenCount: "100.13",
+        detail: "Base",
+      });
+    });
+
+    it("keeps a holder's cash out, in that transaction or another", () => {
+      const events = mapActivityEvents(
+        [
+          cashOutBy("own", "0x2222222222222222222222222222222222222222"),
+          cashOutBy("elsewhere", SUCKER, "0xeee"),
+          send,
+        ],
+        context,
+      );
+      expect(events.map((event) => event.id).sort()).toEqual(["elsewhere", "own", "send-1"]);
+    });
+  });
 });

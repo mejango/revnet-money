@@ -80,8 +80,10 @@ const ACTIVITY_EVENT_FIELDS = `
     tokenSymbol
     cashOutCount
     metadata
+    holder
     project { id projectId handle version }
   }
+  bridgeToOutboxEvent { txHash timestamp caller peerChainId projectTokenCount sucker }
   addToBalanceEvent { txHash timestamp from amount amountUsd memo token decimals tokenSymbol }
   mintTokensEvent {
     id txHash timestamp from caller beneficiary beneficiaryTokenCount memo

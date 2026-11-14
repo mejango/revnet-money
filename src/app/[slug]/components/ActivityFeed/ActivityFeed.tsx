@@ -42,7 +42,8 @@ type ActivityCategory =
   | "payout"
   | "buybackSwap"
   | "buybackPool"
-  | "reserved";
+  | "reserved"
+  | "bridge";
 
 const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
   pay: "Payments",
@@ -58,6 +59,7 @@ const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
   buybackSwap: "Buyback swaps",
   buybackPool: "Buyback pools",
   reserved: "Reserved tokens",
+  bridge: "Bridge sends",
 };
 
 export function activityCategory(event: ActivityEvent): ActivityCategory | null {
@@ -93,6 +95,8 @@ export function activityCategory(event: ActivityEvent): ActivityCategory | null 
     case "reserved":
     case "reservedSplit":
       return "reserved";
+    case "bridgeSend":
+      return "bridge";
     case "operatorPermissionsSet":
       return null;
   }

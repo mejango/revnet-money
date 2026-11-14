@@ -269,8 +269,20 @@ type ActivityCashOut = {
   reclaimAmountUsd: BigNumberish;
   cashOutCount: BigNumberish;
   metadata: string;
+  /** Whose tokens were cashed out. A sucker's own cash out is the inside of a bridge send. */
+  holder?: string;
   project: ActivityProject | null;
 } & EventToken;
+/** Tokens queued on a sucker for another chain (`prepare`). */
+type ActivityBridgeSend = {
+  txHash: string;
+  timestamp: number;
+  /** Who called the sucker: a Safe here, not the account that executed its transaction. */
+  caller: string;
+  peerChainId: number;
+  projectTokenCount: BigNumberish;
+  sucker: string;
+};
 type ActivityBase = { txHash: string; timestamp: number; from: string };
 
 export type ActivityEventsQueryVariables = {
@@ -291,6 +303,7 @@ export type ActivityEventsQuery = {
       project?: ActivityProject | null;
       payEvent: ActivityPayment | null;
       cashOutTokensEvent: ActivityCashOut | null;
+      bridgeToOutboxEvent?: ActivityBridgeSend | null;
       addToBalanceEvent:
         | (ActivityBase &
             EventToken & {

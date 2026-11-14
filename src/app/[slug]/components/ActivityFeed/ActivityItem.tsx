@@ -33,6 +33,7 @@ type ActivityEventType =
   | "payout"
   | "reserved"
   | "reservedSplit"
+  | "bridgeSend"
   | "mintNft";
 
 const ACTIVITY_LABELS: Record<ActivityEventType, string> = {
@@ -54,6 +55,7 @@ const ACTIVITY_LABELS: Record<ActivityEventType, string> = {
   payout: "Payout",
   reserved: "Reserved tokens",
   reservedSplit: "Reserved tokens",
+  bridgeSend: "Bridged out",
   mintNft: "Item minted",
 };
 
@@ -206,6 +208,8 @@ function descriptionParts(
       return { pre: "set the buyback pool" };
     case "payout":
       return { pre: "sent payouts" };
+    case "bridgeSend":
+      return { pre: "sending ", strong: count, post: ` to ${event.detail}` };
     case "reserved":
       return { pre: "distributed reserved ", strong: count };
     case "mintNft":
