@@ -1,7 +1,9 @@
+import { PERMANENTLY_DISABLED_OPERATOR } from "@/app/create/constants";
 import {
   getResolvedIssuance,
   getStageCutFrequencySeconds,
 } from "@/app/create/helpers/calculatePickupIssuance";
+import { storeIdentity } from "@/app/create/helpers/parseDeployData";
 import type { RevnetFormData, SplitDraft, StageData } from "@/app/create/types";
 import type { DraftItem } from "@/components/shop/itemDraft";
 import { parseRevnetDraft } from "@/lib/revnet-draft";
@@ -13,6 +15,7 @@ import {
   emptyJbDraftItem,
   emptyJbDraftSplit,
   emptyJbDraftStage,
+  jbDraftDecimal,
   jbDraftUnsupported,
   parseJbDraft,
   serializeJbDraft,
@@ -44,10 +47,7 @@ const ACCEPTS: Record<RevnetFormData["reserveAsset"], Token[]> = {
 };
 
 /** A typed number as the format's plain decimal, or "" when it isn't one. */
-const num = (value: unknown): string => {
-  const typed = String(value ?? "").trim();
-  return /^\d*(?:\.\d*)?$/u.test(typed) ? typed : "";
-};
+const num = (value: unknown): string => jbDraftDecimal(String(value ?? ""));
 
 /** Move a decimal's point without a float: "20" by -2 is "0.2", "0.1234" by 2 is "12.34". */
 export function shiftDecimal(value: string, places: number): string {
@@ -92,6 +92,10 @@ function splitOut(row: SplitDraft): JbDraftSplit {
 }
 
 function itemOut(item: DraftItem): JbDraftItem {
+  // A chosen file that has not reached IPFS yet would be left out of the draft.
+  if (item.mediaFile && !item.mediaUri.trim() && !item.uri.trim()) {
+    throw new JbDraftError("An item's media is still uploading. Export once it finishes.");
+  }
   return {
     ...emptyJbDraftItem(),
     name: item.name,
@@ -193,7 +197,12 @@ export function toJbDraft(values: RevnetFormData): JbDraft {
       whatsapp: "",
     },
     chains: values.chainIds.map(Number),
-    owner: uniform ? (perChain[0] ?? fallback) : fallback,
+    // With every chain named, nothing is left for a stand-in to cover.
+    owner: uniform
+      ? (perChain[0] ?? fallback)
+      : operators.length >= values.chainIds.length
+        ? ""
+        : fallback,
     ownerPerChain: uniform
       ? {}
       : Object.fromEntries(operators.map((entry) => [Number(entry.chainId), entry.address.trim()])),
@@ -202,6 +211,8 @@ export function toJbDraft(values: RevnetFormData): JbDraft {
     shop: {
       ...emptyJbDraft("revnet", accepts).shop,
       ...store,
+      collectionName: storeIdentity(values).name,
+      collectionSymbol: storeIdentity(values).symbol,
       currency: pricing === "USD" ? "usd" : base,
       categories,
       items: items.map(itemOut),
@@ -301,11 +312,8 @@ export function fromJbDraft(file: JbDraft): RevnetFormData {
   if (file.coverUri) refuse("a cover image");
   if (file.links.instagram || file.links.whatsapp) refuse("an Instagram or WhatsApp link");
   if (file.safe) refuse("a new Safe as the operator");
-  if (!file.anyToken) refuse("a revnet that does not accept any token");
   if (file.chains.length > 1 && !file.linkChains) refuse("chains that are not linked");
   if (file.chains.length > 1 && file.bridge !== "ccip") refuse("a bridge other than CCIP");
-  if (file.shop.issueTokensForSplits) refuse("shop splits that issue tokens");
-  if (file.shop.itemsRedeem) refuse("shop items that cash out");
 
   const reserveAsset = (Object.keys(ACCEPTS) as RevnetFormData["reserveAsset"][]).find(
     (asset) => ACCEPTS[asset].join() === file.accepts.join(),
@@ -322,11 +330,26 @@ export function fromJbDraft(file: JbDraft): RevnetFormData {
     refuse("a shop priced in another currency than issuance");
   }
 
+  // The form switches the operator on or off for every chain at once, and reads which from the
+  // first stage's stand-in. So every chain is named outright, and the stand-in agrees with them.
+  const isOff = (address: string) => address.trim().toLowerCase() === PERMANENTLY_DISABLED_OPERATOR;
+  const operators = file.chains.map((chainId) => file.ownerPerChain[chainId] || file.owner);
+  const off = operators.filter(isOff);
+  if (off.length > 0 && off.length < operators.length) {
+    refuse("an operator switched off on some chains only");
+  }
+  const named = Object.keys(file.ownerPerChain).length > 0;
+  const standIn = !named
+    ? file.owner
+    : off.length
+      ? PERMANENTLY_DISABLED_OPERATOR
+      : operators.find(Boolean);
+
   const stageIn = (stage: JbDraftStage, index: number): StageData => {
     const cycle = Number(stage.cutDays) > 0;
     return {
       // The first stage's operator stands in on a chain with no entry of its own.
-      ...(index === 0 && file.owner ? { initialOperator: file.owner } : {}),
+      ...(index === 0 && standIn ? { initialOperator: standIn } : {}),
       initialIssuance: stage.issuance,
       pickUpFromPrevious: index > 0 && stage.issuance === "",
       priceCeilingIncreasePercentage: cycle ? stage.cutPercent || "0" : "0",
@@ -367,10 +390,9 @@ export function fromJbDraft(file: JbDraft): RevnetFormData {
       initialIssuance: getResolvedIssuance(stage, index, stages),
     })),
     chainIds: file.chains as JBChainId[],
-    operator: Object.entries(file.ownerPerChain).map(([chainId, address]) => ({
-      chainId,
-      address,
-    })),
+    operator: named
+      ? file.chains.map((chainId, n) => ({ chainId: String(chainId), address: operators[n] }))
+      : [],
     reserveAsset,
     issuanceBaseCurrency: base === "usd" ? "USD" : "ETH",
     customReserveAsset: {

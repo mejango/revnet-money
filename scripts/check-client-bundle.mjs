@@ -87,7 +87,9 @@ const routes = [
   // Permit2 pay authorization and the SDK's hook, router and revnet fee rules (SDK 6.6.0) measure /create 569.2,
   // /[slug] 599.8, terms 599.1, operator 682.4, owners 636.3, shop 605.9, extras 617.5, account 431.9 and
   // holdings 421.0 KiB: all client JavaScript grew 1.0 KiB, the rest is shared chunks regrouped. Rounded up only.
-  { route: "/create", path: "/create", kib: 570 },
+  // Items pin their media on choose and the shared .jb draft is read and written in place; the draft schema and
+  // mapper load only when a file is used. /create measures 570.3 KiB.
+  { route: "/create", path: "/create", kib: 571 },
   // Removing the credits UI regrouped shared chunks: all route JavaScript fell 3.7 KiB, while /[slug]
   // measures just over 596 KiB and /[slug]/extras 613.7 KiB. Round only those two up.
   { route: "/[slug]", path: "/eth:1", kib: 600 },
@@ -270,7 +272,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 938);
 // SDK 6.6.0 pay authorization and resolvers: measured 2790.3 KiB, rounded up only.
 // The market floor net of both fees (fee terminal and fee-free surplus reads) on published SDK
 // 6.6.0: CI measured 2791.3 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2792);
+// The shared .jb draft (SDK schema plus this site's mapper, in their own on-demand chunk): measured 2802.5 KiB,
+// rounded up only.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2803);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");

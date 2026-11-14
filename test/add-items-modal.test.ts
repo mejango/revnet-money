@@ -6,6 +6,15 @@ const beneficiaryA = "0x1111111111111111111111111111111111111111";
 const beneficiaryB = "0x2222222222222222222222222222222222222222";
 
 describe("revnet shop item editor", () => {
+  it("refuses a price finer than the token holds, never rounds it", () => {
+    expect(buildTierConfigs([{ ...newDraftItem(), price: "1.0000005" }], 6)).toBe(
+      "the price exceeds 6 decimal places.",
+    );
+    expect(typeof buildTierConfigs([{ ...newDraftItem(), price: "1.000001" }], 6)).not.toBe(
+      "string",
+    );
+  });
+
   it("makes new items permanently transferable by default", () => {
     const result = buildTierConfigs([{ ...newDraftItem(), price: "1" }], 6);
     expect(typeof result).not.toBe("string");

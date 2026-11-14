@@ -136,6 +136,10 @@ export function buildTierConfigs(
     const item = items[i];
     const label = items.length > 1 ? `Item ${i + 1}: ` : "";
 
+    // parseUnits rounds what the token cannot hold: say so instead of launching another price.
+    if ((item.price.trim().split(".")[1]?.replace(/0+$/u, "").length ?? 0) > decimals) {
+      return `${label}the price exceeds ${decimals} decimal places.`;
+    }
     let price: bigint;
     try {
       price = parseUnits(item.price.trim(), decimals);

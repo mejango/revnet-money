@@ -1,4 +1,5 @@
 import { DEFAULT_FORM_DATA, defaultStageData, defaultStoreData } from "@/app/create/constants";
+import { getStageCutFrequencySeconds } from "@/app/create/helpers/calculatePickupIssuance";
 import { createSchema } from "@/app/create/helpers/createSchema";
 import type { RevnetFormData } from "@/app/create/types";
 import { newDraftItem } from "@/components/shop/itemDraft";
@@ -137,6 +138,35 @@ describe("the shared .jb file on revnet.money", () => {
     expect(createSchema.safeParse(back).success).toBe(true);
   });
 
+  it("counts fractional days as exact seconds, and names the collection as launched", () => {
+    const values = form();
+    values.stages[0] = { ...values.stages[0], priceCeilingIncreaseFrequency: "1.005" };
+    expect(getStageCutFrequencySeconds(values.stages[0])).toBe(86_832);
+    values.store = { ...values.store, collectionName: "", collectionSymbol: "" };
+    expect(toJbDraft(values).shop).toMatchObject({
+      collectionName: `${values.name} Store`,
+      collectionSymbol: `${values.tokenSymbol}STORE`,
+    });
+  });
+
+  it("keeps an operator switched off by a chain's own entry switched off", () => {
+    const file = toJbDraft(form());
+    const dead = "0xdead000000000000000000000000000000000000";
+    const back = fromJbDraft({ ...file, owner: A, ownerPerChain: { 1: dead, 8453: dead } });
+    expect(back.stages[0].initialOperator).toBe(dead);
+    expect(back.operator.map((entry) => entry.address)).toEqual([dead, dead]);
+  });
+
+  it("will not write a draft whose item media has not reached IPFS", () => {
+    const values = form();
+    values.store.items[0] = {
+      ...values.store.items[0],
+      mediaUri: "",
+      mediaFile: new File(["x"], "shirt.png"),
+    };
+    expect(() => toJbDraft(values)).toThrow("An item's media is still uploading.");
+  });
+
   it("writes 'after N cuts' as days of the stage before", () => {
     const values = form();
     values.stages[1] = { ...values.stages[1], stageStartCuts: "3" };
@@ -157,10 +187,15 @@ describe("the shared .jb file on revnet.money", () => {
       return "";
     };
     const cant = (what: string) => `revnet.money can't launch this file: it has ${what}.`;
+    expect(
+      refused({
+        chains: [1, 8453],
+        ownerPerChain: { 8453: "0xdead000000000000000000000000000000000000" },
+      }),
+    ).toBe(cant("an operator switched off on some chains only"));
     expect(refused({ tagline: "hi" })).toBe(cant("a tagline"));
     expect(refused({ tags: ["art"] })).toBe(cant("tags"));
     expect(refused({ coverUri: "ipfs://x" })).toBe(cant("a cover image"));
-    expect(refused({ anyToken: false })).toBe(cant("a revnet that does not accept any token"));
     expect(refused({ linkChains: false })).toBe(cant("chains that are not linked"));
     expect(refused({ name: "x".repeat(101) })).toBe(cant("a value longer than this form holds"));
     const hook = revnet();

@@ -28,7 +28,8 @@ export function getCurrentStageDuration(currentStage: StageData, previousStage: 
 
 /** The exact duration REVDeployer passes to JBRulesets, in whole seconds. */
 export function getStageCutFrequencySeconds(stage: StageData): number {
-  return Math.floor(Number(stage.priceCeilingIncreaseFrequency) * 86_400) || 0;
+  // toFixed first: 1.005 days is 86832 seconds, which a float holds as 86831.99…
+  return Math.floor(Number((Number(stage.priceCeilingIncreaseFrequency) * 86_400).toFixed(3))) || 0;
 }
 
 /** A follower starts after a complete cycle of its actual predecessor. */
