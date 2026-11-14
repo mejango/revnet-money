@@ -8,20 +8,16 @@ import { rolloutAddress, rolloutChain } from "@/lib/protocol-rollout";
 import { ReviewRefusal } from "@/lib/review-refusal";
 import { getViemPublicClient } from "@/lib/wagmiTransports";
 import {
-  JBBuybackHookContracts,
-  jbBuybackHookRegistryAbi,
   JBChainId,
   jbControllerAbi,
   JBCoreContracts,
   jbDirectoryAbi,
-  jbOmnichainDeployerAbi,
-  JBOmnichainDeployerContracts,
+  jbMultiTerminalAbi,
   jbPricesAbi,
   jbSplitsAbi,
   jbUniswapV4LpSplitHookAbi,
   jbV6ContractAddress,
   NATIVE_TOKEN,
-  RevnetCoreContracts,
 } from "@bananapus/nana-sdk-core";
 import {
   buildCollectUniswapV4FeesTx,
@@ -29,6 +25,9 @@ import {
   getCashOutQuote,
   getCurrentRuleset,
   readUniswapV4PositionFees,
+  resolveProjectBuybackHook,
+  revnetCashOutFeeApplies,
+  revnetCashOutFeeTerminalExists,
   UNISWAP_PERMIT2_ADDRESS,
   UNISWAP_V4_INITIALIZE_TOPIC,
   UNISWAP_V4_MAX_TICK,
@@ -208,72 +207,6 @@ async function projectDataHook(
   return { dataHook: metadata.dataHook, rulesetId: BigInt(ruleset.id), weight: ruleset.weight };
 }
 
-/**
- * The project's ACTUAL buyback hook, or null when it has no buyback pool.
- * Recognizes the ruleset data hook against the known singleton wrappers — the
- * defaulting hookOf/terminal getters must NOT be trusted for a project that
- * doesn't route through the registry (they return a default → wrong pool):
- * REVOwner / JBBuybackHookRegistry → registry.hookOf(projectId);
- * JBOmnichainDeployer → unwrap extraDataHookOf and recognize that;
- * the concrete JBBuybackHook wired directly → itself; anything else → null.
- */
-async function projectBuybackHook(
-  client: PublicClient,
-  chainId: JBChainId,
-  projectId: bigint,
-): Promise<{ hook: Address | null; info: DataHookInfo | null }> {
-  const info = await projectDataHook(client, chainId, projectId).catch(() => null);
-  if (!info || info.dataHook === zeroAddress) return { hook: null, info };
-
-  const registry = v6Address(JBBuybackHookContracts.JBBuybackHookRegistry, chainId);
-  const revOwner = v6Address(RevnetCoreContracts.REVOwner, chainId);
-  const omni = v6Address(JBOmnichainDeployerContracts.JBOmnichainDeployer, chainId);
-  const concrete = v6Address(JBBuybackHookContracts.JBBuybackHook, chainId);
-  const lc = (a: string | null) => (a ?? "").toLowerCase();
-
-  const recognize = async (dataHook: Address): Promise<Address | null> => {
-    const d = dataHook.toLowerCase();
-    if (registry && (d === lc(registry) || d === lc(revOwner))) {
-      try {
-        const hook = await client.readContract({
-          address: registry,
-          abi: jbBuybackHookRegistryAbi,
-          functionName: "hookOf",
-          args: [projectId],
-        });
-        return hook && hook !== zeroAddress ? hook : null;
-      } catch {
-        return null;
-      }
-    }
-    if (concrete && d === lc(concrete)) return dataHook;
-    const rollout = rolloutChain(chainId);
-    const hooks = [
-      rollout?.contracts.JBBuybackHook,
-      ...Object.values(rollout?.history.JBBuybackHook ?? {}),
-    ];
-    if (hooks.some((hook) => hook && d === lc(hook))) return dataHook;
-    return null;
-  };
-
-  let hook = await recognize(info.dataHook);
-  if (!hook && omni && info.dataHook.toLowerCase() === lc(omni)) {
-    // The omnichain deployer inserts ITSELF as the data hook and stores the real one.
-    try {
-      const extra = await client.readContract({
-        address: omni,
-        abi: jbOmnichainDeployerAbi,
-        functionName: "extraDataHookOf",
-        args: [projectId, info.rulesetId],
-      });
-      if (extra.dataHook && extra.dataHook !== zeroAddress) hook = await recognize(extra.dataHook);
-    } catch {
-      hook = null;
-    }
-  }
-  return { hook, info };
-}
-
 // ── Pool state ────────────────────────────────────────────────────────────────
 
 interface PairToken {
@@ -339,7 +272,9 @@ export async function readPoolSnapshot(
   // The pair token comes from the accounting contexts, not the hook, so both
   // resolve concurrently.
   const [{ hook }, pair] = await Promise.all([
-    projectBuybackHook(client, chainId, projectId),
+    // The hook the current ruleset calls when paid, through its data hook (the SDK's rule). An
+    // unreadable project shows no pool.
+    resolveProjectBuybackHook(client, { chainId, projectId }).catch(() => ({ hook: null })),
     pairTokenFor(client, chainId, projectId),
   ]);
   if (!hook || !poolManager) return { hook: hook ?? null, pool: null };
@@ -2338,13 +2273,15 @@ async function issuanceCeilingOf(
   }
 }
 
+const EMPTY_REFERENCE: MarketReferencePrices = { issuance: null, cashOut: null };
+
 /**
  * The ceiling and floor the pool trades between, both in pair tokens per
  * project token. Read best-effort: either half degrades to null on its own.
  *
- * The cash-out quote is hook-blind (`currentReclaimableSurplusOf` skips data
- * hooks) and display-only — transactions must quote through the hook-aware
- * path. It is taken in the accounting context's own terms, so no price-feed
+ * The cash-out quote is display-only (`currentReclaimableSurplusOf` skips data
+ * hooks, so the revnet's fee is netted here) — transactions must quote through
+ * the hook-aware path. It is taken in the accounting context's own terms, so no price-feed
  * conversion is involved.
  */
 async function readMarketReferencePrices(
@@ -2354,37 +2291,54 @@ async function readMarketReferencePrices(
 ): Promise<MarketReferencePrices> {
   const client = providedClient ?? (getViemPublicClient(pool.chainId) as PublicClient);
 
+  const current = await getCurrentRuleset(client, { chainId: pool.chainId, projectId }).catch(
+    () => null,
+  );
+  if (!current) return EMPTY_REFERENCE;
+  const cashOutTaxRate = BigInt(current.metadata.cashOutTaxRate);
+  const token = pool.pair.addr === zeroAddress ? NATIVE_TOKEN : pool.pair.addr;
+
   const [issuance, cashOut] = await Promise.all([
+    issuanceCeilingOf(client, {
+      chainId: pool.chainId,
+      projectId,
+      weight: current.ruleset.weight,
+      baseCurrency: Number(current.metadata.baseCurrency),
+      pairCurrency: pool.pair.currency,
+    }).catch(() => null),
     (async () => {
-      const current = await getCurrentRuleset(client, { chainId: pool.chainId, projectId });
-      return issuanceCeilingOf(client, {
-        chainId: pool.chainId,
-        projectId,
-        weight: current.ruleset.weight,
-        baseCurrency: Number(current.metadata.baseCurrency),
-        pairCurrency: pool.pair.currency,
-      });
-    })().catch(() => null),
-    (async () => {
-      // Quote the largest whole token unit the supply supports, never a scaled
-      // one-token extrapolation: cash-out is nonlinear, and on a few-decimal
-      // accounting token a one-token reclaim floors to zero at large supplies.
+      // What one token reclaims net of the revnet's own fee and the protocol fee, as the cash
+      // out review shows it. An unreadable fee terminal assumes the fee, never overstating the
+      // floor; with a zero tax the protocol fee depends on the fee-free surplus, read here.
+      const [feeTerminalExists, feeFreeSurplus] = await Promise.all([
+        revnetCashOutFeeTerminalExists(client, { chainId: pool.chainId, token }).catch(() => true),
+        cashOutTaxRate === 0n
+          ? client.readContract({
+              address: v6Address(JBCoreContracts.JBMultiTerminal, pool.chainId)!,
+              abi: jbMultiTerminalAbi,
+              functionName: "feeFreeSurplusOf",
+              args: [projectId, token],
+            })
+          : undefined,
+      ]);
       const quote = await getCashOutQuote(client, {
         chainId: pool.chainId,
         projectId,
         cashOutCount: 10n ** 18n,
         decimals: BigInt(pool.pair.decimals),
         currency: BigInt(pool.pair.currency),
+        cashOutTaxRate,
+        feeFreeSurplus,
+        revnetFeeApplies: revnetCashOutFeeApplies({ cashOutTaxRate, feeTerminalExists }) === true,
       });
-      const value = Number(formatUnits(quote.reclaimAmount, pool.pair.decimals));
+      if (quote.reclaimAmountAfterFee === undefined) return null;
+      const value = Number(formatUnits(quote.reclaimAmountAfterFee, pool.pair.decimals));
       return Number.isFinite(value) && value > 0 ? value : null;
     })().catch(() => null),
   ]);
 
   return { issuance, cashOut };
 }
-
-const EMPTY_REFERENCE: MarketReferencePrices = { issuance: null, cashOut: null };
 
 export interface SolvedRange {
   minPrice: number;

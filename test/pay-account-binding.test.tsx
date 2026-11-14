@@ -21,6 +21,9 @@ const mocks = vi.hoisted(() => ({
   balances: new Map<string, bigint>(),
   write: vi.fn(),
   simulate: vi.fn(),
+  /** The connected account has no code: it can sign a Permit2 allowance. */
+  plainWallet: false,
+  sign: vi.fn(),
   routeError: null as Error | null,
   terminal: "0x3333333333333333333333333333333333333333",
   minReturned: 99n * 10n ** 19n,
@@ -30,6 +33,8 @@ const mocks = vi.hoisted(() => ({
   shop: undefined as unknown,
   cart: [] as unknown[],
   erc20: false,
+  /** A Safe app is connected: a batch run is one proposal. */
+  safeBatch: false,
   /** How the run of a sent hash ends, as core's would. */
   end: (() => undefined) as (hash: `0x${string}`) => unknown,
   runner: null as null | {
@@ -98,11 +103,21 @@ vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   }),
 }));
 
+const WAGMI_CONFIG = vi.hoisted(() => ({}));
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
+  // The pay card reads the connection through the provider's config; a stable stand-in here.
+  useConfig: () => WAGMI_CONFIG,
   useAccount: () => ({ address: mocks.address, isConnected: true }),
-  // ERC-20 allowance reads answer zero, so every ERC-20 payment needs an approval.
-  usePublicClient: () => ({ simulateContract: mocks.simulate, readContract: async () => 0n }),
+  // Allowance reads answer zero, and the account has code unless a test says it is a plain
+  // wallet: a contract wallet approves the terminal for the exact amount.
+  usePublicClient: () => ({
+    simulateContract: mocks.simulate,
+    readContract: async ({ functionName, args }: { functionName: string; args: unknown[] }) =>
+      functionName === "allowance" && args.length === 3 ? [0n, 0, 0] : 0n,
+    getBlock: async () => ({ timestamp: 1_700_000_000n }),
+    getCode: async () => (mocks.plainWallet ? undefined : "0x60"),
+  }),
   // The chain's own receipt read, which a Safe proposal never makes.
   useWaitForTransactionReceipt: () => ({
     data: undefined,
@@ -126,6 +141,10 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     connectWalletText?: string;
   }) => <button {...props}>{children}</button>,
 }));
+vi.mock("@/lib/safe-connector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
+  isSafeConnection: () => mocks.safeBatch,
+}));
 vi.mock("@/components/GetFunds", () => ({
   useOnRamp: () => ({ supported: false, buy: vi.fn() }),
 }));
@@ -136,11 +155,14 @@ vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
     mocks.write,
     (hash) => mocks.end(hash) as never,
     mocks.simulate,
+    () => mocks.safeBatch,
   );
   mocks.runner = runner as never;
   return {
     ...(await importOriginal<typeof import("@/hooks/useReviewedAction")>()),
     useReviewedAction: runner.hook,
+    // Core shows and signs the allowance; the card's part is when it asks and what it sends.
+    signPayAuthorization: (...args: unknown[]) => mocks.sign(...args),
   };
 });
 vi.mock("@/hooks/useTokenBalances", () => ({
@@ -237,6 +259,9 @@ beforeEach(() => {
   mocks.suckersVerified = true;
   mocks.end = () => undefined;
   mocks.runner?.reset();
+  mocks.plainWallet = false;
+  mocks.safeBatch = false;
+  mocks.sign.mockReset().mockResolvedValue(`0x${"cd".repeat(65)}`);
   mocks.write.mockReset().mockResolvedValue(HASH);
   mocks.simulate.mockReset().mockResolvedValue({ request: {} });
 });
@@ -730,6 +755,63 @@ describe("a payment bound to the account it was prepared for", () => {
     expect(mocks.write.mock.calls[1]![0]).toMatchObject({ functionName: "approve" });
   });
 
+  it("has a plain wallet sign the exact payment first, approve Permit2 once, then pay with the signature", async () => {
+    mocks.erc20 = true;
+    mocks.shop = SHOP;
+    mocks.cart = cartOf(1);
+    mocks.plainWallet = true;
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText("Authorize the payment (free signature)");
+    await within(confirm).findByText("Let Permit2 move your TKN (one time)");
+    await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(2));
+
+    // One signature, for the terminal alone, asked for before anything is sent.
+    expect(mocks.sign).toHaveBeenCalledTimes(1);
+    const [, authorization, account] = mocks.sign.mock.calls[0]!;
+    expect(account).toBe(A);
+    expect(authorization).toMatchObject({ spender: mocks.terminal, token: TKN, nonce: 0 });
+    expect(mocks.sign.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.write.mock.invocationCallOrder[0]!,
+    );
+    expect(mocks.write.mock.calls[0]![0]).toMatchObject({
+      functionName: "approve",
+      args: ["0x000000000022D473030F116dDEE9F6B43aC78BA3", 2n ** 256n - 1n],
+    });
+    const payment = mocks.write.mock.calls[1]![0] as { functionName: string; args: unknown[] };
+    expect(payment.functionName).toBe("pay");
+    // The payment's metadata carries the signed allowance for exactly its amount.
+    expect(String(payment.args.at(-1))).toContain("cd".repeat(65));
+    expect(authorization.amount).toBe(payment.args[2]);
+  });
+
+  it("sends nothing when the payer declines the signature", async () => {
+    mocks.erc20 = true;
+    mocks.shop = SHOP;
+    mocks.cart = cartOf(1);
+    mocks.plainWallet = true;
+    mocks.sign.mockRejectedValue(new Error("User rejected the request."));
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await waitFor(() => expect(mocks.sign).toHaveBeenCalledTimes(1));
+    await within(confirm).findByRole("button", { name: "Pay" });
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+
   it("returns to the payment, not its success, once the Safe runs the token approval it proposed", async () => {
     mocks.erc20 = true;
     mocks.shop = SHOP;
@@ -755,6 +837,40 @@ describe("a payment bound to the account it was prepared for", () => {
       "Your Safe approved the token. Review the payment again to send it.",
     );
     await within(confirm).findByRole("button", { name: "Pay" });
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("proposes the token approval and the payment to a Safe as one batch, and takes its success", async () => {
+    mocks.erc20 = true;
+    mocks.safeBatch = true;
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    const pay = screen.getByRole("button", { name: "Pay" });
+    await waitFor(() => expect(pay).toBeEnabled(), { timeout: 3_000 });
+    fireEvent.click(pay);
+    const confirm = await screen.findByRole("dialog", { name: "Confirm payment" });
+    await within(confirm).findByText(/The payment is proposed in Safe/);
+    expect(mocks.write).toHaveBeenCalledTimes(1);
+    expect(
+      (mocks.write.mock.calls[0]![0] as { batch: { functionName: string }[] }).batch.map(
+        (call) => call.functionName,
+      ),
+    ).toEqual(["approve", "pay"]);
+    // The batch is held under the payment's own key, so another payment to the revnet waits on it.
+    const [approve, payment] = (mocks.write.mock.calls[0]![0] as { batch: { intent: string }[] })
+      .batch;
+    expect(approve!.intent).toBe(payment!.intent);
+
+    // The Safe runs the batch: the payment is done, with nothing left to review.
+    act(() => mocks.runner!.set({ phase: "done", held: null }));
+    await waitFor(() => expect(screen.getByLabelText("Amount")).toHaveValue(""));
+    expect(
+      screen.queryByText("Your Safe approved the token. Review the payment again to send it."),
+    ).toBeNull();
     expect(mocks.write).toHaveBeenCalledTimes(1);
   });
 

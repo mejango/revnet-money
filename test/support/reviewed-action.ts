@@ -182,6 +182,8 @@ export function liveReviewedAction(
   end: (hash: Hex) => RunEnd = () => undefined,
   /** Core's simulation of each step, given the call as the wallet gets it, before the write gate. */
   simulate?: Mock,
+  /** A Safe app: a `batch` run of several calls is one proposal, written once as `{ batch }`. */
+  safeBatch?: () => boolean,
 ) {
   const listeners = new Set<() => void>();
   const blank = { phase: "idle", held: null, error: null } as {
@@ -208,6 +210,17 @@ export function liveReviewedAction(
     const hashes: Hex[] = [];
     set({ ...blank, phase: "review" });
     await review;
+    if (safeBatch?.() && action.batch && action.calls.length > 1) {
+      for (const [step, call] of action.calls.entries()) await action.beforeWallet?.(call, step);
+      action.assertWriteState?.();
+      const hash = (await write({ batch: action.calls, account: action.account }, action)) as Hex;
+      for (const [step, call] of action.calls.entries())
+        await coreKept(action.locks, () =>
+          action.onSubmitted?.(call, step, hash, { safe: true, adopted: false }),
+        );
+      set({ phase: "proposed" });
+      return { status: "proposed" as const, step: 0, safeTxHash: hash };
+    }
     for (const [step, call] of action.calls.entries()) {
       try {
         const sent = { ...call, address: call.to, account: action.account };

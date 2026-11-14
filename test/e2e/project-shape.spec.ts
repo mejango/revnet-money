@@ -354,7 +354,8 @@ test("secondary project surfaces stay hydrated, contained, and accessible", asyn
   expect(status.graphqlOperations.V6AutoIssueEvents).toBeGreaterThan(0);
   expect(status.graphqlOperations.V6AllLoans).toBeGreaterThan(0);
   expect(status.contractFunctions.ownerOf).toBeGreaterThan(0);
-  expect(status.contractFunctions.isTerminalOf).toBeGreaterThan(0);
+  // The router terminal is read from the project's own terminal list (the SDK's resolver).
+  expect(status.contractFunctions.terminalsOf).toBeGreaterThan(0);
   await page.waitForTimeout(250);
   expectBoundaryToStayLocal(boundary);
 });
