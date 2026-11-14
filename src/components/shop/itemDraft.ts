@@ -25,6 +25,8 @@ export interface DraftItem {
   name: string;
   description: string;
   mediaUri: string;
+  /** MIME type of the media at `mediaUri`. Empty reads as an image. */
+  mediaType: string;
   mediaFile: File | null;
   mediaPreview: string | null;
   /** ipfs:// URI (or bare DAG-PB CID) of the item's metadata JSON. Optional. */
@@ -55,6 +57,7 @@ export function newDraftItem(): DraftItem {
     name: "",
     description: "",
     mediaUri: "",
+    mediaType: "",
     mediaFile: null,
     mediaPreview: null,
     uri: "",
@@ -133,6 +136,10 @@ export function buildTierConfigs(
     const item = items[i];
     const label = items.length > 1 ? `Item ${i + 1}: ` : "";
 
+    // parseUnits rounds what the token cannot hold: say so instead of launching another price.
+    if ((item.price.trim().split(".")[1]?.replace(/0+$/u, "").length ?? 0) > decimals) {
+      return `${label}the price exceeds ${decimals} decimal places.`;
+    }
     let price: bigint;
     try {
       price = parseUnits(item.price.trim(), decimals);
@@ -285,6 +292,7 @@ export async function pinDraftItems(
       // reader explicitly asked to use.
       if (item.uri.trim()) return item;
       let mediaUri = item.mediaUri.trim();
+      const mediaType = item.mediaFile ? item.mediaFile.type : item.mediaType;
       if (item.mediaFile) {
         const mediaCid = await pinMediaFile(item.mediaFile);
         mediaUri = `ipfs://${mediaCid}`;
@@ -301,8 +309,8 @@ export async function pinDraftItems(
         name: item.name.trim(),
         ...(item.description.trim() ? { description: item.description.trim() } : {}),
         ...(mediaUri
-          ? item.mediaFile && !item.mediaFile.type.startsWith("image/")
-            ? { animation_url: mediaUri, mediaType: item.mediaFile.type }
+          ? mediaType && !mediaType.startsWith("image/")
+            ? { animation_url: mediaUri, mediaType }
             : { image: mediaUri }
           : {}),
         ...(categoryName ? { categoryName } : {}),

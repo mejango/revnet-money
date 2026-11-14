@@ -135,7 +135,8 @@ export const createSchema = schema<RevnetFormData>((input) => {
       );
     }
     storeItems.forEach((item, index) => {
-      const composes = item.name?.trim() || item.description?.trim() || item.mediaFile;
+      const composes =
+        item.name?.trim() || item.description?.trim() || item.mediaFile || item.mediaUri?.trim();
       if (composes && !item.name?.trim()) {
         issue(issues, ["store", "items", index, "name"], "Item name is required");
       }

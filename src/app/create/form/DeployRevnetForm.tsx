@@ -1,7 +1,7 @@
 import { formatShortDateTime } from "@/lib/date";
 import { useFormContext } from "@/lib/forms";
 import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
-import { parseRevnetDraft, revnetDraftFileName } from "@/lib/revnet-draft";
+import { revnetDraftFileName } from "@/lib/revnet-draft";
 import Image from "next/image";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { GoToProjectButton } from "../buttons/GoToProjectButton";
@@ -180,8 +180,10 @@ function DraftControls({
           event.target.value = "";
           if (!file) return;
           try {
+            // The file mapper loads only when a file is used.
+            const { readJbDraftFile } = await import("@/lib/jb-draft");
             load(
-              parseRevnetDraft(await file.text()),
+              readJbDraftFile(await file.text()),
               "Draft imported. Review every section before launch.",
             );
           } catch (error) {
@@ -202,13 +204,16 @@ function DraftControls({
           type="button"
           className={draftPillClassName}
           disabled={disabled}
-          onClick={() => {
-            // The same file shape the browser draft and the importer read. Media files stay behind.
-            const url = URL.createObjectURL(
-              new Blob([JSON.stringify({ v: 1, app: "revnet.money", data: values }, null, 2)], {
-                type: "application/json",
-              }),
-            );
+          onClick={async () => {
+            // The shared file every Juicebox site reads.
+            let text: string;
+            try {
+              text = (await import("@/lib/jb-draft")).writeJbDraftFile(values);
+            } catch (error) {
+              setStatus(error instanceof Error ? error.message : "Export failed.");
+              return;
+            }
+            const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
             const anchor = document.createElement("a");
             anchor.href = url;
             anchor.download = revnetDraftFileName(values.name);
