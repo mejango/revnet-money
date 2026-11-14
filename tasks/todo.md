@@ -1949,8 +1949,8 @@ Runtime and deployment-policy checks pass under verified Node26.13.1. All non-ro
 
 - [x] V9a Pay review shows the paid chain's own notice; chains that read differently open on a toggle; a failed read gets one quiet line with Retry and never blocks the payment.
 - [x] V9b Guides, option A: Learn says "owners", the Credits entries and claim-credits lines go; Build keeps "holder" and "reserved" only as contract names.
-- [ ] V9c Pay route: say when a route's quote is an estimate.
-- [ ] V9d Earlier open questions, decided the way jango has been ruling.
+- [x] V9c Pay route: an estimated quote already reads "You get about" with an "At least" line (V6PayCard); nothing to add. A buyback pool's preview can overstate when the pool cannot fill the whole order at the previewed price: the rest is created at the revnet's rate, so delivery can be under the preview and never under the minimum.
+- [x] V9d Earlier open questions, decided the way jango has been ruling: ERC-20 repay keeps its simulation; earlier copy stands. Review, 2026-11-14: Codex pass 1 moved the notice's Retry and versions toggle onto the pay form (the review covered them) and its two-projects-on-one-chain case was set aside (not possible for a revnet). Pass 2 corrected the Build guide: REVLoans needs BURN_TOKENS (11) from a borrower, as the borrow dialog already grants. Set aside from pass 2: a peer chain's notice edited while the page is open, and a failed re-read of the page's file after a good one. Full check green; 160 browser tests pass.
 
 ## Plan refinement
 - **Objective:** Close the items jango answered on 2026-11-14 so revnet.money matches juicebox.money within revnet scope and states only what is true.

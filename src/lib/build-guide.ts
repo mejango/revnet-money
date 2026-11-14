@@ -447,7 +447,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       "Calculate loan limits from current funds, collateral, costs, the borrowed asset, and permissions. A saved cash out estimate is not enough.",
     paragraphs: [
       "Before borrowing, read borrowableAmountFrom for the selected asset. borrowableNow limits the debt to available funds; borrowableCapacity measures what the collateral supports and can be larger. minBorrowAmount protects the debt before costs, not the money received. Show both the debt and the amount the borrower receives, with each cost.",
-      "An owner borrowing for themselves needs no permission. A contract or operator borrowing for an owner needs OPEN_LOAN (37) from that owner, passed as holder. Collateral and source token are chain-local. Loan permissions can redirect funds or recovered collateral, so explain the exact authority before asking for a grant.",
+      "REVLoans burns the collateral, so the owner first grants it BURN_TOKENS (11) for the revnet. An owner borrowing for themselves needs no other permission. A contract or operator borrowing for an owner also needs OPEN_LOAN (37) from that owner, passed as holder. Collateral and source token are chain-local. Loan permissions can redirect funds or recovered collateral, so explain the exact authority before asking for a grant.",
       "Before repaying, re-read loanOf and the source fee, compute a ceiling with margin, approve or permit the source token if needed, and simulate the exact collateral returned. Native repayment sends the ceiling as value; the excess is refunded.",
     ],
     codePoints: [
@@ -782,7 +782,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       ],
     },
     paragraphs: [
-      "An owner acting for themselves needs no grant. A contract acting for an owner needs JBPermissions.setPermissionsFor from that owner, scoped to the revnet (ROOT works but is far too broad). Every state-changing call runs under a loan-specific reentrancy guard. Collateral is burned when the loan opens and minted again when it closes.",
+      "An owner acting for themselves grants REVLoans only BURN_TOKENS (11), which it uses to burn the collateral. A contract acting for an owner also needs JBPermissions.setPermissionsFor from that owner, scoped to the revnet (ROOT works but is far too broad). Every state-changing call runs under a loan-specific reentrancy guard. Collateral is burned when the loan opens and minted again when it closes.",
       "A standard loan deducts a 2.5% Juicebox fee, a 1% REV fee when available, and a prepaid borrowing cost of 2.5–50% paid to the revnet. 2.5% prepays 182.5 days; 50% prepays all 3,650. After the prepaid period the cost rises until expiry.",
     ],
     links: [
