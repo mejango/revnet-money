@@ -41,6 +41,26 @@ jango: "make sure revnet money is also aligned with juicebox money, though be mi
 ## Review
 Full `npm run check` green on c3b5b0f9: 332 files, 3189 tests, all budgets (all client JavaScript 2803.0 of 2804 KiB). Codex `gpt-6.1-sol` three passes: one finding, one finding, then CLEAN. Not rendered in a browser with a wallet. New copy for jango: "Looking up…", "Name not found", "Not a valid address", the "Fees" and "You receive" loan rows, the "Fee" cash out row, and the view-as note on liquidity.
 
+## Holder flows, second part (R5c, 2026-11-14)
+
+## Plan refinement
+- **Objective:** Close the remaining holder and read gaps against juicebox.money that need no ruling: the cash out review's token, the Safe burn toast, bridge sends, loans and bridge claims in activity, and the pay review's beneficiary and payment notice.
+- **System fit:** The cash out token comes from the chain's terminal through the SDK reader and one picker in `tokenUtils`. Activity rows are mapped once in `mapActivityEvents` and read by the project, account and homepage feeds. The payment notice is project metadata, snapshotted into the prepared payment the review already binds to.
+- **Reuse and simplicity:** No new components. The notice rides the existing payment identity, so the existing "payment changed, review again" path covers a notice that arrives late. Loans and claims reuse the row sentence and category tables.
+- **Evidence and unknowns:** Each gap re-read in both clients. Indexer fields checked against the live schema, including a bridge claim's 32-byte beneficiary. Unknown: whether jango wants the new wording; listed for him.
+- **Verification:** A regression test per change; full `npm run check`; Codex until clean or only contrived findings remain.
+- **Resource budget:** Same branch and draft PR (#134). Budgets raised only to the measured sizes, with reasons beside them.
+- **Authority and recovery:** Draft PR only, merged on jango's word. Each change is its own commit.
+- **Agent-system impact:** None.
+
+## Review
+- Cash out review: the reclaim token is read from the chain's terminal, the review waits for the index and the terminal read, and the token is frozen for an open review. A burn proposed to a Safe is named a proposal.
+- Activity: bridge sends ("sending X to Chain", by the account that called the sucker, with the sucker's inner cash out dropped), loans, repayments, liquidations and bridge claims. A loan or claim is its transaction's row by the calling account, so a Safe's repayment is not attributed to its executor. The homepage describes a bridge send. Split distributions are labelled "Splits".
+- Pay review: Beneficiary and Project notice rows. The notice is snapshotted when the payment is prepared, a change asks for review again, and Pay stays off while the controller or the metadata file is being read.
+- Verification: `npm run check` gates green (333 files, 3202 tests, 160 browser tests, budgets). Codex `gpt-6.1-sol` passes 3 to 8 on this part: nine findings fixed. Set aside from pass 8 as contrived: peers whose metadata diverged after a half-finished update show the page chain's notice (juicebox.money does the same). A failed metadata read lets a payment proceed without the notice.
+- Budgets raised to measured sizes: all client JavaScript 2805, `/[slug]` 601, owners 639, shop 607, extras 620, `/account/[id]` 433 KiB.
+- New copy for jango: "Bridged out", "Bridge sends", "Bridged in", "Bridge claims", "Loan", "Loan repaid", "Loan liquidated", "Loans", "Loan repayments", "Liquidations", "Splits", "Beneficiary", "Project notice".
+
 # Deliberate-backlog (D) items — revnet-money — 2026-07-28
 
 Baseline: 66 files / 333 tests green (node 22).
