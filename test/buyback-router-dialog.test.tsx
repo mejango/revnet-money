@@ -77,9 +77,10 @@ vi.mock("@/components/ButtonWithWallet", () => ({
 
 vi.mock("@/lib/wagmiConfig", () => ({ wagmiConfig: {} }));
 const ENS_TOKEN = "0x9999999999999999999999999999999999999999";
+const ens = vi.hoisted(() => ({ token: "0x9999999999999999999999999999999999999999" }));
 vi.mock("@/hooks/ens/useEnsAddress", () => ({
   useEnsAddress: (name: string | undefined) => ({
-    data: name === "pair.eth" ? ENS_TOKEN : null,
+    data: name === "pair.eth" ? ens.token : null,
     isLoading: false,
   }),
 }));
@@ -189,7 +190,7 @@ describe("BuybackRouterCard", () => {
     let finish!: (result: unknown) => void;
     writes.runWrites.mockReset();
     writes.runWrites.mockReturnValue(new Promise((resolve) => (finish = resolve)));
-    render(<BuybackRouterCard rows={[{ chainId: 8453, projectId: 6 }]} />);
+    const view = render(<BuybackRouterCard rows={[{ chainId: 8453, projectId: 6 }]} />);
     fireEvent.click(screen.getByRole("button", { name: "Set TWAP window" }));
     const dialog = await screen.findByRole("dialog", { name: "Set TWAP window" });
     const field = within(dialog).getByRole("textbox", { name: /on Base/ });
@@ -218,6 +219,13 @@ describe("BuybackRouterCard", () => {
         typeof value === "bigint" ? value.toString() : value,
       ),
     ).toContain(ENS_TOKEN);
+    // The name resolving elsewhere later does not rename what the reviewed call carries.
+    ens.token = `0x${"77".repeat(20)}`;
+    view.rerender(<BuybackRouterCard rows={[{ chainId: 8453, projectId: 6 }]} />);
+    expect(dialog.querySelector("[data-tx-confirm]")?.textContent).toContain(
+      `${ENS_TOKEN} (pair.eth)`,
+    );
+    ens.token = ENS_TOKEN;
     await act(async () => finish({ chains: 1, safeQueued: 0, safeConfirmed: 0 }));
   });
 

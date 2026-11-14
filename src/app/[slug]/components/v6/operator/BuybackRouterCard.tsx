@@ -533,6 +533,7 @@ function BuybackActionForm({
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [review, setReview] = useState<ChainWrite[] | null>(null);
+  const [reviewShown, setReviewShown] = useState<Record<number, string>>({});
   // A send that went to the Safe as a proposal: nothing more to send from here.
   const [proposed, setProposed] = useState(false);
 
@@ -698,7 +699,12 @@ function BuybackActionForm({
     setStatus(null);
     setProposed(false);
     try {
-      setReview(buildWrites());
+      const writes = buildWrites();
+      // Frozen with the calls: a later ENS refresh must not rename what they carry.
+      setReviewShown(
+        Object.fromEntries(writes.map((write) => [write.chainId, shownAddress(write.chainId)])),
+      );
+      setReview(writes);
     } catch (e) {
       const message = formatWalletError(e) || "Could not complete this action.";
       setError(message);
@@ -734,17 +740,17 @@ function BuybackActionForm({
   const context = review
     ? [
         { label: "On", value: review.map((write) => chainName(write.chainId)).join(", ") },
-        new Set(review.map((write) => shownAddress(write.chainId))).size === 1
+        new Set(review.map((write) => reviewShown[write.chainId])).size === 1
           ? {
               label: action.fieldLabel,
-              value: shownAddress(review[0].chainId),
+              value: reviewShown[review[0].chainId],
               mono: true,
             }
           : {
               label: action.fieldLabel,
               value: `${review.length} chains`,
               lines: review.map(
-                (write) => `${chainName(write.chainId)}: ${shownAddress(write.chainId)}`,
+                (write) => `${chainName(write.chainId)}: ${reviewShown[write.chainId]}`,
               ),
             },
         ...(kind === "pool" || kind === "setPool"
