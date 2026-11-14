@@ -48,6 +48,18 @@ import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-
 import { describeQueuedBatch } from "@/lib/safe-batch";
 import { useSafeConnection } from "@/lib/safe-connector";
 import { queuedSafeReviewCall } from "@/lib/safe-queue-review";
+import {
+  hasSafeService,
+  listPendingSafeTransactions,
+  SAFE_EXEC_ABI,
+  safeExecutionArgs,
+  safeQueueUrl,
+  safeTransactionHash,
+  safeTransactionHasRefund,
+  submitSafeConfirmation,
+  usableSafeConfirmations,
+  type SafeQueuedTransaction,
+} from "@/lib/safe-service-config";
 import { queueUnavailableMessage, REFUND_REFUSAL } from "@/lib/safe-transactions";
 import { refreshTransactionActivities } from "@/lib/transaction-activity";
 import { preselectedRelayrPayment, relayrPaymentOptions } from "@/lib/transaction-review";
@@ -61,18 +73,6 @@ import {
   readBoundedSafeNonce,
   type SafeAuthorityIdentity,
 } from "@bananapus/nana-sdk-core/safe";
-import {
-  hasSafeService,
-  listPendingSafeTransactions,
-  SAFE_EXEC_ABI,
-  safeExecutionArgs,
-  safeQueueUrl,
-  safeTransactionHash,
-  safeTransactionHasRefund,
-  submitSafeConfirmation,
-  usableSafeConfirmations,
-  type SafeQueuedTransaction,
-} from "@bananapus/nana-sdk-core/safe-service";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { encodeFunctionData, isAddressEqual, type Address, type Hex } from "viem";

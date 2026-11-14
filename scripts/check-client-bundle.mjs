@@ -93,9 +93,11 @@ const routes = [
   { route: "/[slug]", path: "/eth:1", kib: 600 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 600 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 683 },
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 637 },
+  // Configured Safe service boundary with SDK 6.7.0 measures owners 637.7 and extras 618.3 KiB.
+  // Round only these two incremental route costs up; static and aggregate ceilings stay unchanged.
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 638 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 606 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 618 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 619 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 432 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 422 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 435 },

@@ -117,7 +117,7 @@ function serveQueues(base: SafeQueuedTransaction, optimism?: SafeQueuedTransacti
   const onBase = safeTransactionService("base", SAFE.address, [base]);
   const onOptimism = safeTransactionService("oeth", SAFE.address, optimism ? [optimism] : []);
   vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
-    String(input).includes("/tx-service/oeth/")
+    String(input).includes("/v1/safe/oeth/")
       ? onOptimism.fetch(input, init)
       : onBase.fetch(input, init),
   );

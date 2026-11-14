@@ -47,6 +47,12 @@ import { areRelayrChainsCompatible, isRelayrSupportedChain } from "@/lib/relayr-
 import { requireDone, reviewedCall, ReviewRefusal } from "@/lib/reviewed-call";
 import { loadEngine, reviewedSendDeps, WALLET_CHANGED } from "@/lib/reviewed-send-deps";
 import { isSafeConnection } from "@/lib/safe-connector";
+import {
+  readSafeTransaction,
+  SAFE_EXEC_ABI,
+  safeExecutionResult,
+  safeTransactionMessage,
+} from "@/lib/safe-service-config";
 import { safeTransactionRunsCalls } from "@/lib/safe-transactions";
 import {
   contractTransactionKey,
@@ -66,12 +72,6 @@ import {
   type ReviewedPlan,
 } from "@bananapus/nana-sdk-core/review";
 import { relayrDestinationHash } from "@bananapus/nana-sdk-core/review/relayr";
-import {
-  readSafeTransaction,
-  SAFE_EXEC_ABI,
-  safeExecutionResult,
-  safeTransactionMessage,
-} from "@bananapus/nana-sdk-core/safe-service";
 import { useCallback, useState } from "react";
 import {
   decodeFunctionData,

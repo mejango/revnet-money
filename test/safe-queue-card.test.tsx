@@ -361,7 +361,7 @@ describe("Safe queue card", () => {
       const base = safeTransactionService("base", SAFE.address, [ready(8453)]);
       const optimism = safeTransactionService("oeth", SAFE.address, [ready(10)]);
       vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
-        String(input).includes("/tx-service/oeth/")
+        String(input).includes("/v1/safe/oeth/")
           ? optimism.fetch(input, init)
           : base.fetch(input, init),
       );

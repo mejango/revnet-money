@@ -1,7 +1,7 @@
 import { MARKEE_CHAIN_ID } from "@/lib/markee";
+import { safeExecutionResult, safeExecutionRunsCalls } from "@/lib/safe-service-config";
 import type { TransactionActivity } from "@/lib/transaction-activity";
 import { waitForReceiptWithRetry } from "@/lib/waitForReceipt";
-import { safeExecutionResult, safeExecutionRunsCalls } from "@bananapus/nana-sdk-core/safe-service";
 import type { Address, Hex, PublicClient } from "viem";
 
 /** Associate a lost wallet reply only with an exact direct call or canonically proven Safe execution. */

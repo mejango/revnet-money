@@ -1,3 +1,4 @@
+import "@/lib/safe-service-config";
 import {
   buildSafeInitializer,
   predictSafeAddress,
@@ -185,7 +186,7 @@ export function safeChain(safe: Address | null, options: SafeChainOptions = {}) 
 
 /** A fetch stub for Safe's transaction service that serves `safe`'s creation record on `prefix`. */
 export function creationService(safe: SafeFixture, prefix: string) {
-  const url = `https://api.safe.global/tx-service/${prefix}/api/v1/safes/${safe.address}/creation/`;
+  const url = `https://juicebox.center/v1/safe/${prefix}/api/v1/safes/${safe.address}/creation/`;
   return vi.fn(async (input: RequestInfo | URL) =>
     String(input) === url
       ? new Response(JSON.stringify(safe.servicePayload), { status: 200 })
@@ -213,7 +214,7 @@ export function safeTransactionService(
   safe: Address,
   pending: readonly SafeQueuedTransaction[] = [],
 ) {
-  const base = `https://api.safe.global/tx-service/${prefix}/api/v1`;
+  const base = `https://juicebox.center/v1/safe/${prefix}/api/v1`;
   const posts: { url: string; body: Record<string, unknown> }[] = [];
   const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);

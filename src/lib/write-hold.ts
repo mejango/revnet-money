@@ -1,5 +1,7 @@
 "use client";
 
+import "@/lib/safe-service-config";
+
 import { confirmHeldWriteExit, confirmSendAgain } from "@/lib/flow-choice";
 import type { ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {

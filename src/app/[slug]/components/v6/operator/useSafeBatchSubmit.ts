@@ -14,6 +14,19 @@ import { recordSafeProposal } from "@/lib/held-rows";
 import { legacyBatchNamespace } from "@/lib/legacy-intents";
 import { composeBatch, type BatchCall, type BatchStep } from "@/lib/safe-batch";
 import { isSafeConnection } from "@/lib/safe-connector";
+import {
+  hasSafeService,
+  listPendingSafeTransactions,
+  onchainApprovalStep,
+  proposalNonceChoices,
+  SAFE_EXEC_ABI,
+  safeBatchProposalFor,
+  safeExecutionArgs,
+  safeProposalFor,
+  safeTransactionHash,
+  safeTransactionMatchesCall,
+  safeTransactionMessage,
+} from "@/lib/safe-service-config";
 import { SAFE_PROPOSAL_ORIGIN } from "@/lib/safe-transactions";
 import { requireNoViewAs } from "@/lib/view-as";
 import { safeExecutionIntent } from "@/lib/write-hold";
@@ -31,19 +44,6 @@ import {
   readBoundedSafeApprovedHash,
   readBoundedSafeNonce,
 } from "@bananapus/nana-sdk-core/safe";
-import {
-  hasSafeService,
-  listPendingSafeTransactions,
-  onchainApprovalStep,
-  proposalNonceChoices,
-  SAFE_EXEC_ABI,
-  safeBatchProposalFor,
-  safeExecutionArgs,
-  safeProposalFor,
-  safeTransactionHash,
-  safeTransactionMatchesCall,
-  safeTransactionMessage,
-} from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { isAddressEqual, keccak256, stringToHex, type Address, type Hex } from "viem";
 import { useConfig } from "wagmi";

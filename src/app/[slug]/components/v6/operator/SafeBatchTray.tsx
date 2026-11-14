@@ -25,14 +25,14 @@ import {
   type BatchStep,
 } from "@/lib/safe-batch";
 import { stepResolverFor } from "@/lib/safe-batch-presets";
-import { multiSendCallsOf, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
   hasSafeService,
   listPendingSafeTransactions,
   safeTransactionUrl,
   usableSafeConfirmations,
   type SafeQueuedTransaction,
-} from "@bananapus/nana-sdk-core/safe-service";
+} from "@/lib/safe-service-config";
+import { multiSendCallsOf, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { Address } from "viem";

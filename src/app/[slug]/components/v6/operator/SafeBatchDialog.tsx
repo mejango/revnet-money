@@ -17,8 +17,8 @@ import {
   type BatchStep,
 } from "@/lib/safe-batch";
 import { safeNonceLabel } from "@/lib/safe-nonce-choice";
+import { hasSafeService } from "@/lib/safe-service-config";
 import { formatWalletError } from "@/lib/utils";
-import { hasSafeService } from "@bananapus/nana-sdk-core/safe-service";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import type { AbiFunction, Address } from "viem";

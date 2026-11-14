@@ -1,11 +1,11 @@
 import { chainDisplayName } from "@/app/constants";
+import { fetchSafeCreation } from "@/lib/safe-service-config";
 import {
   proveSafeCreation,
   readCrossChainHandleAuthority,
   type CrossChainHandleAuthority,
   type SafeCreation,
 } from "@bananapus/nana-sdk-core/safe";
-import { fetchSafeCreation } from "@bananapus/nana-sdk-core/safe-service";
 import type { Address } from "viem";
 
 export type HandleAuthority = CrossChainHandleAuthority & {

@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  hasSafeService,
+  readSafeTransaction,
+  SAFE_PROPOSAL_AWAITING,
+  safeExecutionResult,
+  usableSafeConfirmations,
+  waitForSafeExecutionHash,
+} from "@/lib/safe-service-config";
 import type { ReviewedSafeProposal } from "@/lib/safe-transactions";
 import {
   contractTransactionKey,
@@ -23,14 +31,6 @@ import {
   type ReviewedCall,
 } from "@bananapus/nana-sdk-core/review";
 import { readAuthorityIdentity } from "@bananapus/nana-sdk-core/safe";
-import {
-  hasSafeService,
-  readSafeTransaction,
-  SAFE_PROPOSAL_AWAITING,
-  safeExecutionResult,
-  usableSafeConfirmations,
-  waitForSafeExecutionHash,
-} from "@bananapus/nana-sdk-core/safe-service";
 import type { Address, Hex, PublicClient } from "viem";
 import type { Config } from "wagmi";
 import { getPublicClient } from "wagmi/actions";

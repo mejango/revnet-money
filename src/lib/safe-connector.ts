@@ -90,7 +90,7 @@ export function watchSafeWalletPeer(config: Config): () => void {
           connector.getProvider() as Promise<
             { session?: { peer?: { metadata?: { url?: string } } } } | undefined
           >,
-          import("@bananapus/nana-sdk-core/safe-service"),
+          import("@/lib/safe-service-config"),
         ]);
         peer = isSafeWalletPeer(provider?.session?.peer?.metadata?.url);
       } catch {

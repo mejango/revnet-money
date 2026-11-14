@@ -87,7 +87,7 @@ function deferred<T>() {
 
 function serveQueues() {
   const fetch = vi.fn(async (input: RequestInfo | URL) => {
-    const chainId = String(input).includes("/tx-service/base/") ? 8453 : 1;
+    const chainId = String(input).includes("/v1/safe/base/") ? 8453 : 1;
     const transaction = queuedRow(
       chainId,
       SAFE.address,

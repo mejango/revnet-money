@@ -152,7 +152,7 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
     expect(outcome).toEqual({ kind: "proposed", hash, calls: 1 });
     expect(service.posts).toEqual([
       {
-        url: `https://api.safe.global/tx-service/base/api/v1/safes/${OPERATOR_SAFE.address}/multisig-transactions/`,
+        url: `https://juicebox.center/v1/safe/base/api/v1/safes/${OPERATOR_SAFE.address}/multisig-transactions/`,
         body: expect.objectContaining({
           to: steps[0]!.to,
           data: steps[0]!.data,
@@ -214,7 +214,7 @@ describe("a batch signed for the operator Safe on a chain with a Safe service", 
     });
     expect(service.posts).toEqual([
       {
-        url: `https://api.safe.global/tx-service/base/api/v1/multisig-transactions/${queued.safeTxHash}/confirmations/`,
+        url: `https://juicebox.center/v1/safe/base/api/v1/multisig-transactions/${queued.safeTxHash}/confirmations/`,
         body: { signature: SIGNATURE },
       },
     ]);

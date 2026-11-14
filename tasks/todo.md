@@ -1850,3 +1850,37 @@ Two real defects fixed with regression tests (false loan failure on a second loa
 
 ## Review
 Runtime and deployment-policy checks pass under verified Node26.13.1. All non-root lockfile package records are unchanged. The official multiarchitecture Docker index digest was independently rechecked on2026-11-12. Full Linux CI is required on the PR head before merge.
+
+
+## 2026-11-13: Trusted-site Safe API through Center
+
+## Plan refinement
+- **Objective:** Center keeps SAFE_API_KEY server-side and proxies Safe Transaction Service requests from its existing trusted sites; revnet and juicebox.money use the proxy, eliminating browser-key setup. Success includes authenticated upstream calls, exact response/status propagation and no key exposure.
+- **System fit:** Existing Center /v1 origin policy and Store budgets govern the new narrow proxy; SDK owns Safe endpoint selection and retry behavior; both client roots opt into their existing Center environment. Signing, Safe hash verification and execution stay in existing owners. Deployment/key configuration are separate from tested local code; user supplies key via server environment.
+- **Reuse and simplicity:** Reuse fixed Safe chain prefixes and existing origin/rate-limit/body/fetch patterns. Add a narrow SDK configuration point rather than app-local Safe transports or persisted localStorage mutations. No arbitrary target URLs, no new dependency, no server-side transaction signing.
+- **Evidence and unknowns:** Current origin/main Center f6b033b and SDK641e385 are newer than dirty local checkouts; use isolated worktrees. Installed SDK requests directly and retries monthly429. Safe API docs confirm bearer auth and account quotas. Center trusts exact configured origins; origin checks are browser policy, not cryptographic caller authentication, so shared/per-client limits remain necessary.
+- **Verification:** Proxy tests cover allowed/denied origins, endpoint/method/path validation, credential forwarding and non-disclosure, redirects, upstream errors, size/time limits and budgets. SDK tests cover opt-in routing, preserved default/custom routes and monthly-quota no-retry. Run relevant checks and both full client suites before any proposed push; no publishing or main pushes without approval.
+- **Resource budget:** Delegate Center implementation and SDK implementation separately after this plan gate; parent integrates paired clients and reviews boundaries. Reuse dependencies only with matching lockfiles; serialize heavy gates. Replan on missing auth/hosting capability rather than broadening proxy access or exposing the key.
+
+- [ ] Implement and test bounded Center Safe proxy.
+- [ ] Implement SDK opt-in routing and quota retry handling.
+- [ ] Integrate revnet and juicebox.money together, verify with candidate SDK.
+- [ ] Review changes and document exact deployment/key activation steps and outstanding authorization.
+
+
+## Plan refinement
+- **Objective:** Route every Safe service call through Center while preserving lazy loading on pages without Safe features.
+- **System fit:** SDK remains transport owner; one local configured re-export module supplies the existing SDK API to browser and server callers, before requests execute.
+- **Reuse and simplicity:** Reuse safe-service-config and replace direct SDK imports with that owner; remove eager root bootstrap and duplicate authority bootstrap. No new transport or asynchronous initialization.
+- **Evidence and unknowns:** Full revnet candidate tests3168 passed but eager root config added approximately20KiB to static route bundles. Actual rebuilt route budgets will determine success.
+- **Verification:** Enforce configured import boundary in source checks; retain browser/server first-read routing tests; rerun full consumer checks and measure budgets without blanket increases.
+- **Resource budget:** Import rewrites only, bounded frontend gates; preserve all SDK candidate code and other bot work.
+
+### Safe proxy verification and release
+- User authorized merges and automated SDK version PR publication. Center111 and SDK308 merged; generated versionPR310 now merged for core6.7.0.
+- Normal merges retain otherbot revnet131 implementation and budget corrections. No non-SDK lock or installed manifest changed for candidate.
+- Final combined candidate check passed static/type/lint/source/protocol/wallet gates,330files/3170tests withcoverage, production browserbuild, standalone packaging and all bundle limits after rounded owner638KiB/extras619KiB measurements. Browser gate passed160tests with10existing viewport skips.
+- Eager root configuration was replaced by one configured local service re-export; direct callers and SDK review/recovery owners initialize it before network calls. Source check enforces this boundary, and browser/server first-read tests prove Center routing without client Authorization. Static and aggregate bundle ceilings unchanged.
+- Actual published6.7 dependency/lock update and final PR CI remain pending publication.
+
+- Installed published6.7.0 from npm with npm12.0.1/Node26.13.1. Candidate comparison: only package.json differs, all productionfiles identical; nonSDKlockentries unchanged. Dependencies/types/source checks and7focused first-read/lazy-peer tests pass against installedregistryartifact. Latest main6405a16 merged normally with zero resultingfiledelta from testedbranch.
