@@ -1,4 +1,5 @@
 import {
+  pinDetailEdits,
   pinMediaEdits,
   readMediaEditSource,
   replaceTierMedia,
@@ -129,6 +130,30 @@ describe("shop media replacement", () => {
       "cannot be safely preserved",
     );
     expect(mocks.pinJsonMetadata).not.toHaveBeenCalled();
+  });
+
+  it("keeps pointing at artwork whose digest is the media itself, so a details edit does not drop it", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockImplementation(
+          async () => new Response("png", { headers: { "content-type": "image/png" } }),
+        ),
+    );
+    const source = await readMediaEditSource(client(), destination, 12, owner, "details");
+    expect(source.metadata).toEqual({
+      image: expect.stringContaining(cid),
+      mediaType: "image/png",
+    });
+    const [edit] = await pinDetailEdits([source], "Hat", "Warm");
+    expect(mocks.pinJsonMetadata).toHaveBeenCalledWith({
+      image: expect.stringContaining(cid),
+      mediaType: "image/png",
+      name: "Hat",
+      description: "Warm",
+    });
+    expect(edit.tierId).toBe(12);
   });
 
   it("allows a genuinely empty metadata digest", async () => {

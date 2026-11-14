@@ -39,7 +39,13 @@ async function readTierJson(digest: Hex): Promise<Record<string, unknown>> {
       const response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(10_000) });
       if (!response.ok) continue;
       const contentType = response.headers.get("content-type") ?? "";
-      if (/^(image|audio|video)\//u.test(contentType)) return {};
+      // A digest that is the media itself: keep pointing at it, so an edit of other fields keeps the artwork.
+      if (/^(image|audio|video)\//u.test(contentType)) {
+        const mediaType = contentType.split(";")[0].trim();
+        return mediaType.startsWith("image/")
+          ? { image: candidate, mediaType }
+          : { animation_url: candidate, mediaType };
+      }
       const reader = response.body?.getReader();
       if (!reader) continue;
       const chunks: Uint8Array[] = [];

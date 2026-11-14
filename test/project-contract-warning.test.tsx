@@ -49,9 +49,9 @@ describe("the unknown contracts warning", () => {
   });
 
   it("never reads an unfinished check as a clean one", () => {
-    expect(
-      show({ data: [clean(1), { ...clean(8453), failed: true }], isError: false }),
-    ).toContain("did not finish on Base.");
+    expect(show({ data: [clean(1), { ...clean(8453), failed: true }], isError: false })).toContain(
+      "did not finish on Base.",
+    );
     const html = show({ data: undefined, isError: true });
     expect(html).toContain("Could not verify this project’s contracts");
     expect(html).toContain("did not finish on Ethereum, Base.");
