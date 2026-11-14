@@ -84,17 +84,20 @@ const routes = [
   // The audit prompts render in the page so a fetch can read them: /audit measures 362.0 KiB (just over 362).
   { route: "/audit", path: "/audit", kib: 363 },
   { route: "/discover", path: "/discover", kib: 344 },
-  { route: "/create", path: "/create", kib: 568 },
+  // Permit2 pay authorization and the SDK's hook, router and revnet fee rules (SDK 6.6.0) measure /create 569.2,
+  // /[slug] 599.8, terms 599.1, operator 682.4, owners 636.3, shop 605.9, extras 617.5, account 431.9 and
+  // holdings 421.0 KiB: all client JavaScript grew 1.0 KiB, the rest is shared chunks regrouped. Rounded up only.
+  { route: "/create", path: "/create", kib: 570 },
   // Removing the credits UI regrouped shared chunks: all route JavaScript fell 3.7 KiB, while /[slug]
   // measures just over 596 KiB and /[slug]/extras 613.7 KiB. Round only those two up.
-  { route: "/[slug]", path: "/eth:1", kib: 597 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 596 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 678 },
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 635 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 603 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 614 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 431 },
-  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 420 },
+  { route: "/[slug]", path: "/eth:1", kib: 600 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 600 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 683 },
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 637 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 606 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 618 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 432 },
+  { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 422 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 435 },
   { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 394 },
   { route: "/_not-found", path: "/no-such-page/x/y", kib: 358, status: 404 },
@@ -112,7 +115,8 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
 // Next 16.4.2 measures 923.0 KiB; the ceiling moves to 924.
 // The forms pass (checkbox-gated options, inline export confirm, stacked phone tables) measures terms 595.2,
 // extras 612.5, account 430.0 and route-referenced JS 932.4 KiB; round only those up.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 935);
+// SDK 6.6.0 pay authorization and resolvers: measured 937.7 KiB route-referenced, rounded up only.
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 938);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
@@ -261,7 +265,8 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 935);
 // The same frozen acquisition-fix artifact measures2759.3 KiB, +1.7 KiB over the prior artifact.
 // Explicit homepage availability and permission retry: measured 2760.4 KiB, rounded up only.
 // Guide code copy buttons and the stages endpoint: measured 2789.3 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2790);
+// SDK 6.6.0 pay authorization and resolvers: measured 2790.3 KiB, rounded up only.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2791);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");

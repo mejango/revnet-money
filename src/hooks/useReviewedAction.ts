@@ -1,7 +1,12 @@
 "use client";
 
 import { recordSubmittedWrite, settleSubmittedWrite } from "@/lib/held-rows";
-import { revertedStep, ReviewRefusal, type ReviewedRunResult } from "@/lib/reviewed-call";
+import {
+  ACCOUNT_CHANGED,
+  revertedStep,
+  ReviewRefusal,
+  type ReviewedRunResult,
+} from "@/lib/reviewed-call";
 import {
   announcingSign,
   loadEngine,
@@ -30,10 +35,11 @@ import {
   type UseReviewedRunDeps,
   type UseReviewedRunResult,
 } from "@bananapus/nana-sdk-core/review/react";
+import type { Permit2SignatureAuthorization } from "@bananapus/nana-sdk-core/v6";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Address, Hex } from "viem";
-import { useAccount, useConfig } from "wagmi";
+import { useAccount, useConfig, type Config } from "wagmi";
 import { getAccount, getPublicClient } from "wagmi/actions";
 
 export {
@@ -311,6 +317,36 @@ export function useSafeTransactionSignature() {
     [config],
   );
   return { signSafeTransactionAsync };
+}
+
+/**
+ * The payer signs the exact, expiring Permit2 allowance for one payment, after core's review of
+ * it. Nothing moves until the payment that carries the signature is sent.
+ */
+export async function signPayAuthorization(
+  config: Config,
+  authorization: Permit2SignatureAuthorization,
+  expected: Address,
+): Promise<Hex> {
+  requireNoViewAs();
+  const { address: account, connector } = getAccount(config);
+  if (!account || account.toLowerCase() !== expected.toLowerCase())
+    throw new Error(ACCOUNT_CHANGED);
+  const { signReviewed } = await loadEngine();
+  const adapter = reviewedWalletAdapter(config, account, connector);
+  const [signature] = await signReviewed(
+    [{ kind: "permit2", authorization }],
+    {
+      account,
+      title: "Authorize the payment",
+      description:
+        "Your signature lets this payment, and only this payment, take the exact amount. It costs no gas and expires in 30 minutes.",
+    },
+    { adapter },
+  );
+  // A wallet prompt has no time bound: the wallet is checked again before the signature is used.
+  adapter.requireUnchanged();
+  return signature!;
 }
 
 /** The calls as core compares an unfinished run with a new one (useReviewedRun's `sent`). */

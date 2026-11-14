@@ -14,7 +14,6 @@ import { JB_CHAINS } from "@bananapus/nana-sdk-core";
 export const RESERVED_TOKEN_SPLIT_GROUP_ID = 1n;
 /** JBSplits.FALLBACK_RULESET_ID — the default group `splitsOf` serves when a ruleset's group is empty. */
 export const FALLBACK_RULESET_ID = 0n;
-export const REVNET_CASHOUT_FEE_PERCENT = 0.025;
 
 /**
  * Display order for chain lists. Production chains first, then their testnets, so every

@@ -15,6 +15,7 @@ import { etherscanLink } from "@/lib/utils";
 import { V6PayMode, V6PayTokenOption } from "@/lib/v6/pay";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useStartOnce } from "@bananapus/nana-sdk-core/review/react";
+import type { Permit2SignatureAuthorization } from "@bananapus/nana-sdk-core/v6";
 import { PAY_MAX_SLIPPAGE_BPS, PAY_QUOTE_FAILED_MESSAGE } from "@bananapus/nana-sdk-core/v6";
 import { Abi, Address, Hex } from "viem";
 import { useAccount } from "wagmi";
@@ -26,6 +27,7 @@ export { payContext };
 export type V6PayPhase =
   | "preparing"
   | "ready"
+  | "authorizing"
   | "approving-token"
   | "simulating"
   | "signing"
@@ -67,6 +69,8 @@ export interface PreparedV6Pay {
   needsApproval: boolean;
   tokenApprovalComplete: boolean;
   tokenApproval: PreparedV6TransactionAction | null;
+  /** The exact Permit2 allowance the payer signs for this payment, free of gas; null when none is needed. */
+  authorization: Permit2SignatureAuthorization | null;
   cartRows: { tierId: number; quantity: number; name: string }[];
   request: {
     address: Address;
@@ -80,6 +84,7 @@ export interface PreparedV6Pay {
 
 const PHASE_LABELS: Record<Exclude<V6PayPhase, "ready" | "safe-proposed" | "success">, string> = {
   preparing: "Preparing…",
+  authorizing: "Sign the payment authorization in your wallet. It is free.",
   "approving-token":
     "Confirm token access in your wallet. The payment will continue automatically…",
   simulating: "Checking the transaction…",
@@ -131,6 +136,7 @@ export function V6PayConfirmDialog({
   following?: boolean;
 }) {
   const busy =
+    phase === "authorizing" ||
     phase === "approving-token" ||
     phase === "simulating" ||
     phase === "signing" ||
@@ -291,18 +297,19 @@ export function V6PayConfirmDialog({
 
 function walletActionSteps(prepared: PreparedV6Pay): string[] {
   const steps: string[] = [];
-  if (prepared.needsApproval) {
-    steps.push(`Approve ${prepared.token.symbol} access`);
-  }
+  if (prepared.authorization) steps.push("Authorize the payment (free signature)");
+  if (prepared.tokenApproval) steps.push(prepared.tokenApproval.label);
   steps.push(prepared.mode === "pay" ? "Execute the payment" : "Add to the project balance");
   return steps;
 }
 
 function activeStepIndex(prepared: PreparedV6Pay, phase: V6PayPhase): number {
   const steps = walletActionSteps(prepared);
-  if (phase === "approving-token") return 0;
+  if (phase === "authorizing") return 0;
+  if (phase === "approving-token") return steps.length - 2;
   if (phase === "simulating" || phase === "signing" || phase === "pending") return steps.length - 1;
   if (phase === "success") return steps.length;
+  if (prepared.authorization) return 0;
   if (prepared.needsApproval && !prepared.tokenApprovalComplete) return 0;
   return steps.length - 1;
 }

@@ -4,7 +4,7 @@ import type { PreparedV6Pay, V6PayPhase } from "./V6PayConfirmDialog";
 /** How a failed payment is offered again: with a looser tolerance, or quoted afresh. */
 type PayRecovery = { kind: "slippage"; bps: number } | { kind: "reverted" };
 
-type Sending = "approving-token" | "simulating" | "signing";
+type Sending = "authorizing" | "approving-token" | "simulating" | "signing";
 
 /**
  * The pay card's confirm, one state at a time. `open` is the confirm dialog's; a Safe proposal
