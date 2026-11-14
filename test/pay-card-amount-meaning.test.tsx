@@ -69,6 +69,7 @@ vi.mock("@/hooks/useTokenBalances", () => ({
 }));
 vi.mock("@/lib/nana/project", () => ({
   useJBTokenContext: () => ({ token: { data: { symbol: "REV", decimals: 18 } } }),
+  useJBProjectMetadataContext: () => ({ metadata: { data: { payDisclosure: "No refunds." } } }),
 }));
 vi.mock("@/lib/nana/suckers", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/nana/suckers")>()),

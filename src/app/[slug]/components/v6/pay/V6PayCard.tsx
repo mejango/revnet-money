@@ -14,7 +14,7 @@ import { useSecondsUntil } from "@/hooks/useSecondsUntil";
 import { useTokenBalances } from "@/hooks/useTokenBalances";
 import { erc20ApproveAbi } from "@/lib/erc20-approve";
 import { legacyIntents } from "@/lib/legacy-intents";
-import { useJBTokenContext } from "@/lib/nana/project";
+import { useJBProjectMetadataContext, useJBTokenContext } from "@/lib/nana/project";
 import {
   hasSuckerPair,
   isPairCheckPending,
@@ -159,6 +159,10 @@ export function V6PayCard() {
   const signedAuthorization = useRef<SignedPermit2PayAuthorization | null>(null);
 
   const projectToken = useJBTokenContext().token.data;
+  const payDisclosure = (
+    useJBProjectMetadataContext().metadata?.data as { payDisclosure?: unknown } | undefined
+  )?.payDisclosure;
+  const projectNotice = typeof payDisclosure === "string" ? payDisclosure.trim() : "";
   const projectTokenLabel = projectToken?.symbol
     ? formatTokenSymbol(projectToken.symbol)
     : "tokens";
@@ -958,7 +962,7 @@ export function V6PayCard() {
         account: prepared.account,
         title: "Review the payment",
         confirmLabel: "Agree & send",
-        context: payContext(prepared, projectTokenLabel),
+        context: payContext(prepared, projectTokenLabel, projectNotice),
         calls: [
           ...(approval
             ? [
@@ -1725,6 +1729,7 @@ export function V6PayCard() {
           }
           quoteSettled={mode !== "pay" || quoteSettled}
           projectTokenSymbol={projectTokenLabel}
+          projectNotice={projectNotice}
           txHash={txHash}
           onConfirm={confirm}
           onSwitchChain={switchChain}

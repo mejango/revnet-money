@@ -109,6 +109,7 @@ export function V6PayConfirmDialog({
   retrySlippage,
   quoteSettled = true,
   projectTokenSymbol,
+  projectNotice,
   txHash,
   onConfirm,
   onDone,
@@ -127,6 +128,8 @@ export function V6PayConfirmDialog({
   /** The route quote the payment is checked against has settled; its review waits for it. */
   quoteSettled?: boolean;
   projectTokenSymbol: string;
+  /** The project's payment notice, shown with the review. */
+  projectNotice: string;
   txHash: `0x${string}` | undefined;
   onConfirm: () => void;
   /** Retained for caller compatibility; chain selection belongs to the payment card. */
@@ -230,7 +233,7 @@ export function V6PayConfirmDialog({
                     </div>
                   ) : prepared ? (
                     <div className="flex flex-col gap-3 py-2">
-                      {payContext(prepared, projectTokenSymbol).map((row) => (
+                      {payContext(prepared, projectTokenSymbol, projectNotice).map((row) => (
                         <SummaryRow key={row.label} label={row.label}>
                           {row.value}
                         </SummaryRow>

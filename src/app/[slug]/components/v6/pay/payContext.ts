@@ -13,8 +13,10 @@ export function payContext(
     quoteFailed: boolean;
     cartRows: { quantity: number; name: string }[];
     memo: string;
+    account: string;
   },
   projectTokenSymbol: string,
+  projectNotice = "",
 ): { label: string; value: string; strong?: boolean; note?: string }[] {
   return [
     {
@@ -41,6 +43,9 @@ export function payContext(
           },
         ]
       : []),
+    ...(prepared.mode === "pay" ? [{ label: "Beneficiary", value: prepared.account }] : []),
     ...(prepared.memo ? [{ label: "Note", value: prepared.memo }] : []),
+    // What the project asks every payer to read before paying.
+    ...(projectNotice ? [{ label: "Project notice", value: projectNotice, strong: true }] : []),
   ];
 }
