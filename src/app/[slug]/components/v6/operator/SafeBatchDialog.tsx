@@ -146,6 +146,9 @@ export function SafeBatchDialog({
     queryFn: () => noncesFor({ chainId: row.chainId, safe: proposalSafe! }),
   });
   const nonces = proposalSafe ? noncesQuery.data : undefined;
+  // The row is there from the start, so the choice cannot appear unnoticed after a slow read.
+  const noncesLoading =
+    !!address && (routeQuery.isLoading || (!!proposalSafe && noncesQuery.isLoading));
   const [pickedNonce, setPickedNonce] = useState<number | null>(null);
   const proposalNonce =
     nonces && pickedNonce !== null && nonces.choices.includes(pickedNonce)
@@ -275,11 +278,12 @@ export function SafeBatchDialog({
               route.kind === "refused" ||
               !steps.length ||
               problems.length > 0 ||
-              gate.blocked
+              gate.blocked ||
+              noncesLoading
             }
             onClick={() => void confirm()}
           >
-            {busy || routeQuery.isLoading || gate.pending ? (
+            {busy || noncesLoading || gate.pending ? (
               <Loader2 aria-hidden className="mr-2 inline h-4 w-4 animate-spin" />
             ) : null}
             {actionLabel(route, steps.length, row.chainId)}
@@ -320,6 +324,10 @@ export function SafeBatchDialog({
               label: safeNonceLabel(nonce, nonces.next),
             }))}
           />
+        </SummaryRow>
+      ) : noncesLoading ? (
+        <SummaryRow label="Safe nonce">
+          <span className="text-zinc-500">Loading…</span>
         </SummaryRow>
       ) : null}
       {steps.length ? (
