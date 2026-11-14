@@ -4,6 +4,8 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
+import { useHydrated } from "@/hooks/useHydrated";
+
 // Every route's bundle carries the root not-found module, so the nav it needs loads on demand.
 export const NotFoundNav = dynamic(() =>
   import("@/components/layout/Nav").then((module) => module.Nav),
@@ -29,5 +31,12 @@ export function NotFoundMessage() {
   useEffect(() => {
     document.title = "Not found | Revnet";
   }, []);
-  return <p className="mb-6 max-w-full break-words text-zinc-600">{messageFor(usePathname())}</p>;
+  // The prebuilt 404 is rendered for "/_not-found", so the path is named once the browser knows it.
+  const hydrated = useHydrated();
+  const pathname = usePathname();
+  return (
+    <p className="mb-6 min-h-6 max-w-full break-words text-zinc-600">
+      {hydrated ? messageFor(pathname) : ""}
+    </p>
+  );
 }

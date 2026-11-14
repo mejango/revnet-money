@@ -1,17 +1,25 @@
-import { BuybackRouterCard } from "@/app/[slug]/components/v6/operator/BuybackRouterCard";
+import {
+  BuybackRouterCard,
+  READ_FAILED_LINE,
+} from "@/app/[slug]/components/v6/operator/BuybackRouterCard";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { groupGateState } from "./support/group-write-gate";
 
 vi.mock("@/lib/nana/groupWriteGate", () => import("./support/group-write-gate"));
-beforeEach(() => groupGateState.reset());
+beforeEach(() => {
+  groupGateState.reset();
+  chainRead.readFailed = false;
+});
 
 // The card reads chain state on mount; stub it so the test is about the shell,
 // not the RPC. One chain with an initialized USDC pool = every action available.
+const chainRead = vi.hoisted(() => ({ readFailed: false }));
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({
     data: [
       {
+        readFailed: chainRead.readFailed,
         chainId: 8453,
         projectId: 6,
         buybackRegistry: "0x1111111111111111111111111111111111111111",
@@ -89,6 +97,13 @@ describe("BuybackRouterCard over sucker-group rows", () => {
 });
 
 describe("BuybackRouterCard", () => {
+  it("says a chain could not be read instead of calling its hook unset", async () => {
+    chainRead.readFailed = true;
+    render(<BuybackRouterCard rows={[{ chainId: 8453, projectId: 6 }]} />);
+    expect(screen.getAllByText(READ_FAILED_LINE).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Not set")).toBeNull();
+  });
+
   it("opens each action's form in a modal dialog, not inline", async () => {
     render(<BuybackRouterCard rows={[{ chainId: 8453, projectId: 6 }]} />);
 

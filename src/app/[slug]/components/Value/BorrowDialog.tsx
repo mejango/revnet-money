@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
-import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
+import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { PropsWithChildren, useCallback, useEffect, useMemo, useState } from "react";
@@ -42,6 +42,7 @@ const BORROW_STATUS_TEXT: Record<LoanStatus, string> = {
   "granting-permission": "Granting permission...",
   "waiting-signature": "Waiting for wallet confirmation...",
   pending: "Creating loan...",
+  proposed: SAFE_PROPOSAL_PENDING_LINE,
   "reallocation-pending": "Adjusting loan...",
   success: "Loan opened.",
   "safe-unconfirmed": SAFE_PROPOSAL_UNCONFIRMED_LINE,
@@ -203,7 +204,8 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
       : [];
 
   useEffect(() => {
-    if (["pending", "reallocation-pending", "success"].includes(borrowStatus)) setReview(false);
+    if (["pending", "proposed", "reallocation-pending", "success"].includes(borrowStatus))
+      setReview(false);
   }, [borrowStatus]);
 
   return (

@@ -3,14 +3,14 @@
   "sites": [
     {
       "file": "src/app/[slug]/components/Value/RepayDialog.tsx",
-      "line": 95,
+      "line": 104,
       "api": "useWalletClient",
       "boundary": "Reads the connected wallet client only to require a connected wallet; it never signs or sends. Writes go through the reviewed write hook.",
       "test": "test/value-send-hold.test.tsx"
     },
     {
       "file": "src/app/[slug]/components/Value/hooks/useBorrowDialog.tsx",
-      "line": 167,
+      "line": 173,
       "api": "useWalletClient",
       "boundary": "Reads the connected wallet client only to require a connected wallet; it never signs or sends. Writes go through the reviewed write hook.",
       "test": "test/borrow-review-cancel.test.tsx"

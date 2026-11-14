@@ -14,7 +14,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { loanNumberOf } from "@/lib/loanTransactions";
-import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
+import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { JBChainId } from "@bananapus/nana-sdk-core";
 import { useEffect, useState } from "react";
 import { formatUnits } from "viem";
@@ -29,6 +29,7 @@ const REALLOCATE_STATUS_TEXT: Record<LoanStatus, string> = {
   "granting-permission": "Granting permission...",
   "waiting-signature": "Waiting for wallet confirmation...",
   pending: "Refinancing loan...",
+  proposed: SAFE_PROPOSAL_PENDING_LINE,
   "reallocation-pending": "Refinancing loan...",
   success: "Loan refinanced.",
   "safe-unconfirmed": SAFE_PROPOSAL_UNCONFIRMED_LINE,
@@ -147,7 +148,8 @@ export function ReallocateDialog({
   const statusText = REALLOCATE_STATUS_TEXT[borrowStatus];
 
   useEffect(() => {
-    if (["pending", "reallocation-pending", "success"].includes(borrowStatus)) setReview(false);
+    if (["pending", "proposed", "reallocation-pending", "success"].includes(borrowStatus))
+      setReview(false);
   }, [borrowStatus]);
 
   const refinanceContext = cashOutChainId

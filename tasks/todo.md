@@ -1,3 +1,25 @@
+# Parity with juicebox.money for revnet actions (2026-11-13)
+
+jango: "make sure revnet money is also aligned with juicebox money, though be mindful it is scoped only to revnet projects."
+
+- [x] R1 Cash out: sale deadline follows the Safe rule; a fresh minimum below the reviewed one refuses with "The cash out estimate dropped. Review the new estimate."
+- [x] R2 Loans: a Safe proposal ends as proposed in Borrow, Reallocate and Repay, never as done.
+- [x] R3 Buyback router card: Add to batch needs the danger acknowledgement, like Send.
+- [x] R4 Loan fee total falls back to the SDK protocol constants when the onchain read is missing; repay check errors read plainly.
+- [x] R5a Cash out ends on a confirmed state with a transaction link and stops under View as; the buyback card says when a registry read failed instead of "Not set".
+- [ ] R5 Still open: net "You receive" row on cash out, separate approval review for ERC-20 repay, view-as on liquidity, burn and Safe proposal end states, reclaim token source read onchain, ENS in buyback address fields.
+- [ ] R6 Not yet compared: pay card, read surface and home, operator metadata, splits and permissions, send modes and shell, launch form and guides.
+
+## Plan refinement
+- **Objective:** For a revnet, the same action on revnet.money and juicebox.money builds the same call and says the same words. Success is each listed gap closed with a test, or put to jango.
+- **System fit:** juicebox.money through the SDK is the reference. revnet.money stays scoped to revnets; shared rules come from the SDK (`safe-service`, `loan-math`), dialogs only display them.
+- **Reuse and simplicity:** Reuse SDK exports already in the lockfile; no new SDK release, no new helper where one exists (`swapDeadline`, `SAFE_PROPOSAL_PENDING_LINE`).
+- **Evidence and unknowns:** Gaps come from three read-only comparison reports (subagent output), each re-read in code before a change. Open: whether revnet fee math (`applyRevFee`) should move into the SDK.
+- **Verification:** One regression test per fix; full `npm run check` green; one browser test (`project-shape` alias tab, tablet) failed once under load and passed 15 of 15 on rerun.
+- **Resource budget:** One worktree, one PR, edits in the main session. Replan if a fix needs an SDK release.
+- **Authority and recovery:** Local commits and a PR only. Merge when jango says so. Each fix is its own commit and can be reverted alone.
+- **Agent-system impact:** None.
+
 # Deliberate-backlog (D) items — revnet-money — 2026-07-28
 
 Baseline: 66 files / 333 tests green (node 22).

@@ -90,6 +90,7 @@ const tokenBalance = (chainId: number, projectId: number) => ({
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
   useAccount: () => ({ address: mocks.account }),
+  useConfig: () => ({}),
   // One client per chain across renders, as wagmi's is.
   usePublicClient: (parameters?: { chainId?: number }) =>
     (mocks.clients[parameters?.chainId ?? 0] ??= {
@@ -370,6 +371,7 @@ vi.mock("@/lib/bendystraw", () => ({
   useBendystrawQuery: () => ({ data: undefined }),
 }));
 vi.mock("@/lib/nana/project", () => ({
+  useChain: () => undefined,
   useJBChainId: () => 1,
   useJBContractContext: () => ({
     contractAddress: () => "0x5555555555555555555555555555555555555555",
@@ -748,6 +750,27 @@ describe("a repayment's loan token, decimals and currency", () => {
   });
 });
 
+describe("cash out's reviewed minimum", () => {
+  it("sends nothing when the fresh minimum is below the one the review shows", async () => {
+    mocks.prepareCashOut.mockResolvedValue({
+      route: { expectedReturn: 10n ** 17n, minimumReturn: 8n * 10n ** 16n },
+      transaction: {
+        chainId: 1,
+        address: "0x6666666666666666666666666666666666666666",
+        abi: parseAbi(["function cashOutTokensOf()"]),
+        functionName: "cashOutTokensOf",
+        args: [],
+      },
+    });
+    await confirmCashOut();
+    expect(
+      (await screen.findAllByText("The cash out estimate dropped. Review the new estimate."))
+        .length,
+    ).toBeGreaterThan(0);
+    expect(mocks.write).not.toHaveBeenCalled();
+  });
+});
+
 describe("value flows hold their dialog while a send is in flight", () => {
   it("cash out, from Confirm through the route read before the wallet prompt", async () => {
     await confirmCashOut();
@@ -1037,7 +1060,7 @@ describe("value sends name the account they pay", () => {
     ["repay", confirmRepay],
   ])("%s", async (_, confirmFlow) => {
     mocks.prepareCashOut.mockResolvedValue({
-      route: { expectedReturn: 10n ** 17n },
+      route: { expectedReturn: 10n ** 17n, minimumReturn: 9n * 10n ** 16n },
       transaction: {
         chainId: 1,
         address: "0x6666666666666666666666666666666666666666",
@@ -1070,7 +1093,7 @@ describe("value flows refused by core's write hold", () => {
     mocks.hasPermissions.mockResolvedValue(permitted);
     mocks.freshBorrowable.mockResolvedValue(10n ** 18n);
     mocks.prepareCashOut.mockResolvedValue({
-      route: { expectedReturn: 10n ** 17n },
+      route: { expectedReturn: 10n ** 17n, minimumReturn: 9n * 10n ** 16n },
       transaction: {
         chainId: 1,
         address: "0x6666666666666666666666666666666666666666",
@@ -1196,6 +1219,9 @@ describe("holder dialogs tell why their button is off, and preview for the viewe
     fireEvent.change(amount, { target: { value: "1" } });
     expect(await screen.findByText(/You'll get/)).toBeTruthy();
     expect(mocks.routeHolder).toHaveBeenLastCalledWith(VIEWED);
+    // View as reads only: the send button is off and says how to get it back.
+    const stop = await screen.findByRole("button", { name: "Exit View as to cash out" });
+    expect((stop as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("quotes a cash out for the connected wallet outside View as", async () => {

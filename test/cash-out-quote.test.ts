@@ -1,5 +1,6 @@
 import {
   cashOutExecutionErrorMessage,
+  cashOutMinimumDropped,
   cashOutPoolBufferBps,
   resolveCashOutChainId,
 } from "@/lib/cashOutQuote";
@@ -61,5 +62,14 @@ describe("cash-out chain and presentation adapters", () => {
     };
 
     expect(cashOutPoolBufferBps(route)).toBe(256);
+  });
+});
+
+describe("cashOutMinimumDropped", () => {
+  it("refuses a send whose minimum is below the reviewed one, or whose reviewed minimum is unread", () => {
+    expect(cashOutMinimumDropped(100n, 99n)).toBe(true);
+    expect(cashOutMinimumDropped(undefined, 99n)).toBe(true);
+    expect(cashOutMinimumDropped(100n, 100n)).toBe(false);
+    expect(cashOutMinimumDropped(100n, 101n)).toBe(false);
   });
 });

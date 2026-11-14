@@ -164,7 +164,7 @@ describe("a refinance whose permission a Safe executes after the run ended", () 
     act(() => result.current.setCollateralAmount("1"));
     await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
     await act(() => result.current.handleBorrow());
-    expect(result.current.borrowStatus).toBe("pending");
+    expect(result.current.borrowStatus).toBe("proposed");
 
     // The Safe executes the grant: the runner is idle with its first step settled.
     act(() => reallocation.set({ phase: "idle", settledStep: 0 }));
@@ -213,7 +213,7 @@ describe("a loan proposal released from another tab", () => {
     act(() => result.current.setCollateralAmount("1"));
     await waitFor(() => expect(result.current.selectedChainTokenConfig).toBeTruthy());
     await act(() => result.current.handleBorrow());
-    expect(result.current.borrowStatus).toBe("pending");
+    expect(result.current.borrowStatus).toBe("proposed");
 
     // Released in another tab: the runner is idle, with no error, hold or settled step.
     act(() => borrow.set({ phase: "idle" }));

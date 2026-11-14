@@ -21,6 +21,14 @@ export function cashOutExecutionErrorMessage(error: unknown): string | null {
   return null;
 }
 
+/**
+ * Whether the minimum the call would carry is below the minimum the review
+ * shows. An unread reviewed minimum counts as dropped: its row cannot be true.
+ */
+export function cashOutMinimumDropped(reviewed: bigint | undefined, fresh: bigint): boolean {
+  return reviewed === undefined || fresh < reviewed;
+}
+
 /** Keep a remembered multi-chain choice from diverging from the chains which are still cash-outable. */
 export function resolveCashOutChainId(
   availableChainIds: readonly number[],
