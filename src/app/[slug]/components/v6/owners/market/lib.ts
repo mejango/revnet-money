@@ -12,6 +12,7 @@ import {
   jbControllerAbi,
   JBCoreContracts,
   jbDirectoryAbi,
+  jbMultiTerminalAbi,
   jbPricesAbi,
   jbSplitsAbi,
   jbUniswapV4LpSplitHookAbi,
@@ -25,6 +26,8 @@ import {
   getCurrentRuleset,
   readUniswapV4PositionFees,
   resolveProjectBuybackHook,
+  revnetCashOutFeeApplies,
+  revnetCashOutFeeTerminalExists,
   UNISWAP_PERMIT2_ADDRESS,
   UNISWAP_V4_INITIALIZE_TOPIC,
   UNISWAP_V4_MAX_TICK,
@@ -2270,13 +2273,15 @@ async function issuanceCeilingOf(
   }
 }
 
+const EMPTY_REFERENCE: MarketReferencePrices = { issuance: null, cashOut: null };
+
 /**
  * The ceiling and floor the pool trades between, both in pair tokens per
  * project token. Read best-effort: either half degrades to null on its own.
  *
- * The cash-out quote is hook-blind (`currentReclaimableSurplusOf` skips data
- * hooks) and display-only — transactions must quote through the hook-aware
- * path. It is taken in the accounting context's own terms, so no price-feed
+ * The cash-out quote is display-only (`currentReclaimableSurplusOf` skips data
+ * hooks, so the revnet's fee is netted here) — transactions must quote through
+ * the hook-aware path. It is taken in the accounting context's own terms, so no price-feed
  * conversion is involved.
  */
 async function readMarketReferencePrices(
@@ -2286,37 +2291,54 @@ async function readMarketReferencePrices(
 ): Promise<MarketReferencePrices> {
   const client = providedClient ?? (getViemPublicClient(pool.chainId) as PublicClient);
 
+  const current = await getCurrentRuleset(client, { chainId: pool.chainId, projectId }).catch(
+    () => null,
+  );
+  if (!current) return EMPTY_REFERENCE;
+  const cashOutTaxRate = BigInt(current.metadata.cashOutTaxRate);
+  const token = pool.pair.addr === zeroAddress ? NATIVE_TOKEN : pool.pair.addr;
+
   const [issuance, cashOut] = await Promise.all([
+    issuanceCeilingOf(client, {
+      chainId: pool.chainId,
+      projectId,
+      weight: current.ruleset.weight,
+      baseCurrency: Number(current.metadata.baseCurrency),
+      pairCurrency: pool.pair.currency,
+    }).catch(() => null),
     (async () => {
-      const current = await getCurrentRuleset(client, { chainId: pool.chainId, projectId });
-      return issuanceCeilingOf(client, {
-        chainId: pool.chainId,
-        projectId,
-        weight: current.ruleset.weight,
-        baseCurrency: Number(current.metadata.baseCurrency),
-        pairCurrency: pool.pair.currency,
-      });
-    })().catch(() => null),
-    (async () => {
-      // Quote the largest whole token unit the supply supports, never a scaled
-      // one-token extrapolation: cash-out is nonlinear, and on a few-decimal
-      // accounting token a one-token reclaim floors to zero at large supplies.
+      // What one token reclaims net of the revnet's own fee and the protocol fee, as the cash
+      // out review shows it. An unreadable fee terminal assumes the fee, never overstating the
+      // floor; with a zero tax the protocol fee depends on the fee-free surplus, read here.
+      const [feeTerminalExists, feeFreeSurplus] = await Promise.all([
+        revnetCashOutFeeTerminalExists(client, { chainId: pool.chainId, token }).catch(() => true),
+        cashOutTaxRate === 0n
+          ? client.readContract({
+              address: v6Address(JBCoreContracts.JBMultiTerminal, pool.chainId)!,
+              abi: jbMultiTerminalAbi,
+              functionName: "feeFreeSurplusOf",
+              args: [projectId, token],
+            })
+          : undefined,
+      ]);
       const quote = await getCashOutQuote(client, {
         chainId: pool.chainId,
         projectId,
         cashOutCount: 10n ** 18n,
         decimals: BigInt(pool.pair.decimals),
         currency: BigInt(pool.pair.currency),
+        cashOutTaxRate,
+        feeFreeSurplus,
+        revnetFeeApplies: revnetCashOutFeeApplies({ cashOutTaxRate, feeTerminalExists }) === true,
       });
-      const value = Number(formatUnits(quote.reclaimAmount, pool.pair.decimals));
+      if (quote.reclaimAmountAfterFee === undefined) return null;
+      const value = Number(formatUnits(quote.reclaimAmountAfterFee, pool.pair.decimals));
       return Number.isFinite(value) && value > 0 ? value : null;
     })().catch(() => null),
   ]);
 
   return { issuance, cashOut };
 }
-
-const EMPTY_REFERENCE: MarketReferencePrices = { issuance: null, cashOut: null };
 
 export interface SolvedRange {
   minPrice: number;
