@@ -19,7 +19,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       columns: ["You need to", "Use"],
       rows: [
         ["Pay contributors in tokens on a published schedule", "Revnet"],
-        ["Let holders cash out or borrow against the balance sheet", "Revnet"],
+        ["Let owners cash out or borrow against the balance sheet", "Revnet"],
         ["Commit to terms nobody can change after launch", "Revnet"],
         ["Pay a team a budget each month", "Juicebox project"],
         ["Change the rules after launch", "Juicebox project"],
@@ -46,7 +46,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["founders"],
     title: "Choosing the numbers",
     summary:
-      "Model the whole schedule before launch. Compare outcomes under realistic revenue, holder concentration, and withdrawal scenarios; no single tax or cut is safe for every revnet.",
+      "Model the whole schedule before launch. Compare outcomes under realistic revenue, owner concentration, and withdrawal scenarios; no single tax or cut is safe for every revnet.",
     points: [
       {
         key: "Issuance and cuts",
@@ -54,7 +54,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Cash out tax",
-        text: "compare exits at several shares of supply. A higher tax keeps more of each cash out for remaining holders. Loans use the same tax, so borrowing does not get around it.",
+        text: "compare exits at several shares of supply. A higher tax keeps more of each cash out for remaining owners. Loans use the same tax, so borrowing does not get around it.",
       },
       {
         key: "Split",
@@ -66,7 +66,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Concentration",
-        text: "test large holders exiting, auto issuance claims, heavy borrowing, and empty local balances. Open loans count in both supply and backing.",
+        text: "test large owners exiting, auto issuance claims, heavy borrowing, and empty local balances. Open loans count in both supply and backing.",
       },
     ],
     links: [
@@ -166,7 +166,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
           ],
           [
             "Split",
-            "A share of new tokens sent to contributors. Default none. Above 0% needs a recipient. Juicebox calls the same idea reserved tokens, and the contract field is splitPercent.",
+            "A share of new tokens sent to contributors. Default none. Above 0% needs a recipient. The contract field is splitPercent.",
           ],
           [
             "Cash out tax",
@@ -231,7 +231,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["founders"],
     title: "Running it: what the operator can do",
     summary:
-      "The operator has nine default permissions plus any granted at launch. The Operator tab shows the available actions; check grants per chain, since routing, recipients, and shop choices affect holders.",
+      "The operator has nine default permissions plus any granted at launch. The Operator tab shows the available actions; check grants per chain, since routing, recipients, and shop choices affect owners.",
     table: {
       label: "Operator tab",
       rows: [
@@ -259,7 +259,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       ],
     },
     paragraphs: [
-      "Collect auto issuance from Owners. Holders use the You card to cash out, borrow, move between networks, or claim their tokens as ERC-20s. Card and bank payments buy an accepted token first.",
+      "Collect auto issuance from Owners. Owners use the You card to cash out, borrow, or move between networks. Card and bank payments buy an accepted token first.",
       "Liquidity lives under Owners → Market. Anyone can add liquidity to the pool through Uniswap V4's position manager, single-sided if they like. The site shows the pool's composition, depth by price band, and every position.",
       "The operator cannot change issuance, cuts, cash out taxes, split percentages, or stage timing, and cannot withdraw the balance. There is no owner key: REVOwner holds the project NFT and never transfers it.",
     ],
@@ -326,7 +326,6 @@ const SECTIONS: readonly RevnetGuideSection[] = [
         ["Buy a shop item", "JBMultiTerminal.pay with 721 metadata (prepareUserPay with tiers)"],
         ["Add funds, no tokens", "JBMultiTerminal.addToBalanceOf"],
         ["Cash out", "JBMultiTerminal.cashOutTokensOf (prepareHookAwareCashOut)"],
-        ["Claim credits as ERC-20", "JBController.claimTokensFor (buildClaimTokensTx)"],
         ["Collect auto issuance", "REVOwner.autoIssueFor (buildAutoIssueTx)"],
         ["Borrow", "REVLoans.borrowFrom (buildBorrowTx)"],
         ["Repay", "REVLoans.repayLoan (buildRepayLoanTx)"],
@@ -448,7 +447,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       "Calculate loan limits from current funds, collateral, costs, the borrowed asset, and permissions. A saved cash out estimate is not enough.",
     paragraphs: [
       "Before borrowing, read borrowableAmountFrom for the selected asset. borrowableNow limits the debt to available funds; borrowableCapacity measures what the collateral supports and can be larger. minBorrowAmount protects the debt before costs, not the money received. Show both the debt and the amount the borrower receives, with each cost.",
-      "A holder borrowing for themselves needs no permission. A contract or operator borrowing for a holder needs OPEN_LOAN (37) from that holder. Collateral and source token are chain-local. Loan permissions can redirect funds or recovered collateral, so explain the exact authority before asking for a grant.",
+      "An owner borrowing for themselves needs no permission. A contract or operator borrowing for an owner needs OPEN_LOAN (37) from that owner, passed as holder. Collateral and source token are chain-local. Loan permissions can redirect funds or recovered collateral, so explain the exact authority before asking for a grant.",
       "Before repaying, re-read loanOf and the source fee, compute a ceiling with margin, approve or permit the source token if needed, and simulate the exact collateral returned. Native repayment sends the ceiling as value; the excess is refunded.",
     ],
     codePoints: [
@@ -604,7 +603,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     summary:
       "A stage's split recipients can be contracts. When the split is distributed, the controller hands your contract its tokens and calls processSplitWith. The LP split hook uses this to seed pool liquidity.",
     paragraphs: [
-      "Split recipients live in group 1 (RESERVED_TOKENS). Set the split's hook field to your contract's address. For an ERC-20, the controller grants an allowance: pull the tokens during the callback, or the rest is revoked and burned. For credits, it transfers them to the hook before the callback. A reverting callback emits SplitHookReverted without blocking distribution; unpulled ERC-20 tokens are burned, while transferred credits stay at the hook.",
+      "Split recipients live in group 1 (RESERVED_TOKENS). Set the split's hook field to your contract's address. The controller grants an allowance: pull the tokens during the callback, or the rest is revoked and burned. A reverting callback emits SplitHookReverted without blocking distribution; unpulled tokens are burned.",
     ],
     codePoints: [
       {
@@ -756,7 +755,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     audience: ["contracts"],
     title: "Loans from a contract",
     summary:
-      "Any contract holding the right permission from a token holder can call REVLoans. Liquidation is permissionless, which makes it a keeper job.",
+      "Any contract with the right permission from an owner can call REVLoans. Liquidation is permissionless, which makes it a keeper job.",
     table: {
       label: "REVLoans surface",
       rows: [
@@ -783,7 +782,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       ],
     },
     paragraphs: [
-      "A holder acting for themselves needs no grant. A contract acting for a holder needs JBPermissions.setPermissionsFor from that holder, scoped to the revnet (ROOT works but is far too broad). Every state-changing call runs under a loan-specific reentrancy guard. Collateral is burned when the loan opens and minted again when it closes.",
+      "An owner acting for themselves needs no grant. A contract acting for an owner needs JBPermissions.setPermissionsFor from that owner, scoped to the revnet (ROOT works but is far too broad). Every state-changing call runs under a loan-specific reentrancy guard. Collateral is burned when the loan opens and minted again when it closes.",
       "A standard loan deducts a 2.5% Juicebox fee, a 1% REV fee when available, and a prepaid borrowing cost of 2.5–50% paid to the revnet. 2.5% prepays 182.5 days; 50% prepays all 3,650. After the prepaid period the cost rises until expiry.",
     ],
     links: [
@@ -809,7 +808,7 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       },
       {
         key: "Bridge cash outs",
-        text: "a registered sucker cashes out on the source chain with no tax and no launch lock, against local backing only, so bridge accounting works. A holder who receives the tokens on the destination gets neither exemption.",
+        text: "a registered sucker cashes out on the source chain with no tax and no launch lock, against local backing only, so bridge accounting works. An owner who receives the tokens on the destination gets neither exemption.",
       },
       {
         key: "Fees at a tax of 0",
@@ -896,10 +895,6 @@ const SECTIONS: readonly RevnetGuideSection[] = [
       {
         key: "Sucker",
         text: "a bridge contract pair that moves tokens and balance between chains.",
-      },
-      {
-        key: "Credits / ERC-20",
-        text: "two ways to hold a balance. Credits live inside Juicebox; claiming turns them into ERC-20 tokens one for one.",
       },
       {
         key: "TWAP",

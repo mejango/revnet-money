@@ -1948,7 +1948,7 @@ Runtime and deployment-policy checks pass under verified Node26.13.1. All non-ro
 ## 2026-11-14: Round 9, jango's answers to the end list (V9)
 
 - [x] V9a Pay review shows the paid chain's own notice; chains that read differently open on a toggle; a failed read gets one quiet line with Retry and never blocks the payment.
-- [ ] V9b Guides, option A: Learn says "owners", the Credits entries and claim-credits lines go; Build keeps "holder" and "reserved" only as contract names.
+- [x] V9b Guides, option A: Learn says "owners", the Credits entries and claim-credits lines go; Build keeps "holder" and "reserved" only as contract names.
 - [ ] V9c Pay route: say when a route's quote is an estimate.
 - [ ] V9d Earlier open questions, decided the way jango has been ruling.
 
