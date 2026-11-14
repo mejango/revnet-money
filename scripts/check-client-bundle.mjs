@@ -99,10 +99,12 @@ const routes = [
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 683 },
   // Configured Safe service boundary with SDK 6.7.0 measures owners 637.7 and extras 618.3 KiB.
   // Round only these two incremental route costs up; static and aggregate ceilings stay unchanged.
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 638 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 606 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 619 },
-  { route: "/account/[id]", path: `/account/${account}`, kib: 432 },
+  // Loans, bridge sends and claims in the shared activity rows, and the pay review's notice and beneficiary:
+  // owners measures 638.4, shop 606.2, extras 619.1 and /account/[id] 432.2 KiB. Rounded up only.
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 639 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 607 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 620 },
+  { route: "/account/[id]", path: `/account/${account}`, kib: 433 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 422 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 435 },
   { route: "/account/[id]/roles", path: `/account/${account}/roles`, kib: 394 },
@@ -278,7 +280,8 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 938);
 // rounded up only.
 // The ENS address field on the buyback and router card, view-as liquidity and the confirm fee rows:
 // measured just over 2803.0 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2804);
+// Loans, bridge sends and claims in activity and the pay review's notice: measured 2804.1 KiB, rounded up only.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2805);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
