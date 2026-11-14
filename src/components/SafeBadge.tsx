@@ -1,6 +1,6 @@
 "use client";
 
-import { SAFE_PREFIX } from "@bananapus/nana-sdk-core/safe-service";
+import { SAFE_PREFIX } from "@/lib/safe-service-config";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";

@@ -43,7 +43,7 @@ describe("project handle authority across chains", () => {
     // Only the project chain's record: Ethereum's service is never asked.
     expect(service).toHaveBeenCalledTimes(1);
     expect(String(service.mock.calls[0][0])).toBe(
-      `https://api.safe.global/tx-service/base/api/v1/safes/${SAFE.address}/creation/`,
+      `https://juicebox.center/v1/safe/base/api/v1/safes/${SAFE.address}/creation/`,
     );
   });
 

@@ -15,7 +15,7 @@ const runtime = vi.hoisted(() => {
   };
 });
 
-vi.mock("@bananapus/nana-sdk-core/safe-service", async () => {
+vi.mock("@/lib/safe-service-config", async () => {
   await runtime.chunk;
   runtime.loaded();
   return { isSafeWalletPeer: (url?: string) => url === "https://app.safe.global" };

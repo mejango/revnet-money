@@ -1,8 +1,8 @@
 import { ReviewRefusal } from "@/lib/review-refusal";
+import { SAFE_EXEC_ABI } from "@/lib/safe-service-config";
 import { reserveWouldDeadlock } from "@/lib/shop-item-policy";
 import { erc2771ForwarderAbi, jb721TiersHookAbi, revDeployerAbi } from "@bananapus/nana-sdk-core";
 import { multiSendCallsOf } from "@bananapus/nana-sdk-core/safe";
-import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { decodeFunctionData, type Address, type Hex } from "viem";
 
 /** Check only new authorization/funding, never mutate or reinterpret a signed recovery journal. */

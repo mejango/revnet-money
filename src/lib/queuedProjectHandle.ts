@@ -1,3 +1,4 @@
+import type { SafeQueuedTransaction } from "@/lib/safe-service-config";
 import {
   JBCoreContracts,
   RevnetCoreContracts,
@@ -6,7 +7,6 @@ import {
   revOwnerAbi,
   type JBChainId,
 } from "@bananapus/nana-sdk-core";
-import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
 import {
   decodeFunctionData,
   encodeFunctionData,

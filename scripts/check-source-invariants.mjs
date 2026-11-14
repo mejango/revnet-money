@@ -21,6 +21,12 @@ function sourceFiles(root) {
 
 for (const path of sourceFiles("src")) {
   const source = read(path);
+  if (
+    path !== "src/lib/safe-service-config.ts" &&
+    source.includes("@bananapus/nana-sdk-core/safe-service")
+  ) {
+    failures.push(`${path}: Safe requests must use the configured local Safe service module`);
+  }
   if (/from\s+["']viem\/chains["']/.test(source)) {
     failures.push(
       `${path}: production code must use the SDK's supported chain definitions, not the all-chain viem barrel`,
@@ -54,6 +60,12 @@ if (
 ) {
   failures.push(
     "Browser RPC pacing must use the shared SDK provider limiter before timeout creation",
+  );
+}
+
+if (!read("src/lib/write-hold.ts").includes('import "@/lib/safe-service-config"')) {
+  failures.push(
+    "Saved Safe recovery must initialize the configured service before SDK review calls",
   );
 }
 

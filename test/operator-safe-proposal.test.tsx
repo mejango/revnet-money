@@ -104,7 +104,7 @@ describe("an operator write signed for the operator Safe", () => {
     const proposed = sameCall(6);
     expect(service.posts).toEqual([
       {
-        url: `https://api.safe.global/tx-service/base/api/v1/safes/${SAFE.address}/multisig-transactions/`,
+        url: `https://juicebox.center/v1/safe/base/api/v1/safes/${SAFE.address}/multisig-transactions/`,
         body: {
           to: getAddress(TARGET),
           value: "0",
@@ -135,7 +135,7 @@ describe("an operator write signed for the operator Safe", () => {
     expect(mocks.sign).toHaveBeenCalledOnce();
     expect(service.posts).toEqual([
       {
-        url: `https://api.safe.global/tx-service/base/api/v1/multisig-transactions/${queued.safeTxHash}/confirmations/`,
+        url: `https://juicebox.center/v1/safe/base/api/v1/multisig-transactions/${queued.safeTxHash}/confirmations/`,
         body: { signature: SIGNATURE },
       },
     ]);

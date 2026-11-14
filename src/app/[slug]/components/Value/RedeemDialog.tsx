@@ -60,6 +60,7 @@ import type { JBChainId } from "@/lib/nana/types";
 import { formatDecimals } from "@/lib/number";
 import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { isSafeConnection } from "@/lib/safe-connector";
+import { swapDeadline } from "@/lib/safe-service-config";
 import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import {
@@ -72,7 +73,6 @@ import {
   NATIVE_TOKEN,
 } from "@bananapus/nana-sdk-core";
 import { approvalIntent, cashOutIntent } from "@bananapus/nana-sdk-core/review";
-import { swapDeadline } from "@bananapus/nana-sdk-core/safe-service";
 import {
   getTokenAddress,
   prepareHookAwareCashOut,

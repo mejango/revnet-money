@@ -10,10 +10,6 @@ import { submittedViaSafe } from "@/lib/held-rows";
 import { areRelayrChainsCompatible } from "@/lib/relayr-chains";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { chooseSafeNonce } from "@/lib/safe-nonce-choice";
-import { SAFE_PROPOSAL_ORIGIN } from "@/lib/safe-transactions";
-import { chooseRelayrPayment } from "@/lib/transaction-review";
-import { gasWithHeadroom, type ReviewContextRow } from "@bananapus/nana-sdk-core/review";
-import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import {
   listPendingSafeTransactions,
   proposalNonceChoices,
@@ -22,7 +18,11 @@ import {
   safeTransactionMatchesCall,
   submitSafeConfirmation,
   usableSafeConfirmations,
-} from "@bananapus/nana-sdk-core/safe-service";
+} from "@/lib/safe-service-config";
+import { SAFE_PROPOSAL_ORIGIN } from "@/lib/safe-transactions";
+import { chooseRelayrPayment } from "@/lib/transaction-review";
+import { gasWithHeadroom, type ReviewContextRow } from "@bananapus/nana-sdk-core/review";
+import { readAuthorityIdentity, readBoundedSafeNonce } from "@bananapus/nana-sdk-core/safe";
 import { useQueryClient } from "@tanstack/react-query";
 import { Address, encodeFunctionData, isAddressEqual } from "viem";
 import { useConfig } from "wagmi";

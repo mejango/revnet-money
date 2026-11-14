@@ -5,6 +5,7 @@ import { verifyMetadataSource } from "@/lib/project-metadata-write";
 import { relayrRecoveryScopeKey, relayrSavedQuote } from "@/lib/relayr-activity";
 import { loadEngine, reviewedSendDeps, reviewedWalletAdapter } from "@/lib/reviewed-send-deps";
 import { isSafeConnection } from "@/lib/safe-connector";
+import { SAFE_EXEC_ABI } from "@/lib/safe-service-config";
 import {
   dismissTransactionActivity,
   recordTransactionActivity,
@@ -30,7 +31,6 @@ import {
   type SafeRelayrProgress,
   type SafeRelayrSession,
 } from "@bananapus/nana-sdk-core/review/safe-relayr";
-import { SAFE_EXEC_ABI } from "@bananapus/nana-sdk-core/safe-service";
 import { decodeFunctionResult, zeroAddress, type Address } from "viem";
 import type { Config } from "wagmi";
 import { getAccount, getPublicClient } from "wagmi/actions";

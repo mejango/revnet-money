@@ -45,8 +45,7 @@ describe("projects owned through a Safe", () => {
 
   beforeEach(() => {
     service = vi.fn(async (input: RequestInfo | URL) =>
-      String(input) ===
-      `https://api.safe.global/tx-service/base/api/v1/owners/${SAFE_OWNER_A}/safes/`
+      String(input) === `https://juicebox.center/v1/safe/base/api/v1/owners/${SAFE_OWNER_A}/safes/`
         ? new Response(JSON.stringify({ safes: [SAFE.address] }))
         : new Response("Not found", { status: 404 }),
     );
@@ -64,7 +63,7 @@ describe("projects owned through a Safe", () => {
     expect(service.mock.calls.map(([url]) => String(url)).sort()).toEqual(
       ["arb1", "base", "eth", "oeth"].map(
         (prefix) =>
-          `https://api.safe.global/tx-service/${prefix}/api/v1/owners/${SAFE_OWNER_A}/safes/`,
+          `https://juicebox.center/v1/safe/${prefix}/api/v1/owners/${SAFE_OWNER_A}/safes/`,
       ),
     );
   });

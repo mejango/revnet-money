@@ -11,6 +11,7 @@ import { fence, type TabLocks } from "@/lib/fence";
 import { confirmCheckedIt, confirmHeldWriteExit, confirmUnreadableExit } from "@/lib/flow-choice";
 import * as markee from "@/lib/markee";
 import { recoverMarkeeSubmission } from "@/lib/markee-recovery";
+import { safeExecutionResult, safeExecutionRunsCalls } from "@/lib/safe-service-config";
 import {
   contractTransactionKey,
   recordTransactionActivity,
@@ -33,7 +34,6 @@ import {
   type SavedAttempt,
   type SavedAttemptOutcome,
 } from "@bananapus/nana-sdk-core/review";
-import { safeExecutionResult, safeExecutionRunsCalls } from "@bananapus/nana-sdk-core/safe-service";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   encodeFunctionData,

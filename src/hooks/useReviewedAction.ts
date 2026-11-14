@@ -12,6 +12,8 @@ import {
   type ReviewedWallet,
 } from "@/lib/reviewed-send-deps";
 import { isSafeConnection, safeWalletPeerSettled } from "@/lib/safe-connector";
+import type { SafeQueuedTransaction } from "@/lib/safe-service-config";
+import { canonicalSafeTxHash, SAFE_NONCE_GUIDANCE } from "@/lib/safe-service-config";
 import { requireNoViewAs } from "@/lib/view-as";
 import { answerHeldRefusal, isHeldRefusal, writeHolds } from "@/lib/write-hold";
 import type { ReviewedCall, ReviewedPlan } from "@bananapus/nana-sdk-core/review";
@@ -28,8 +30,6 @@ import {
   type UseReviewedRunDeps,
   type UseReviewedRunResult,
 } from "@bananapus/nana-sdk-core/review/react";
-import type { SafeQueuedTransaction } from "@bananapus/nana-sdk-core/safe-service";
-import { canonicalSafeTxHash, SAFE_NONCE_GUIDANCE } from "@bananapus/nana-sdk-core/safe-service";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { Address, Hex } from "viem";
