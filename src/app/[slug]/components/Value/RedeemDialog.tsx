@@ -61,7 +61,12 @@ import { formatDecimals } from "@/lib/number";
 import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { swapDeadline } from "@/lib/safe-service-config";
-import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
+import {
+  getTokenConfigForChain,
+  getTokenSymbolFromAddress,
+  isNativeToken,
+  pickAccountingContext,
+} from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import {
   formatUnits,
@@ -74,6 +79,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { approvalIntent, cashOutIntent } from "@bananapus/nana-sdk-core/review";
 import {
+  getAccountingContexts,
   getTokenAddress,
   prepareHookAwareCashOut,
   uniswapV4Deployment,
@@ -201,9 +207,27 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   // The selected chain's accounting-token config. Null while a chain is
   // selected means LOADING — never assume the native token: gate the quote
   // and submission until it resolves.
-  const selectedChainTokenConfig = activeCashOutChainId
+  const indexedTokenConfig = activeCashOutChainId
     ? getTokenConfigForChain(suckerGroupData, Number(activeCashOutChainId))
     : null;
+  // The terminal's own accounting contexts are the authority for the token, its decimals and
+  // currency; the index only fills in while they load or when the read fails.
+  const { data: onchainContexts, isPending: contextsPending } = useQuery({
+    queryKey: ["cashOutAccountingContexts", selectedChainId, effectiveProjectId?.toString()],
+    enabled: !!publicClient && !!selectedChainId && !!effectiveProjectId,
+    queryFn: () =>
+      getAccountingContexts(publicClient!, {
+        chainId: selectedChainId!,
+        projectId: BigInt(effectiveProjectId!),
+      }),
+    // A failed read falls back to the index at once.
+    retry: false,
+  });
+  // Still loading until the terminal has answered or failed: a review never opens on the
+  // index's token and then changes under it.
+  const selectedChainTokenConfig = contextsPending
+    ? null
+    : (pickAccountingContext(onchainContexts, indexedTokenConfig) ?? indexedTokenConfig);
 
   // Determine what token to receive from cashout: the native sentinel for
   // native-base projects, else the chain's own accounting token (e.g. USDC).
@@ -796,7 +820,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   (valid &&
                     (isQuoteFetching || directSellLoading || pairPending || !tokenToReceive))
                 }
-                disabled={isViewAs || !valid || !cashOutRoute || !pairVerified}
+                disabled={isViewAs || !valid || !cashOutRoute || !pairVerified || !tokenToReceive}
                 onClick={() => {
                   setError(null);
                   // Pin the reviewed chain: a peer balance arriving later must not unselect it.
