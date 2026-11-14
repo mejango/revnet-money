@@ -25,14 +25,23 @@ import { TEST_ACCOUNT } from "./fixtures/revnet";
 
 const { previewPayMock } = vi.hoisted(() => ({ previewPayMock: vi.fn() }));
 
-vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>()),
-  prepareUserPay: async (...args: unknown[]) => ({
+vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => {
+  const { bestUserPayOver } = await import("./support/best-user-pay");
+  const prepareUserPay = async (...args: unknown[]) => ({
     preview: await previewPayMock(...args),
     metadata: "0x",
     minReturnedTokens: 0n,
-  }),
-}));
+  });
+  const actual = await importOriginal<typeof import("@bananapus/nana-sdk-core/v6")>();
+  return {
+    ...actual,
+    prepareUserPay,
+    prepareBestUserPay: bestUserPayOver(
+      prepareUserPay,
+      (error) => error instanceof actual.PaySwapQuoteFailedError,
+    ),
+  };
+});
 
 import { resolveBestV6PayRoute } from "@/lib/paymentTerminal";
 

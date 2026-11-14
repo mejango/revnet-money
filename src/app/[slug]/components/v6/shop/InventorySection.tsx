@@ -25,6 +25,7 @@ import {
   TierMedia,
   useTierCart,
 } from "./shopLib";
+import type { ItemChange } from "./shopMediaEdit";
 import { canSet721Metadata } from "./shopPermissions";
 import { TierMediaPreview } from "./TierMediaPreview";
 
@@ -82,9 +83,12 @@ export function InventorySection({
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   /** The one inventory modal open: an item's detail, mint or media, or adding items. */
   const [modal, setModal] = useState<
-    { kind: "detail" | "mint" | "media"; tierId: number } | { kind: "add" } | null
+    | { kind: "detail" | "mint"; tierId: number }
+    | { kind: "change"; change: ItemChange; tierId: number }
+    | { kind: "add" }
+    | null
   >(null);
-  const tierOf = (kind: "detail" | "mint" | "media") =>
+  const tierOf = (kind: "detail" | "mint" | "change") =>
     modal?.kind === kind ? (shop.tiers.find((tier) => tier.id === modal.tierId) ?? null) : null;
 
   // Add items and free mint are shown to everyone; the modals refuse a wallet without the permission.
@@ -119,7 +123,7 @@ export function InventorySection({
   );
 
   const detailTier = tierOf("detail");
-  const mediaTier = tierOf("media");
+  const mediaTier = tierOf("change");
   const mintTier = tierOf("mint");
   // An open item's Mint and Edit media actions open their modals from inside it.
   const detailCanMint = !!detailTier?.flags?.allowOwnerMint;
@@ -281,8 +285,11 @@ export function InventorySection({
               ? () => setModal({ kind: "mint", tierId: detailTier.id })
               : undefined
           }
-          onEditMedia={
-            canEditMedia ? () => setModal({ kind: "media", tierId: detailTier.id }) : undefined
+          onChangeItem={
+            // ponytail: one gate (metadata rights) shows all four; each dialog checks its own permission.
+            canEditMedia
+              ? (change) => setModal({ kind: "change", change, tierId: detailTier.id })
+              : undefined
           }
           onClose={() => setModal(null)}
         />
@@ -300,8 +307,10 @@ export function InventorySection({
         />
       ) : null}
 
-      {mediaTier ? (
+      {mediaTier && modal?.kind === "change" ? (
         <EditItemMediaModal
+          key={modal.change}
+          mode={modal.change}
           chainId={chainId}
           projectId={projectId}
           projects={projects}

@@ -6,8 +6,7 @@ import {
   jbV6ContractAddress,
 } from "@bananapus/nana-sdk-core";
 import {
-  PaySwapQuoteFailedError,
-  prepareUserPay,
+  prepareBestUserPay,
   resolvePaymentTerminal,
   type PreparedUserPay,
 } from "@bananapus/nana-sdk-core/v6";
@@ -53,34 +52,25 @@ export async function resolveBestV6PayRoute(args: {
     attachedTerminals = [primary.address];
   }
 
-  let swapQuoteFailure: PaySwapQuoteFailedError | undefined;
-  const previews = await Promise.all(
-    v6PayRouteCandidates(chainId, attachedTerminals).map(async (route) => {
-      try {
-        const prepared = await prepareUserPay(client, {
-          chainId,
-          terminal: route.address,
-          projectId,
-          token,
-          amount,
-          beneficiary,
-          ...(slippageBps !== undefined ? { slippageBps } : {}),
-        });
-        return { ...route, ...prepared };
-      } catch (error) {
-        if (error instanceof PaySwapQuoteFailedError) swapQuoteFailure = error;
-        return null;
-      }
-    }),
-  );
-
-  let best: V6PayRoute | null = null;
-  for (const route of previews) {
-    if (!route) continue;
-    if (!best || v6PayRouteIsBetter(route, best)) best = route;
-  }
-  if (!best && swapQuoteFailure) throw swapQuoteFailure;
-  return best;
+  // One rule for every client: the SDK prepares the payment on each listed terminal and keeps the
+  // one that gives the beneficiary the most.
+  const candidates = v6PayRouteCandidates(chainId, attachedTerminals);
+  const best = await prepareBestUserPay(client, {
+    chainId,
+    projectId,
+    token,
+    amount,
+    beneficiary,
+    candidates: candidates.map((route) => ({
+      terminal: route.address,
+      type: route.type === "multi" ? ("multi" as const) : ("router" as const),
+    })),
+    ...(slippageBps !== undefined ? { slippageBps } : {}),
+  });
+  if (!best) return null;
+  const { terminal, type: _type, ...prepared } = best;
+  const route = candidates.find((candidate) => candidate.address === terminal)!;
+  return { ...route, ...prepared };
 }
 
 function v6PayRouteCandidates(
@@ -101,17 +91,4 @@ function v6PayRouteCandidates(
     routes.push({ address: multi, abi: jbMultiTerminalAbi, type: "multi" });
   }
   return routes;
-}
-
-function v6PayRouteIsBetter(candidate: V6PayRoute, current: V6PayRoute): boolean {
-  if (candidate.preview.beneficiaryTokenCount !== current.preview.beneficiaryTokenCount) {
-    return candidate.preview.beneficiaryTokenCount > current.preview.beneficiaryTokenCount;
-  }
-  const candidateTotal =
-    candidate.preview.beneficiaryTokenCount + candidate.preview.reservedTokenCount;
-  const currentTotal = current.preview.beneficiaryTokenCount + current.preview.reservedTokenCount;
-  if (candidateTotal !== currentTotal) return candidateTotal > currentTotal;
-
-  // Prefer the direct multi terminal over the router when quotes tie.
-  return candidate.type === "multi" && current.type !== "multi";
 }

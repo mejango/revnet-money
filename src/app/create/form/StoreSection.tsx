@@ -1,3 +1,4 @@
+import { pinMediaFile } from "@/app/create/helpers/pinProjectMetaData";
 import { ItemDraftFields } from "@/components/shop/ItemDraftFields";
 import { MAX_MEDIA_BYTES, newDraftItem, type DraftItem } from "@/components/shop/itemDraft";
 import { Input } from "@/components/ui/input";
@@ -69,7 +70,17 @@ export function StoreSection({ disabled = false }: { disabled?: boolean }) {
     }
     const mediaPreview = file?.type.startsWith("image/") ? URL.createObjectURL(file) : null;
     if (mediaPreview) previews.current.add(mediaPreview);
-    setItem(index, { mediaFile: file, mediaPreview });
+    setItem(index, { mediaFile: file, mediaPreview, mediaUri: "", mediaType: "" });
+    if (!file) return;
+    // Pinned as it is chosen, so a saved or exported draft carries the media and not a
+    // file that stays behind. A pin that fails here is tried again at launch.
+    pinMediaFile(file)
+      .then((cid) => {
+        const at = storeRef.current.items.findIndex((item) => item.mediaFile === file);
+        if (at < 0) return;
+        setItem(at, { mediaUri: `ipfs://${cid}`, mediaType: file.type, mediaFile: null });
+      })
+      .catch(() => {});
   };
   const removeItem = (index: number) => {
     const preview = store.items[index]?.mediaPreview;

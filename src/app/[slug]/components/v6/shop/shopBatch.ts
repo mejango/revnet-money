@@ -81,14 +81,7 @@ export function tierConfigsForDestination(
 ) {
   const { shop, chainId } = destination;
   if (!shop.configFlags) throw new Error(`Shop configuration is unavailable on chain ${chainId}.`);
-  const drafts = items.map((item, index) => {
-    const price = prices[index] ?? item.price;
-    if ((price.trim().split(".")[1]?.replace(/0+$/u, "").length ?? 0) > shop.pricing.decimals)
-      throw new Error(
-        `Chain ${chainId}: item ${index + 1}'s price exceeds ${shop.pricing.decimals} decimal places.`,
-      );
-    return { ...item, price };
-  });
+  const drafts = items.map((item, index) => ({ ...item, price: prices[index] ?? item.price }));
   const configs = buildTierConfigs(drafts, shop.pricing.decimals, chainId);
   if (typeof configs === "string") throw new Error(`Chain ${chainId}: ${configs}`);
   configs.forEach((tier) => {

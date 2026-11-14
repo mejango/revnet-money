@@ -8,6 +8,7 @@ import type { RevnetFormData, StageData } from "@/app/create/types";
 import { Button } from "@/components/ui/button";
 import { withSchema } from "@/lib/formValidation";
 import { FormProvider, useFormContext } from "@/lib/forms";
+import { writeJbDraftFile } from "@/lib/jb-draft";
 import { parseRevnetDraft } from "@/lib/revnet-draft";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -92,7 +93,8 @@ const formValues = () =>
   JSON.parse(screen.getByTestId("values").textContent ?? "{}") as RevnetFormData;
 
 async function importDraft(draft: unknown) {
-  const source = JSON.stringify(draft);
+  // Tests state drafts as form values; the importer reads the shared file.
+  const source = writeJbDraftFile(parseRevnetDraft(JSON.stringify(draft)));
   const file = Object.assign(new File([source], "rev.jb"), { text: async () => source });
   await act(async () => {
     fireEvent.change(screen.getByLabelText("Import deployment draft"), {

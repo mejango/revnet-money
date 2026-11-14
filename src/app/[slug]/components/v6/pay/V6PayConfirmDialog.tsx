@@ -54,6 +54,8 @@ export interface PreparedV6Pay {
   identity: string;
   /** The account it was built for: a payment's tokens go to it. */
   account: Address;
+  /** The project's payment notice as it read when this was prepared. */
+  projectNotice: string;
   mode: V6PayMode;
   chainId: JBChainId;
   token: V6PayTokenOption;

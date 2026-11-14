@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   addItemsConditions: vi.fn(),
   readMediaEditSource: vi.fn(),
   pinMediaEdits: vi.fn(),
+  pinDetailEdits: vi.fn(),
   pinMediaFile: vi.fn(),
   saved: false,
   destinations: [] as unknown[],
@@ -48,6 +49,7 @@ vi.mock("@/app/[slug]/components/v6/shop/shopBatch", async (importOriginal) => (
 vi.mock("@/app/[slug]/components/v6/shop/shopMediaEdit", () => ({
   readMediaEditSource: mocks.readMediaEditSource,
   pinMediaEdits: mocks.pinMediaEdits,
+  pinDetailEdits: mocks.pinDetailEdits,
 }));
 vi.mock("@/app/create/helpers/pinProjectMetaData", () => ({ pinMediaFile: mocks.pinMediaFile }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
@@ -107,7 +109,7 @@ async function confirmAction(name: string) {
   return within(await findConfirm()).getByRole("button", { name });
 }
 
-function mount(kind: "add" | "media") {
+function mount(kind: "add" | "media", mode?: "details" | "discount" | "remove") {
   return render(
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
@@ -126,8 +128,9 @@ function mount(kind: "add" | "media") {
           chainId={1}
           projectId={7n}
           projects={[]}
-          tier={{ id: 3 } as ShopTier}
+          tier={{ id: 3, discountPercent: 20 } as ShopTier}
           media={{ name: "Original" }}
+          mode={mode}
           onClose={vi.fn()}
         />
       )}
@@ -277,6 +280,73 @@ describe("selected-chain shop dialogs", () => {
       address: peerShop.hook,
       args: ["", "", "", "", peerShop.hook, 12n, digest],
       recoveryScope: "shop-media:8453:91:12",
+    });
+  });
+
+  it("wallet-action:shop-items sets a reviewed discount, refusing one a chain can only lower", async () => {
+    mocks.readMediaEditSource.mockImplementation(async (_client, destination, tierId) => ({
+      destination,
+      tierId,
+      discountPercent: 20,
+      cantIncreaseDiscountPercent: true,
+      metadata: {},
+      preconditions: [guard],
+    }));
+    mount("media", "discount");
+    const field = screen.getByLabelText("Discount (% off)");
+    expect(field).toHaveValue(10);
+    fireEvent.change(field, { target: { value: "12.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review discount" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("can only be lowered on Ethereum");
+    fireEvent.change(field, { target: { value: "10" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review discount" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("already have this discount");
+    fireEvent.change(field, { target: { value: "2.5" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review discount" }));
+    await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledOnce());
+    expect(mocks.readMediaEditSource.mock.calls[0][4]).toBe("discount");
+    expect(mocks.runBatch.mock.calls[0][0].calls).toMatchObject([
+      {
+        chainId: 1,
+        address: primaryShop.hook,
+        functionName: "setDiscountPercentOf",
+        args: [3n, 5n],
+        recoveryScope: "shop-discount:1:7:3",
+        preconditions: [guard],
+      },
+    ]);
+    expect(mocks.pinMediaEdits).not.toHaveBeenCalled();
+  });
+
+  it("wallet-action:shop-items saves a new name and description over each chain's own JSON", async () => {
+    mocks.pinDetailEdits.mockImplementation(async (sources) =>
+      sources.map((source: object) => ({ ...source, encodedIpfsUri: digest, uri: "ipfs://new" })),
+    );
+    mount("media", "details");
+    expect(screen.getByLabelText("Name")).toHaveValue("Original");
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Warm" } });
+    fireEvent.click(screen.getByRole("button", { name: "Review details update" }));
+    await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledOnce());
+    expect(mocks.pinDetailEdits).toHaveBeenCalledWith(expect.any(Array), "Renamed", "Warm");
+    expect(mocks.runBatch.mock.calls[0][0]).toMatchObject({
+      label: "Edit shop item details",
+      context: expect.arrayContaining([{ label: "New name", value: "Renamed" }]),
+      calls: [
+        { functionName: "setMetadata", args: ["", "", "", "", primaryShop.hook, 3n, digest] },
+      ],
+    });
+  });
+
+  it("wallet-action:shop-items removes only the reviewed item, after the warning", async () => {
+    mount("media", "remove");
+    expect(screen.getByText(/Buyers can no longer mint this item/u)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Review removal" }));
+    await waitFor(() => expect(mocks.runBatch).toHaveBeenCalledOnce());
+    expect(mocks.runBatch.mock.calls[0][0]).toMatchObject({
+      label: "Remove shop item",
+      scope: "shop-remove:1:7:3",
+      calls: [{ chainId: 1, functionName: "adjustTiers", args: [[], [3n]] }],
     });
   });
 

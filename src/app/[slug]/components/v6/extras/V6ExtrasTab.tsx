@@ -78,10 +78,15 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
     ReturnType<typeof buildRevnetDraft>
   > | null>(null);
 
-  const download = (file: Awaited<ReturnType<typeof buildRevnetDraft>>["file"]) => {
-    const url = URL.createObjectURL(
-      new Blob([JSON.stringify(file, null, 2)], { type: "application/json" }),
-    );
+  const download = async (file: Awaited<ReturnType<typeof buildRevnetDraft>>["file"]) => {
+    let text: string;
+    try {
+      text = (await import("@/lib/jb-draft")).writeJbDraftFile(file.data);
+    } catch (error) {
+      setExportStatus(error instanceof Error ? error.message : "Export failed.");
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = revnetDraftFileName(file.data.name);
@@ -127,7 +132,7 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
         setWarnedExport(result);
         return;
       }
-      download(result.file);
+      await download(result.file);
     } catch (error) {
       setExportStatus(
         error instanceof Error ? error.message : "Could not safely reconstruct this revnet.",
@@ -160,7 +165,7 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
               <Button
                 variant="outline"
                 onClick={() => {
-                  download(warnedExport.file);
+                  void download(warnedExport.file);
                   setWarnedExport(null);
                 }}
               >

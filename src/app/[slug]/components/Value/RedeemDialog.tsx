@@ -61,7 +61,13 @@ import { formatDecimals } from "@/lib/number";
 import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { swapDeadline } from "@/lib/safe-service-config";
-import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
+import {
+  getTokenConfigForChain,
+  getTokenSymbolFromAddress,
+  isNativeToken,
+  pickAccountingContext,
+  type TokenConfig,
+} from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import {
   formatUnits,
@@ -74,6 +80,7 @@ import {
 } from "@bananapus/nana-sdk-core";
 import { approvalIntent, cashOutIntent } from "@bananapus/nana-sdk-core/review";
 import {
+  getAccountingContexts,
   getTokenAddress,
   prepareHookAwareCashOut,
   uniswapV4Deployment,
@@ -119,6 +126,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   // under them.
   const [submitting, setSubmitting] = useState(false);
   const [review, setReview] = useState(false);
+  const [reviewedTokenConfig, setReviewedTokenConfig] = useState<TokenConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const suckerQuery = useSuckers();
@@ -154,7 +162,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const effectiveProjectId = selectedSucker?.projectId || projectId;
 
   // Get the suckerGroupId from the current project
-  const { data: projectData } = useBendystrawQuery(
+  const { data: projectData, isLoading: projectIndexLoading } = useBendystrawQuery(
     ProjectOperation,
     { chainId: Number(chainId), projectId: Number(projectId), version: 6 },
     { enabled: !!chainId && !!projectId },
@@ -162,7 +170,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const suckerGroupId = projectData?.project?.suckerGroupId;
 
   // Get all projects in the sucker group with their token data
-  const { data: suckerGroupData } = useBendystrawQuery(
+  const { data: suckerGroupData, isLoading: groupIndexLoading } = useBendystrawQuery(
     SuckerGroupOperation,
     { id: suckerGroupId ?? "" },
     { enabled: !!suckerGroupId, chainId: Number(chainId) },
@@ -201,9 +209,33 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   // The selected chain's accounting-token config. Null while a chain is
   // selected means LOADING — never assume the native token: gate the quote
   // and submission until it resolves.
-  const selectedChainTokenConfig = activeCashOutChainId
+  const indexedTokenConfig = activeCashOutChainId
     ? getTokenConfigForChain(suckerGroupData, Number(activeCashOutChainId))
     : null;
+  // The terminal's own accounting contexts are the authority for the token, its decimals and
+  // currency; the index only fills in while they load or when the read fails.
+  const { data: onchainContexts, isPending: contextsPending } = useQuery({
+    queryKey: ["cashOutAccountingContexts", selectedChainId, effectiveProjectId?.toString()],
+    enabled: !!publicClient && !!selectedChainId && !!effectiveProjectId,
+    queryFn: () =>
+      getAccountingContexts(publicClient!, {
+        chainId: selectedChainId!,
+        projectId: BigInt(effectiveProjectId!),
+      }),
+    // A failed read falls back to the index at once.
+    retry: false,
+  });
+  // Still loading until the terminal has answered or failed: a review never opens on the
+  // index's token and then changes under it.
+  // The index picks among several contexts, so it has to have answered or failed too.
+  const liveTokenConfig =
+    contextsPending || projectIndexLoading || groupIndexLoading
+      ? null
+      : (pickAccountingContext(onchainContexts, indexedTokenConfig) ?? indexedTokenConfig);
+  // An open review keeps the token it opened with: its rows, its quote and the call it sends
+  // stay one thing even if the index answers differently later.
+  const selectedChainTokenConfig =
+    review && reviewedTokenConfig ? reviewedTokenConfig : liveTokenConfig;
 
   // Determine what token to receive from cashout: the native sentinel for
   // native-base projects, else the chain's own accounting token (e.g. USDC).
@@ -213,7 +245,12 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
       : selectedChainTokenConfig.token
     : undefined;
 
-  const baseDecimals = baseToken?.decimals ?? 18;
+  // Amounts are in the selected chain's reclaim token, which can differ from
+  // the token of the chain this page shows.
+  const baseDecimals = selectedChainTokenConfig?.decimals ?? baseToken?.decimals ?? 18;
+  const baseSymbol = selectedChainTokenConfig
+    ? (selectedChainTokenConfig.symbol ?? getTokenSymbolFromAddress(selectedChainTokenConfig.token))
+    : baseToken?.symbol;
 
   // Hook-aware quote: previewCashOutFrom runs the real cash-out path (data
   // hook + buyback routing) and returns the exact minimum/metadata to submit.
@@ -396,9 +433,20 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
         { label: "On", value: chainDisplayName(selectedChainId) },
         {
           label: "You get",
-          value: `~${formatDecimals(quotedOutput, 5)} ${baseToken?.symbol}`,
-          note: `Stops if you would receive less than ${formatDecimals(minimumOutput, 5)} ${baseToken?.symbol}`,
+          value: `~${formatDecimals(quotedOutput, 5)} ${baseSymbol}`,
+          note: `Stops if you would receive less than ${formatDecimals(minimumOutput, 5)} ${baseSymbol}`,
         },
+        // Already taken out of what you get; named so the amount adds up.
+        ...(!directSell &&
+        cashOutRoute?.route === "treasury" &&
+        cashOutRoute.treasuryProtocolFee > 0n
+          ? [
+              {
+                label: "Fee",
+                value: `${formatDecimals(Number(formatUnits(cashOutRoute.treasuryProtocolFee, baseDecimals)), 5)} ${baseSymbol}`,
+              },
+            ]
+          : []),
         {
           label: "Route",
           value: directSell ? "Sell to other traders" : "Cash out from revnet funds",
@@ -738,7 +786,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                             : expectedReclaim,
                           5,
                         )}{" "}
-                        {baseToken?.symbol}
+                        {baseSymbol}
                       </span>
                       <div className="text-sm text-zinc-500 mt-1">
                         Stops if you would receive less than{" "}
@@ -748,9 +796,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                             : minimumReclaim,
                           5,
                         )}{" "}
-                        {baseToken?.symbol}
+                        {baseSymbol}
                         {directSell
-                          ? ` | selling pays more than the ${formatDecimals(expectedReclaim, 5)} ${baseToken?.symbol} cash-out estimate`
+                          ? ` | selling pays more than the ${formatDecimals(expectedReclaim, 5)} ${baseSymbol} cash-out estimate`
                           : " | includes the revnet’s cash-out settings"}
                       </div>
                     </div>
@@ -780,11 +828,12 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   (valid &&
                     (isQuoteFetching || directSellLoading || pairPending || !tokenToReceive))
                 }
-                disabled={isViewAs || !valid || !cashOutRoute || !pairVerified}
+                disabled={isViewAs || !valid || !cashOutRoute || !pairVerified || !tokenToReceive}
                 onClick={() => {
                   setError(null);
                   // Pin the reviewed chain: a peer balance arriving later must not unselect it.
                   if (activeCashOutChainId) setCashOutChainId(activeCashOutChainId);
+                  setReviewedTokenConfig(liveTokenConfig);
                   setReview(true);
                 }}
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"

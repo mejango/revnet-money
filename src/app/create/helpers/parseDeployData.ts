@@ -200,8 +200,7 @@ export function parseDeployData(
   if (typeof tiers === "string") throw new Error(tiers);
 
   const tiered721Config = buildRevnet721Config({
-    name: formData.store.collectionName.trim() || `${formData.name} Store`,
-    symbol: formData.store.collectionSymbol.trim() || `${formData.tokenSymbol}STORE`,
+    ...storeIdentity(formData),
     contractUri: extra.metadataCid,
     salt: extra.salt,
     pricing: storePricing,
@@ -243,4 +242,16 @@ export function parseDeployData(
     tiered721Config,
     allowedPosts: [],
   });
+}
+
+/** The shop collection's name and symbol as launched: what was typed, else taken from the revnet. */
+export function storeIdentity(formData: {
+  name: string;
+  tokenSymbol: string;
+  store: { collectionName: string; collectionSymbol: string };
+}): { name: string; symbol: string } {
+  return {
+    name: formData.store.collectionName.trim() || `${formData.name} Store`,
+    symbol: formData.store.collectionSymbol.trim() || `${formData.tokenSymbol}STORE`,
+  };
 }

@@ -13,6 +13,7 @@ const PROPOSAL = `0x${"ce".repeat(32)}` as Hex;
 const mocks = vi.hoisted(() => ({
   read: vi.fn(),
   write: vi.fn(),
+  toast: vi.fn(),
 }));
 
 vi.mock("wagmi", async (importOriginal) => ({
@@ -35,7 +36,7 @@ vi.mock("@/components/ButtonWithWallet", () => ({
   }) => <button {...props}>{children}</button>,
 }));
 vi.mock("@/components/ChainLogo", () => ({ ChainLogo: () => null }));
-vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: vi.fn() }) }));
+vi.mock("@/components/ui/use-toast", () => ({ useToast: () => ({ toast: mocks.toast }) }));
 vi.mock("@/hooks/useReviewedAction", async (importOriginal) => {
   const { reviewedActionThrough } = await import("./support/reviewed-action");
   // A burn's own Safe proposal ends where the app can't confirm its result.
@@ -147,5 +148,13 @@ describe("a burn left open over its own Safe proposal the app can't confirm", ()
 
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(1));
     await screen.findByText("Check this proposal in your Safe before sending it again.");
+    // The proposal is named as one, never as a burn that happened.
+    expect(mocks.toast).toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Safe proposal submitted" }),
+    );
+    expect(mocks.toast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ title: "Tokens burned" }),
+    );
+    expect(screen.queryByRole("button", { name: "Burned" })).toBeNull();
   });
 });

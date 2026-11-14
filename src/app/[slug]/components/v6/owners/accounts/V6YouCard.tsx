@@ -26,7 +26,12 @@ import { netLoanProceeds } from "@/lib/feeHelpers";
 import { useJBChainId, useJBContractContext, useJBTokenContext } from "@/lib/nana/project";
 import { useSuckersUserTokenBalance } from "@/lib/nana/suckers";
 import type { JBChainId } from "@/lib/nana/types";
-import { getTokenConfigForChain, getTokenSymbolFromAddress, TokenConfig } from "@/lib/tokenUtils";
+import {
+  getTokenConfigForChain,
+  getTokenSymbolFromAddress,
+  pickAccountingContext,
+  TokenConfig,
+} from "@/lib/tokenUtils";
 import { formatTokenSymbol } from "@/lib/utils";
 import {
   formatUnits,
@@ -171,23 +176,14 @@ export function V6YouCard({ projects }: { projects: ProjectItem[] }) {
   const accountingContextByChain = useMemo(() => {
     const map = new Map<number, TokenConfig>();
     balances?.forEach((b, i) => {
-      const contexts = contextsData?.[i]?.result as
-        readonly { token: `0x${string}`; decimals: number; currency: number }[] | undefined;
-      if (!contexts?.length) return;
-      // Projects can hold several contexts; prefer the one for the indexed
-      // accounting token, else the first. The indexed config can be null while
-      // the sucker-group data loads — the on-chain contexts stay authoritative.
-      const indexed = getTokenConfigForChain(suckerGroupData, b.chainId);
-      const context =
-        (indexed
-          ? contexts.find((c) => c.token.toLowerCase() === indexed.token.toLowerCase())
-          : undefined) ?? contexts[0];
-      map.set(b.chainId, {
-        token: context.token,
-        currency: Number(context.currency),
-        decimals: Number(context.decimals),
-        symbol: indexed?.symbol,
-      });
+      const picked = pickAccountingContext(
+        contextsData?.[i]?.result as
+          readonly { token: `0x${string}`; decimals: number; currency: number }[] | undefined,
+        // The indexed config can be null while the sucker-group data loads; the onchain
+        // contexts stay authoritative.
+        getTokenConfigForChain(suckerGroupData, b.chainId),
+      );
+      if (picked) map.set(b.chainId, picked);
     });
     return map;
   }, [balances, contextsData, suckerGroupData]);

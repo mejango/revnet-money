@@ -154,6 +154,7 @@ function sanitizeStore(value: unknown): RevnetFormData["store"] {
         name: text(item.name, 100),
         description: text(item.description, 2_000),
         mediaUri: text(item.mediaUri, 500),
+        mediaType: text(item.mediaType, 100),
         uri: text(item.uri, 500),
         price: numericText(item.price),
         supply: numericText(item.supply),
@@ -266,7 +267,9 @@ export function parseRevnetDraft(source: string): RevnetFormData {
       address: text(custom.address, 64),
       symbol: text(custom.symbol, 32),
       decimals:
-        Number.isInteger(Number(custom.decimals)) && Number(custom.decimals) >= 0
+        typeof custom.decimals === "number" &&
+        Number.isInteger(custom.decimals) &&
+        custom.decimals >= 0
           ? Number(custom.decimals)
           : null,
       verifiedChainIds: (Array.isArray(custom.verifiedChainIds) ? custom.verifiedChainIds : [])

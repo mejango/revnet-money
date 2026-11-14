@@ -185,3 +185,24 @@ export function getTokenConfigForChain(
       getTokenSymbolFromAddress(projectForChain.token as `0x${string}`),
   };
 }
+
+/**
+ * A chain's accounting token as its terminal states it. A project can hold several contexts: the
+ * one for the indexed token wins, else the first. The indexed symbol labels only its own token.
+ */
+export function pickAccountingContext(
+  contexts: readonly { token: `0x${string}`; decimals: number; currency: number }[] | undefined,
+  indexed: TokenConfig | null,
+): TokenConfig | null {
+  if (!contexts?.length) return null;
+  const match = indexed
+    ? contexts.find((context) => context.token.toLowerCase() === indexed.token.toLowerCase())
+    : undefined;
+  const context = match ?? contexts[0];
+  return {
+    token: context.token,
+    currency: Number(context.currency),
+    decimals: Number(context.decimals),
+    symbol: match ? indexed?.symbol : undefined,
+  };
+}

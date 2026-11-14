@@ -5,6 +5,7 @@ import { ChainLogo } from "@/components/ChainLogo";
 import type { DraftItem } from "@/components/shop/itemDraft";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ipfsUriToGatewayUrl } from "@/lib/ipfs";
 import { type JBChainId } from "@bananapus/nana-sdk-core";
 import { type ReactNode, useState } from "react";
 
@@ -108,24 +109,27 @@ export function ItemDraftFields({
     onChange({ category: String(existing ? existing.id : onAddCategory(name)) });
   };
 
+  // Pinned media with no local file (an imported draft) previews from the gateway.
+  const preview =
+    item.mediaPreview ??
+    (item.mediaUri && (!item.mediaType || item.mediaType.startsWith("image/"))
+      ? ipfsUriToGatewayUrl(item.mediaUri)
+      : undefined);
+
   return (
     <>
       <div className="mt-4 flex flex-col gap-4 sm:flex-row">
         <div className="flex shrink-0 flex-col items-start gap-2">
-          {item.mediaPreview ? (
+          {preview ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={item.mediaPreview}
-              alt=""
-              className="h-20 w-20 border border-zinc-200 object-cover"
-            />
+            <img src={preview} alt="" className="h-20 w-20 border border-zinc-200 object-cover" />
           ) : (
             <span className="flex h-20 w-20 items-center justify-center border border-dashed border-zinc-300 bg-white text-2xl">
-              {item.mediaFile ? "📄" : "🖼️"}
+              {item.mediaFile || item.mediaUri ? "📄" : "🖼️"}
             </span>
           )}
           <label className="cursor-pointer border border-zinc-300 bg-white px-3 py-2 text-xs font-medium hover:border-zinc-500">
-            {item.mediaFile ? "Change media" : "Upload media"}
+            {item.mediaFile || item.mediaUri ? "Change media" : "Upload media"}
             <input
               type="file"
               accept="image/*,video/*,audio/*,application/pdf,text/*,.md,.markdown"

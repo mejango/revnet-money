@@ -22,7 +22,7 @@ import {
   type ReviewedCall,
 } from "@/hooks/useReviewedAction";
 import { buildBurnTokensRequest } from "@/lib/burnTokens";
-import { SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
+import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { formatWalletError } from "@/lib/utils";
 import {
   formatUnits,
@@ -188,6 +188,8 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
       if (!result) setReviewing(false);
       if (result?.status === "failed") throw new ReviewRefusal(failedLine(result));
       if (result?.status === "done") setSuccess(true);
+      if (result?.status === "proposed")
+        toast({ title: "Safe proposal submitted", description: SAFE_PROPOSAL_PENDING_LINE });
     } catch (cause) {
       setError(formatWalletError(cause));
     } finally {

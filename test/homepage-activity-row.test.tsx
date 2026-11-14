@@ -46,3 +46,28 @@ it("gives the amount a line the relative time does not share", () => {
   // The amount's row: its span, then the group with the in/out tag, then the row.
   expect(amount.parentElement?.parentElement?.contains(time)).toBe(false);
 });
+
+it("says what a bridge send sends and where", () => {
+  const send = {
+    id: "2",
+    chainId: 1,
+    txHash: "0xdef",
+    timestamp: 1_700_000_000,
+    project: { projectId: 3, name: "Markee", tokenSymbol: "ETH", decimals: 18 },
+    payEvent: null,
+    bridgeToOutboxEvent: {
+      txHash: "0xdef",
+      timestamp: 1_700_000_000,
+      caller: "0x1111111111111111111111111111111111111111",
+      peerChainId: 8453,
+      projectTokenCount: "100130000000000000000",
+      sucker: "0x2222222222222222222222222222222222222222",
+    },
+  } as unknown as ComponentProps<typeof HomepageActivityFeed>["initialEvents"][number];
+  render(
+    <TooltipProvider>
+      <HomepageActivityFeed initialEvents={[send]} initialHasMore={false} />
+    </TooltipProvider>,
+  );
+  expect(document.body.textContent).toMatch(/sending 100\.13 \S+ to Base/);
+});

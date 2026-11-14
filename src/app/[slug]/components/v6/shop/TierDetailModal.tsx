@@ -34,6 +34,7 @@ import {
   tierSaleShares,
   useTierCart,
 } from "./shopLib";
+import type { ItemChange } from "./shopMediaEdit";
 import { TierMediaPreview } from "./TierMediaPreview";
 
 const FLAG_DESCRIPTIONS: [keyof NonNullable<ShopTier["flags"]>, string, string][] = [
@@ -67,7 +68,7 @@ export function TierDetailModal({
   tier,
   media,
   onMint,
-  onEditMedia,
+  onChangeItem,
   onClose,
 }: {
   shop: ShopInventory;
@@ -76,7 +77,8 @@ export function TierDetailModal({
   tier: ShopTier;
   media: TierMedia | undefined;
   onMint?: () => void;
-  onEditMedia?: () => void;
+  /** Present for a wallet that can manage the item; each dialog refuses a missing permission. */
+  onChangeItem?: (change: ItemChange) => void;
   onClose: () => void;
 }) {
   const config = useConfig();
@@ -217,15 +219,25 @@ export function TierDetailModal({
               </span>
             </div>
 
-            {onEditMedia ? (
-              <button
-                type="button"
-                onClick={onEditMedia}
-                className="mt-3 block text-sm font-medium text-teal-700 underline underline-offset-4 hover:text-teal-900"
-              >
-                Replace media across chains →
-              </button>
-            ) : null}
+            {onChangeItem
+              ? (
+                  [
+                    ["media", "Replace media across chains →"],
+                    ["details", "Edit details →"],
+                    ["discount", "Set discount →"],
+                    ...(tier.flags?.cantBeRemoved ? [] : [["remove", "Remove item →"]]),
+                  ] as [ItemChange, string][]
+                ).map(([change, label]) => (
+                  <button
+                    key={change}
+                    type="button"
+                    onClick={() => onChangeItem(change)}
+                    className="mt-3 block text-sm font-medium text-teal-700 underline underline-offset-4 hover:text-teal-900"
+                  >
+                    {label}
+                  </button>
+                ))
+              : null}
 
             {onMint ? (
               <button

@@ -1,3 +1,4 @@
+import { chainDisplayName } from "@/app/constants";
 import type { ActivityEventsQuery, EventToken } from "@/lib/bendystraw/types";
 import type { JBChainId } from "@/lib/nana/types";
 import { commaNumber, exactNumber, formatCompact, prettyNumber } from "@/lib/number";
@@ -108,6 +109,12 @@ function reservePercentLabel(
  */
 const SAME_TX_ORDER: ActivityEvent["type"][] = [
   "projectCreate",
+  // A loan or a bridge claim moves money and tokens in its own transaction: it is the row, by
+  // its own account, and the deposit or mint inside it reads after it.
+  "borrowLoan",
+  "repayLoan",
+  "liquidateLoan",
+  "bridgeClaim",
   "in",
   "addToBalance",
   "out",
@@ -120,6 +127,7 @@ const SAME_TX_ORDER: ActivityEvent["type"][] = [
   "autoIssue",
   "reserved",
   "reservedSplit",
+  "bridgeSend",
 ];
 
 function sameTxRank(type: ActivityEvent["type"]): number {
@@ -237,6 +245,9 @@ export function mapActivityEvents(
   // plumbing, not anyone's receipt.
   const sellSwapTxs = new Set<string>();
   const cashOutTxs = new Set<string>();
+  // A sucker cashes out its own tokens inside a bridge send; the send's row says what happened,
+  // so that cash out makes no row.
+  const bridgeSends = new Set<string>();
   const mintCountsByTx = new Map<string, bigint[]>();
   const manualMintCountsByTx = new Map<string, bigint[]>();
   const pushSorted = (map: Map<string, bigint[]>, key: string, value: bigint) => {
@@ -280,6 +291,9 @@ export function mapActivityEvents(
     }
     if (event.autoIssueEvent) autoIssueTxs.add(key);
     if (event.cashOutTokensEvent) cashOutTxs.add(key);
+    if (event.bridgeToOutboxEvent) {
+      bridgeSends.add(`${key}:${event.bridgeToOutboxEvent.sucker.toLowerCase()}`);
+    }
     if (event.swapEvent) {
       if (event.swapEvent.direction.toLowerCase() === "buy") {
         pushSorted(buySwapAmountsByTx, key, BigInt(event.swapEvent.projectTokenAmount));
@@ -388,6 +402,23 @@ export function mapActivityEvents(
         tokenCount,
         memo: event.payEvent.memo || undefined,
       });
+    } else if (event.bridgeToOutboxEvent) {
+      const send = event.bridgeToOutboxEvent;
+      events.push({
+        id: event.id,
+        type: "bridgeSend",
+        txHash: send.txHash,
+        timestamp: send.timestamp,
+        beneficiary: send.caller as Address,
+        chainId,
+        tokenCount: new JBProjectToken(BigInt(send.projectTokenCount)).format(6),
+        detail: chainDisplayName(send.peerChainId),
+      });
+    } else if (
+      event.cashOutTokensEvent?.holder &&
+      bridgeSends.has(`${txKey}:${event.cashOutTokensEvent.holder.toLowerCase()}`)
+    ) {
+      continue;
     } else if (event.cashOutTokensEvent) {
       const tokenCount = new JBProjectToken(BigInt(event.cashOutTokensEvent.cashOutCount)).format(
         6,
@@ -577,6 +608,41 @@ export function mapActivityEvents(
         txHash: e.txHash,
         timestamp: e.timestamp,
         beneficiary: e.from as Address,
+        chainId,
+      });
+    } else if (event.bridgeClaimEvent) {
+      const e = event.bridgeClaimEvent;
+      events.push({
+        id: event.id,
+        type: "bridgeClaim",
+        txHash: e.txHash,
+        timestamp: e.timestamp,
+        // The index can hold the sucker leaf's 32-byte beneficiary: its last 20 bytes are the account.
+        beneficiary: `0x${e.beneficiary.slice(-40)}` as Address,
+        chainId,
+        tokenCount: new JBProjectToken(BigInt(e.projectTokenCount)).format(6),
+        detail: chainDisplayName(e.peerChainId),
+      });
+    } else if (event.borrowLoanEvent) {
+      const e = event.borrowLoanEvent;
+      events.push({
+        id: event.id,
+        type: "borrowLoan",
+        txHash: e.txHash,
+        timestamp: e.timestamp,
+        beneficiary: e.beneficiary as Address,
+        chainId,
+        tokenCount: new JBProjectToken(BigInt(e.collateral)).format(6),
+      });
+    } else if (event.repayLoanEvent || event.liquidateLoanEvent) {
+      const e = (event.repayLoanEvent ?? event.liquidateLoanEvent)!;
+      events.push({
+        id: event.id,
+        type: event.repayLoanEvent ? "repayLoan" : "liquidateLoan",
+        txHash: e.txHash,
+        timestamp: e.timestamp,
+        // Who called the loans contract: a Safe here, not the account that executed for it.
+        beneficiary: e.caller as Address,
         chainId,
       });
     } else if (event.sendPayoutsEvent) {

@@ -14,6 +14,10 @@ const TKN = "0x7777777777777777777777777777777777777777";
 
 const mocks = vi.hoisted(() => ({
   address: "0x1111111111111111111111111111111111111111" as string | undefined,
+  metadata: {
+    metadata: { data: { payDisclosure: "No refunds." } },
+    fullMetadataLoading: false,
+  },
   write: vi.fn(),
   simulate: vi.fn(),
   routeError: null as Error | null,
@@ -30,7 +34,7 @@ const mocks = vi.hoisted(() => ({
   runner: null as null | {
     reset: () => void;
     holdReview: () => () => void;
-    run: { mock: { calls: { calls: { functionName: string }[] }[][] } };
+    run: { mock: { calls: { calls: { functionName: string }[]; context?: unknown[] }[][] } };
   },
 }));
 
@@ -101,6 +105,7 @@ vi.mock("@/hooks/useTokenBalances", () => ({
 }));
 vi.mock("@/lib/nana/project", () => ({
   useJBTokenContext: () => ({ token: { data: { symbol: "REV", decimals: 18 } } }),
+  useJBProjectMetadataContext: () => mocks.metadata,
 }));
 vi.mock("@/lib/nana/suckers", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/nana/suckers")>()),
@@ -172,6 +177,7 @@ const queryClient = () => new QueryClient({ defaultOptions: { queries: { retry: 
 
 beforeEach(() => {
   window.localStorage.clear();
+  mocks.metadata.fullMetadataLoading = false;
   mocks.runner?.reset();
   mocks.write.mockReset().mockResolvedValue(HASH);
   mocks.simulate.mockReset().mockResolvedValue({ request: {} });
@@ -194,6 +200,12 @@ describe("one in-app confirmation per action", () => {
     await waitFor(() => expect(mocks.runner!.run).toHaveBeenCalledTimes(1));
     const action = mocks.runner!.run.mock.calls[0]![0];
     expect(action.calls.map((call) => call.functionName)).toEqual(["approve", "pay"]);
+    // The review carries the project's payment notice as it read when the payment was prepared.
+    expect(action.context).toContainEqual({
+      label: "Project notice",
+      value: "No refunds.",
+      strong: true,
+    });
     // Beside core's review, only the action's progress is open, and it asks for nothing.
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Pay" })).toBe(pay);
@@ -202,5 +214,17 @@ describe("one in-app confirmation per action", () => {
     release();
     await waitFor(() => expect(mocks.write).toHaveBeenCalledTimes(2));
     expect(mocks.runner!.run).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Pay off until the full metadata file, where the payment notice lives, is read", async () => {
+    mocks.metadata.fullMetadataLoading = true;
+    render(
+      <QueryClientProvider client={queryClient()}>
+        <V6PayCard />
+      </QueryClientProvider>,
+    );
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1" } });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(screen.getByRole("button", { name: "Pay" })).toBeDisabled();
   });
 });

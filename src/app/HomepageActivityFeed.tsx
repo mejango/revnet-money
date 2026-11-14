@@ -41,6 +41,8 @@ function description(event: HomepageActivity, symbol: string) {
       return `swapped ${event.tokenCount} ${symbol} via the buyback pool`;
     case "payout":
       return "sent payouts";
+    case "bridgeSend":
+      return `sending ${event.tokenCount} ${symbol} to ${event.detail}`;
     case "rulesetQueued":
       return "reconfigured the revnet";
     case "projectCreate":
