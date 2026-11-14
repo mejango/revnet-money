@@ -95,6 +95,15 @@ export type ProjectQueryVariables = {
   chainId: number;
   version: number;
 };
+/** One deployment's indexed payment notice. */
+export type ProjectPayNoticeQuery = {
+  project: {
+    chainId: number;
+    projectId: number;
+    version: number;
+    payDisclosure: string | null;
+  } | null;
+};
 export type ProjectQuery = {
   project: Pick<
     Project,

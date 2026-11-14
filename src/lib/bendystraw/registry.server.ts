@@ -28,6 +28,7 @@ import {
   ProjectOperation,
   ProjectOperatorOperation,
   ProjectPayersOperation,
+  ProjectPayNoticeOperation,
   ProjectsByOwnerOperation,
   ProjectTokenBalanceMomentsOperation,
   ProjectWithPermissionsOperation,
@@ -164,6 +165,17 @@ export const BENDYSTRAW_QUERY_REGISTRY: Readonly<Record<string, RegisteredQuery>
     query: `query Project($projectId: Float!, $chainId: Float!, $version: Float!) {
       project(projectId: $projectId, chainId: $chainId, version: $version) {
         ${PROJECT_FIELDS}
+      }
+    }`,
+  },
+  [ProjectPayNoticeOperation.id]: {
+    operationName: "ProjectPayNotice",
+    query: `query ProjectPayNotice($projectId: Float!, $chainId: Float!, $version: Float!) {
+      project(projectId: $projectId, chainId: $chainId, version: $version) {
+        chainId
+        projectId
+        version
+        payDisclosure
       }
     }`,
   },

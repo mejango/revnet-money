@@ -1944,3 +1944,20 @@ Runtime and deployment-policy checks pass under verified Node26.13.1. All non-ro
 - The pay route tests run the SDK's order through `test/support/best-user-pay.ts`, since a mocked SDK entry cannot reach the call the real rule makes inside the package.
 - Not rendered with a wallet: the three new dialog modes are covered by unit tests only.
 - New copy for jango: the `COPY` table in `EditItemMediaModal.tsx` ("Edit details", "Set discount", "Remove item", their review and done lines), the removal warning, "Enter a discount from 0 to 100, in steps of 0.5.", "This item cannot be removed on {chain}."
+
+## 2026-11-14: Round 9, jango's answers to the end list (V9)
+
+- [x] V9a Pay review shows the paid chain's own notice; chains that read differently open on a toggle; a failed read gets one quiet line with Retry and never blocks the payment.
+- [ ] V9b Guides, option A: Learn says "owners", the Credits entries and claim-credits lines go; Build keeps "holder" and "reserved" only as contract names.
+- [ ] V9c Pay route: say when a route's quote is an estimate.
+- [ ] V9d Earlier open questions, decided the way jango has been ruling.
+
+## Plan refinement
+- **Objective:** Close the items jango answered on 2026-11-14 so revnet.money matches juicebox.money within revnet scope and states only what is true.
+- **System fit:** `payNoticeView` in `src/lib/payNotice.ts` owns what a payer is shown; the pay card feeds it the page chain's full file and the indexer's per-chain notice. The same rule lives in juicebox.money's `pay-notice.ts`; it is small enough that an SDK release for it alone was not cut, and it moves there with the next one.
+- **Reuse and simplicity:** One new registered indexer operation, one native `details` element, no new dependency.
+- **Evidence and unknowns:** Each chain's project has its own metadata URI, and the indexer exposes `payDisclosure` per deployment. Not rendered with a wallet.
+- **Verification:** Unit test for the rule; the pay card suites; the full check before the pull request; CI green before merge.
+- **Resource budget:** One branch, one pull request.
+- **Authority and recovery:** A pull request, merged on jango's word. One commit per item.
+- **Agent-system impact:** None.
