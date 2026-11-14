@@ -421,6 +421,7 @@ const allowedGraphqlOperations = new Set([
   "ProjectCreateEvent",
   "ProjectErc20Tickers",
   "ProjectOperator",
+  "ProjectPayNotice",
   "ProjectTokenBalanceMoments",
   "ProjectWithPermissions",
   "Projects",
@@ -500,6 +501,10 @@ const graphqlHandlers = {
     }
     requireExactVariables("Project", variables, { chainId, projectId, version: 6 });
     return { project: fixtureProject };
+  },
+  ProjectPayNotice(variables) {
+    requireExactVariables("ProjectPayNotice", variables, { chainId, projectId, version: 6 });
+    return { project: { payDisclosure: null } };
   },
   ProjectAccountingContext(variables) {
     requireExactVariables("ProjectAccountingContext", variables, {
