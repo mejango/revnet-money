@@ -259,7 +259,7 @@ function BurnChainRow({ row, tokenSymbol }: { row: BurnRow; tokenSymbol: string 
         open={reviewing}
         onClose={() => setReviewing(false)}
         title="Confirm burn"
-        steps={[{ title: `Burn ${amountLabel}`, detail: "Credits go first, then ERC-20 tokens." }]}
+        steps={[{ title: `Burn ${amountLabel}` }]}
         activeIndex={sending ? 0 : -1}
         start={() => void burn()}
         busy={sending}

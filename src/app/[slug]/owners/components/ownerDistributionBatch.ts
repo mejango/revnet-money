@@ -177,59 +177,6 @@ export async function prepareReservedDistribution(
   };
 }
 
-export async function prepareCreditClaim(
-  client: DistributionClient,
-  identity: DistributionIdentity,
-  account: Address,
-): Promise<DistributionSnapshot> {
-  const { chainId, projectId } = identity;
-  const preconditions: DistributionPrecondition[] = [];
-  const read = recordedReads(client, preconditions);
-  const controller = requireAddress(
-    await read<Address>(identity.directory, jbDirectoryAbi, "controllerOf", [projectId]),
-    "The active controller",
-  );
-  const tokens = requireAddress(
-    await read<Address>(controller, jbControllerAbi, "TOKENS"),
-    "The token registry",
-  );
-  const token = requireAddress(
-    await read<Address>(tokens, jbTokensAbi, "tokenOf", [projectId]),
-    `The ERC-20 on chain ${chainId}`,
-  );
-  const amount = await read<bigint>(tokens, jbTokensAbi, "creditBalanceOf", [account, projectId]);
-  if (amount <= 0n) throw new Error(`There are no credits to claim on chain ${chainId}.`);
-  const call: DistributionSnapshot["call"] = {
-    chainId,
-    address: controller,
-    abi: jbControllerAbi,
-    functionName: "claimTokensFor",
-    args: [account, projectId, amount, account],
-    contractName: "JBController",
-    preconditions,
-  };
-  // The connected holder claims only its own credits to itself. Simulation checks
-  // the live controller's holder/permission and ERC-20 minting requirements.
-  await client.simulateContract({
-    address: call.address,
-    abi: call.abi,
-    functionName: call.functionName,
-    args: call.args,
-    account,
-  });
-  return {
-    id: distributionProjectKey(identity),
-    chainId,
-    projectId,
-    amount,
-    call,
-    details: [
-      { label: "To", value: account },
-      { label: "ERC-20", value: token },
-    ],
-  };
-}
-
 export type AutoIssuanceSelection = DistributionProject & { stageId: bigint; beneficiary: Address };
 
 export function autoIssuanceKey(row: AutoIssuanceSelection) {

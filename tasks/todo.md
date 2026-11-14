@@ -8,6 +8,7 @@ jango: "make sure revnet money is also aligned with juicebox money, though be mi
 - [x] R4 Loan fee total falls back to the SDK protocol constants when the onchain read is missing; repay check errors read plainly.
 - [x] R5a Cash out ends on a confirmed state with a transaction link and stops under View as; the buyback card says when a registry read failed instead of "Not set".
 - [ ] R5 Still open: net "You receive" row on cash out, separate approval review for ERC-20 repay, view-as on liquidity, burn and Safe proposal end states, reclaim token source read onchain, ENS in buyback address fields.
+- [x] R7 Round two, after jango's rulings of 2026-11-13: the 404 names the path after hydration (the prebuilt page said "/_not-found" and raised React 418); the shop shows "+ Add items" and free mint to everyone and the modals refuse a wallet without the permission; tickers without a dollar sign; the credits line, Claim credits and its batch code are removed, because REVDeployer deploys the ERC-20 in the launch transaction and JBTokens mints ERC-20 whenever a token exists, so a revnet holder never has credits.
 - [ ] R6 Not yet compared: pay card, read surface and home, operator metadata, splits and permissions, send modes and shell, launch form and guides.
 
 ## Plan refinement

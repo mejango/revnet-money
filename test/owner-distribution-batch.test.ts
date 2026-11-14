@@ -1,16 +1,10 @@
 import {
   autoIssuanceKey,
   prepareAutoIssuance,
-  prepareCreditClaim,
   prepareReservedDistribution,
   type DistributionClient,
 } from "@/app/[slug]/owners/components/ownerDistributionBatch";
-import {
-  jbControllerAbi,
-  jbDirectoryAbi,
-  jbSplitsAbi,
-  jbTokensAbi,
-} from "@bananapus/nana-sdk-core";
+import { jbControllerAbi, jbDirectoryAbi, jbSplitsAbi } from "@bananapus/nana-sdk-core";
 import { buildAutoIssueTx } from "@bananapus/nana-sdk-core/v6";
 import {
   decodeFunctionData,
@@ -188,48 +182,6 @@ describe("reserved token distribution", () => {
     simulateContract.mockRejectedValueOnce(new Error("split hook reverted"));
     await expect(prepareReservedDistribution(client, identity, account)).rejects.toThrow(
       "split hook reverted",
-    );
-  });
-});
-
-describe("credit claim snapshots", () => {
-  it("uses the runtime token registry and fresh holder balance, keeping holder and beneficiary bound", async () => {
-    const result = await prepareCreditClaim(client, identity, account);
-    expect(result.call).toMatchObject({
-      address: controller,
-      functionName: "claimTokensFor",
-      args: [account, 91n, 900n, account],
-    });
-    expect(readContract).toHaveBeenCalledWith(
-      expect.objectContaining({
-        address: registry,
-        functionName: "creditBalanceOf",
-        args: [account, 91n],
-      }),
-    );
-    const guard = result.call.preconditions.at(-1)!;
-    expect(
-      decodeFunctionResult({
-        abi: jbTokensAbi,
-        functionName: "creditBalanceOf",
-        data: guard.expected,
-      }),
-    ).toBe(900n);
-  });
-
-  it.each(["controllerOf", "TOKENS", "tokenOf"])(
-    "rejects missing %s before signing",
-    async (field) => {
-      values[field] = zeroAddress;
-      await expect(prepareCreditClaim(client, identity, account)).rejects.toThrow("unavailable");
-      expect(simulateContract).not.toHaveBeenCalled();
-    },
-  );
-
-  it("rejects already-claimed credits", async () => {
-    values.creditBalanceOf = 0n;
-    await expect(prepareCreditClaim(client, identity, account)).rejects.toThrow(
-      "no credits to claim",
     );
   });
 });

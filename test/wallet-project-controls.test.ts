@@ -18,15 +18,6 @@ const actionExpectations: Array<{
     ],
   },
   {
-    action: "claim-credits",
-    sources: [
-      {
-        file: "src/app/[slug]/components/v6/owners/accounts/V6ClaimCreditsDialog.tsx",
-        contains: ["prepareCreditClaim", "OwnerDistributionBatchButton"],
-      },
-    ],
-  },
-  {
     action: "split-hook",
     sources: [
       {

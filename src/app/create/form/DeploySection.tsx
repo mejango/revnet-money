@@ -191,7 +191,7 @@ export function DeploySection({
             busy={isSubmitting}
             rows={[
               { label: "Revnet", value: values.name || "Unnamed", strong: true },
-              { label: "Token", value: `$${revnetTokenSymbol}` },
+              { label: "Token", value: revnetTokenSymbol },
               { label: "On", value: chainNames.join(", ") },
               { label: "Backed by", value: reserveAssetSymbol },
               ...(stickySplits.length > 0

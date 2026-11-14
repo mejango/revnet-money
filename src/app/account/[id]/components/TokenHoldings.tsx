@@ -143,8 +143,6 @@ export function TokenHoldings({ address }: { address: Address }) {
                 </div>
                 <div className="mt-1.5 flex flex-col gap-1">
                   {group.rows.map((row) => {
-                    const credits = BigInt(row.creditBalance ?? 0);
-                    const claimed = BigInt(row.erc20Balance ?? 0);
                     return (
                       <div
                         key={`${row.chainId}:${row.projectId}`}
@@ -159,12 +157,6 @@ export function TokenHoldings({ address }: { address: Address }) {
                             {formatUnits(BigInt(row.balance), 18, { fractionDigits: 5 })}{" "}
                             {group.symbol}
                           </span>
-                          {credits > 0n ? (
-                            <span className="block text-[11px] tabular-nums text-zinc-500">
-                              {formatUnits(claimed, 18, { fractionDigits: 5 })} claimed |{" "}
-                              {formatUnits(credits, 18, { fractionDigits: 5 })} credits
-                            </span>
-                          ) : null}
                         </span>
                       </div>
                     );
