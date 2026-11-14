@@ -1921,3 +1921,19 @@ Runtime and deployment-policy checks pass under verified Node26.13.1. All non-ro
 - Actual published6.7 dependency/lock update and final PR CI remain pending publication.
 
 - Installed published6.7.0 from npm with npm12.0.1/Node26.13.1. Candidate comparison: only package.json differs, all productionfiles identical; nonSDKlockentries unchanged. Dependencies/types/source checks and7focused first-read/lazy-peer tests pass against installedregistryartifact. Latest main6405a16 merged normally with zero resultingfiledelta from testedbranch.
+
+## 2026-11-14: Shop item actions, contracts warning, launch defaults (R6)
+
+- [x] Shop: the item dialog that replaces media also edits the name and description, sets the discount and removes the item, each per chosen chain and item.
+- [x] Revnet page: the unknown contracts warning juicebox.money shows, from the SDK's `auditProjectContracts`.
+- [x] Create: stage defaults match juicebox.money (no cut, cash out tax 0.1). The pay route choice calls the SDK's `prepareBestUserPay`.
+
+## Plan refinement
+- **Objective:** A revnet operator can make the same item changes juicebox.money offers, a visitor sees the same contracts warning, and a new revnet starts from the same defaults. Rulings 2, 3 and 4 of 2026-11-14.
+- **System fit:** One item dialog (`EditItemMediaModal`, `mode`) keeps the per-chain item choice, live guards, saved-batch recovery and write gate for all four changes. The reader (`readMediaEditSource`) takes the change and checks its own permission: metadata 25, discount 27, adjust tiers 24.
+- **Reuse and simplicity:** SDK `editShopMetadataDetails` (moved from juicebox.money), `auditProjectContracts`, `prepareBestUserPay`. No new dialog, hook or send path. The four entries show under the one existing metadata-rights gate; each dialog refuses a missing permission.
+- **Evidence and unknowns:** `REVDeployer` grants the operator ADJUST_721_TIERS, SET_721_METADATA, MINT_721 and SET_721_DISCOUNT_PERCENT unless a prevent flag is set. `JB721TiersHook.setDiscountPercentOf` refuses an increase on a `cantIncreaseDiscountPercent` item, and removal refuses `cantBeRemoved`; both are refused before review.
+- **Verification:** Unit tests for the reader, the three new dialog modes and the warning card; `npm run check` on the packed SDK; Codex until clean.
+- **Resource budget:** One branch, one full gate, review passes as needed.
+- **Authority and recovery:** Draft PR, merged on jango's word after SDK 6.8.0 is published. Three commits; each reverts alone.
+- **Agent-system impact:** None.
