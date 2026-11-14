@@ -266,7 +266,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 938);
 // Explicit homepage availability and permission retry: measured 2760.4 KiB, rounded up only.
 // Guide code copy buttons and the stages endpoint: measured 2789.3 KiB, rounded up only.
 // SDK 6.6.0 pay authorization and resolvers: measured 2790.3 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2791);
+// The market floor net of both fees (fee terminal and fee-free surplus reads) on published SDK
+// 6.6.0: CI measured 2791.3 KiB, rounded up only.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2792);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
