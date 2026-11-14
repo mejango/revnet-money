@@ -1,7 +1,8 @@
 import { formatShortDateTime } from "@/lib/date";
 import { useFormContext } from "@/lib/forms";
 import type { JBChainId, RelayrPostBundleResponse } from "@/lib/nana/types";
-import { parseRevnetDraft, revnetDraftFileName } from "@/lib/revnet-draft";
+import { readJbDraftFile, writeJbDraftFile } from "@/lib/jb-draft";
+import { revnetDraftFileName } from "@/lib/revnet-draft";
 import Image from "next/image";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { GoToProjectButton } from "../buttons/GoToProjectButton";
@@ -181,7 +182,7 @@ function DraftControls({
           if (!file) return;
           try {
             load(
-              parseRevnetDraft(await file.text()),
+              readJbDraftFile(await file.text()),
               "Draft imported. Review every section before launch.",
             );
           } catch (error) {
@@ -203,11 +204,9 @@ function DraftControls({
           className={draftPillClassName}
           disabled={disabled}
           onClick={() => {
-            // The same file shape the browser draft and the importer read. Media files stay behind.
+            // The shared file every Juicebox site reads. Media not yet pinned stays behind.
             const url = URL.createObjectURL(
-              new Blob([JSON.stringify({ v: 1, app: "revnet.money", data: values }, null, 2)], {
-                type: "application/json",
-              }),
+              new Blob([writeJbDraftFile(values)], { type: "application/json" }),
             );
             const anchor = document.createElement("a");
             anchor.href = url;

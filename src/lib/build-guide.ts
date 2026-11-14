@@ -108,8 +108,10 @@ const SECTIONS: readonly RevnetGuideSection[] = [
     ],
     links: [
       { href: "https://juicebox.center/api", label: "Juicebox Center API" },
-      { href: `${REFERENCE_ROOT}/src/lib/revnet-draft.ts`, label: "Draft format" },
-      { href: `${REFERENCE_ROOT}/src/app/create/types.ts`, label: "Every field" },
+      {
+        href: "https://github.com/Bananapus/juice-sdk-v4/blob/main/packages/core/src/v6/jbDraft.ts",
+        label: "Draft format",
+      },
       { href: `${SKILLS}/jb-deploy-ui/SKILL.md`, label: "Launch interface skill" },
     ],
   },

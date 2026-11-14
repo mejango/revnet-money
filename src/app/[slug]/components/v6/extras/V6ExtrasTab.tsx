@@ -22,6 +22,7 @@ import {
   useJBProjectMetadataContext,
   useJBTokenContext,
 } from "@/lib/nana/project";
+import { writeJbDraftFile } from "@/lib/jb-draft";
 import { buildRevnetDraft, revnetDraftFileName } from "@/lib/revnet-draft";
 import { pickRevnetOperator } from "@/lib/revnetOperator";
 import { formatTokenSymbol } from "@/lib/utils";
@@ -80,7 +81,7 @@ export function V6ExtrasTab({ projects }: { projects: ProjectItem[] }) {
 
   const download = (file: Awaited<ReturnType<typeof buildRevnetDraft>>["file"]) => {
     const url = URL.createObjectURL(
-      new Blob([JSON.stringify(file, null, 2)], { type: "application/json" }),
+      new Blob([writeJbDraftFile(file.data)], { type: "application/json" }),
     );
     const anchor = document.createElement("a");
     anchor.href = url;

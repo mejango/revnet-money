@@ -66,10 +66,11 @@ identifier, description and logo.
   paying, cashing out, loans, and integrations.
 - [Launch with an AI assistant](${siteOrigin}/build#launch-with-an-agent): the MCP or a .jb draft.
 - [Example .jb draft](${siteOrigin}/examples/revnet.jb): the three-stage schedule from Learn, on Base, which imports at
-  ${siteOrigin}/create. \`initialIssuance\` is tokens per ETH, \`priceCeilingIncreasePercentage\` (the issuance cut),
-  \`priceFloorTaxIntensity\` (the cash out tax, so \`20\` is a 0.2 tax) and a split's \`percentage\` are 0 to 100,
-  \`priceCeilingIncreaseFrequency\` is days between cuts, and \`stageStart\` is days after the previous stage starts,
-  rounded up to one of that stage's cuts. The form asks for the two blanks, the operator and the split recipient.
+  ${siteOrigin}/create. \`issuance\` is tokens per ETH, and empty on a later stage picks up where the stage before ends.
+  \`cutPercent\` (the issuance cut) and a split's \`share\` are 0 to 100, \`cashOutTax\` is 0 to 1, \`cutDays\` is days
+  between cuts, and \`startAfterDays\` is days after the previous stage starts, rounded up to one of that stage's cuts.
+  Only \`v\`, \`kind\` and \`stages\` are required, and a key the format does not name refuses the file. The form asks
+  for the two blanks, the operator and the split recipient.
 - [Shared app work](${siteOrigin}/build#shared-with-juicebox): SDK, reads, payments, and signing.
 - [Audit prompts](${siteOrigin}/audit): review the whole system or one transaction.
 
