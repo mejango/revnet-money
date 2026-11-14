@@ -34,7 +34,6 @@ import {
   payTokenKey,
   V6PayMode,
 } from "@/lib/v6/pay";
-import { wagmiConfig } from "@/lib/wagmiConfig";
 import { heldLineOf } from "@/lib/write-hold";
 import { useParaAuth } from "@/providers/ParaAuthContext";
 import {
@@ -76,7 +75,7 @@ import {
   PublicClient,
   zeroAddress,
 } from "viem";
-import { useAccount, usePublicClient } from "wagmi";
+import { useAccount, useConfig, usePublicClient } from "wagmi";
 import { useSelectedSucker } from "../../PayCard/SelectedSuckerContext";
 import { useShopCart } from "../ShopCartContext";
 import { MemoCount } from "./MemoCount";
@@ -146,6 +145,7 @@ export function V6PayCard() {
   );
 
   const { address, isConnected } = useAccount();
+  const wagmiConfig = useConfig();
   const publicClient = usePublicClient({ chainId });
   // Every wallet action confirms through the one transaction safety check —
   // the same shell every multi-step flow uses. The confirm dialog only shows
@@ -758,6 +758,7 @@ export function V6PayCard() {
           token: selected,
           entry: terminal,
           amount: amountRaw,
+          isSafe: isSafeConnection(wagmiConfig),
         });
         next = {
           identity: payIdentity,
@@ -802,6 +803,7 @@ export function V6PayCard() {
           token: selected,
           entry: terminal,
           amount: amountRaw,
+          isSafe: isSafeConnection(wagmiConfig),
         });
         next = {
           identity: payIdentity,
@@ -1746,12 +1748,15 @@ async function payAuthorizationOf(
     token,
     entry,
     amount,
+    isSafe,
   }: {
     chainId: JBChainId;
     owner: Address;
     token: PreparedV6Pay["token"];
     entry: Address;
     amount: bigint;
+    /** The connection is a Safe app, which never signs. */
+    isSafe: boolean;
   },
 ): Promise<Pick<PreparedV6Pay, "tokenApproval" | "authorization">> {
   if (isNativePayToken(token.token) || amount === 0n) {
@@ -1763,7 +1768,7 @@ async function payAuthorizationOf(
     token: token.token,
     entry,
     amount,
-    isSafe: isSafeConnection(wagmiConfig),
+    isSafe,
   });
   const approve = (spender: Address, approved: bigint, label: string) => {
     const args = [spender, approved] as const;

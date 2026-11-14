@@ -38,8 +38,11 @@ const mocks = vi.hoisted(() => ({
   balance: 10n ** 20n,
 }));
 
+const WAGMI_CONFIG = vi.hoisted(() => ({}));
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
+  // The pay card reads the connection through the provider's config; a stable stand-in here.
+  useConfig: () => WAGMI_CONFIG,
   useAccount: () => ({
     address: "0x1111111111111111111111111111111111111111",
     isConnected: true,

@@ -103,8 +103,11 @@ vi.mock("@bananapus/nana-sdk-core/v6", async (importOriginal) => ({
   }),
 }));
 
+const WAGMI_CONFIG = vi.hoisted(() => ({}));
 vi.mock("wagmi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("wagmi")>()),
+  // The pay card reads the connection through the provider's config; a stable stand-in here.
+  useConfig: () => WAGMI_CONFIG,
   useAccount: () => ({ address: mocks.address, isConnected: true }),
   // Allowance reads answer zero, and the account has code unless a test says it is a plain
   // wallet: a contract wallet approves the terminal for the exact amount.
