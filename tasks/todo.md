@@ -1875,3 +1875,10 @@ Runtime and deployment-policy checks pass under verified Node26.13.1. All non-ro
 - **Evidence and unknowns:** Full revnet candidate tests3168 passed but eager root config added approximately20KiB to static route bundles. Actual rebuilt route budgets will determine success.
 - **Verification:** Enforce configured import boundary in source checks; retain browser/server first-read routing tests; rerun full consumer checks and measure budgets without blanket increases.
 - **Resource budget:** Import rewrites only, bounded frontend gates; preserve all SDK candidate code and other bot work.
+
+### Safe proxy verification and release
+- User authorized merges and automated SDK version PR publication. Center111 and SDK308 merged; generated versionPR310 now merged for core6.7.0.
+- Normal merges retain otherbot revnet131 implementation and budget corrections. No non-SDK lock or installed manifest changed for candidate.
+- Final combined candidate check passed static/type/lint/source/protocol/wallet gates,330files/3170tests withcoverage, production browserbuild, standalone packaging and all bundle limits after rounded owner638KiB/extras619KiB measurements. Browser gate passed160tests with10existing viewport skips.
+- Eager root configuration was replaced by one configured local service re-export; direct callers and SDK review/recovery owners initialize it before network calls. Source check enforces this boundary, and browser/server first-read tests prove Center routing without client Authorization. Static and aggregate bundle ceilings unchanged.
+- Actual published6.7 dependency/lock update and final PR CI remain pending publication.
