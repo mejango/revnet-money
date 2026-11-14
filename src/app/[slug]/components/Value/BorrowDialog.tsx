@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/use-toast";
+import { netLoanProceeds } from "@/lib/feeHelpers";
 import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { getTokenSymbolFromAddress } from "@/lib/tokenUtils";
 import { JBChainId } from "@bananapus/nana-sdk-core";
@@ -199,7 +200,26 @@ export function BorrowDialog(props: PropsWithChildren<Props>) {
                 }
               : {}),
           },
-          { label: "Prepaid fee", value: `${prepaidPercent}%` },
+          {
+            label: "Fees",
+            value: `2.5% protocol + 1% revnet + ${prepaidPercent}% prepaid`,
+          },
+          ...(effectiveBorrowableAmount
+            ? [
+                {
+                  label: "You receive",
+                  // The contracts' own fee arithmetic; the prepaid fee is out of 1,000.
+                  value: `~${formatUnits(
+                    netLoanProceeds(
+                      effectiveBorrowableAmount,
+                      BigInt(Math.round(Number(prepaidPercent) * 10)),
+                    ),
+                    selectedChainTokenConfig.decimals,
+                  )} ${selectedChainTokenSymbol}`,
+                  strong: true,
+                },
+              ]
+            : []),
         ]
       : [];
 

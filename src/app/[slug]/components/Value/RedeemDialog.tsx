@@ -399,6 +399,17 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
           value: `~${formatDecimals(quotedOutput, 5)} ${baseToken?.symbol}`,
           note: `Stops if you would receive less than ${formatDecimals(minimumOutput, 5)} ${baseToken?.symbol}`,
         },
+        // Already taken out of what you get; named so the amount adds up.
+        ...(!directSell &&
+        cashOutRoute?.route === "treasury" &&
+        cashOutRoute.treasuryProtocolFee > 0n
+          ? [
+              {
+                label: "Fee",
+                value: `${formatDecimals(Number(formatUnits(cashOutRoute.treasuryProtocolFee, baseDecimals)), 5)} ${baseToken?.symbol}`,
+              },
+            ]
+          : []),
         {
           label: "Route",
           value: directSell ? "Sell to other traders" : "Cash out from revnet funds",

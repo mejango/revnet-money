@@ -3,6 +3,7 @@ import { BridgeDialog } from "@/app/[slug]/components/Value/BridgeDialog";
 import { ReallocateDialog } from "@/app/[slug]/components/Value/ReallocateDialog";
 import { RedeemDialog } from "@/app/[slug]/components/Value/RedeemDialog";
 import { RepayDialog } from "@/app/[slug]/components/Value/RepayDialog";
+import { netLoanProceeds } from "@/lib/feeHelpers";
 import { repayCeilingFor } from "@/lib/loanFees";
 import { clearViewAs, setViewAs } from "@/lib/view-as";
 import { NATIVE_TOKEN, type JBChainId } from "@bananapus/nana-sdk-core";
@@ -320,7 +321,12 @@ vi.mock("@/hooks/useBorrowableAmountFrom", () => ({
   }),
 }));
 vi.mock("@/hooks/useCashOutRoute", () => {
-  const data = { expectedReturn: 10n ** 17n, minimumReturn: 9n * 10n ** 16n };
+  const data = {
+    expectedReturn: 10n ** 17n,
+    minimumReturn: 9n * 10n ** 16n,
+    route: "treasury",
+    treasuryProtocolFee: 25n * 10n ** 14n,
+  };
   return {
     useCashOutRoute: ({ holder }: { holder?: string }) => {
       mocks.routeHolder(holder);
@@ -747,6 +753,24 @@ describe("a repayment's loan token, decimals and currency", () => {
       ),
     ).toBeTruthy();
     expect(mocks.write).not.toHaveBeenCalled();
+  });
+});
+
+describe("what a confirm says about fees", () => {
+  it("names the fee already taken out of a cash out from the revnet's funds", async () => {
+    await confirmCashOut();
+    const confirm = document.querySelector("[data-tx-confirm]")!;
+    expect(confirm.textContent).toMatch(/Fee\s*0\.0025 /);
+  });
+
+  it("names a loan's fees and what reaches the borrower after them", async () => {
+    await confirmBorrow();
+    const confirm = document.querySelector("[data-tx-confirm]")!;
+    expect(confirm.textContent).toContain("2.5% protocol + 1% revnet + 2.5% prepaid");
+    // The 1 token quote less the three fees, by the contracts' own arithmetic.
+    expect(confirm.textContent).toContain(
+      `You receive~${formatUnits(netLoanProceeds(10n ** 18n, 25n), 18)} `,
+    );
   });
 });
 
