@@ -827,6 +827,38 @@ describe("what a confirm says about fees", () => {
     expect(screen.getByRole("button", { name: "Cash out" })).toBeDisabled();
   });
 
+  it("keeps an open review on the token it opened with when the index answers differently later", async () => {
+    // The terminal lists two tokens; the index, failed for now, cannot pick, so the first stands.
+    mocks.onchainContexts = [
+      { token: "0x000000000000000000000000000000000000EEEe", decimals: 18, currency: 61166 },
+      { token: "0x00000000000000000000000000000000000000Cc", decimals: 6, currency: 3 },
+    ];
+    const client = new QueryClient();
+    const ui = () => (
+      <QueryClientProvider client={client}>
+        <RedeemDialog projectId={7n} tokenSymbol="REV">
+          <button type="button">Open cash out</button>
+        </RedeemDialog>
+      </QueryClientProvider>
+    );
+    const view = render(ui());
+    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
+    fireEvent.click(await screen.findByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: /Ethereum/ }));
+    fireEvent.change(screen.getByLabelText("Tokens to cash out"), { target: { value: "1" } });
+    const cashOut = screen.getByRole("button", { name: "Cash out" });
+    await waitFor(() => expect(cashOut).toBeEnabled());
+    fireEvent.click(cashOut);
+    const confirm = await confirmPanel();
+    expect(confirm.textContent).toMatch(/Fee\s*0\.0025 ETH/);
+
+    // The index recovers and names the other token.
+    mocks.usdcReclaim = true;
+    view.rerender(ui());
+    expect((await confirmPanel()).textContent).toMatch(/Fee\s*0\.0025 ETH/);
+    expect((await confirmPanel()).textContent).not.toContain("USDC");
+  });
+
   it("names a loan's fees and what reaches the borrower after them", async () => {
     await confirmBorrow();
     const confirm = document.querySelector("[data-tx-confirm]")!;

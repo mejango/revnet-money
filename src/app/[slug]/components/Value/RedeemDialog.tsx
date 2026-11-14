@@ -66,6 +66,7 @@ import {
   getTokenSymbolFromAddress,
   isNativeToken,
   pickAccountingContext,
+  type TokenConfig,
 } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import {
@@ -125,6 +126,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   // under them.
   const [submitting, setSubmitting] = useState(false);
   const [review, setReview] = useState(false);
+  const [reviewedTokenConfig, setReviewedTokenConfig] = useState<TokenConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { toast } = useToast();
   const suckerQuery = useSuckers();
@@ -226,10 +228,14 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   // Still loading until the terminal has answered or failed: a review never opens on the
   // index's token and then changes under it.
   // The index picks among several contexts, so it has to have answered or failed too.
-  const selectedChainTokenConfig =
+  const liveTokenConfig =
     contextsPending || projectIndexLoading || groupIndexLoading
       ? null
       : (pickAccountingContext(onchainContexts, indexedTokenConfig) ?? indexedTokenConfig);
+  // An open review keeps the token it opened with: its rows, its quote and the call it sends
+  // stay one thing even if the index answers differently later.
+  const selectedChainTokenConfig =
+    review && reviewedTokenConfig ? reviewedTokenConfig : liveTokenConfig;
 
   // Determine what token to receive from cashout: the native sentinel for
   // native-base projects, else the chain's own accounting token (e.g. USDC).
@@ -827,6 +833,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                   setError(null);
                   // Pin the reviewed chain: a peer balance arriving later must not unselect it.
                   if (activeCashOutChainId) setCashOutChainId(activeCashOutChainId);
+                  setReviewedTokenConfig(liveTokenConfig);
                   setReview(true);
                 }}
                 className="bg-teal-500 text-melon-950 hover:bg-teal-600"
