@@ -962,13 +962,17 @@ export function V6PayCard() {
             ? [
                 reviewedCall(
                   { chainId: prepared.chainId, ...approval.request },
-                  {
-                    intent: approvalIntent(intent, {
-                      step: "erc20",
-                      token: prepared.token.token,
-                      spender: approval.request.args[0] as Address,
-                    }),
-                  },
+                  // Core holds a Safe batch under its first call's key: the whole batch is the
+                  // payment, held by the payment's own key, so paying again another way waits on it.
+                  isSafeConnection(wagmiConfig)
+                    ? { intent, legacyIntents: legacyIntents.pay(projectId, prepared.account) }
+                    : {
+                        intent: approvalIntent(intent, {
+                          step: "erc20",
+                          token: prepared.token.token,
+                          spender: approval.request.args[0] as Address,
+                        }),
+                      },
                 ),
               ]
             : []),

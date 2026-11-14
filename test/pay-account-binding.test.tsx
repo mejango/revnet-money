@@ -138,6 +138,10 @@ vi.mock("@/components/ButtonWithWallet", () => ({
     connectWalletText?: string;
   }) => <button {...props}>{children}</button>,
 }));
+vi.mock("@/lib/safe-connector", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/safe-connector")>()),
+  isSafeConnection: () => mocks.safeBatch,
+}));
 vi.mock("@/components/GetFunds", () => ({
   useOnRamp: () => ({ supported: false, buy: vi.fn() }),
 }));
@@ -853,6 +857,10 @@ describe("a payment bound to the account it was prepared for", () => {
         (call) => call.functionName,
       ),
     ).toEqual(["approve", "pay"]);
+    // The batch is held under the payment's own key, so another payment to the revnet waits on it.
+    const [approve, payment] = (mocks.write.mock.calls[0]![0] as { batch: { intent: string }[] })
+      .batch;
+    expect(approve!.intent).toBe(payment!.intent);
 
     // The Safe runs the batch: the payment is done, with nothing left to review.
     act(() => mocks.runner!.set({ phase: "done", held: null }));
