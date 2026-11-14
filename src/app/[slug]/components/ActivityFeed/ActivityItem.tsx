@@ -34,6 +34,10 @@ type ActivityEventType =
   | "reserved"
   | "reservedSplit"
   | "bridgeSend"
+  | "bridgeClaim"
+  | "borrowLoan"
+  | "repayLoan"
+  | "liquidateLoan"
   | "mintNft";
 
 const ACTIVITY_LABELS: Record<ActivityEventType, string> = {
@@ -56,6 +60,10 @@ const ACTIVITY_LABELS: Record<ActivityEventType, string> = {
   reserved: "Splits",
   reservedSplit: "Splits",
   bridgeSend: "Bridged out",
+  bridgeClaim: "Bridged in",
+  borrowLoan: "Loan",
+  repayLoan: "Loan repaid",
+  liquidateLoan: "Loan liquidated",
   mintNft: "Item minted",
 };
 
@@ -210,6 +218,14 @@ function descriptionParts(
       return { pre: "sent payouts" };
     case "bridgeSend":
       return { pre: "sending ", strong: count, post: ` to ${event.detail}` };
+    case "bridgeClaim":
+      return { pre: "claimed ", strong: count, post: ` from ${event.detail}` };
+    case "borrowLoan":
+      return { pre: "borrowed against ", strong: count };
+    case "repayLoan":
+      return { pre: "repaid a loan" };
+    case "liquidateLoan":
+      return { pre: "liquidated a loan" };
     case "reserved":
       return { pre: "distributed reserved ", strong: count };
     case "mintNft":

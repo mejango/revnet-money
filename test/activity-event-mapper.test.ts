@@ -742,4 +742,47 @@ describe("formatUsd", () => {
       expect(events.map((event) => event.id).sort()).toEqual(["elsewhere", "own", "send-1"]);
     });
   });
+
+  describe("loans and bridge claims", () => {
+    const base = { ...payItem({ payEvent: null }), txHash: "0xeee" };
+    const at = { txHash: "0xeee", timestamp: 1_700_000_000 };
+    const BORROWER = "0x3333333333333333333333333333333333333333";
+    const context = () => ({ tokenSymbol: "ETH", decimals: 18 });
+    const row = (item: Partial<ActivityEventItem>) =>
+      mapActivityEvents([{ ...base, id: "row", ...item }], context)[0];
+
+    it("reads a loan by its collateral, for the borrower", () => {
+      const event = row({
+        borrowLoanEvent: {
+          ...at,
+          from: "0xrelayer",
+          beneficiary: BORROWER,
+          collateral: "73214660000000000000",
+        },
+      });
+      expect(event).toMatchObject({ type: "borrowLoan", beneficiary: BORROWER });
+      expect(combinedDescription(event, "REV")).toBe("borrowed against 73.21466 REV");
+    });
+
+    it("reads a repayment and a liquidation", () => {
+      const repaid = row({ repayLoanEvent: { ...at, from: BORROWER } });
+      const liquidated = row({ liquidateLoanEvent: { ...at, from: BORROWER } });
+      expect(combinedDescription(repaid, "REV")).toBe("repaid a loan");
+      expect(combinedDescription(liquidated, "REV")).toBe("liquidated a loan");
+      expect([repaid.type, liquidated.type]).toEqual(["repayLoan", "liquidateLoan"]);
+    });
+
+    it("reads a bridge claim from its chain, for the account inside a 32-byte beneficiary", () => {
+      const event = row({
+        bridgeClaimEvent: {
+          ...at,
+          beneficiary: `0x${"0".repeat(24)}${BORROWER.slice(2)}`,
+          peerChainId: 1,
+          projectTokenCount: "100000000000000000000000",
+        },
+      });
+      expect(event).toMatchObject({ type: "bridgeClaim", beneficiary: BORROWER });
+      expect(combinedDescription(event, "REV")).toBe("claimed 100000 REV from Ethereum");
+    });
+  });
 });

@@ -304,6 +304,17 @@ export type ActivityEventsQuery = {
       payEvent: ActivityPayment | null;
       cashOutTokensEvent: ActivityCashOut | null;
       bridgeToOutboxEvent?: ActivityBridgeSend | null;
+      /** Tokens claimed here from another chain. `beneficiary` can be a 32-byte value. */
+      bridgeClaimEvent?: {
+        txHash: string;
+        timestamp: number;
+        beneficiary: string;
+        peerChainId: number;
+        projectTokenCount: BigNumberish;
+      } | null;
+      borrowLoanEvent?: (ActivityBase & { beneficiary: string; collateral: BigNumberish }) | null;
+      repayLoanEvent?: ActivityBase | null;
+      liquidateLoanEvent?: ActivityBase | null;
       addToBalanceEvent:
         | (ActivityBase &
             EventToken & {

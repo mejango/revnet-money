@@ -43,7 +43,11 @@ type ActivityCategory =
   | "buybackSwap"
   | "buybackPool"
   | "reserved"
-  | "bridge";
+  | "bridge"
+  | "bridgeClaim"
+  | "borrowLoan"
+  | "repayLoan"
+  | "liquidateLoan";
 
 const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
   pay: "Payments",
@@ -60,6 +64,10 @@ const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
   buybackPool: "Buyback pools",
   reserved: "Splits",
   bridge: "Bridge sends",
+  bridgeClaim: "Bridge claims",
+  borrowLoan: "Loans",
+  repayLoan: "Loan repayments",
+  liquidateLoan: "Liquidations",
 };
 
 export function activityCategory(event: ActivityEvent): ActivityCategory | null {
@@ -97,6 +105,11 @@ export function activityCategory(event: ActivityEvent): ActivityCategory | null 
       return "reserved";
     case "bridgeSend":
       return "bridge";
+    case "bridgeClaim":
+    case "borrowLoan":
+    case "repayLoan":
+    case "liquidateLoan":
+      return event.type;
     case "operatorPermissionsSet":
       return null;
   }

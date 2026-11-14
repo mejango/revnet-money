@@ -121,6 +121,7 @@ const SAME_TX_ORDER: ActivityEvent["type"][] = [
   "autoIssue",
   "reserved",
   "reservedSplit",
+  "bridgeClaim",
   "bridgeSend",
 ];
 
@@ -599,6 +600,40 @@ export function mapActivityEvents(
       events.push({
         id: event.id,
         type: "buybackPool",
+        txHash: e.txHash,
+        timestamp: e.timestamp,
+        beneficiary: e.from as Address,
+        chainId,
+      });
+    } else if (event.bridgeClaimEvent) {
+      const e = event.bridgeClaimEvent;
+      events.push({
+        id: event.id,
+        type: "bridgeClaim",
+        txHash: e.txHash,
+        timestamp: e.timestamp,
+        // The index can hold the sucker leaf's 32-byte beneficiary: its last 20 bytes are the account.
+        beneficiary: `0x${e.beneficiary.slice(-40)}` as Address,
+        chainId,
+        tokenCount: new JBProjectToken(BigInt(e.projectTokenCount)).format(6),
+        detail: chainDisplayName(e.peerChainId),
+      });
+    } else if (event.borrowLoanEvent) {
+      const e = event.borrowLoanEvent;
+      events.push({
+        id: event.id,
+        type: "borrowLoan",
+        txHash: e.txHash,
+        timestamp: e.timestamp,
+        beneficiary: e.beneficiary as Address,
+        chainId,
+        tokenCount: new JBProjectToken(BigInt(e.collateral)).format(6),
+      });
+    } else if (event.repayLoanEvent || event.liquidateLoanEvent) {
+      const e = (event.repayLoanEvent ?? event.liquidateLoanEvent)!;
+      events.push({
+        id: event.id,
+        type: event.repayLoanEvent ? "repayLoan" : "liquidateLoan",
         txHash: e.txHash,
         timestamp: e.timestamp,
         beneficiary: e.from as Address,
