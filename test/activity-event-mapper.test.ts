@@ -772,6 +772,31 @@ describe("formatUsd", () => {
       expect([repaid.type, liquidated.type]).toEqual(["repayLoan", "liquidateLoan"]);
     });
 
+    it("keeps a Safe's repayment the row, by the Safe, when a deposit shares its transaction", () => {
+      const deposit: ActivityEventItem = {
+        ...base,
+        id: "deposit",
+        addToBalanceEvent: {
+          ...at,
+          from: "0x9999999999999999999999999999999999999999",
+          amount: "1000000000000000",
+          amountUsd: "0",
+          memo: "",
+          token: "0x000000000000000000000000000000000000eeee",
+          decimals: 18,
+          tokenSymbol: "ETH",
+        },
+      };
+      const repay: ActivityEventItem = {
+        ...base,
+        id: "repay",
+        repayLoanEvent: { ...at, caller: BORROWER },
+      };
+      const [folded] = groupSameTxEvents(mapActivityEvents([deposit, repay], context));
+      expect(folded).toMatchObject({ type: "repayLoan", beneficiary: BORROWER });
+      expect(folded.also?.map((entry) => entry.type)).toEqual(["addToBalance"]);
+    });
+
     it("reads a bridge claim from its chain, for the account inside a 32-byte beneficiary", () => {
       const event = row({
         bridgeClaimEvent: {

@@ -438,9 +438,10 @@ function MetadataProvider({
               : null,
         refetch: metadata.refetch,
       },
-      fullMetadataLoading: metadata.isLoading,
+      // The file is read through the controller, so that read being pending counts too.
+      fullMetadataLoading: metadata.isLoading || contracts.controller.isLoading,
     }),
-    [metadata, initialMetadata],
+    [metadata, initialMetadata, contracts.controller.isLoading],
   );
   return (
     <JBProjectMetadataContext.Provider value={value}>{children}</JBProjectMetadataContext.Provider>

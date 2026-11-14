@@ -109,6 +109,12 @@ function reservePercentLabel(
  */
 const SAME_TX_ORDER: ActivityEvent["type"][] = [
   "projectCreate",
+  // A loan or a bridge claim moves money and tokens in its own transaction: it is the row, by
+  // its own account, and the deposit or mint inside it reads after it.
+  "borrowLoan",
+  "repayLoan",
+  "liquidateLoan",
+  "bridgeClaim",
   "in",
   "addToBalance",
   "out",
@@ -121,7 +127,6 @@ const SAME_TX_ORDER: ActivityEvent["type"][] = [
   "autoIssue",
   "reserved",
   "reservedSplit",
-  "bridgeClaim",
   "bridgeSend",
 ];
 
