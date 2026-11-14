@@ -160,7 +160,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const effectiveProjectId = selectedSucker?.projectId || projectId;
 
   // Get the suckerGroupId from the current project
-  const { data: projectData } = useBendystrawQuery(
+  const { data: projectData, isLoading: projectIndexLoading } = useBendystrawQuery(
     ProjectOperation,
     { chainId: Number(chainId), projectId: Number(projectId), version: 6 },
     { enabled: !!chainId && !!projectId },
@@ -168,7 +168,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   const suckerGroupId = projectData?.project?.suckerGroupId;
 
   // Get all projects in the sucker group with their token data
-  const { data: suckerGroupData } = useBendystrawQuery(
+  const { data: suckerGroupData, isLoading: groupIndexLoading } = useBendystrawQuery(
     SuckerGroupOperation,
     { id: suckerGroupId ?? "" },
     { enabled: !!suckerGroupId, chainId: Number(chainId) },
@@ -225,9 +225,11 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
   });
   // Still loading until the terminal has answered or failed: a review never opens on the
   // index's token and then changes under it.
-  const selectedChainTokenConfig = contextsPending
-    ? null
-    : (pickAccountingContext(onchainContexts, indexedTokenConfig) ?? indexedTokenConfig);
+  // The index picks among several contexts, so it has to have answered or failed too.
+  const selectedChainTokenConfig =
+    contextsPending || projectIndexLoading || groupIndexLoading
+      ? null
+      : (pickAccountingContext(onchainContexts, indexedTokenConfig) ?? indexedTokenConfig);
 
   // Determine what token to receive from cashout: the native sentinel for
   // native-base projects, else the chain's own accounting token (e.g. USDC).

@@ -23,6 +23,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   /** The selected chain reclaims USDC while the page's chain holds ETH. */
   usdcReclaim: false,
+  /** The index has not answered yet. */
+  indexLoading: false,
   /** What the selected chain's terminal states as its accounting contexts; null is a failed read. */
   onchainContexts: null as { token: string; decimals: number; currency: number }[] | null,
   /** The connected wallet, or undefined for a visitor with none. */
@@ -378,7 +380,7 @@ vi.mock("@/lib/cashOutQuote", async (importOriginal) => ({
 vi.mock("@/lib/bendystraw", () => ({
   ProjectOperation: { id: "Project" },
   SuckerGroupOperation: { id: "SuckerGroup" },
-  useBendystrawQuery: () => ({ data: undefined }),
+  useBendystrawQuery: () => ({ data: undefined, isLoading: mocks.indexLoading }),
 }));
 vi.mock("@/lib/nana/project", () => ({
   useChain: () => undefined,
@@ -484,6 +486,7 @@ beforeEach(() => {
   mocks.writeHooks = 0;
   mocks.nativeBase = true;
   mocks.usdcReclaim = false;
+  mocks.indexLoading = false;
   mocks.onchainContexts = null;
   mocks.allowanceOnLoanChainOnly = false;
   mocks.bridgeAllowed = false;
@@ -802,6 +805,26 @@ describe("what a confirm says about fees", () => {
     expect(mocks.prepareCashOut.mock.calls.at(-1)?.[1]).toMatchObject({
       tokenToReclaim: "0x00000000000000000000000000000000000000Cc",
     });
+  });
+
+  it("opens no review while the index that picks among the terminal's tokens is still loading", async () => {
+    mocks.indexLoading = true;
+    mocks.onchainContexts = [
+      { token: "0x000000000000000000000000000000000000EEEe", decimals: 18, currency: 61166 },
+      { token: "0x00000000000000000000000000000000000000Cc", decimals: 6, currency: 3 },
+    ];
+    renderWithQueries(
+      <RedeemDialog projectId={7n} tokenSymbol="REV">
+        <button type="button">Open cash out</button>
+      </RedeemDialog>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open cash out" }));
+    fireEvent.click(await screen.findByRole("combobox"));
+    fireEvent.click(await screen.findByRole("option", { name: /Ethereum/ }));
+    fireEvent.change(screen.getByLabelText("Tokens to cash out"), { target: { value: "1" } });
+    // The terminal has answered; the first context alone is not the answer.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.getByRole("button", { name: "Cash out" })).toBeDisabled();
   });
 
   it("names a loan's fees and what reaches the borrower after them", async () => {

@@ -92,7 +92,9 @@ const routes = [
   { route: "/create", path: "/create", kib: 571 },
   // Removing the credits UI regrouped shared chunks: all route JavaScript fell 3.7 KiB, while /[slug]
   // measures just over 596 KiB and /[slug]/extras 613.7 KiB. Round only those two up.
-  { route: "/[slug]", path: "/eth:1", kib: 600 },
+  // The cash out dialog reads its token from the chain's terminal (the SDK reader and the shared picker):
+  // /[slug] measures just over 600.0 KiB. Rounded up only.
+  { route: "/[slug]", path: "/eth:1", kib: 601 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 600 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 683 },
   // Configured Safe service boundary with SDK 6.7.0 measures owners 637.7 and extras 618.3 KiB.
