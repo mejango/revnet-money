@@ -21,6 +21,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 // the next open could send again.
 
 const mocks = vi.hoisted(() => ({
+  /** The selected chain reclaims USDC while the page's chain holds ETH. */
+  usdcReclaim: false,
   /** The connected wallet, or undefined for a visitor with none. */
   account: "0x1111111111111111111111111111111111111111" as string | undefined,
   /** The registry's active pairs from the home chain, when a test overrides them. */
@@ -403,13 +405,16 @@ vi.mock("@/lib/nana/suckers", async (importOriginal) => ({
   }),
 }));
 vi.mock("@/lib/tokenUtils", () => ({
-  getTokenConfigForChain: () => ({
-    token: "0x000000000000000000000000000000000000EEEe",
-    decimals: 18,
-    currency: 61166,
-    symbol: "ETH",
-  }),
-  getTokenSymbolFromAddress: () => "ETH",
+  getTokenConfigForChain: () =>
+    mocks.usdcReclaim
+      ? { token: "0x00000000000000000000000000000000000000Cc", decimals: 6, currency: 3 }
+      : {
+          token: "0x000000000000000000000000000000000000EEEe",
+          decimals: 18,
+          currency: 61166,
+          symbol: "ETH",
+        },
+  getTokenSymbolFromAddress: () => (mocks.usdcReclaim ? "USDC" : "ETH"),
   isNativeToken: () => mocks.nativeBase,
 }));
 vi.mock("@/lib/token", () => ({
@@ -471,6 +476,7 @@ beforeEach(() => {
   mocks.sent = [];
   mocks.writeHooks = 0;
   mocks.nativeBase = true;
+  mocks.usdcReclaim = false;
   mocks.allowanceOnLoanChainOnly = false;
   mocks.bridgeAllowed = false;
   mocks.directSell = false;
@@ -761,6 +767,16 @@ describe("what a confirm says about fees", () => {
     await confirmCashOut();
     const confirm = document.querySelector("[data-tx-confirm]")!;
     expect(confirm.textContent).toMatch(/Fee\s*0\.0025 /);
+  });
+
+  it("states cash out amounts in the selected chain's token, not the page's", async () => {
+    mocks.usdcReclaim = true;
+    mocks.nativeBase = false;
+    await confirmCashOut();
+    const confirm = document.querySelector("[data-tx-confirm]")!;
+    // 2_500_000_000_000_000 raw at 6 decimals; at the page's 18 it read 0.0025 ETH.
+    expect(confirm.textContent).toMatch(/Fee\s*2,?500,?000,?000 USDC/);
+    expect(confirm.textContent).not.toContain("ETH");
   });
 
   it("names a loan's fees and what reaches the borrower after them", async () => {

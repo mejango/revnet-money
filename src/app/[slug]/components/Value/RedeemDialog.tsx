@@ -61,7 +61,7 @@ import { formatDecimals } from "@/lib/number";
 import { SAFE_PROPOSAL_PENDING_LINE, SAFE_PROPOSAL_UNCONFIRMED_LINE } from "@/lib/reviewed-call";
 import { isSafeConnection } from "@/lib/safe-connector";
 import { swapDeadline } from "@/lib/safe-service-config";
-import { getTokenConfigForChain, isNativeToken } from "@/lib/tokenUtils";
+import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from "@/lib/tokenUtils";
 import { formatWalletError } from "@/lib/utils";
 import {
   formatUnits,
@@ -213,7 +213,12 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
       : selectedChainTokenConfig.token
     : undefined;
 
-  const baseDecimals = baseToken?.decimals ?? 18;
+  // Amounts are in the selected chain's reclaim token, which can differ from
+  // the token of the chain this page shows.
+  const baseDecimals = selectedChainTokenConfig?.decimals ?? baseToken?.decimals ?? 18;
+  const baseSymbol = selectedChainTokenConfig
+    ? (selectedChainTokenConfig.symbol ?? getTokenSymbolFromAddress(selectedChainTokenConfig.token))
+    : baseToken?.symbol;
 
   // Hook-aware quote: previewCashOutFrom runs the real cash-out path (data
   // hook + buyback routing) and returns the exact minimum/metadata to submit.
@@ -396,8 +401,8 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
         { label: "On", value: chainDisplayName(selectedChainId) },
         {
           label: "You get",
-          value: `~${formatDecimals(quotedOutput, 5)} ${baseToken?.symbol}`,
-          note: `Stops if you would receive less than ${formatDecimals(minimumOutput, 5)} ${baseToken?.symbol}`,
+          value: `~${formatDecimals(quotedOutput, 5)} ${baseSymbol}`,
+          note: `Stops if you would receive less than ${formatDecimals(minimumOutput, 5)} ${baseSymbol}`,
         },
         // Already taken out of what you get; named so the amount adds up.
         ...(!directSell &&
@@ -406,7 +411,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
           ? [
               {
                 label: "Fee",
-                value: `${formatDecimals(Number(formatUnits(cashOutRoute.treasuryProtocolFee, baseDecimals)), 5)} ${baseToken?.symbol}`,
+                value: `${formatDecimals(Number(formatUnits(cashOutRoute.treasuryProtocolFee, baseDecimals)), 5)} ${baseSymbol}`,
               },
             ]
           : []),
@@ -749,7 +754,7 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                             : expectedReclaim,
                           5,
                         )}{" "}
-                        {baseToken?.symbol}
+                        {baseSymbol}
                       </span>
                       <div className="text-sm text-zinc-500 mt-1">
                         Stops if you would receive less than{" "}
@@ -759,9 +764,9 @@ export function RedeemDialog(props: PropsWithChildren<Props>) {
                             : minimumReclaim,
                           5,
                         )}{" "}
-                        {baseToken?.symbol}
+                        {baseSymbol}
                         {directSell
-                          ? ` | selling pays more than the ${formatDecimals(expectedReclaim, 5)} ${baseToken?.symbol} cash-out estimate`
+                          ? ` | selling pays more than the ${formatDecimals(expectedReclaim, 5)} ${baseSymbol} cash-out estimate`
                           : " | includes the revnet’s cash-out settings"}
                       </div>
                     </div>

@@ -274,7 +274,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 938);
 // 6.6.0: CI measured 2791.3 KiB, rounded up only.
 // The shared .jb draft (SDK schema plus this site's mapper, in their own on-demand chunk): measured 2802.5 KiB,
 // rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2803);
+// The ENS address field on the buyback and router card, view-as liquidity and the confirm fee rows:
+// measured just over 2803.0 KiB, rounded up only.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2804);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
