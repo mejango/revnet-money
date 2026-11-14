@@ -53,8 +53,8 @@ const ACTIVITY_LABELS: Record<ActivityEventType, string> = {
   swap: "Swap",
   buybackPool: "Buyback pool",
   payout: "Payout",
-  reserved: "Reserved tokens",
-  reservedSplit: "Reserved tokens",
+  reserved: "Splits",
+  reservedSplit: "Splits",
   bridgeSend: "Bridged out",
   mintNft: "Item minted",
 };

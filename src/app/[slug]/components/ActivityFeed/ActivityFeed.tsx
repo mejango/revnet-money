@@ -58,7 +58,7 @@ const ACTIVITY_CATEGORY_LABELS: Record<ActivityCategory, string> = {
   payout: "Payouts",
   buybackSwap: "Buyback swaps",
   buybackPool: "Buyback pools",
-  reserved: "Reserved tokens",
+  reserved: "Splits",
   bridge: "Bridge sends",
 };
 
