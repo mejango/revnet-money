@@ -33,7 +33,12 @@ function client(values: Record<string, unknown> = {}) {
           encodedIpfsUriOf: digest,
           tokenUriResolverOf: zeroAddress,
           isTierRemoved: false,
-          tierOf: { id: 12, initialSupply: 100 },
+          tierOf: {
+            id: 12,
+            initialSupply: 100,
+            discountPercent: 40,
+            flags: { cantBeRemoved: false, cantIncreaseDiscountPercent: true },
+          },
           ...values,
         })[functionName],
     ),
@@ -154,5 +159,25 @@ describe("shop media replacement", () => {
       mediaType: "image/png",
     });
     expect(edits.map((edit) => edit.tierId)).toEqual([12, 41, 12]);
+  });
+
+  it("reads a discount or removal under its own permission, without the item's JSON", async () => {
+    const reads = client();
+    const source = await readMediaEditSource(reads, destination, 12, owner, "discount");
+    expect(source).toMatchObject({ discountPercent: 40, cantIncreaseDiscountPercent: true });
+    expect(source.preconditions).toHaveLength(4);
+    // A custom resolver blocks only metadata edits.
+    await expect(
+      readMediaEditSource(client({ tokenUriResolverOf: owner }), destination, 12, owner, "remove"),
+    ).resolves.toMatchObject({ tierId: 12 });
+    const locked = {
+      id: 12,
+      initialSupply: 100,
+      discountPercent: 0,
+      flags: { cantBeRemoved: true },
+    };
+    await expect(
+      readMediaEditSource(client({ tierOf: locked }), destination, 12, owner, "remove"),
+    ).rejects.toThrow("cannot be removed on Base");
   });
 });
