@@ -94,16 +94,18 @@ const routes = [
   // measures just over 596 KiB and /[slug]/extras 613.7 KiB. Round only those two up.
   // The cash out dialog reads its token from the chain's terminal (the SDK reader and the shared picker):
   // /[slug] measures just over 600.0 KiB. Rounded up only.
-  { route: "/[slug]", path: "/eth:1", kib: 601 },
-  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 600 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 683 },
+  // The unknown contracts warning sits in the revnet layout (its readers load on demand): every
+  // revnet route measures under 1 KiB more (601.6, 600.8, 683.2, 639.8, 607.3, 620.1). Rounded up only.
+  { route: "/[slug]", path: "/eth:1", kib: 602 },
+  { route: "/[slug]/terms", path: "/eth:1/terms", kib: 601 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 684 },
   // Configured Safe service boundary with SDK 6.7.0 measures owners 637.7 and extras 618.3 KiB.
   // Round only these two incremental route costs up; static and aggregate ceilings stay unchanged.
   // Loans, bridge sends and claims in the shared activity rows, and the pay review's notice and beneficiary:
   // owners measures 638.4, shop 606.2, extras 619.1 and /account/[id] 432.2 KiB. Rounded up only.
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 639 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 607 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 620 },
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 640 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 608 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 621 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 433 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 422 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 435 },
@@ -124,7 +126,7 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
 // The forms pass (checkbox-gated options, inline export confirm, stacked phone tables) measures terms 595.2,
 // extras 612.5, account 430.0 and route-referenced JS 932.4 KiB; round only those up.
 // SDK 6.6.0 pay authorization and resolvers: measured 937.7 KiB route-referenced, rounded up only.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 938);
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 939);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
@@ -281,7 +283,9 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 938);
 // The ENS address field on the buyback and router card, view-as liquidity and the confirm fee rows:
 // measured just over 2803.0 KiB, rounded up only.
 // Loans, bridge sends and claims in activity and the pay review's notice: measured 2804.1 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2805);
+// The shop item dialog's details, discount and removal modes, the unknown contracts warning and its
+// on-demand audit chunk measure 2809.8 KiB all client JavaScript and 938.2 KiB route-referenced.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2810);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
