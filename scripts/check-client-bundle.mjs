@@ -107,7 +107,8 @@ const routes = [
   // Round only these two incremental route costs up; static and aggregate ceilings stay unchanged.
   // Loans, bridge sends and claims in the shared activity rows, and the pay review's notice and beneficiary:
   // owners measures 638.4, shop 606.2, extras 619.1 and /account/[id] 432.2 KiB. Rounded up only.
-  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 641 },
+  // The re-band net-debit check at send time together with SDK 6.9.0: owners measures 641.1 KiB. Rounded up only.
+  { route: "/[slug]/owners", path: "/eth:1/owners", kib: 642 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 609 },
   { route: "/[slug]/extras", path: "/eth:1/extras", kib: 622 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 433 },
