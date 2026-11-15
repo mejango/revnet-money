@@ -1966,7 +1966,7 @@ Runtime and deployment-policy checks pass under verified Node26.13.1. All non-ro
 
 - [x] S1 The pay card passes the connected account to the route choice (`simulateFrom`): each native-token route is run as that account and the one that delivers the most tokens wins.
 - [x] S2 The payment notice rule comes from the SDK (`payNoticeView`); `src/lib/payNotice.ts` is removed. The site passes its chain order.
-- [ ] S3 Pin `@bananapus/nana-sdk-core` 6.9.0 once it is published; until then the branch is checked against the packed tarball.
+- [x] S3 `@bananapus/nana-sdk-core` pinned to 6.9.0 (published 2026-11-15).
 - [x] S4 Gate on the packed SDK tarball (2026-11-14): every stage of `npm run check` passes, 3,216 unit and 160 browser tests. Four budgets raised by under 1 KiB each with the measured numbers beside them (terms 603, operator 685, extras 622, all client JavaScript 2812 KiB).
 
 ## Plan refinement
