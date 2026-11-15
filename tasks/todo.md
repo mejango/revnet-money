@@ -1978,3 +1978,20 @@ Runtime and deployment-policy checks pass under verified Node26.13.1. All non-ro
 - **Resource budget:** One draft pull request.
 - **Authority and recovery:** Draft pull request; merged on jango's word after the SDK release. Reverts alone.
 - **Agent-system impact:** None.
+
+## 2026-11-15: A re-band's reviewed cap is enforced onchain
+
+- [x] C1 A move (`prepareEditLiquidity`) and a market re-fit (`prepareMarketEdit`) end in `SETTLE` of each reviewed cap from the caller plus `TAKE_PAIR` (`cappedCloseActions`) in place of `CLOSE_CURRENCY` x2 [+ `SWEEP`]. Same bytes as juicebox.money and Juicescan.
+- [x] C2 The editors require the wallet to hold the whole cap for such a plan.
+- [x] C3 The review dialog shows the `SETTLE` step (SDK 6.10.0 decodes it).
+- [x] C4 Pin `@bananapus/nana-sdk-core` 6.10.0 (published); full check green on the registry package.
+
+## Plan refinement
+- **Objective:** After signing, a price move can no longer make a re-band pull more from the wallet than the review's "Authorizes up to" figure (jango, 2026-11-15).
+- **System fit:** The rule lives in the plan builders in `market/lib.ts`; panels gate the balance and display.
+- **Reuse and simplicity:** One closing helper beside the existing one; the caps are the plan's `value` and `erc20Sides`.
+- **Evidence and unknowns:** v4-periphery `_takePair` reads `_getFullCredit`, which reverts on a debt. Fork run on Base projects 3 and 6 through Juicescan's byte-identical builders: funded re-bands and re-fits execute, cut caps revert. A wallet holding less than the cap cannot send a re-band.
+- **Verification:** Unit tests assert the exact actions, the settle parameters and the decoded steps; `npm run check` on the packed SDK tarball; CI after the pin.
+- **Resource budget:** One pull request.
+- **Authority and recovery:** jango asked for it in-session; merged on his word. Reverts alone.
+- **Agent-system impact:** None.

@@ -1308,6 +1308,7 @@ export function prepareAddLiquidity(
 const ACTION_INCREASE_LIQUIDITY = "00";
 const ACTION_DECREASE_LIQUIDITY = "01";
 const ACTION_BURN_POSITION = "03";
+const ACTION_SETTLE = "0b";
 const ACTION_TAKE_PAIR = "11";
 
 type EditLiquidityKind = "increase" | "decrease" | "move" | "remove";
@@ -1397,6 +1398,45 @@ function closeActions(pool: PoolSnapshot, recipient: Address, value: bigint) {
     actions += ACTION_SWEEP;
   }
   return { actions, parameters };
+}
+
+/**
+ * The closing actions of a plan that burns one band to mint another. The mint's
+ * maxima bound what the mint takes in, not what the wallet pays once the burn's
+ * return is counted, so closing the net would let a price move pull more than
+ * was reviewed. This pays in exactly the reviewed caps (SETTLE, payer is the
+ * caller) and takes everything left over (TAKE_PAIR), which reverts when a
+ * currency is still owed: the wallet never pays more than the caps.
+ */
+function cappedCloseActions(
+  pool: PoolSnapshot,
+  recipient: Address,
+  value: bigint,
+  erc20Sides: ReadonlyArray<{ currency: Address; max: bigint }>,
+) {
+  let actions = "";
+  const parameters: Hex[] = [];
+  for (const currency of [pool.key.currency0, pool.key.currency1]) {
+    const cap = /^0x0{40}$/.test(currency)
+      ? value
+      : (erc20Sides.find((side) => side.currency.toLowerCase() === currency.toLowerCase())?.max ??
+        0n);
+    if (cap <= 0n) continue;
+    actions += ACTION_SETTLE;
+    parameters.push(
+      encodeAbiParameters(
+        [{ type: "address" }, { type: "uint256" }, { type: "bool" }],
+        [currency, cap, true],
+      ),
+    );
+  }
+  parameters.push(
+    encodeAbiParameters(
+      [{ type: "address" }, { type: "address" }, { type: "address" }],
+      [pool.key.currency0, pool.key.currency1, recipient],
+    ),
+  );
+  return { actions: `${actions}${ACTION_TAKE_PAIR}`, parameters };
 }
 
 function encodeUnlock(actions: string, parameters: Hex[]): Hex {
@@ -1689,9 +1729,10 @@ function editOperations(
  *   fees offset what it pays.
  * - Same band, less liquidity → DECREASE_LIQUIDITY + TAKE_PAIR: the freed
  *   share and unclaimed fees return to the wallet, behind 95% floors.
- * - New band → BURN_POSITION + MINT_POSITION + CLOSE×2 [+ SWEEP]: the burn's
- *   credit funds the mint inside the unlock; only the difference touches the
- *   wallet, in either direction. The part of each target the old position
+ * - New band → BURN_POSITION + MINT_POSITION + SETTLE per funded currency +
+ *   TAKE_PAIR: the burn's credit funds the mint inside the unlock; the wallet
+ *   pays in at most its reviewed caps and takes back whatever is left, and the
+ *   call reverts if a currency is still owed. The part of each target the old position
  *   already covers is shaved 1% so ~1% of price drift between review and
  *   execution still fits without wallet funding, matching the plain move.
  * - Nothing on either side → the full-exit removal.
@@ -1716,7 +1757,10 @@ export function prepareEditLiquidity(
     );
     unlockData = encodeUnlock(`${ops.actions}${ACTION_TAKE_PAIR}`, [...ops.parameters, takePair]);
   } else {
-    const close = closeActions(pool, recipient, ops.value);
+    const close =
+      ops.kind === "move"
+        ? cappedCloseActions(pool, recipient, ops.value, ops.erc20Sides)
+        : closeActions(pool, recipient, ops.value);
     unlockData = encodeUnlock(`${ops.actions}${close.actions}`, [
       ...ops.parameters,
       ...close.parameters,
@@ -2127,7 +2171,11 @@ export function prepareMarketEdit(
   if (!operations.length) throw new Error("This leaves the market as it is.");
 
   const value = operations.reduce((sum, ops) => sum + ops.value, 0n);
-  const close = closeActions(pool, recipient, value);
+  const erc20Sides = mergeErc20Sides(operations.map((ops) => ops.erc20Sides));
+  // A re-fit burns to mint, so the whole edit pays in its reviewed caps and takes the rest.
+  const close = operations.some((ops) => ops.burned)
+    ? cappedCloseActions(pool, recipient, value, erc20Sides)
+    : closeActions(pool, recipient, value);
   const sum = (pick: (ops: EditOperations) => bigint) =>
     operations.reduce((total, ops) => total + pick(ops), 0n);
   const holdingOf = (side: { edit: MarketSideEdit } | null) => side?.edit.holding ?? 0n;
@@ -2139,7 +2187,7 @@ export function prepareMarketEdit(
     token: token?.edit ?? null,
     pair: pair?.edit ?? null,
     value,
-    erc20Sides: mergeErc20Sides(operations.map((ops) => ops.erc20Sides)),
+    erc20Sides,
     tokenFlow: sum((ops) => ops.tokenFlow),
     pairFlow: sum((ops) => ops.pairFlow),
     tokenFunding: sum((ops) => ops.tokenFunding),

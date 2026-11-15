@@ -232,10 +232,12 @@ export function MarketEditPanel({
       }
       const held = balances.data ?? (await balances.refetch()).data;
       if (!held) throw new Error("Could not read your wallet balances.");
-      if (plan.tokenFlow > held.token) {
+      // A re-fit pays in its whole cap and takes the rest back, so the wallet must hold the cap.
+      const paysCap = plan.token?.kind === "move" || plan.pair?.kind === "move";
+      if ((paysCap ? plan.tokenFunding : plan.tokenFlow) > held.token) {
         throw new Error(`That's more ${tokenSymbol} than your balance.`);
       }
-      if (plan.pairFlow > held.pair) {
+      if ((paysCap ? plan.pairFunding : plan.pairFlow) > held.pair) {
         throw new Error(`That's more ${pool.pair.symbol} than your balance.`);
       }
       const steps = await approvalStepsFor({
