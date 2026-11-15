@@ -372,14 +372,17 @@ export function MarketEditPanel({
     ? []
     : [
         { label: "Market", value: `${ids} on ${chainName(state.chainId)}` },
-        {
-          label: "Corridor",
-          value: `${
-            corridor
-              ? `${formatPrice(corridor.floor)} – ${formatPrice(corridor.ceiling)} ${pool.pair.symbol}/${tokenSymbol}`
-              : "None"
-          }${current.plan.refit ? " (re-fit)" : " (kept)"}`,
-        },
+        // Without a re-fit the bands keep their ticks, which the current corridor may not describe.
+        current.plan.refit
+          ? {
+              label: "Corridor",
+              value: `${
+                corridor
+                  ? `${formatPrice(corridor.floor)} – ${formatPrice(corridor.ceiling)} ${pool.pair.symbol}/${tokenSymbol}`
+                  : "None"
+              } (re-fit)`,
+            }
+          : { label: "Bands", value: "Kept as they are" },
         ...(current.plan.token
           ? [{ label: `${tokenSymbol} side`, value: String(sideLine(current.plan.token, "token")) }]
           : []),
@@ -421,7 +424,7 @@ export function MarketEditPanel({
           ? [
               {
                 label: "Enforced onchain",
-                value: `At least ${amountsText(current.plan.tokenMinimum, current.plan.pairMinimum)} back (95% floors)`,
+                value: `Removed liquidity pays at least ${amountsText(current.plan.tokenMinimum, current.plan.pairMinimum)} (95% floors)`,
               },
             ]
           : []),

@@ -1340,6 +1340,42 @@ interface EditOperations {
   mint: AddLiquidityPlan | null;
   amount0Max: bigint;
   amount1Max: bigint;
+  /**
+   * A move only: the band it burns, and the most each currency may pull from
+   * the wallet once the burn's return is netted against the mint.
+   */
+  burned?: { tickLower: number; tickUpper: number; funding0: bigint; funding1: bigint };
+}
+
+/**
+ * Whether a move's mint, at the live price, still costs the wallet no more
+ * than reviewed once the burn's return is counted. The mint's own maxima bound
+ * what it takes in, not the difference the wallet pays.
+ */
+export function moveStillCovered(
+  move: Pick<
+    EditOperations,
+    "tickLower" | "tickUpper" | "liquidity" | "liquidityBefore" | "burned"
+  >,
+  sqrtP: bigint,
+): boolean {
+  if (!move.burned) return true;
+  const minted = uniswapV4AmountsForLiquidity(
+    sqrtP,
+    uniswapV4SqrtPriceX96AtTick(move.tickLower),
+    uniswapV4SqrtPriceX96AtTick(move.tickUpper),
+    move.liquidity,
+  );
+  const returned = uniswapV4AmountsForLiquidity(
+    sqrtP,
+    uniswapV4SqrtPriceX96AtTick(move.burned.tickLower),
+    uniswapV4SqrtPriceX96AtTick(move.burned.tickUpper),
+    move.liquidityBefore,
+  );
+  return (
+    minted.amount0 - returned.amount0 <= move.burned.funding0 &&
+    minted.amount1 - returned.amount1 <= move.burned.funding1
+  );
 }
 
 export interface EditLiquidityPlan extends EditOperations {
@@ -1638,6 +1674,7 @@ function editOperations(
     mint,
     amount0Max: mint.amount0Max,
     amount1Max: mint.amount1Max,
+    burned: { tickLower: position.tickLower, tickUpper: position.tickUpper, funding0, funding1 },
   };
 }
 
@@ -1709,7 +1746,11 @@ export async function reverifyEditLiquidity(
     uniswapV4SqrtPriceX96AtTick(plan.tickUpper),
     plan.kind === "move" ? plan.liquidity : plan.liquidityDelta,
   );
-  if (required.amount0 > plan.amount0Max || required.amount1 > plan.amount1Max) {
+  if (
+    required.amount0 > plan.amount0Max ||
+    required.amount1 > plan.amount1Max ||
+    !moveStillCovered(plan, fresh.pool.sqrtP)
+  ) {
     throw new ReviewRefusal(
       "The pool price moved beyond the reviewed range. Review fresh amounts.",
     );
@@ -1914,6 +1955,7 @@ export interface MarketSideEdit {
   liquidityDelta: bigint;
   amount0Max: bigint;
   amount1Max: bigint;
+  burned?: EditOperations["burned"];
 }
 
 export interface MarketEditPlan {
@@ -1954,6 +1996,7 @@ function sideEdit(
     liquidityDelta: ops.liquidityDelta,
     amount0Max: ops.amount0Max,
     amount1Max: ops.amount1Max,
+    burned: ops.burned,
   };
 }
 
@@ -2136,7 +2179,11 @@ export async function reverifyMarketEdit(
       uniswapV4SqrtPriceX96AtTick(side.tickUpper),
       side.kind === "increase" ? side.liquidityDelta : side.liquidity,
     );
-    if (required.amount0 > side.amount0Max || required.amount1 > side.amount1Max) {
+    if (
+      required.amount0 > side.amount0Max ||
+      required.amount1 > side.amount1Max ||
+      !moveStillCovered(side, sqrtP)
+    ) {
       throw new ReviewRefusal(
         "The pool price moved beyond the reviewed range. Review fresh amounts.",
       );
