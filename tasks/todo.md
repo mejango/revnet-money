@@ -1984,7 +1984,7 @@ Runtime and deployment-policy checks pass under verified Node26.13.1. All non-ro
 - [x] C1 A move (`prepareEditLiquidity`) and a market re-fit (`prepareMarketEdit`) end in `SETTLE` of each reviewed cap from the caller plus `TAKE_PAIR` (`cappedCloseActions`) in place of `CLOSE_CURRENCY` x2 [+ `SWEEP`]. Same bytes as juicebox.money and Juicescan.
 - [x] C2 The editors require the wallet to hold the whole cap for such a plan.
 - [x] C3 The review dialog shows the `SETTLE` step (SDK 6.10.0 decodes it).
-- [ ] C4 Pin `@bananapus/nana-sdk-core` 6.10.0 once published; until then checked against the packed tarball.
+- [x] C4 Pin `@bananapus/nana-sdk-core` 6.10.0 (published); full check green on the registry package.
 
 ## Plan refinement
 - **Objective:** After signing, a price move can no longer make a re-band pull more from the wallet than the review's "Authorizes up to" figure (jango, 2026-11-15).
