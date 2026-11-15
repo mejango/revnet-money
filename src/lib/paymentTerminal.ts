@@ -39,8 +39,14 @@ export async function resolveBestV6PayRoute(args: {
   attachedTerminals?: readonly Address[];
   /** The payer's tolerance on the SDK's quote and minimum; the SDK default when unset. */
   slippageBps?: bigint;
+  /**
+   * The paying account. With it, each native-token route is run as that account and the one that
+   * delivers the most tokens wins; without it, the terminals' previews decide.
+   */
+  simulateFrom?: Address;
 }): Promise<V6PayRoute | null> {
-  const { client, chainId, projectId, token, amount, beneficiary, slippageBps } = args;
+  const { client, chainId, projectId, token, amount, beneficiary, slippageBps, simulateFrom } =
+    args;
 
   let attachedTerminals = args.attachedTerminals;
   if (attachedTerminals === undefined) {
@@ -66,6 +72,7 @@ export async function resolveBestV6PayRoute(args: {
       type: route.type === "multi" ? ("multi" as const) : ("router" as const),
     })),
     ...(slippageBps !== undefined ? { slippageBps } : {}),
+    ...(simulateFrom ? { simulateFrom } : {}),
   });
   if (!best) return null;
   const { terminal, type: _type, ...prepared } = best;

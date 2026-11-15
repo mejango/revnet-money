@@ -1,5 +1,10 @@
-import { payNoticeView } from "@/lib/payNotice";
+import { chainSortIndex } from "@/app/constants";
+import { payNoticeView as view, type PayNotices } from "@bananapus/nana-sdk-core/v6";
 import { describe, expect, it } from "vitest";
+
+// The SDK owns the rule; the site passes its chain order.
+const payNoticeView = (chainId: number, notices: PayNotices) =>
+  view(chainId, notices, (a, b) => chainSortIndex(a) - chainSortIndex(b));
 
 describe("the payment notice a payer is shown", () => {
   it("is the paid chain’s own, with the chains that read differently listed in display order", () => {
