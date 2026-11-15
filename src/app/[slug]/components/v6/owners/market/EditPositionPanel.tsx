@@ -426,7 +426,7 @@ export function EditPositionPanel({
           ? [
               {
                 label: "Enforced onchain",
-                value: `At least ${fmtUnits(current.plan.tokenMinimum, 18)} ${tokenSymbol} + ${fmtUnits(current.plan.pairMinimum, pool.pair.decimals)} ${pool.pair.symbol} back (95% floors)`,
+                value: `Removed liquidity pays at least ${fmtUnits(current.plan.tokenMinimum, 18)} ${tokenSymbol} + ${fmtUnits(current.plan.pairMinimum, pool.pair.decimals)} ${pool.pair.symbol} (95% floors)`,
               },
             ]
           : []),

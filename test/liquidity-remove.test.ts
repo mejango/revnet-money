@@ -3,6 +3,7 @@ import {
   groupMarketPositions,
   lpBandPrices,
   lpDeadline,
+  moveStillCovered,
   prepareAddLiquidity,
   prepareCollectLpFees,
   prepareCollectMarketFees,
@@ -54,6 +55,46 @@ const position = {
   pairAmount: 1_000n,
   tokenAmount: 2_000n,
 } as UserLpPosition;
+
+describe("a reviewed re-band", () => {
+  it("is no longer covered once the burn returns less than the mint takes, though the mint fits its maxima", () => {
+    const sqrtP = 2n ** 96n;
+    const lower = uniswapV4SqrtPriceX96AtTick(-600);
+    const upper = uniswapV4SqrtPriceX96AtTick(600);
+    const held = uniswapV4AmountsForLiquidity(sqrtP, lower, upper, 10n ** 18n);
+    const liquidity = uniswapV4LiquidityForAmounts(sqrtP, lower, upper, held.amount0, held.amount1);
+    const live = { ...pool, sqrtP, price: 1 } as PoolSnapshot;
+    const narrow = {
+      ...position,
+      liquidity,
+      tickLower: -600,
+      tickUpper: 600,
+      pairAmount: held.amount0,
+      tokenAmount: held.amount1,
+    } as UserLpPosition;
+    const move = prepareEditLiquidity(
+      live,
+      narrow,
+      { pairAmount: held.amount0, tokenAmount: held.amount1 },
+      { minimumPrice: 0.5, maximumPrice: 2 },
+      recipient,
+    );
+    expect(move.kind).toBe("move");
+    expect(move.pairFunding + move.tokenFunding).toBe(0n);
+    expect(moveStillCovered(move, sqrtP)).toBe(true);
+    // A 0.2% price move: the wide new band still fits its own maxima, but the narrow old band
+    // returns less of one currency than the mint takes, which the wallet would pay unreviewed.
+    const moved = uniswapV4SqrtPriceX96AtTick(20);
+    const minted = uniswapV4AmountsForLiquidity(
+      moved,
+      uniswapV4SqrtPriceX96AtTick(move.tickLower),
+      uniswapV4SqrtPriceX96AtTick(move.tickUpper),
+      move.liquidity,
+    );
+    expect(minted.amount0 <= move.amount0Max && minted.amount1 <= move.amount1Max).toBe(true);
+    expect(moveStillCovered(move, moved)).toBe(false);
+  });
+});
 
 describe("Revnet LP removal", () => {
   it("wallet-action:liquidity-management encodes a full burn and take-pair with exact 95% output floors", () => {
