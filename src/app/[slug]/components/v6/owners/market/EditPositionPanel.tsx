@@ -256,11 +256,13 @@ export function EditPositionPanel({
       const held = balances.data ?? (await balances.refetch()).data;
       if (!held) throw new Error("Could not read your wallet balances.");
       // Gate on what the pool actually pulls, not on the maxima: those carry
-      // 1% price headroom that only gets spent if the price moves.
-      if (plan.tokenFlow > held.token) {
+      // 1% price headroom that only gets spent if the price moves. A move is
+      // the exception: it pays in its whole cap and takes the rest back.
+      const paysCap = plan.kind === "move";
+      if ((paysCap ? plan.tokenFunding : plan.tokenFlow) > held.token) {
         throw new Error(`That's more ${tokenSymbol} than your balance.`);
       }
-      if (plan.pairFlow > held.pair) {
+      if ((paysCap ? plan.pairFunding : plan.pairFlow) > held.pair) {
         throw new Error(`That's more ${pool.pair.symbol} than your balance.`);
       }
       const approvals = await approvalStepsFor({

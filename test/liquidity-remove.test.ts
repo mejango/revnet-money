@@ -359,9 +359,14 @@ describe("Revnet LP edit", () => {
       [{ type: "bytes" }, { type: "bytes[]" }],
       plan.unlockData,
     );
-    // BURN_POSITION, MINT_POSITION, CLOSE_CURRENCY ×2, SWEEP (native funding refund).
-    expect(actions).toBe("0x0302121214");
+    // BURN_POSITION, MINT_POSITION, SETTLE each reviewed cap from the caller, TAKE_PAIR: whatever the caps do
+    // not cover stays owed and TAKE_PAIR reverts, so the wallet never pays more than it reviewed.
+    expect(actions).toBe("0x03020b0b11");
     expect(params).toHaveLength(5);
+    const settle = [{ type: "address" }, { type: "uint256" }, { type: "bool" }] as const;
+    expect(decodeAbiParameters(settle, params[2])).toEqual([zeroAddress, plan.pairFunding, true]);
+    expect(decodeAbiParameters(settle, params[3])[1]).toBe(plan.tokenFunding);
+    expect(plan.value).toBe(plan.pairFunding);
     const [tokenId, amount0Minimum, amount1Minimum] = decodeAbiParameters(
       [{ type: "uint256" }, { type: "uint128" }, { type: "uint128" }, { type: "bytes" }],
       params[0],
@@ -397,8 +402,9 @@ describe("Revnet LP edit", () => {
       [{ type: "bytes" }, { type: "bytes[]" }],
       plan.unlockData,
     );
-    expect(actions).toBe("0x03021212");
-    expect(params).toHaveLength(4);
+    // Nothing to pay in: the burn must cover the mint or TAKE_PAIR reverts.
+    expect(actions).toBe("0x030211");
+    expect(params).toHaveLength(3);
   });
 
   it("maps a position's ticks back to display prices with min below max", () => {
@@ -620,8 +626,9 @@ describe("Revnet LP market", () => {
       [{ type: "bytes" }, { type: "bytes[]" }],
       plan.unlockData,
     );
-    expect(actions.startsWith("0x03020302")).toBe(true);
-    expect(params.length).toBeGreaterThanOrEqual(6);
+    // Two burns and mints, then TAKE_PAIR alone: nothing is paid in, so the burns must cover the mints.
+    expect(actions).toBe("0x0302030211");
+    expect(params).toHaveLength(5);
   });
 
   it("removes one side, keeps an unchanged side, and mints a missing side", () => {
@@ -670,7 +677,7 @@ describe("Revnet LP market", () => {
 });
 
 describe("Review-dialog V4 plan decoding", () => {
-  it("renders a move plan as readable burn/mint/close steps", async () => {
+  it("renders a move plan as readable burn, mint and take steps", async () => {
     const { describeV4UnlockData } = await import("@bananapus/nana-sdk-core/review/decode");
     const plan = prepareEditLiquidity(
       livePool,
@@ -680,7 +687,7 @@ describe("Review-dialog V4 plan decoding", () => {
       recipient,
     );
     const steps = describeV4UnlockData(plan.unlockData)! as Array<Record<string, unknown>>;
-    expect(steps).toHaveLength(4);
+    expect(steps).toHaveLength(3);
     expect(steps[0]).toMatchObject({
       action: "BURN_POSITION",
       position: "#42",
@@ -692,8 +699,28 @@ describe("Review-dialog V4 plan decoding", () => {
       ticks: { lower: plan.tickLower, upper: plan.tickUpper },
       liquidity: plan.liquidity,
     });
-    expect(steps[2]).toMatchObject({ action: "CLOSE_CURRENCY", currency: zeroAddress });
-    expect(steps[3]).toMatchObject({ action: "CLOSE_CURRENCY" });
+    expect(steps[2]).toMatchObject({ action: "TAKE_PAIR", currency0: zeroAddress, recipient });
+    // A move the wallet funds shows each cap it pays in.
+    const funded = prepareEditLiquidity(
+      livePool,
+      livePosition,
+      { pairAmount: held.amount0 * 2n, tokenAmount: held.amount1 * 2n },
+      { minimumPrice: 0.25, maximumPrice: 4 },
+      recipient,
+    );
+    const fundedSteps = describeV4UnlockData(funded.unlockData)! as Array<Record<string, unknown>>;
+    expect(fundedSteps.map((step) => step.action)).toEqual([
+      "BURN_POSITION",
+      "MINT_POSITION",
+      "SETTLE",
+      "SETTLE",
+      "TAKE_PAIR",
+    ]);
+    expect(fundedSteps[2]).toMatchObject({
+      currency: zeroAddress,
+      amount: funded.pairFunding,
+      payerIsCaller: true,
+    });
     // Unknown actions must fall back to the raw view, never a partial story.
     expect(describeV4UnlockData("0xdead")).toBeNull();
   });
