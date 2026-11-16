@@ -106,7 +106,6 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
       (await mapConcurrentChecks(identities, readIndexedPendingRouterCalls)).flat(),
     refetchInterval: 30_000,
     staleTime: 10_000,
-    retry: 1,
   });
   const query = useQuery({
     queryKey: [...queryKey, "verification", inventory.data],

@@ -21,7 +21,6 @@ export function useBendystrawQuery<TResult, TVariables extends Record<string, un
     queryFn: () => queryBendystrawFromBrowser(operation, variables, options.chainId),
     enabled: options.enabled ?? true,
     refetchInterval: options.pollInterval || false,
-    retry: 2,
     staleTime: options.pollInterval
       ? Math.min(options.pollInterval, bendystrawCacheTtl("live"))
       : bendystrawCacheTtl("standard"),

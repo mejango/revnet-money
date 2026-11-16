@@ -149,6 +149,20 @@ describe("Bendystraw proxy failures", () => {
     },
   );
 
+  it("passes a rate limit on as 429 with the indexer's wait", async () => {
+    mocks.queryBendystraw.mockRejectedValue(
+      Object.assign(new BendystrawRequestError("Bendystraw request failed (429)", 429), {
+        retryAfter: "7",
+      }),
+    );
+
+    const response = await relay();
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("7");
+    await expect(response.json()).resolves.toEqual({ error: "Bendystraw is busy" });
+  });
+
   it("logs a cause on one line, without the control characters a terminal or a log viewer would act on", async () => {
     // A line break could forge a log line, ESC starts a terminal sequence, and NUL cuts a line in some viewers. U+0085 (NEL), U+009B (CSI) and DEL are controls that `\s` does not match.
     mocks.queryBendystraw.mockRejectedValue(

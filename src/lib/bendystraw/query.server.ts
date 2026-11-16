@@ -34,17 +34,33 @@ export async function queryBendystraw<TResult, TVariables extends Record<string,
   }
   const documentContract = compileBendystrawOperation(registered.query);
 
-  return requestBendystraw<TResult, TVariables>(
-    configuredGraphqlUrl(chainId),
-    registered.query,
-    variables,
-    {
-      fetch: (input, init) => fetch(input, { ...init, cache: "no-store" }),
-      operationName: documentContract.operationName ?? registered.operationName,
-      validateData: (value) =>
-        documentContract.validateData(value) && operation.validateData(value),
-      validateVariables: (value) =>
-        documentContract.validateVariables(value) && operation.validateVariables(value),
-    },
-  );
+  // Whether the indexer's last answer was a rate limit, and the wait it named in whole seconds,
+  // for the relay to pass on. The SDK reports a 429 without a JSON body as a bad response.
+  let limited = false;
+  let retryAfter: string | undefined;
+  try {
+    return await requestBendystraw<TResult, TVariables>(
+      configuredGraphqlUrl(chainId),
+      registered.query,
+      variables,
+      {
+        fetch: async (input, init) => {
+          const response = await fetch(input, { ...init, cache: "no-store" });
+          limited = response.status === 429;
+          const seconds = limited ? response.headers.get("retry-after") : null;
+          retryAfter = seconds && /^\d{1,5}$/u.test(seconds) ? seconds : undefined;
+          return response;
+        },
+        operationName: documentContract.operationName ?? registered.operationName,
+        validateData: (value) =>
+          documentContract.validateData(value) && operation.validateData(value),
+        validateVariables: (value) =>
+          documentContract.validateVariables(value) && operation.validateVariables(value),
+      },
+    );
+  } catch (error) {
+    if (limited && error instanceof BendystrawError)
+      throw Object.assign(new BendystrawError(error.message, 429), { retryAfter });
+    throw error;
+  }
 }

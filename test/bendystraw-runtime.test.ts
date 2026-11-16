@@ -1,4 +1,5 @@
-import { bendystrawNetworkFor } from "@/lib/bendystraw/client";
+import { bendystrawNetworkFor, retryUnlessProxied } from "@/lib/bendystraw/client";
+import { BendystrawRequestError } from "@bananapus/nana-sdk-core";
 import { describe, expect, it } from "vitest";
 
 describe("shared Bendystraw runtime policy", () => {
@@ -18,5 +19,13 @@ describe("shared Bendystraw runtime policy", () => {
     expect(() => bendystrawNetworkFor({ where: { chainId: 999_999 } })).toThrow(
       "Unsupported Bendystraw chain ID",
     );
+  });
+
+  it("never retries an answer from the proxy, and retries anything else once", () => {
+    expect(retryUnlessProxied(0, new BendystrawRequestError("Bendystraw is busy", 429))).toBe(
+      false,
+    );
+    expect(retryUnlessProxied(0, new Error("network"))).toBe(true);
+    expect(retryUnlessProxied(1, new Error("network"))).toBe(false);
   });
 });

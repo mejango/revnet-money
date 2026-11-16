@@ -66,7 +66,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ net
       },
     );
   } catch (error) {
-    // The cause is logged, on one line, and never sent: the answer is one of three messages
+    // The cause is logged, on one line, and never sent: the answer is one of four messages
     // whatever failed. Control characters go too, so an indexer's text cannot start a terminal
     // sequence or forge a log line.
     console.error("Bendystraw relay failed:", String(error).replace(/[\p{Cc}\s]+/gu, " "));
@@ -76,7 +76,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ net
         : (error as { name?: string }).name === "TimeoutError"
           ? 504
           : 502;
-    const clientStatus = status >= 500 ? status : 400;
+    // A rate limit stays a rate limit, with the indexer's wait, so a browser backs off instead
+    // of reading it as a bad request.
+    const clientStatus = status >= 500 || status === 429 ? status : 400;
+    const retryAfter = (error as { retryAfter?: string }).retryAfter;
     return Response.json(
       {
         error:
@@ -84,9 +87,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ net
             ? "Bendystraw timed out"
             : clientStatus >= 500
               ? "Bendystraw unavailable"
-              : "invalid operation request",
+              : clientStatus === 429
+                ? "Bendystraw is busy"
+                : "invalid operation request",
       },
-      { status: clientStatus },
+      {
+        status: clientStatus,
+        headers: clientStatus === 429 && retryAfter ? { "retry-after": retryAfter } : undefined,
+      },
     );
   }
 }
