@@ -26,7 +26,7 @@ import { fetchAmmStates, type PoolSnapshot } from "./lib";
  */
 
 const DAY = 86_400;
-const PRICE_REFRESH_MS = 15_000;
+const PRICE_REFRESH_MS = 30_000;
 
 const RANGES = [
   { label: "1D", seconds: DAY },
@@ -74,7 +74,6 @@ function PoolChart({
       staleTime: 60_000,
       retry: 1,
       refetchInterval: PRICE_REFRESH_MS,
-      refetchOnWindowFocus: true,
       queryFn: () =>
         getMarketPriceHistory({
           projectId: projectId.toString(),
