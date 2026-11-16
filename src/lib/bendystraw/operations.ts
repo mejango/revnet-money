@@ -518,15 +518,35 @@ export const ShieldGroupOperation = operation<ShieldGroupQuery, ShieldGroupQuery
   hasRoot("suckerGroup", "nullable-object"),
 );
 
+/** One destination project: its own AND, since an OR clause of several fields matches any one. */
+export type RouterPendingProjectFilter = { AND: [{ chainId: number }, { projectId: number }] };
+const isRouterPendingProject = (value: unknown): boolean => {
+  if (!isObject(value) || Object.keys(value).length !== 1 || !Array.isArray(value.AND))
+    return false;
+  const [chain, project, ...rest] = value.AND as unknown[];
+  return (
+    rest.length === 0 &&
+    isObject(chain) &&
+    isObject(project) &&
+    Object.keys(chain).length === 1 &&
+    Object.keys(project).length === 1 &&
+    isInteger(chain.chainId) &&
+    isInteger(project.projectId)
+  );
+};
+const listOf =
+  (item: (value: unknown) => boolean) =>
+  (value: unknown): boolean =>
+    Array.isArray(value) && value.length > 0 && value.every(item);
+
 export const RouterPendingCallsOperation = operation<
   { routerPendingCalls: { items: IndexedRouterPendingCall[]; totalCount: number } },
-  { chainId: number; projectId: number; gateway: string; limit: number; offset: number }
+  { projects: RouterPendingProjectFilter[]; gateways: string[]; limit: number; offset: number }
 >(
-  "router-pending-calls.v1",
+  "router-pending-calls.v2",
   variablesWith({
-    chainId: isInteger,
-    projectId: isInteger,
-    gateway: isString,
+    projects: listOf(isRouterPendingProject),
+    gateways: listOf(isString),
     limit: positiveLimit,
     offset,
   }),

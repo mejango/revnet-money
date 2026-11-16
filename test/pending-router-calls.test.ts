@@ -111,29 +111,42 @@ beforeEach(() => {
 });
 
 describe("original pending router calls", () => {
+  const projectsOf = (variables: {
+    projects: { AND: [{ chainId: number }, { projectId: number }] }[];
+  }) =>
+    variables.projects.map(({ AND: [chain, project] }) => `${chain.chainId}:${project.projectId}`);
+  /** Answers as the index does: rows of a listed project at a listed gateway. */
+  const indexOf = (rows: IndexedRouterPendingCall[]) =>
+    mocks.query.mockImplementation(async (_operation, variables) => {
+      const items = rows.filter(
+        (payment) =>
+          projectsOf(variables).includes(`${payment.chainId}:${payment.projectId}`) &&
+          variables.gateways.includes(payment.gateway),
+      );
+      return { routerPendingCalls: { items, totalCount: items.length } };
+    });
+
   it("lists incoming payments on destination 1, never on their source 6", async () => {
     const incoming = [
       { ...item, sourceProjectId: 6 },
       { ...item, sourceProjectId: 9, pendingCallId: `0x${"2".repeat(64)}` },
     ];
-    mocks.query.mockImplementation(async (_operation, variables) => {
-      const items = incoming.filter(
-        (payment) =>
-          payment.projectId === variables.projectId && payment.gateway === variables.gateway,
-      );
-      return { routerPendingCalls: { items, totalCount: items.length } };
-    });
-    expect(await readIndexedPendingRouterCalls({ chainId: 1, projectId: 1, version: 6 })).toEqual(
+    indexOf(incoming);
+    expect(await readIndexedPendingRouterCalls([{ chainId: 1, projectId: 1, version: 6 }])).toEqual(
       incoming,
     );
-    expect(await readIndexedPendingRouterCalls({ chainId: 1, projectId: 6, version: 6 })).toEqual(
+    expect(await readIndexedPendingRouterCalls([{ chainId: 1, projectId: 6, version: 6 }])).toEqual(
       [],
     );
     const query = BENDYSTRAW_QUERY_REGISTRY[RouterPendingCallsOperation.id].query;
-    expect(query).toContain("projectId: $projectId");
+    // Each condition stands alone under AND: an OR clause of several fields matches any of them.
+    expect(query).toContain(
+      "where: { AND: [{ OR: $projects }, { gateway_in: $gateways }, { version: 6 }, { status_in: [queued, retried] }] }",
+    );
     expect(query).not.toContain("sourceProjectId:");
-    expect(mocks.query.mock.calls[0][1]).toMatchObject({ chainId: 1, projectId: 1 });
-    expect(mocks.query.mock.calls[0][1]).not.toHaveProperty("sourceProjectId");
+    expect(mocks.query.mock.calls[0][1].projects).toEqual([
+      { AND: [{ chainId: 1 }, { projectId: 1 }] },
+    ]);
   });
 
   it("rejects an outgoing payment even when its source matches the viewed project", async () => {
@@ -141,34 +154,87 @@ describe("original pending router calls", () => {
       routerPendingCalls: { items: [{ ...item, sourceProjectId: 6 }], totalCount: 1 },
     });
     await expect(
-      readIndexedPendingRouterCalls({ chainId: 1, projectId: 6, version: 6 }),
+      readIndexedPendingRouterCalls([{ chainId: 1, projectId: 6, version: 6 }]),
     ).rejects.toThrow("inconsistent project");
   });
 
-  it("paginates each recorded gateway independently when generations reuse a pending ID", async () => {
+  it("reads every chain and gateway generation of a project in one query", async () => {
     const original = rollout.rolloutChain(1)!;
     const previous = "0x0000000000000000000000000000000000000099";
-    vi.spyOn(rollout, "rolloutChain").mockReturnValue({
-      ...original,
-      history: { ...original.history, JBRouterTerminalGateway: { previous, v1: null } },
-    });
-    mocks.query.mockImplementation(async (_operation, variables) => ({
-      routerPendingCalls: {
-        items: [{ ...item, gateway: variables.gateway }],
-        totalCount: 1,
+    const base = "0x00000000000000000000000000000000000000ba";
+    vi.spyOn(rollout, "rolloutChain").mockImplementation((chainId): typeof original =>
+      chainId === 1
+        ? {
+            ...original,
+            history: { ...original.history, JBRouterTerminalGateway: { previous, v1: null } },
+          }
+        : {
+            ...original,
+            contracts: { ...original.contracts, JBRouterTerminalGateway: base },
+            history: { ...original.history, JBRouterTerminalGateway: {} },
+          },
+    );
+    // Generations reuse a pending ID, and the index answers in an order of its own.
+    indexOf([
+      { ...item, chainId: 8453, projectId: 3, gateway: base },
+      { ...item, gateway: previous },
+      item,
+    ]);
+
+    const rows = await readIndexedPendingRouterCalls([
+      { chainId: 1, projectId: 1, version: 6 },
+      { chainId: 8453, projectId: 3, version: 6 },
+      { chainId: 10, projectId: 1, version: 5 },
+    ]);
+
+    expect(mocks.query).toHaveBeenCalledExactlyOnceWith(
+      RouterPendingCallsOperation,
+      {
+        projects: [
+          { AND: [{ chainId: 1 }, { projectId: 1 }] },
+          { AND: [{ chainId: 8453 }, { projectId: 3 }] },
+        ],
+        gateways: [gateway, previous, base],
+        limit: 100,
+        offset: 0,
       },
-    }));
-    const rows = await readIndexedPendingRouterCalls({ chainId: 1, projectId: 1, version: 6 });
-    expect(rows).toHaveLength(2);
-    expect(new Set(rows.map((row) => row.gateway))).toEqual(new Set([gateway, previous]));
-    expect(mocks.query.mock.calls.every((args) => args[1].offset === 0)).toBe(true);
+      1,
+    );
+    // By project as given, then gateway generation with the current one first.
+    expect(rows.map((row) => [row.chainId, row.gateway])).toEqual([
+      [1, gateway],
+      [1, previous],
+      [8453, base],
+    ]);
   });
-  it("loads every destination-project page, rejects truncation and cross-project results", async () => {
+
+  it("rejects a row at another chain's gateway, which the shared gateway list alone would admit", async () => {
+    const original = rollout.rolloutChain(1)!;
+    const base = "0x00000000000000000000000000000000000000ba";
+    vi.spyOn(rollout, "rolloutChain").mockImplementation((chainId): typeof original =>
+      chainId === 1
+        ? original
+        : { ...original, contracts: { ...original.contracts, JBRouterTerminalGateway: base } },
+    );
+    mocks.query.mockResolvedValue({
+      routerPendingCalls: { items: [{ ...item, gateway: base }], totalCount: 1 },
+    });
+
+    await expect(
+      readIndexedPendingRouterCalls([
+        { chainId: 1, projectId: 1, version: 6 },
+        { chainId: 8453, projectId: 1, version: 6 },
+      ]),
+    ).rejects.toThrow("inconsistent project");
+  });
+
+  it("loads every destination-project page, rejects truncation, repeats and cross-project results", async () => {
     const original = rollout.rolloutChain(1)!;
     vi.spyOn(rollout, "rolloutChain").mockReturnValue({
       ...original,
       history: { ...original.history, JBRouterTerminalGateway: {} },
     });
+    const project = [{ chainId: 1, projectId: 1, version: 6 }];
     mocks.query
       .mockResolvedValueOnce({ routerPendingCalls: { items: [item], totalCount: 2 } })
       .mockResolvedValueOnce({
@@ -177,26 +243,23 @@ describe("original pending router calls", () => {
           totalCount: 2,
         },
       });
-    expect(
-      await readIndexedPendingRouterCalls({ chainId: 1, projectId: 1, version: 6 }),
-    ).toHaveLength(2);
+    expect(await readIndexedPendingRouterCalls(project)).toHaveLength(2);
     expect(mocks.query.mock.calls[1][1]).toEqual({
-      chainId: 1,
-      projectId: 1,
-      gateway,
+      projects: [{ AND: [{ chainId: 1 }, { projectId: 1 }] }],
+      gateways: [gateway],
       limit: 100,
       offset: 1,
     });
     mocks.query.mockResolvedValueOnce({ routerPendingCalls: { items: [], totalCount: 1 } });
-    await expect(
-      readIndexedPendingRouterCalls({ chainId: 1, projectId: 1, version: 6 }),
-    ).rejects.toThrow("changed while loading");
+    await expect(readIndexedPendingRouterCalls(project)).rejects.toThrow("changed while loading");
     mocks.query.mockResolvedValueOnce({
       routerPendingCalls: { items: [{ ...item, projectId: 8 }], totalCount: 1 },
     });
-    await expect(
-      readIndexedPendingRouterCalls({ chainId: 1, projectId: 1, version: 6 }),
-    ).rejects.toThrow("inconsistent project");
+    await expect(readIndexedPendingRouterCalls(project)).rejects.toThrow("inconsistent project");
+    mocks.query
+      .mockResolvedValueOnce({ routerPendingCalls: { items: [item], totalCount: 2 } })
+      .mockResolvedValueOnce({ routerPendingCalls: { items: [item], totalCount: 2 } });
+    await expect(readIndexedPendingRouterCalls(project)).rejects.toThrow("inconsistent project");
   });
 
   it("rejects modified memo or beneficiary before any onchain action", async () => {
@@ -332,6 +395,47 @@ describe("original pending router calls", () => {
       );
     },
   );
+
+  it("shares one block per pass and a gateway's retry delay across passes, never a payment's own state", async () => {
+    const rpc = client();
+    const other = { ...item, pendingCallId: `0x${"2".repeat(64)}` as Hex };
+    const reads = (name: string) =>
+      vi.mocked(rpc.readContract).mock.calls.filter(([read]) => read.functionName === name).length;
+    const fixed = new Map<string, Promise<unknown>>();
+
+    const pass = { pass: new Map<string, Promise<unknown>>(), fixed };
+    await Promise.all([
+      readPendingRouterPayment(rpc, item, pass),
+      readPendingRouterPayment(rpc, other, pass),
+    ]);
+    expect(rpc.getBlock).toHaveBeenCalledTimes(1);
+    expect(reads("RETRY_DELAY")).toBe(1);
+    expect(reads("maximumQualifiedCallGas")).toBe(1);
+    expect(reads("pendingCallCommitmentOf")).toBe(2);
+    expect(reads("pendingCallFailureOf")).toBe(2);
+
+    // The next pass reads the block and the live gas ceiling again, the constant never.
+    await readPendingRouterPayment(rpc, item, { pass: new Map(), fixed });
+    expect(rpc.getBlock).toHaveBeenCalledTimes(2);
+    expect(reads("maximumQualifiedCallGas")).toBe(2);
+    expect(reads("RETRY_DELAY")).toBe(1);
+
+    // A send prepares without a cache: every read is its own.
+    await preparePendingRouterPayment(rpc, item, account);
+    expect(rpc.getBlock).toHaveBeenCalledTimes(3);
+    expect(reads("RETRY_DELAY")).toBe(2);
+  });
+
+  it("does not keep a shared read that failed", async () => {
+    const rpc = client();
+    vi.mocked(rpc.getBlock).mockRejectedValueOnce(new Error("node down"));
+    const cache = { pass: new Map<string, Promise<unknown>>(), fixed: new Map() };
+
+    await expect(readPendingRouterPayment(rpc, item, cache)).rejects.toThrow("node down");
+    await expect(readPendingRouterPayment(rpc, item, cache)).resolves.toMatchObject({
+      ready: true,
+    });
+  });
 
   it("uses chain time for cooldown and freezes both live commitment and failure reads", async () => {
     const rpc = client({ count: 1, timestamp: 86_499n });

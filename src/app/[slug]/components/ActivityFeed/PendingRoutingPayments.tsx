@@ -20,6 +20,7 @@ import {
   readIndexedPendingRouterCalls,
   readPendingRouterPayment,
   type PendingProject,
+  type PendingReadCache,
   type PendingRouterPayment,
 } from "@/lib/pending-router-calls";
 import { safeQueueUrl } from "@/lib/safe-service-config";
@@ -39,6 +40,9 @@ const routingCallSteps = {
   reverted: { status: "Reverted", state: "failed" },
   skipped: { status: "Already handled", state: "complete" },
 } as const;
+
+/** Gateway constants and token labels, kept across display passes for the life of the page. */
+const fixedPendingReads: PendingReadCache["fixed"] = new Map();
 
 const PENDING_LINE = "Some payments are still pending. Try again to check them and continue.";
 
@@ -102,29 +106,32 @@ export function PendingRoutingPayments({ projects }: { projects: PendingProject[
   const inventory = useQuery({
     queryKey: [...queryKey, "inventory"],
     enabled: hydrated && identities.length > 0,
-    queryFn: async () =>
-      (await mapConcurrentChecks(identities, readIndexedPendingRouterCalls)).flat(),
+    queryFn: () => readIndexedPendingRouterCalls(identities),
     refetchInterval: 30_000,
     staleTime: 10_000,
   });
   const query = useQuery({
     queryKey: [...queryKey, "verification", inventory.data],
     enabled: hydrated && Boolean(inventory.data),
-    queryFn: async () =>
-      mapConcurrentChecks(inventory.data ?? [], async (indexed) => {
+    queryFn: async () => {
+      // One block per chain for the whole pass, not one per payment.
+      const cache: PendingReadCache = { pass: new Map(), fixed: fixedPendingReads };
+      return mapConcurrentChecks(inventory.data ?? [], async (indexed) => {
         try {
           return {
             indexed,
             payment: await readPendingRouterPayment(
               getViemPublicClient(indexed.chainId as JBChainId),
               indexed,
+              cache,
             ),
             error: null,
           };
         } catch (cause) {
           return { indexed, payment: null, error: formatWalletError(cause) };
         }
-      }),
+      });
+    },
     refetchInterval: 30_000,
     staleTime: 10_000,
     retry: 1,

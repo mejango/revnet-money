@@ -76,6 +76,10 @@ const row = (id: string, ready = true) => ({
     pendingCallId: id,
   },
 });
+/** The inventory is one read for every project: each project's rows, in the projects' order. */
+const perProject =
+  (rows: (project: { chainId: number }) => unknown[]) => async (projects: { chainId: number }[]) =>
+    projects.flatMap(rows);
 function setup(expanded = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const rendered = render(
@@ -92,9 +96,7 @@ beforeEach(() => {
   mocks.address = "0x0000000000000000000000000000000000000001";
   mocks.saved.mockReturnValue(undefined);
   mocks.recheck.mockImplementation(async () => mocks.saved());
-  mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-    project.chainId === 1 ? [row("one").indexed] : [],
-  );
+  mocks.indexed.mockImplementation(async () => [row("one").indexed]);
   mocks.payment.mockImplementation(async (_client, indexed) => row(indexed.pendingCallId));
   mocks.prepare.mockImplementation(async (_client, indexed) => ({
     payment: row(indexed.pendingCallId),
@@ -130,10 +132,12 @@ describe("payment recovery", () => {
         resolve = finish;
       }),
     );
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1
-        ? [{ ...row("one").indexed, amount: "42500018", token: mocks.address }]
-        : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1
+          ? [{ ...row("one").indexed, amount: "42500018", token: mocks.address }]
+          : [],
+      ),
     );
     const rendered = setup(false);
     const summary = await screen.findByText("1 payment needs processing.");
@@ -212,7 +216,7 @@ describe("payment recovery", () => {
   it("renders nothing when all indexed destination projects have no pending calls", async () => {
     mocks.indexed.mockResolvedValue([]);
     setup();
-    await waitFor(() => expect(mocks.indexed).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mocks.indexed).toHaveBeenCalledExactlyOnceWith(projects));
     await waitFor(() => expect(screen.queryByText("payments need processing.")).toBeNull());
   });
 
@@ -235,8 +239,12 @@ describe("payment recovery", () => {
       total: 3,
       refreshable: true,
     });
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1 ? [row("one").indexed, row("waiting").indexed] : [row("base").indexed],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1
+          ? [row("one").indexed, row("waiting").indexed]
+          : [row("base").indexed],
+      ),
     );
     mocks.payment.mockImplementation(async (_client, indexed) =>
       row(indexed.pendingCallId, indexed.pendingCallId !== "waiting"),
@@ -263,8 +271,10 @@ describe("payment recovery", () => {
       refreshable: true,
       recoveryReason: "A wallet submission has an unknown result.",
     });
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+      ),
     );
     const rendered = setup();
     await screen.findByText("14 payments ready to retry.");
@@ -308,8 +318,10 @@ describe("payment recovery", () => {
       total: 3,
       refreshable: true,
     });
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+      ),
     );
     mocks.batch.mockImplementationOnce(
       ({ signal }: { signal: AbortSignal }) =>
@@ -340,8 +352,10 @@ describe("payment recovery", () => {
       total: 3,
       refreshable: true,
     });
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+      ),
     );
     mocks.batch.mockImplementationOnce(async () => {
       mocks.saved.mockReturnValue({
@@ -398,8 +412,10 @@ describe("payment recovery", () => {
       total: 3,
       refreshable: false,
     });
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+      ),
     );
     setup();
     await screen.findByText("14 payments ready to retry.");
@@ -415,8 +431,10 @@ describe("payment recovery", () => {
   });
 
   it("keeps the batch action above the payment list", async () => {
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1 ? [row("one").indexed, row("two").indexed] : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1 ? [row("one").indexed, row("two").indexed] : [],
+      ),
     );
     setup();
     const batch = await screen.findByRole("button", { name: "Retry all payments" });
@@ -454,14 +472,16 @@ describe("payment recovery", () => {
       finish = resolve;
     });
     mocks.saved.mockReturnValue({ scope: "legacy", completed: 0, total: 3 });
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1
-        ? Array.from({ length: 7 }, (_, i) => ({
-            ...row(`item-${i}`).indexed,
-            amount: "100",
-            token: mocks.address,
-          }))
-        : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1
+          ? Array.from({ length: 7 }, (_, i) => ({
+              ...row(`item-${i}`).indexed,
+              amount: "100",
+              token: mocks.address,
+            }))
+          : [],
+      ),
     );
     mocks.payment.mockImplementation(async (_client, indexed) => {
       await check;
@@ -484,10 +504,12 @@ describe("payment recovery", () => {
   });
 
   it("keeps discovered payments visible when a chain check fails, excluding resolved rows", async () => {
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1
-        ? [row("ok").indexed, row("failed").indexed, row("resolved").indexed]
-        : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1
+          ? [row("ok").indexed, row("failed").indexed, row("resolved").indexed]
+          : [],
+      ),
     );
     mocks.payment.mockImplementation(async (_client, indexed) => {
       if (indexed.pendingCallId === "failed") throw new Error("RPC unavailable");
@@ -509,8 +531,10 @@ describe("payment recovery", () => {
       total: 3,
       replaceableDraft: true,
     });
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1 ? Array.from({ length: 8 }, (_, i) => row(`item-${i}`).indexed) : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1 ? Array.from({ length: 8 }, (_, i) => row(`item-${i}`).indexed) : [],
+      ),
     );
     const rendered = setup();
     const release = holdPreparation();
@@ -605,8 +629,8 @@ describe("payment recovery", () => {
       mocks.saved.mockReturnValue(checked);
       return checked;
     });
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1 ? [row("a").indexed, row("b").indexed] : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) => (project.chainId === 1 ? [row("a").indexed, row("b").indexed] : [])),
     );
     setup();
     expect(await screen.findByRole("button", { name: "Retry all payments" })).toBeEnabled();
@@ -762,8 +786,10 @@ describe("payment recovery", () => {
 
   it("shows passive progress for all 14 payments and restores the action after a timeout", async () => {
     let fail!: (cause: Error) => void;
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+      ),
     );
     mocks.batch.mockReturnValueOnce(new Promise((_resolve, reject) => (fail = reject)));
     setup();
@@ -876,8 +902,10 @@ describe("payment recovery", () => {
 
   it("shows each of 14 independently checked results in the modal through completion", async () => {
     let finish!: (result: unknown) => void;
-    mocks.indexed.mockImplementation(async (project: { chainId: number }) =>
-      project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+    mocks.indexed.mockImplementation(
+      perProject((project) =>
+        project.chainId === 1 ? Array.from({ length: 14 }, (_, i) => row(`item-${i}`).indexed) : [],
+      ),
     );
     mocks.prepare.mockImplementation(async (_client, indexed) => ({
       payment: {
