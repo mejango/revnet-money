@@ -385,7 +385,7 @@ export function useCompleteActivityEvents(
     queryKey: ["complete-activity-events", variables, chainId],
     queryFn: () => completeActivityEvents(variables, chainId),
     enabled,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });
 }
 
@@ -394,7 +394,7 @@ export function useCompleteAccountActivity(address: string, enabled = true) {
     queryKey: ["complete-account-activity", address],
     queryFn: () => completeAccountActivity(address),
     enabled,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });
 }
 
@@ -451,7 +451,7 @@ export function useCompleteParticipants(where: BendystrawFilter, chainId: number
     meta: PERSIST,
     queryFn: () => completeParticipants(where, chainId),
     enabled,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
   });
 }
 

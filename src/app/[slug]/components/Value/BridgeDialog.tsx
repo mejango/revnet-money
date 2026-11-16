@@ -186,7 +186,7 @@ export function BridgeDialog(props: PropsWithChildren<Props>) {
       });
     },
     staleTime: 10_000,
-    refetchInterval: 15_000,
+    refetchInterval: 30_000,
     retry: 1,
   });
 
