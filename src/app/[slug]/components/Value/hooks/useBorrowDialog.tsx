@@ -433,7 +433,6 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   const send = async (runner: ReviewedAction, action: ReviewedActionInput) => {
     const result = await runner.run(action);
     if (result?.status === "failed") throw new ReviewRefusal(failedLine(result));
-    if (result?.status === "done") refreshLoansAfterWrite(queryClient);
     return result;
   };
 
@@ -663,6 +662,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         calls: [...(grant ? [grant] : []), grant ? { ...loan, dependsOnPrior: true } : loan],
       });
       if (!result) return "closed" as const;
+      if (result.status === "done") refreshLoansAfterWrite(queryClient);
       if (result.status === "proposed")
         setAttempt((now) =>
           now.status === "sending" && now.runner === kind ? { ...now, proposed: true } : now,
@@ -675,7 +675,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       }
       return result.status;
     },
-    [address, borrow, reallocation, toast],
+    [address, borrow, queryClient, reallocation, toast],
   );
 
   const handleBorrow = useCallback(

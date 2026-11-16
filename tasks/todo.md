@@ -2,14 +2,18 @@
 
 jango's rule: a page loads what it needs once, then refreshes about every 30 seconds or on a distinct user action; faster only for a short window after the user sends a transaction. Bendystraw allows 100 requests per minute per IP and every browser query shares the server's budget.
 
-- [ ] N1 Price chart: server result shared for 30 s, client refresh 30 s, `tokenOf` kept once set.
-- [ ] N2 Loans: 30 s, a short fast window after a borrow or repay confirms; project and sucker group load once.
-- [ ] N3 Activity polls the newest page and merges by id; holders poll one page and re-page the tail only on a change or after five minutes.
-- [ ] N4 Pending routing: one inventory query for all chains and gateways; verification reads one block per chain per pass and keeps gateway constants and token labels.
-- [ ] N5 No client retry of a proxied Bendystraw failure; the proxy answers 429 as 429 with Retry-After.
-- [ ] N6 Proxy shares identical display reads for 5 s (allow-list: activity, participants).
-- [ ] N7 Project context: protocol reads grouped with `useReadContracts`; ERC-20 reads stay separate; no global batch.
-- [ ] N8 Market chart 30 s without focus refetch; base token and borrow dialog load the project once.
+- [x] N1 Price chart: the server action's answer is shared for 30 s (`sharedDisplayRead`, in memory, never serving a stale answer), an answer missing a source is not kept, the client refreshes every 30 s. The `tokenOf` read is removed instead of cached: its result was never used.
+- [x] N2 Loans: 30 s, and every 3 s for the 30 s after a confirmed borrow, reallocation or repayment (`refreshLoansAfterWrite`); project and sucker group load once.
+- [x] N3 Activity polls the newest page and merges by id, paging all again on a gap or a count mismatch. Holders poll the first page; a longer list keeps its rows while the total and first page are unchanged, for at most five minutes.
+- [x] N4 Pending routing: one inventory query for all chains and gateway generations (`router-pending-calls.v2`, checked against both live indexers); verification reads one block per chain per pass and keeps the retry delay and token labels. A send still reads everything itself.
+- [x] N5 No client retry of a proxied Bendystraw failure (`retryUnlessProxied`); the proxy answers a rate limit as 429 with Retry-After.
+- [x] N6 The proxy shares identical activity and participant reads for 5 s; every other operation always reaches the indexer.
+- [x] N7 The project context drops four controller constants nobody read. No global multicall batch and no grouping: the remaining protocol reads depend on each other or belong to a third-party token.
+- [x] N8 Market chart 30 s without focus refetch; base token and borrow dialog load the project once.
+
+## Review
+- Gate: `test/poll-pace.test.ts` refuses any fixed `refetchInterval` or `pollInterval` under 30 s in `src`.
+- Not done: the Market chart's server action still pages all swaps on each 30 s poll (one line with `sharedDisplayRead` if wanted); explicit `retry: 1` on other queries is unchanged; live request counts after the change are not measured.
 
 ## Plan refinement
 
