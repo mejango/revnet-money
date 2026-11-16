@@ -9,7 +9,7 @@ vi.mock("@/lib/bendystraw/query.server", () => ({
 }));
 
 import { POST as proxyBendystraw } from "@/app/api/bendystraw/[net]/query/route";
-import { ProjectOperation } from "@/lib/bendystraw/operations";
+import { ActivityEventsOperation, ProjectOperation } from "@/lib/bendystraw/operations";
 
 const SITE = "https://app.revnet.example";
 
@@ -93,6 +93,53 @@ describe("Bendystraw proxy boundary", () => {
       expect.objectContaining({ id: ProjectOperation.id }),
       variables,
     );
+  });
+});
+
+describe("Bendystraw proxy shared display reads", () => {
+  const post = (operation: string, variables: Record<string, unknown>) =>
+    proxyBendystraw(
+      jsonRequest(`${SITE}/api/bendystraw/mainnet/query`, JSON.stringify({ operation, variables })),
+      { params: Promise.resolve({ net: "mainnet" }) },
+    );
+  const feed = (suckerGroupId: string) => ({
+    where: { suckerGroupId },
+    orderBy: "timestamp",
+    orderDirection: "desc",
+    limit: 250,
+    offset: 0,
+  });
+
+  it("answers identical activity requests from one indexer read, and other variables from their own", async () => {
+    mocks.queryBendystraw.mockResolvedValue({ activityEvents: { items: [] } });
+
+    const answers = await Promise.all([
+      post(ActivityEventsOperation.id, feed("shared-a")),
+      post(ActivityEventsOperation.id, feed("shared-a")),
+    ]);
+    await post(ActivityEventsOperation.id, feed("shared-a"));
+    expect(answers.map((answer) => answer.status)).toEqual([200, 200]);
+    expect(mocks.queryBendystraw).toHaveBeenCalledTimes(1);
+
+    await post(ActivityEventsOperation.id, feed("shared-b"));
+    expect(mocks.queryBendystraw).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not keep a failed read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.queryBendystraw.mockRejectedValueOnce(new BendystrawRequestError("down", 502));
+    expect((await post(ActivityEventsOperation.id, feed("shared-c"))).status).toBe(502);
+    mocks.queryBendystraw.mockResolvedValue({ activityEvents: { items: [] } });
+    expect((await post(ActivityEventsOperation.id, feed("shared-c"))).status).toBe(200);
+  });
+
+  it("always reaches the indexer for an operation outside the display list", async () => {
+    mocks.queryBendystraw.mockResolvedValue({ project: null });
+    const variables = { chainId: 1, projectId: 1, version: 6 };
+
+    await post(ProjectOperation.id, variables);
+    await post(ProjectOperation.id, variables);
+    expect(mocks.queryBendystraw).toHaveBeenCalledTimes(2);
   });
 });
 
