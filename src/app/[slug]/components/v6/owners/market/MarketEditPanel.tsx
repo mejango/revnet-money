@@ -23,6 +23,7 @@ import { useAccount, useConfig, usePublicClient } from "wagmi";
 import { chainName, fmtUnits } from "../settlement/lib";
 import {
   addsFunds,
+  liquidityShortfall,
   lpBandPrices,
   prepareMarketEdit,
   refreshPoolAndPosition,
@@ -231,15 +232,14 @@ export function MarketEditPanel({
         throw new Error(gate.line ?? "Still confirming this project's chains onchain. Try again.");
       }
       const held = balances.data ?? (await balances.refetch()).data;
-      if (!held) throw new Error("Could not read your wallet balances.");
       // A re-fit pays in its whole cap and takes the rest back, so the wallet must hold the cap.
       const paysCap = plan.token?.kind === "move" || plan.pair?.kind === "move";
-      if ((paysCap ? plan.tokenFunding : plan.tokenFlow) > held.token) {
-        throw new Error(`That's more ${tokenSymbol} than your balance.`);
-      }
-      if ((paysCap ? plan.pairFunding : plan.pairFlow) > held.pair) {
-        throw new Error(`That's more ${pool.pair.symbol} than your balance.`);
-      }
+      const short = liquidityShortfall(plan, paysCap, held);
+      if (short === "unread") throw new Error("Could not read your wallet balances.");
+      if (short)
+        throw new Error(
+          `That's more ${short === "token" ? tokenSymbol : pool.pair.symbol} than your balance.`,
+        );
       const steps = await approvalStepsFor({
         publicClient: publicClient as PublicClient,
         chainId: state.chainId,
@@ -265,8 +265,8 @@ export function MarketEditPanel({
         account: address,
       });
       const tight = [
-        plan.tokenFunding > held.token ? tokenSymbol : null,
-        plan.pairFunding > held.pair ? pool.pair.symbol : null,
+        held && plan.tokenFunding > held.token ? tokenSymbol : null,
+        held && plan.pairFunding > held.pair ? pool.pair.symbol : null,
       ].filter((symbol): symbol is string => symbol != null);
       setStatus(
         tight.length

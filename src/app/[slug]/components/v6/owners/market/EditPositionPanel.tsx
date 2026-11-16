@@ -24,6 +24,7 @@ import { chainName, fmtUnits } from "../settlement/lib";
 import { describeEditLiquidityPlan } from "./formView";
 import {
   addsFunds,
+  liquidityShortfall,
   lpBandPrices,
   prepareEditLiquidity,
   refreshPoolAndPosition,
@@ -254,17 +255,13 @@ export function EditPositionPanel({
         throw new Error(gate.line ?? "Still confirming this project's chains onchain. Try again.");
       }
       const held = balances.data ?? (await balances.refetch()).data;
-      if (!held) throw new Error("Could not read your wallet balances.");
-      // Gate on what the pool actually pulls, not on the maxima: those carry
-      // 1% price headroom that only gets spent if the price moves. A move is
-      // the exception: it pays in its whole cap and takes the rest back.
-      const paysCap = plan.kind === "move";
-      if ((paysCap ? plan.tokenFunding : plan.tokenFlow) > held.token) {
-        throw new Error(`That's more ${tokenSymbol} than your balance.`);
-      }
-      if ((paysCap ? plan.pairFunding : plan.pairFlow) > held.pair) {
-        throw new Error(`That's more ${pool.pair.symbol} than your balance.`);
-      }
+      // A move pays in its whole cap and takes the rest back.
+      const short = liquidityShortfall(plan, plan.kind === "move", held);
+      if (short === "unread") throw new Error("Could not read your wallet balances.");
+      if (short)
+        throw new Error(
+          `That's more ${short === "token" ? tokenSymbol : pool.pair.symbol} than your balance.`,
+        );
       const approvals = await approvalStepsFor({
         publicClient: publicClient as PublicClient,
         chainId: state.chainId,
@@ -283,8 +280,8 @@ export function EditPositionPanel({
         account: address,
       });
       const tight = [
-        plan.tokenFunding > held.token ? tokenSymbol : null,
-        plan.pairFunding > held.pair ? pool.pair.symbol : null,
+        held && plan.tokenFunding > held.token ? tokenSymbol : null,
+        held && plan.pairFunding > held.pair ? pool.pair.symbol : null,
       ].filter((symbol): symbol is string => symbol != null);
       setStatus(
         tight.length
