@@ -20,11 +20,6 @@ import type { LoanTokenProject } from "@/lib/tokenUtils";
 import { formatSeconds } from "@/lib/utils";
 import { getRevnetLoanContract, JB_CHAINS, JBChainId } from "@bananapus/nana-sdk-core";
 
-// Constants for loan calculations and display
-const LOAN_CONSTANTS = {
-  POLL_INTERVAL: 3000, // Refresh every 3 seconds
-} as const;
-
 // Separate component for each loan row to avoid Rules of Hooks violation
 function LoanRow({
   loan,
@@ -213,7 +208,7 @@ export function LoanDetailsTable({
 }) {
   const currentChainId = useJBChainId();
 
-  // Get project data to find sucker group ID
+  // Get project data to find sucker group ID. The group and its tokens do not change: read once.
   const { data: projectData } = useBendystrawQuery(
     ProjectOperation,
     {
@@ -221,10 +216,7 @@ export function LoanDetailsTable({
       projectId: Number(revnetId),
       version: 6,
     },
-    {
-      enabled: !!currentChainId && !!revnetId,
-      pollInterval: 10000,
-    },
+    { enabled: !!currentChainId && !!revnetId },
   );
 
   const suckerGroupId = projectData?.project?.suckerGroupId;
@@ -235,22 +227,13 @@ export function LoanDetailsTable({
     {
       id: suckerGroupId ?? "",
     },
-    {
-      enabled: !!suckerGroupId,
-      pollInterval: 10000,
-      chainId: Number(currentChainId),
-    },
+    { enabled: !!suckerGroupId, chainId: Number(currentChainId) },
   );
 
   // Every loan the user owns, paged to completion: a single page would silently drop rows
   // for an account past the indexer's default page size, and the filter below would then
   // show an arbitrary subset of this revnet's loans as if it were all of them.
-  const { data: loans } = useCompleteLoansByAccount(
-    address,
-    6,
-    Number(currentChainId),
-    LOAN_CONSTANTS.POLL_INTERVAL,
-  );
+  const { data: loans } = useCompleteLoansByAccount(address, 6, Number(currentChainId));
 
   if (!loans) return null;
 

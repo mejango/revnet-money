@@ -43,7 +43,7 @@ import type {
   V6StoredAutoIssuancesQuery,
 } from "@/lib/bendystraw/types";
 import { PERSIST } from "@/lib/query-persist";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 
 const PAGE_SIZE = 250;
 
@@ -431,17 +431,36 @@ export function useCompleteLoans(refs: readonly VersionedProjectRef[], enabled =
   });
 }
 
+const LOANS_REFRESH_MS = 30_000;
+const LOANS_AFTER_WRITE_REFRESH_MS = 3_000;
+const LOANS_AFTER_WRITE_WINDOW_MS = 30_000;
+let loanWriteConfirmedAt = Number.NEGATIVE_INFINITY;
+
+/**
+ * A borrow, reallocation or repayment confirmed: the account's loans are read now, then every
+ * three seconds for thirty while the indexer catches up, then every thirty again.
+ */
+export function refreshLoansAfterWrite(client: QueryClient, now = Date.now()) {
+  loanWriteConfirmedAt = now;
+  void client.invalidateQueries({ queryKey: ["complete-loans-by-account"] });
+}
+
+export function loansRefreshInterval(now = Date.now()) {
+  return now - loanWriteConfirmedAt < LOANS_AFTER_WRITE_WINDOW_MS
+    ? LOANS_AFTER_WRITE_REFRESH_MS
+    : LOANS_REFRESH_MS;
+}
+
 export function useCompleteLoansByAccount(
   owner: string | undefined,
   version: number,
   chainId?: number,
-  pollInterval = 3_000,
 ) {
   return useQuery({
     queryKey: ["complete-loans-by-account", owner ?? null, version, chainId ?? null],
     queryFn: () => fetchLoansByAccount(owner!, version, chainId),
     enabled: !!owner,
-    refetchInterval: pollInterval,
+    refetchInterval: () => loansRefreshInterval(),
   });
 }
 

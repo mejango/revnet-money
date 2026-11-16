@@ -176,6 +176,8 @@ describe("a refinance whose permission a Safe executes after the run ended", () 
 
     // The permission now reads as granted, so the next review sends the refinance alone.
     mocks.hasPermissions.mockResolvedValue(true);
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    expect(invalidate).not.toHaveBeenCalled();
     reallocation.run.mockImplementationOnce(
       async (action: import("@bananapus/nana-sdk-core/review").ReviewedAction) => {
         expect(action.calls.map((call) => call.functionName)).toEqual([
@@ -191,6 +193,8 @@ describe("a refinance whose permission a Safe executes after the run ended", () 
     expect(reallocation.run).toHaveBeenCalledTimes(2);
     expect(borrow.run).not.toHaveBeenCalled();
     expect(result.current.borrowStatus).toBe("success");
+    // The confirmed loan write reads the account's loans again, without waiting for the poll.
+    expect(invalidate).toHaveBeenCalledExactlyOnceWith({ queryKey: ["complete-loans-by-account"] });
   });
 });
 

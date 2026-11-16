@@ -1,4 +1,9 @@
-import { fetchCompleteLoans, fetchLoansByAccount } from "@/hooks/useCompleteBendystrawLists";
+import {
+  fetchCompleteLoans,
+  fetchLoansByAccount,
+  loansRefreshInterval,
+  refreshLoansAfterWrite,
+} from "@/hooks/useCompleteBendystrawLists";
 import { queryBendystrawFromBrowser } from "@/lib/bendystraw/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -140,5 +145,21 @@ describe("fetchLoansByAccount", () => {
     query.mockResolvedValue({ loans: { totalCount: 260, items: [] } } as never);
 
     await expect(fetchLoansByAccount(OWNER, 6)).rejects.toThrow("before its reported total");
+  });
+});
+
+describe("loan refresh pace", () => {
+  it("refreshes every 30 s, and every 3 s only for the 30 s after a confirmed loan write", () => {
+    expect(loansRefreshInterval(1_000_000)).toBe(30_000);
+
+    const client = { invalidateQueries: vi.fn(async () => {}) };
+    refreshLoansAfterWrite(client as never, 1_000_000);
+
+    expect(client.invalidateQueries).toHaveBeenCalledExactlyOnceWith({
+      queryKey: ["complete-loans-by-account"],
+    });
+    expect(loansRefreshInterval(1_000_001)).toBe(3_000);
+    expect(loansRefreshInterval(1_029_999)).toBe(3_000);
+    expect(loansRefreshInterval(1_030_000)).toBe(30_000);
   });
 });
