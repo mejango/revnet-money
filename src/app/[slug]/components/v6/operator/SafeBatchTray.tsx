@@ -75,8 +75,8 @@ function useProposedBatch(
     queryKey: ["revnet-safe-batch-proposed", chainId, authority, key],
     // A chain without a Safe service has no queue to read; its batch is approved onchain.
     enabled: !!authority && !!key && hasSafeService(chainId),
-    staleTime: 15_000,
-    refetchInterval: 15_000,
+    staleTime: 30_000,
+    refetchInterval: 30_000,
     queryFn: async (): Promise<ProposedBatch | null> => {
       const client = publicClientFor(chainId as ChainProjectRow["chainId"]);
       const [identity, nonce] = await Promise.all([
@@ -249,6 +249,20 @@ export function SafeBatchTray({
                 Remove from the batch
               </button>
             </p>
+          ) : null}
+          {proposed ? (
+            // The review offers the Safe's nonces: one queued too late is proposed again earlier.
+            <ButtonWithWallet
+              className="mt-3"
+              size="sm"
+              variant="secondary"
+              targetChainId={source.chainId}
+              onClick={() => setDialog({ kind: "batch", chainId: source.chainId })}
+              onPointerEnter={() => void loadBatchDialog()}
+              onFocus={() => void loadBatchDialog()}
+            >
+              Propose at another nonce
+            </ButtonWithWallet>
           ) : (
             // The batch's confirm cannot connect a wallet, so this asks for one first.
             <ButtonWithWallet
