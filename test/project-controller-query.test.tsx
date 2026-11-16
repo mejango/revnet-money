@@ -10,16 +10,21 @@ vi.mock("@bananapus/nana-sdk-core", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@bananapus/nana-sdk-core")>()),
   getProjectMetadata: async () => null,
 }));
+/** Every contract function the provider has an enabled read for. */
+const reads = vi.hoisted(() => new Set<string>());
 vi.mock("wagmi", async (importOriginal) => {
   const wagmi = await importOriginal<typeof import("wagmi")>();
   return {
     ...wagmi,
     // Exercise the actual controller hook/cache/transport. Unrelated provider
     // reads are outside this freshness regression and need no network fixture.
-    useReadContract: (parameters: Parameters<typeof wagmi.useReadContract>[0]) =>
-      parameters?.functionName === "controllerOf"
+    useReadContract: (parameters: Parameters<typeof wagmi.useReadContract>[0]) => {
+      if (parameters?.address && parameters.query?.enabled !== false)
+        reads.add(String(parameters.functionName));
+      return parameters?.functionName === "controllerOf"
         ? wagmi.useReadContract(parameters)
-        : { data: undefined, isLoading: false, error: null, refetch: vi.fn() },
+        : { data: undefined, isLoading: false, error: null, refetch: vi.fn() };
+    },
   };
 });
 
@@ -69,4 +74,12 @@ it("reuses a controller for the app's 30-second window and discovers migration o
   render(view());
   expect(await screen.findByText(after)).toBeInTheDocument();
   expect(request).toHaveBeenCalledTimes(2);
+  // With the controller known, the provider reads only what a consumer uses: no controller
+  // constant (FUND_ACCESS_LIMITS, RULESETS, TOKENS, SPLITS) is read on a page load.
+  expect([...reads].sort()).toEqual([
+    "accountingContextsOf",
+    "controllerOf",
+    "currentRulesetOf",
+    "tokenOf",
+  ]);
 });
