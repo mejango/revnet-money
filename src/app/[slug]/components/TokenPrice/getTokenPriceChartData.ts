@@ -13,9 +13,9 @@ import {
 import { getCurrentCashOutTax } from "@/lib/cashOutTax";
 import { minimumCashOutPriceAtIssuancePrice } from "@/lib/minimumCashOutPrice";
 import { smoothPriceSeries } from "@/lib/priceSeries";
+import { sharedDisplayRead } from "@/lib/server/projectDisplayCache";
 import { getStartTimeForRange, getTimeRangeConfig, TimeRange } from "@/lib/timeRange";
-import { getTokenAddress } from "@/lib/token";
-import { JBChainId, NATIVE_TOKEN } from "@bananapus/nana-sdk-core";
+import { JBChainId } from "@bananapus/nana-sdk-core";
 import { calculateIssuancePriceHistory } from "./calculateIssuancePriceHistory";
 import { getFloorPriceHistory } from "./getFloorPriceHistory";
 import { getV4AmmPriceHistory } from "./getV4AmmPriceHistory";
@@ -36,13 +36,38 @@ export type PriceDataPoint = {
   cashOutTaxRate?: number;
 };
 
-export async function getTokenPriceChartData(params: {
+type ChartParams = {
   projectId: string;
   chainId: JBChainId;
   range: TimeRange;
   suckerGroupId: string;
   baseToken: { address: string; symbol: string; decimals: number };
-}) {
+};
+
+/**
+ * The chart pages every pool, swap, liquidity event, tax snapshot and sucker-group moment, so one
+ * answer serves every visitor of the same chart for 30 seconds. An answer missing a source is not
+ * kept, so the next request asks for it again.
+ */
+export async function getTokenPriceChartData(params: ChartParams) {
+  const { projectId, chainId, baseToken, suckerGroupId, range } = params;
+  return sharedDisplayRead(
+    [
+      "price-chart",
+      projectId,
+      chainId,
+      range,
+      suckerGroupId,
+      baseToken.address,
+      baseToken.symbol,
+      baseToken.decimals,
+    ],
+    () => readTokenPriceChartData(params),
+    { keep: (chart) => chart.unavailableSources.length === 0 },
+  );
+}
+
+async function readTokenPriceChartData(params: ChartParams) {
   const { projectId, chainId, baseToken, suckerGroupId, range } = params;
   const startTime = getStartTimeForRange(range);
 
@@ -53,11 +78,6 @@ export async function getTokenPriceChartData(params: {
   // Issuance is 1/weight — ALREADY in base-currency units, and exact. It is the AMM and
   // cash-out series (accounting-token denominated) that move onto the axis.
   const issuanceData = calculateIssuancePriceHistory(rulesets, range);
-
-  const projectTokenAddress = await getTokenAddress(chainId, Number(projectId));
-  if (!projectTokenAddress || projectTokenAddress === NATIVE_TOKEN) {
-    throw new Error("Could not get project token address");
-  }
 
   // V6 buyback pools are Uniswap V4 pools identified by bytes32 pool IDs.
   const currentCashOutTax = await getCurrentCashOutTax(projectId, chainId);

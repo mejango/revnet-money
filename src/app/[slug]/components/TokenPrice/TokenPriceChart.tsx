@@ -42,7 +42,7 @@ const TIME_RANGES: RangeOption<TimeRange>[] = [
 ];
 
 const NOW_COLOR = "#EE6F3A"; // peel-400
-const PRICE_REFRESH_MS = 15_000;
+const PRICE_REFRESH_MS = 30_000;
 const POOL_RESERVE_BARS = 48;
 
 interface Props {
