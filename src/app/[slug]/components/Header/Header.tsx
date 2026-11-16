@@ -81,7 +81,7 @@ export function Header(props: Props) {
       ? "…"
       : `${holderSummary.count}${holderSummary.exact ? "" : "+"}`;
   // Restored from the last session: show the count now, mark it unconfirmed
-  // until the 15s poll answers.
+  // until the refresh answers.
   const holdersPending = hydrated && participantsQuery.isFetching && !participantsQuery.isLoading;
   const { data: suckers } = useSuckers();
   const { name: projectName, logoUri } = metadata?.data ?? {};

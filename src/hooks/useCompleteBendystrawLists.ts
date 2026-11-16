@@ -129,6 +129,36 @@ async function completeActivityEvents(
   return items;
 }
 
+/**
+ * The feed after one look at its newest page. Events are only ever added, so the newest page is
+ * placed ahead of the events already held, by id. Everything is paged again when nothing is held,
+ * when the newest page does not reach an event already held, or when the merged count differs
+ * from the indexer's total (an event indexed late, or one removed by a reorg).
+ */
+export async function refreshActivityEvents(
+  previous: ActivityEventsQuery["activityEvents"]["items"] | undefined,
+  variables: Omit<ActivityEventsQueryVariables, "limit" | "offset">,
+  chainId: number,
+) {
+  if (!previous?.length) return completeActivityEvents(variables, chainId);
+  const data = await queryBendystrawFromBrowser(
+    ActivityEventsOperation,
+    { ...variables, limit: PAGE_SIZE, offset: 0 },
+    chainId,
+  );
+  const page = data.activityEvents.items ?? [];
+  const totalCount = data.activityEvents.totalCount;
+  if (page.length < PAGE_SIZE && (totalCount === undefined || totalCount <= page.length))
+    return page;
+  const newest = new Set(page.map((event) => event.id));
+  const older = previous.filter((event) => !newest.has(event.id));
+  const merged = [...page, ...older];
+  const reachesHeld = older.length < previous.length;
+  if (!reachesHeld || (totalCount !== undefined && totalCount !== merged.length))
+    return completeActivityEvents(variables, chainId);
+  return merged;
+}
+
 const ACCOUNT_ACTIVITY_ROOTS = [
   "activityEvents",
   "beneficiaryPayEvents",
@@ -275,26 +305,56 @@ export async function fetchLoansByAccount(owner: string, version: number, chainI
   return items;
 }
 
-async function completeParticipants(where: BendystrawFilter, chainId: number) {
-  const items: ParticipantsQuery["participants"]["items"] = [];
-  let totalCount = 0;
-  do {
-    const data = await queryBendystrawFromBrowser(
-      ParticipantsOperation,
-      {
-        where,
-        orderBy: "balance",
-        orderDirection: "desc",
-        limit: PAGE_SIZE,
-        offset: items.length,
-      },
-      chainId,
-    );
-    const page = data.participants.items ?? [];
-    totalCount = data.participants.totalCount ?? page.length;
-    items.push(...page);
-    if (!page.length) break;
-  } while (items.length < totalCount);
+async function participantsPage(where: BendystrawFilter, chainId: number, offset: number) {
+  const data = await queryBendystrawFromBrowser(
+    ParticipantsOperation,
+    { where, orderBy: "balance", orderDirection: "desc", limit: PAGE_SIZE, offset },
+    chainId,
+  );
+  const items = data.participants.items ?? [];
+  return { items, totalCount: data.participants.totalCount ?? items.length };
+}
+
+const PARTICIPANTS_TAIL_MAX_AGE_MS = 5 * 60_000;
+/** When each participant list was last paged to its end, by filter and chain. */
+const participantsPagedAt = new Map<string, number>();
+
+/**
+ * Every participant row, after one look at the first page. A list of one page is always that
+ * fresh page. A longer list keeps the rows already held while the total and the first page (the
+ * largest balances) are unchanged, and is paged to its end again when either changes.
+ *
+ * ponytail: an unchanged total and first page cannot show a change among the smaller holders (a
+ * balance moving, or one holder leaving as another arrives), so the held rows are trusted for at
+ * most five minutes. A cursor of changes since a timestamp would remove that window.
+ */
+export async function refreshParticipants(
+  previous: ParticipantsQuery["participants"]["items"] | undefined,
+  where: BendystrawFilter,
+  chainId: number,
+  now = Date.now(),
+) {
+  const key = JSON.stringify([where, chainId]);
+  const head = await participantsPage(where, chainId, 0);
+  const pagedAt = participantsPagedAt.get(key);
+  if (
+    previous &&
+    pagedAt !== undefined &&
+    now - pagedAt < PARTICIPANTS_TAIL_MAX_AGE_MS &&
+    head.totalCount > head.items.length &&
+    previous.length === head.totalCount &&
+    JSON.stringify(previous.slice(0, head.items.length)) === JSON.stringify(head.items)
+  )
+    return previous;
+  const items = [...head.items];
+  let totalCount = head.totalCount;
+  while (items.length < totalCount) {
+    const page = await participantsPage(where, chainId, items.length);
+    if (!page.items.length) break;
+    totalCount = page.totalCount;
+    items.push(...page.items);
+  }
+  participantsPagedAt.set(key, now);
   return items;
 }
 
@@ -383,7 +443,8 @@ export function useCompleteActivityEvents(
 ) {
   return useQuery({
     queryKey: ["complete-activity-events", variables, chainId],
-    queryFn: () => completeActivityEvents(variables, chainId),
+    queryFn: ({ client, queryKey }) =>
+      refreshActivityEvents(client.getQueryData(queryKey), variables, chainId),
     enabled,
     refetchInterval: 30_000,
   });
@@ -468,7 +529,8 @@ export function useCompleteParticipants(where: BendystrawFilter, chainId: number
   return useQuery({
     queryKey: ["complete-participants", where, chainId],
     meta: PERSIST,
-    queryFn: () => completeParticipants(where, chainId),
+    queryFn: ({ client, queryKey }) =>
+      refreshParticipants(client.getQueryData(queryKey), where, chainId),
     enabled,
     refetchInterval: 30_000,
   });
