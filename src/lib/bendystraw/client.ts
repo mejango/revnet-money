@@ -14,14 +14,6 @@ export function bendystrawNetworkFor(
   return resolveBendystrawNetwork({ chainId, variables });
 }
 
-/**
- * The app's query retry rule: one more try, except for an answer from the Bendystraw proxy. The
- * relay behind the proxy has already retried the indexer, and every visitor shares its budget.
- */
-export function retryUnlessProxied(failureCount: number, error: unknown): boolean {
-  return !(error instanceof BendystrawError) && failureCount < 1;
-}
-
 export async function queryBendystrawFromBrowser<
   TResult,
   TVariables extends Record<string, unknown>,

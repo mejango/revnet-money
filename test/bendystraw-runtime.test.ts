@@ -1,4 +1,5 @@
-import { bendystrawNetworkFor, retryUnlessProxied } from "@/lib/bendystraw/client";
+import { bendystrawNetworkFor } from "@/lib/bendystraw/client";
+import { retryUnlessProxied } from "@/lib/bendystraw/retry";
 import { BendystrawRequestError } from "@bananapus/nana-sdk-core";
 import { describe, expect, it } from "vitest";
 

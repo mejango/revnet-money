@@ -100,7 +100,9 @@ const routes = [
   // 640.5 and 608.0 KiB on /[slug], terms, owners and shop. Rounded up only.
   // SDK 6.9.0's pay route run as the payer (simulated payment, revert reading): terms measures just over
   // 602.0, operator 684.4 and extras 621.4 KiB. Rounded up only.
-  { route: "/[slug]", path: "/eth:1", kib: 603 },
+  // Lean network (one pending-routing query, incremental activity and holder polls, loan refresh after
+  // a write): /[slug] measures 603.6 and extras 622.1 KiB. Rounded up only.
+  { route: "/[slug]", path: "/eth:1", kib: 604 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 603 },
   { route: "/[slug]/operator", path: "/eth:1/operator", kib: 685 },
   // Configured Safe service boundary with SDK 6.7.0 measures owners 637.7 and extras 618.3 KiB.
@@ -110,7 +112,7 @@ const routes = [
   // The re-band net-debit check at send time together with SDK 6.9.0: owners measures 641.1 KiB. Rounded up only.
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 642 },
   { route: "/[slug]/shop", path: "/eth:1/shop", kib: 609 },
-  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 622 },
+  { route: "/[slug]/extras", path: "/eth:1/extras", kib: 623 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 433 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 422 },
   { route: "/account/[id]/projects", path: `/account/${account}/projects`, kib: 435 },
@@ -132,7 +134,8 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
 // extras 612.5, account 430.0 and route-referenced JS 932.4 KiB; round only those up.
 // SDK 6.6.0 pay authorization and resolvers: measured 937.7 KiB route-referenced, rounded up only.
 // The per-chain pay notice measures just over 939.0 KiB route-referenced, rounded up only.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 940);
+// Lean network measures 940.9 KiB route-referenced and 2812.8 KiB all client JS; each ceiling moves up 1 KiB.
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 941);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
@@ -293,7 +296,7 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 940);
 // on-demand audit chunk measure 2809.8 KiB all client JavaScript and 938.2 KiB route-referenced.
 // The per-chain pay notice (versions toggle, Retry) measures 2810.7 KiB, rounded up only.
 // SDK 6.9.0's pay route run as the payer measures 2811.2 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2812);
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2813);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");

@@ -2,7 +2,7 @@
 
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { retryUnlessProxied } from "@/lib/bendystraw/client";
+import { retryUnlessProxied } from "@/lib/bendystraw/retry";
 import { IS_DETERMINISTIC_BROWSER, PARA_EMBEDDED_WALLET_ENABLED } from "@/lib/browserEnvironment";
 import { installQueryPersistence } from "@/lib/query-persist";
 import { watchSafeWalletPeer } from "@/lib/safe-connector";
