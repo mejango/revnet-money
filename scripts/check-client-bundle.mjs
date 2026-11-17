@@ -135,7 +135,8 @@ const checkedRoutes = process.env.CLIENT_BUNDLE_ROUTES
 // SDK 6.6.0 pay authorization and resolvers: measured 937.7 KiB route-referenced, rounded up only.
 // The per-chain pay notice measures just over 939.0 KiB route-referenced, rounded up only.
 // Lean network measures 940.9 KiB route-referenced and 2812.8 KiB all client JS; each ceiling moves up 1 KiB.
-const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 941);
+// Its five-minute activity re-page bound measures just over 941.0 KiB route-referenced; rounded up only.
+const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 942);
 // Counts every emitted chunk, including ones a visitor may never download.
 // WalletConnect (with @reown/appkit), Coinbase Wallet and Safe add ~690 KiB of
 // strictly lazy vendor SDK here; the per-route budgets and the lazy-load
