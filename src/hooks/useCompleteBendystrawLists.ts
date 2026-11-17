@@ -129,18 +129,32 @@ async function completeActivityEvents(
   return items;
 }
 
+const HELD_ROWS_MAX_AGE_MS = 5 * 60_000;
+/** When each activity feed was last paged to its end, by variables and chain. */
+const activityPagedAt = new Map<string, number>();
+
 /**
  * The feed after one look at its newest page. Events are only ever added, so the newest page is
  * placed ahead of the events already held, by id. Everything is paged again when nothing is held,
- * when the newest page does not reach an event already held, or when the merged count differs
- * from the indexer's total (an event indexed late, or one removed by a reorg).
+ * when the newest page does not reach an event already held, when the merged count differs from
+ * the indexer's total (an event indexed late, or one removed by a reorg), and at least every five
+ * minutes: a reorg that replaces an older event one for one leaves the count unchanged.
  */
 export async function refreshActivityEvents(
   previous: ActivityEventsQuery["activityEvents"]["items"] | undefined,
   variables: Omit<ActivityEventsQueryVariables, "limit" | "offset">,
   chainId: number,
+  now = Date.now(),
 ) {
-  if (!previous?.length) return completeActivityEvents(variables, chainId);
+  const key = JSON.stringify([variables, chainId]);
+  const complete = async () => {
+    const all = await completeActivityEvents(variables, chainId);
+    activityPagedAt.set(key, now);
+    return all;
+  };
+  const pagedAt = activityPagedAt.get(key);
+  if (!previous?.length || pagedAt === undefined || now - pagedAt >= HELD_ROWS_MAX_AGE_MS)
+    return complete();
   const data = await queryBendystrawFromBrowser(
     ActivityEventsOperation,
     { ...variables, limit: PAGE_SIZE, offset: 0 },
@@ -154,8 +168,7 @@ export async function refreshActivityEvents(
   const older = previous.filter((event) => !newest.has(event.id));
   const merged = [...page, ...older];
   const reachesHeld = older.length < previous.length;
-  if (!reachesHeld || (totalCount !== undefined && totalCount !== merged.length))
-    return completeActivityEvents(variables, chainId);
+  if (!reachesHeld || (totalCount !== undefined && totalCount !== merged.length)) return complete();
   return merged;
 }
 
@@ -315,7 +328,6 @@ async function participantsPage(where: BendystrawFilter, chainId: number, offset
   return { items, totalCount: data.participants.totalCount ?? items.length };
 }
 
-const PARTICIPANTS_TAIL_MAX_AGE_MS = 5 * 60_000;
 /** When each participant list was last paged to its end, by filter and chain. */
 const participantsPagedAt = new Map<string, number>();
 
@@ -340,7 +352,7 @@ export async function refreshParticipants(
   if (
     previous &&
     pagedAt !== undefined &&
-    now - pagedAt < PARTICIPANTS_TAIL_MAX_AGE_MS &&
+    now - pagedAt < HELD_ROWS_MAX_AGE_MS &&
     head.totalCount > head.items.length &&
     previous.length === head.totalCount &&
     JSON.stringify(previous.slice(0, head.items.length)) === JSON.stringify(head.items)

@@ -2,7 +2,7 @@
 
 import { TransactionReviewProvider } from "@/components/TransactionReviewProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { retryUnlessProxied } from "@/lib/bendystraw/retry";
+import { retryUnlessRateLimited } from "@/lib/bendystraw/retry";
 import { IS_DETERMINISTIC_BROWSER, PARA_EMBEDDED_WALLET_ENABLED } from "@/lib/browserEnvironment";
 import { installQueryPersistence } from "@/lib/query-persist";
 import { watchSafeWalletPeer } from "@/lib/safe-connector";
@@ -32,7 +32,7 @@ function createQueryClient() {
       queries: {
         staleTime: 30_000,
         gcTime: 10 * 60_000,
-        retry: retryUnlessProxied,
+        retry: retryUnlessRateLimited,
         refetchOnWindowFocus: false,
       },
     },

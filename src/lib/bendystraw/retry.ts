@@ -1,8 +1,10 @@
 /**
- * The app's query retry rule: one more try, except for an answer from the Bendystraw proxy. The
- * relay behind the proxy has already retried the indexer, and every visitor shares its budget.
- * The error is told by its name, so the app shell does not load the indexer client for this.
+ * The app's query retry rule: one more try, except for a rate limit from the Bendystraw proxy.
+ * Every visitor shares the proxy's budget, so a 429 waits for the next refresh instead. The error
+ * is told by its name, so the app shell does not load the indexer client for this.
  */
-export function retryUnlessProxied(failureCount: number, error: unknown): boolean {
-  return (error as { name?: string } | null)?.name !== "BendystrawRequestError" && failureCount < 1;
+export function retryUnlessRateLimited(failureCount: number, error: unknown): boolean {
+  const failure = error as { name?: string; status?: number } | null;
+  if (failure?.name === "BendystrawRequestError" && failure.status === 429) return false;
+  return failureCount < 1;
 }

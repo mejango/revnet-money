@@ -36,6 +36,8 @@ export type PriceDataPoint = {
   cashOutTaxRate?: number;
 };
 
+const CHART_SHARED_MS = 10_000;
+
 type ChartParams = {
   projectId: string;
   chainId: JBChainId;
@@ -46,8 +48,9 @@ type ChartParams = {
 
 /**
  * The chart pages every pool, swap, liquidity event, tax snapshot and sucker-group moment, so one
- * answer serves every visitor of the same chart for 30 seconds. An answer missing a source is not
- * kept, so the next request asks for it again.
+ * answer serves every visitor of the same chart for ten seconds: long enough to join viewers who
+ * load together, short enough that the page's 30 second refresh is at most ten seconds behind.
+ * An answer missing a source is not kept, so the next request asks for it again.
  */
 export async function getTokenPriceChartData(params: ChartParams) {
   const { projectId, chainId, baseToken, suckerGroupId, range } = params;
@@ -63,7 +66,7 @@ export async function getTokenPriceChartData(params: ChartParams) {
       baseToken.decimals,
     ],
     () => readTokenPriceChartData(params),
-    { keep: (chart) => chart.unavailableSources.length === 0 },
+    { staleTime: CHART_SHARED_MS, keep: (chart) => chart.unavailableSources.length === 0 },
   );
 }
 

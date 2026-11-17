@@ -1,5 +1,5 @@
 import { bendystrawNetworkFor } from "@/lib/bendystraw/client";
-import { retryUnlessProxied } from "@/lib/bendystraw/retry";
+import { retryUnlessRateLimited } from "@/lib/bendystraw/retry";
 import { BendystrawRequestError } from "@bananapus/nana-sdk-core";
 import { describe, expect, it } from "vitest";
 
@@ -22,11 +22,18 @@ describe("shared Bendystraw runtime policy", () => {
     );
   });
 
-  it("never retries an answer from the proxy, and retries anything else once", () => {
-    expect(retryUnlessProxied(0, new BendystrawRequestError("Bendystraw is busy", 429))).toBe(
+  it("retries a failure once, a proxied one too, but never a rate limit", () => {
+    expect(retryUnlessRateLimited(0, new BendystrawRequestError("Bendystraw is busy", 429))).toBe(
       false,
     );
-    expect(retryUnlessProxied(0, new Error("network"))).toBe(true);
-    expect(retryUnlessProxied(1, new Error("network"))).toBe(false);
+    // An indexer error the relay does not retry (a GraphQL error on HTTP 200) recovers here.
+    expect(
+      retryUnlessRateLimited(0, new BendystrawRequestError("Bendystraw unavailable", 502)),
+    ).toBe(true);
+    expect(
+      retryUnlessRateLimited(1, new BendystrawRequestError("Bendystraw unavailable", 502)),
+    ).toBe(false);
+    expect(retryUnlessRateLimited(0, new Error("network"))).toBe(true);
+    expect(retryUnlessRateLimited(1, new Error("network"))).toBe(false);
   });
 });

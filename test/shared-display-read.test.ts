@@ -64,7 +64,7 @@ describe("price chart read", () => {
     baseToken: { address: "0xeeee", symbol: "ETH", decimals: 18 },
   };
 
-  it("pages the indexer once for the same chart within 30 seconds", async () => {
+  it("pages the indexer once for the same chart within ten seconds, and again after", async () => {
     await chart.getTokenPriceChartData(params);
     await chart.getTokenPriceChartData(params);
     expect(reads.pool).toHaveBeenCalledTimes(1);
@@ -72,7 +72,10 @@ describe("price chart read", () => {
     await chart.getTokenPriceChartData({ ...params, range: "1y" });
     expect(reads.pool).toHaveBeenCalledTimes(2);
 
-    vi.advanceTimersByTime(30_001);
+    vi.advanceTimersByTime(9_999);
+    await chart.getTokenPriceChartData(params);
+    expect(reads.pool).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(2);
     await chart.getTokenPriceChartData(params);
     expect(reads.pool).toHaveBeenCalledTimes(3);
   });

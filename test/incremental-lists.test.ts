@@ -10,59 +10,94 @@ const query = vi.mocked(queryBendystrawFromBrowser);
 beforeEach(() => query.mockReset());
 
 describe("activity feed refresh", () => {
-  const variables = {
-    orderBy: "timestamp",
-    orderDirection: "desc",
-    where: { suckerGroupId: "group" },
-  } as const;
+  const variablesOf = (suckerGroupId: string) =>
+    ({ orderBy: "timestamp", orderDirection: "desc", where: { suckerGroupId } }) as const;
   const events = (from: number, count: number) =>
     Array.from({ length: count }, (_, index) => ({ id: `e${from - index}` }));
   const answer = (items: { id: string }[], totalCount?: number) =>
     ({ activityEvents: { items, totalCount } }) as never;
-  const refresh = (previous?: { id: string }[]) =>
-    refreshActivityEvents(previous as never, variables as never, 1);
+  const refresh = (group: string, previous: { id: string }[] | undefined, now: number) =>
+    refreshActivityEvents(previous as never, variablesOf(group) as never, 1, now);
+  /** A feed of 300 events paged to its end at time 0, as the first load leaves it. */
+  async function held(group: string) {
+    query
+      .mockResolvedValueOnce(answer(events(300, 250), 300))
+      .mockResolvedValueOnce(answer(events(50, 50), 300));
+    const all = await refresh(group, undefined, 0);
+    query.mockClear();
+    return all;
+  }
 
   it("pages the whole feed when nothing is held", async () => {
     query
       .mockResolvedValueOnce(answer(events(300, 250), 300))
       .mockResolvedValueOnce(answer(events(50, 50), 300));
 
-    expect(await refresh()).toHaveLength(300);
+    expect(await refresh("first", undefined, 0)).toHaveLength(300);
     expect(query).toHaveBeenCalledTimes(2);
   });
 
   it("asks for the newest page only and puts its new events ahead of the held ones", async () => {
-    const held = events(300, 300);
+    const all = await held("merge");
     query.mockResolvedValueOnce(answer(events(302, 250), 302));
 
-    const merged = await refresh(held);
+    const merged = await refresh("merge", all, 30_000);
 
     expect(query).toHaveBeenCalledExactlyOnceWith(
       expect.anything(),
-      { ...variables, limit: 250, offset: 0 },
+      { ...variablesOf("merge"), limit: 250, offset: 0 },
       1,
     );
     expect(merged.map((event) => event.id)).toEqual(events(302, 302).map((event) => event.id));
   });
 
   it("pages everything again when the newest page does not reach a held event", async () => {
+    const all = await held("gap");
     query
       .mockResolvedValueOnce(answer(events(900, 250), 900))
       .mockResolvedValueOnce(answer(events(900, 250), 500))
       .mockResolvedValueOnce(answer(events(650, 250), 500));
 
-    expect(await refresh(events(300, 300))).toHaveLength(500);
+    expect(await refresh("gap", all, 30_000)).toHaveLength(500);
     expect(query).toHaveBeenCalledTimes(3);
   });
 
   it("pages everything again when the merged count is not the indexer's total", async () => {
+    const all = await held("count");
     // One held event is gone from the index: the merge would keep it.
     query
       .mockResolvedValueOnce(answer(events(300, 250), 299))
       .mockResolvedValueOnce(answer(events(300, 250), 299))
       .mockResolvedValueOnce(answer(events(49, 49), 299));
 
-    expect(await refresh(events(300, 300))).toHaveLength(299);
+    expect(await refresh("count", all, 30_000)).toHaveLength(299);
+  });
+
+  it("pages everything again after five minutes, so a replaced older event does not stay", async () => {
+    const all = await held("reorg");
+    // A reorg replaced an event below the newest page: same count, same newest page.
+    const replaced = [...events(50, 49), { id: "replacement" }];
+    query.mockResolvedValueOnce(answer(events(300, 250), 300));
+    expect(await refresh("reorg", all, 4 * 60_000)).toHaveLength(300);
+    expect(query).toHaveBeenCalledTimes(1);
+
+    query
+      .mockResolvedValueOnce(answer(events(300, 250), 300))
+      .mockResolvedValueOnce(answer(replaced, 300));
+    const fresh = await refresh("reorg", all, 5 * 60_000);
+
+    expect(fresh.at(-1)).toEqual({ id: "replacement" });
+    expect(fresh.some((event) => event.id === "e1")).toBe(false);
+  });
+
+  it("pages held events it never paged itself before merging into them", async () => {
+    query
+      .mockResolvedValueOnce(answer(events(300, 250), 300))
+      .mockResolvedValueOnce(answer(events(50, 50), 300));
+
+    await refresh("unpaged", events(300, 300), 30_000);
+
+    expect(query).toHaveBeenCalledTimes(2);
   });
 });
 
