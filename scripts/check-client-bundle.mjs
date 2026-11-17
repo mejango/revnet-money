@@ -297,7 +297,8 @@ const totalBudgetKiB = Number(process.env.CLIENT_TOTAL_GZIP_BUDGET_KIB ?? 942);
 // on-demand audit chunk measure 2809.8 KiB all client JavaScript and 938.2 KiB route-referenced.
 // The per-chain pay notice (versions toggle, Retry) measures 2810.7 KiB, rounded up only.
 // SDK 6.9.0's pay route run as the payer measures 2811.2 KiB, rounded up only.
-const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2813);
+// SDK 6.10.3's refusal status and hidden fee review pause measure 2813.1 KiB, rounded up only.
+const allClientBudgetKiB = Number(process.env.CLIENT_ALL_JS_GZIP_BUDGET_KIB ?? 2814);
 const totalBudget = totalBudgetKiB * 1024;
 const allClientBudget = allClientBudgetKiB * 1024;
 const buildDirectory = resolve(process.cwd(), ".next");
