@@ -909,15 +909,10 @@ const graphqlHandlers = {
     };
   },
   RouterPendingCalls(variables) {
-    // The app reads every gateway generation; retired ones hold nothing here.
-    requireFixture(
-      gatewayGenerations.has(variables.gateway),
-      `RouterPendingCalls gateway=${variables.gateway}`,
-    );
+    // The app reads every gateway generation in one query; none holds anything here.
     requireExactVariables("RouterPendingCalls", variables, {
-      chainId,
-      projectId,
-      gateway: variables.gateway,
+      projects: [{ AND: [{ chainId }, { projectId }] }],
+      gateways: [...gatewayGenerations],
       limit: 100,
       offset: 0,
     });

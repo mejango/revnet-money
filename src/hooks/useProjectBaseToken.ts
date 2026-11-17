@@ -44,16 +44,17 @@ export function useProjectBaseToken(): ReturnData | undefined {
   const { projectId } = useJBContractContext();
   const chainId = useJBChainId();
 
+  // A project's accounting token and its group do not change: read once.
   const { data } = useBendystrawQuery(
     ProjectOperation,
     { chainId: Number(chainId), projectId: Number(projectId), version: 6 },
-    { enabled: !!chainId && !!projectId, pollInterval: 30000 },
+    { enabled: !!chainId && !!projectId },
   );
 
   const { data: suckerGroupData } = useBendystrawQuery(
     SuckerGroupOperation,
     { id: data?.project?.suckerGroupId ?? "" },
-    { enabled: !!data?.project?.suckerGroupId, pollInterval: 30000, chainId: Number(chainId) },
+    { enabled: !!data?.project?.suckerGroupId, chainId: Number(chainId) },
   );
 
   // Memoized so consumers can use the result in effect deps without looping.

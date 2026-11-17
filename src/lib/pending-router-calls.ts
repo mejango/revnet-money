@@ -24,7 +24,10 @@ import {
   type TransactionReceipt,
 } from "viem";
 import { queryBendystrawFromBrowser } from "./bendystraw/client";
-import { RouterPendingCallsOperation } from "./bendystraw/operations";
+import {
+  RouterPendingCallsOperation,
+  type RouterPendingProjectFilter,
+} from "./bendystraw/operations";
 import type { IndexedRouterPendingCall } from "./bendystraw/types";
 import {
   isBatchCallHandled,
@@ -264,11 +267,10 @@ export function findPendingRoutingBatch(account: Address, projects: readonly Pen
   });
 }
 
-/** Every page and identity is required before offering “all pending”. */
-export async function readIndexedPendingRouterCalls(project: PendingProject) {
-  if (project.version !== 6) return [];
-  const chain = rolloutChain(project.chainId);
-  const gateways = [
+/** A chain's gateway generations, current first, lowercase. */
+function gatewayGenerations(chainId: number) {
+  const chain = rolloutChain(chainId);
+  return [
     ...new Set(
       [
         chain?.contracts.JBRouterTerminalGateway,
@@ -278,14 +280,25 @@ export async function readIndexedPendingRouterCalls(project: PendingProject) {
         .map((address) => address.toLowerCase()),
     ),
   ];
-  // A pending ID is unique only within a gateway. Separate queries preserve a
-  // deterministic order across deployment generations and never depend on the project's current router.
-  return (
-    await Promise.all(gateways.map((gateway) => readGatewayPendingCalls(project, gateway)))
-  ).flat();
 }
 
-async function readGatewayPendingCalls(project: PendingProject, gateway: string) {
+/**
+ * Every pending payment to these projects, in one paged query across their chains and every
+ * gateway generation. Every page and identity is required before offering “all pending”.
+ */
+export async function readIndexedPendingRouterCalls(projects: readonly PendingProject[]) {
+  const identities = projects.filter((project) => project.version === 6);
+  const gatewaysOf = new Map(
+    identities.map(({ chainId }) => [chainId, gatewayGenerations(chainId)] as const),
+  );
+  const gateways = [...new Set([...gatewaysOf.values()].flat())];
+  if (!identities.length || !gateways.length) return [];
+  const identityOf = (item: IndexedRouterPendingCall) =>
+    identities.findIndex(
+      (project) => project.chainId === item.chainId && project.projectId === item.projectId,
+    );
+  const generationOf = (item: IndexedRouterPendingCall) =>
+    gatewaysOf.get(item.chainId)?.indexOf(item.gateway.toLowerCase()) ?? -1;
   const items: IndexedRouterPendingCall[] = [];
   const seen = new Set<string>();
   let total: number | undefined;
@@ -293,13 +306,14 @@ async function readGatewayPendingCalls(project: PendingProject, gateway: string)
     const result = await queryBendystrawFromBrowser(
       RouterPendingCallsOperation,
       {
-        chainId: project.chainId,
-        projectId: project.projectId,
-        gateway,
+        projects: identities.map(({ chainId, projectId }): RouterPendingProjectFilter => ({
+          AND: [{ chainId }, { projectId }],
+        })),
+        gateways,
         limit: 100,
         offset: items.length,
       },
-      project.chainId,
+      identities[0].chainId,
     );
     const page = result.routerPendingCalls;
     if (
@@ -312,11 +326,12 @@ async function readGatewayPendingCalls(project: PendingProject, gateway: string)
     }
     total = page.totalCount;
     for (const item of page.items) {
+      // A pending ID is unique only within a gateway, and the filter lists every chain's
+      // gateways together: each row must be one of these projects at a gateway of its own chain.
       const key = `${item.chainId}:${item.gateway.toLowerCase()}:${item.pendingCallId.toLowerCase()}`;
       if (
-        item.chainId !== project.chainId ||
-        item.projectId !== project.projectId ||
-        item.gateway.toLowerCase() !== gateway ||
+        identityOf(item) < 0 ||
+        generationOf(item) < 0 ||
         item.version !== 6 ||
         !["queued", "retried"].includes(item.status) ||
         seen.has(key)
@@ -329,13 +344,47 @@ async function readGatewayPendingCalls(project: PendingProject, gateway: string)
     if (items.length > total)
       throw new Error("The pending payment index returned an incomplete list.");
   } while (items.length < total);
-  return items;
+  // The same order whatever the pages held: by project as given, gateway generation, pending ID.
+  return items.sort(
+    (a, b) =>
+      identityOf(a) - identityOf(b) ||
+      generationOf(a) - generationOf(b) ||
+      (a.pendingCallId.toLowerCase() < b.pendingCallId.toLowerCase() ? -1 : 1),
+  );
+}
+
+/**
+ * Reads a display pass over several payments may share. `pass` lasts one pass: the chain's block
+ * and a gateway's live gas ceiling. `fixed` outlives it: a gateway's retry delay and a token's
+ * decimals and symbol, which never change. Each payment's commitment and failure state are always
+ * read for that payment, and a send prepares without a cache, so it reads everything itself.
+ */
+export type PendingReadCache = {
+  pass: Map<string, Promise<unknown>>;
+  fixed: Map<string, Promise<unknown>>;
+};
+
+function sharedRead<T>(
+  cache: Map<string, Promise<unknown>> | undefined,
+  key: string,
+  read: () => Promise<T>,
+): Promise<T> {
+  if (!cache) return read();
+  let held = cache.get(key) as Promise<T> | undefined;
+  if (!held) {
+    held = read();
+    cache.set(key, held);
+    // A failed read is not kept: the next payment or pass asks again.
+    held.catch(() => cache.delete(key));
+  }
+  return held;
 }
 
 /** The index discovers calls; the original commitment and live failure state authorize action. */
 export async function readPendingRouterPayment(
   client: PendingClient,
   indexed: IndexedRouterPendingCall,
+  cache?: PendingReadCache,
 ): Promise<PendingRouterPayment | null> {
   for (const address of [indexed.gateway, indexed.token, indexed.beneficiary, indexed.refundTo]) {
     if (!isAddress(address)) throw new Error("The indexed payment contains an invalid address.");
@@ -401,15 +450,20 @@ export async function readPendingRouterPayment(
   if (liveCommitment.toLowerCase() !== commitment.toLowerCase()) {
     throw new Error("The payment no longer matches the gateway's pending commitment.");
   }
+  const at = `${indexed.chainId}:${gateway.toLowerCase()}`;
   const [failure, block, retryDelay, maximumGas] = await Promise.all([
     read("pendingCallFailureOf") as Promise<Failure>,
-    client.getBlock(),
-    client.readContract({ address: gateway, abi: LIMITS_ABI, functionName: "RETRY_DELAY" }),
-    client.readContract({
-      address: gateway,
-      abi: LIMITS_ABI,
-      functionName: "maximumQualifiedCallGas",
-    }),
+    sharedRead(cache?.pass, `${indexed.chainId}:block`, () => client.getBlock()),
+    sharedRead(cache?.fixed, `${at}:RETRY_DELAY`, () =>
+      client.readContract({ address: gateway, abi: LIMITS_ABI, functionName: "RETRY_DELAY" }),
+    ),
+    sharedRead(cache?.pass, `${at}:maximumQualifiedCallGas`, () =>
+      client.readContract({
+        address: gateway,
+        abi: LIMITS_ABI,
+        functionName: "maximumQualifiedCallGas",
+      }),
+    ),
   ]);
   const nextAttemptAt = failure.count ? BigInt(failure.lastFailureAt) + retryDelay : 0n;
   let forwarded =
@@ -428,10 +482,15 @@ export async function readPendingRouterPayment(
   if (isAddressEqual(call.token, NATIVE_TOKEN)) amountLabel = `${formatUnits(call.amount, 18)} ETH`;
   else {
     try {
-      const [decimals, symbol] = await Promise.all([
-        client.readContract({ address: call.token, abi: erc20Abi, functionName: "decimals" }),
-        client.readContract({ address: call.token, abi: erc20Abi, functionName: "symbol" }),
-      ]);
+      const [decimals, symbol] = await sharedRead(
+        cache?.fixed,
+        `${indexed.chainId}:${call.token.toLowerCase()}:label`,
+        () =>
+          Promise.all([
+            client.readContract({ address: call.token, abi: erc20Abi, functionName: "decimals" }),
+            client.readContract({ address: call.token, abi: erc20Abi, functionName: "symbol" }),
+          ]),
+      );
       amountLabel = `${formatUnits(call.amount, decimals)} ${symbol}`;
     } catch {
       /* Keep unreadable token metadata separate from a displayable amount. */

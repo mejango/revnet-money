@@ -9,7 +9,7 @@ vi.mock("@/lib/bendystraw/query.server", () => ({
 }));
 
 import { POST as proxyBendystraw } from "@/app/api/bendystraw/[net]/query/route";
-import { ProjectOperation } from "@/lib/bendystraw/operations";
+import { ActivityEventsOperation, ProjectOperation } from "@/lib/bendystraw/operations";
 
 const SITE = "https://app.revnet.example";
 
@@ -96,6 +96,53 @@ describe("Bendystraw proxy boundary", () => {
   });
 });
 
+describe("Bendystraw proxy shared display reads", () => {
+  const post = (operation: string, variables: Record<string, unknown>) =>
+    proxyBendystraw(
+      jsonRequest(`${SITE}/api/bendystraw/mainnet/query`, JSON.stringify({ operation, variables })),
+      { params: Promise.resolve({ net: "mainnet" }) },
+    );
+  const feed = (suckerGroupId: string) => ({
+    where: { suckerGroupId },
+    orderBy: "timestamp",
+    orderDirection: "desc",
+    limit: 250,
+    offset: 0,
+  });
+
+  it("answers identical activity requests from one indexer read, and other variables from their own", async () => {
+    mocks.queryBendystraw.mockResolvedValue({ activityEvents: { items: [] } });
+
+    const answers = await Promise.all([
+      post(ActivityEventsOperation.id, feed("shared-a")),
+      post(ActivityEventsOperation.id, feed("shared-a")),
+    ]);
+    await post(ActivityEventsOperation.id, feed("shared-a"));
+    expect(answers.map((answer) => answer.status)).toEqual([200, 200]);
+    expect(mocks.queryBendystraw).toHaveBeenCalledTimes(1);
+
+    await post(ActivityEventsOperation.id, feed("shared-b"));
+    expect(mocks.queryBendystraw).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not keep a failed read", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    mocks.queryBendystraw.mockRejectedValueOnce(new BendystrawRequestError("down", 502));
+    expect((await post(ActivityEventsOperation.id, feed("shared-c"))).status).toBe(502);
+    mocks.queryBendystraw.mockResolvedValue({ activityEvents: { items: [] } });
+    expect((await post(ActivityEventsOperation.id, feed("shared-c"))).status).toBe(200);
+  });
+
+  it("always reaches the indexer for an operation outside the display list", async () => {
+    mocks.queryBendystraw.mockResolvedValue({ project: null });
+    const variables = { chainId: 1, projectId: 1, version: 6 };
+
+    await post(ProjectOperation.id, variables);
+    await post(ProjectOperation.id, variables);
+    expect(mocks.queryBendystraw).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("Bendystraw proxy failures", () => {
   const relay = () =>
     proxyBendystraw(
@@ -148,6 +195,20 @@ describe("Bendystraw proxy failures", () => {
       expect(console.error).toHaveBeenCalledExactlyOnceWith("Bendystraw relay failed:", logged);
     },
   );
+
+  it("passes a rate limit on as 429 with the indexer's wait", async () => {
+    mocks.queryBendystraw.mockRejectedValue(
+      Object.assign(new BendystrawRequestError("Bendystraw request failed (429)", 429), {
+        retryAfter: "7",
+      }),
+    );
+
+    const response = await relay();
+
+    expect(response.status).toBe(429);
+    expect(response.headers.get("retry-after")).toBe("7");
+    await expect(response.json()).resolves.toEqual({ error: "Bendystraw is busy" });
+  });
 
   it("logs a cause on one line, without the control characters a terminal or a log viewer would act on", async () => {
     // A line break could forge a log line, ESC starts a terminal sequence, and NUL cuts a line in some viewers. U+0085 (NEL), U+009B (CSI) and DEL are controls that `\s` does not match.

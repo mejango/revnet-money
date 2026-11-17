@@ -43,7 +43,7 @@ import type {
   V6StoredAutoIssuancesQuery,
 } from "@/lib/bendystraw/types";
 import { PERSIST } from "@/lib/query-persist";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, type QueryClient } from "@tanstack/react-query";
 
 const PAGE_SIZE = 250;
 
@@ -127,6 +127,49 @@ async function completeActivityEvents(
     if (!page.length || (totalCount === undefined && page.length < PAGE_SIZE)) break;
   } while (totalCount === undefined || items.length < totalCount);
   return items;
+}
+
+const HELD_ROWS_MAX_AGE_MS = 5 * 60_000;
+/** When each activity feed was last paged to its end, by variables and chain. */
+const activityPagedAt = new Map<string, number>();
+
+/**
+ * The feed after one look at its newest page. Events are only ever added, so the newest page is
+ * placed ahead of the events already held, by id. Everything is paged again when nothing is held,
+ * when the newest page does not reach an event already held, when the merged count differs from
+ * the indexer's total (an event indexed late, or one removed by a reorg), and at least every five
+ * minutes: a reorg that replaces an older event one for one leaves the count unchanged.
+ */
+export async function refreshActivityEvents(
+  previous: ActivityEventsQuery["activityEvents"]["items"] | undefined,
+  variables: Omit<ActivityEventsQueryVariables, "limit" | "offset">,
+  chainId: number,
+  now = Date.now(),
+) {
+  const key = JSON.stringify([variables, chainId]);
+  const complete = async () => {
+    const all = await completeActivityEvents(variables, chainId);
+    activityPagedAt.set(key, now);
+    return all;
+  };
+  const pagedAt = activityPagedAt.get(key);
+  if (!previous?.length || pagedAt === undefined || now - pagedAt >= HELD_ROWS_MAX_AGE_MS)
+    return complete();
+  const data = await queryBendystrawFromBrowser(
+    ActivityEventsOperation,
+    { ...variables, limit: PAGE_SIZE, offset: 0 },
+    chainId,
+  );
+  const page = data.activityEvents.items ?? [];
+  const totalCount = data.activityEvents.totalCount;
+  if (page.length < PAGE_SIZE && (totalCount === undefined || totalCount <= page.length))
+    return page;
+  const newest = new Set(page.map((event) => event.id));
+  const older = previous.filter((event) => !newest.has(event.id));
+  const merged = [...page, ...older];
+  const reachesHeld = older.length < previous.length;
+  if (!reachesHeld || (totalCount !== undefined && totalCount !== merged.length)) return complete();
+  return merged;
 }
 
 const ACCOUNT_ACTIVITY_ROOTS = [
@@ -275,26 +318,55 @@ export async function fetchLoansByAccount(owner: string, version: number, chainI
   return items;
 }
 
-async function completeParticipants(where: BendystrawFilter, chainId: number) {
-  const items: ParticipantsQuery["participants"]["items"] = [];
-  let totalCount = 0;
-  do {
-    const data = await queryBendystrawFromBrowser(
-      ParticipantsOperation,
-      {
-        where,
-        orderBy: "balance",
-        orderDirection: "desc",
-        limit: PAGE_SIZE,
-        offset: items.length,
-      },
-      chainId,
-    );
-    const page = data.participants.items ?? [];
-    totalCount = data.participants.totalCount ?? page.length;
-    items.push(...page);
-    if (!page.length) break;
-  } while (items.length < totalCount);
+async function participantsPage(where: BendystrawFilter, chainId: number, offset: number) {
+  const data = await queryBendystrawFromBrowser(
+    ParticipantsOperation,
+    { where, orderBy: "balance", orderDirection: "desc", limit: PAGE_SIZE, offset },
+    chainId,
+  );
+  const items = data.participants.items ?? [];
+  return { items, totalCount: data.participants.totalCount ?? items.length };
+}
+
+/** When each participant list was last paged to its end, by filter and chain. */
+const participantsPagedAt = new Map<string, number>();
+
+/**
+ * Every participant row, after one look at the first page. A list of one page is always that
+ * fresh page. A longer list keeps the rows already held while the total and the first page (the
+ * largest balances) are unchanged, and is paged to its end again when either changes.
+ *
+ * ponytail: an unchanged total and first page cannot show a change among the smaller holders (a
+ * balance moving, or one holder leaving as another arrives), so the held rows are trusted for at
+ * most five minutes. A cursor of changes since a timestamp would remove that window.
+ */
+export async function refreshParticipants(
+  previous: ParticipantsQuery["participants"]["items"] | undefined,
+  where: BendystrawFilter,
+  chainId: number,
+  now = Date.now(),
+) {
+  const key = JSON.stringify([where, chainId]);
+  const head = await participantsPage(where, chainId, 0);
+  const pagedAt = participantsPagedAt.get(key);
+  if (
+    previous &&
+    pagedAt !== undefined &&
+    now - pagedAt < HELD_ROWS_MAX_AGE_MS &&
+    head.totalCount > head.items.length &&
+    previous.length === head.totalCount &&
+    JSON.stringify(previous.slice(0, head.items.length)) === JSON.stringify(head.items)
+  )
+    return previous;
+  const items = [...head.items];
+  let totalCount = head.totalCount;
+  while (items.length < totalCount) {
+    const page = await participantsPage(where, chainId, items.length);
+    if (!page.items.length) break;
+    totalCount = page.totalCount;
+    items.push(...page.items);
+  }
+  participantsPagedAt.set(key, now);
   return items;
 }
 
@@ -383,7 +455,8 @@ export function useCompleteActivityEvents(
 ) {
   return useQuery({
     queryKey: ["complete-activity-events", variables, chainId],
-    queryFn: () => completeActivityEvents(variables, chainId),
+    queryFn: ({ client, queryKey }) =>
+      refreshActivityEvents(client.getQueryData(queryKey), variables, chainId),
     enabled,
     refetchInterval: 30_000,
   });
@@ -431,17 +504,36 @@ export function useCompleteLoans(refs: readonly VersionedProjectRef[], enabled =
   });
 }
 
+const LOANS_REFRESH_MS = 30_000;
+const LOANS_AFTER_WRITE_REFRESH_MS = 3_000;
+const LOANS_AFTER_WRITE_WINDOW_MS = 30_000;
+let loanWriteConfirmedAt = Number.NEGATIVE_INFINITY;
+
+/**
+ * A borrow, reallocation or repayment confirmed: the account's loans are read now, then every
+ * three seconds for thirty while the indexer catches up, then every thirty again.
+ */
+export function refreshLoansAfterWrite(client: QueryClient, now = Date.now()) {
+  loanWriteConfirmedAt = now;
+  void client.invalidateQueries({ queryKey: ["complete-loans-by-account"] });
+}
+
+export function loansRefreshInterval(now = Date.now()) {
+  return now - loanWriteConfirmedAt < LOANS_AFTER_WRITE_WINDOW_MS
+    ? LOANS_AFTER_WRITE_REFRESH_MS
+    : LOANS_REFRESH_MS;
+}
+
 export function useCompleteLoansByAccount(
   owner: string | undefined,
   version: number,
   chainId?: number,
-  pollInterval = 3_000,
 ) {
   return useQuery({
     queryKey: ["complete-loans-by-account", owner ?? null, version, chainId ?? null],
     queryFn: () => fetchLoansByAccount(owner!, version, chainId),
     enabled: !!owner,
-    refetchInterval: pollInterval,
+    refetchInterval: () => loansRefreshInterval(),
   });
 }
 
@@ -449,7 +541,8 @@ export function useCompleteParticipants(where: BendystrawFilter, chainId: number
   return useQuery({
     queryKey: ["complete-participants", where, chainId],
     meta: PERSIST,
-    queryFn: () => completeParticipants(where, chainId),
+    queryFn: ({ client, queryKey }) =>
+      refreshParticipants(client.getQueryData(queryKey), where, chainId),
     enabled,
     refetchInterval: 30_000,
   });

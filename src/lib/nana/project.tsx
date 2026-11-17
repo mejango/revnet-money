@@ -46,10 +46,6 @@ type V6Contract = Parameters<typeof getJBContractAddress<6>>[0];
 type ContractState = {
   primaryNativeTerminal: AsyncData<Address>;
   controller: AsyncData<Address>;
-  fundAccessLimits: AsyncData<Address>;
-  rulesets: AsyncData<Address>;
-  tokens: AsyncData<Address>;
-  splits: AsyncData<Address>;
 };
 
 export type JBContractContextData = {
@@ -229,38 +225,6 @@ function ContractProvider({ projectId, children }: PropsWithChildren<{ projectId
     args: [projectId],
     query: { enabled: !!directory },
   });
-  const controllerAddress =
-    controller.data && !isAddressEqual(controller.data, zeroAddress) ? controller.data : undefined;
-
-  const fundAccessLimits = useReadContract({
-    address: controllerAddress,
-    abi: jbControllerAbi,
-    functionName: "FUND_ACCESS_LIMITS",
-    chainId,
-    query: { enabled: !!controllerAddress, staleTime: Infinity },
-  });
-  const rulesets = useReadContract({
-    address: controllerAddress,
-    abi: jbControllerAbi,
-    functionName: "RULESETS",
-    chainId,
-    query: { enabled: !!controllerAddress, staleTime: Infinity },
-  });
-  const tokens = useReadContract({
-    address: controllerAddress,
-    abi: jbControllerAbi,
-    functionName: "TOKENS",
-    chainId,
-    query: { enabled: !!controllerAddress, staleTime: Infinity },
-  });
-  const splits = useReadContract({
-    address: controllerAddress,
-    abi: jbControllerAbi,
-    functionName: "SPLITS",
-    chainId,
-    query: { enabled: !!controllerAddress, staleTime: Infinity },
-  });
-
   const contractAddress = useCallback(
     (contract: Contract, requestedChainId?: JBChainId) =>
       getJBContractAddress(contract as V6Contract, VERSION, requestedChainId ?? chainId!),
@@ -274,23 +238,10 @@ function ContractProvider({ projectId, children }: PropsWithChildren<{ projectId
       contracts: {
         primaryNativeTerminal: queryState(primaryNativeTerminal),
         controller: queryState(controller),
-        fundAccessLimits: queryState(fundAccessLimits),
-        rulesets: queryState(rulesets),
-        tokens: queryState(tokens),
-        splits: queryState(splits),
       },
       contractAddress,
     }),
-    [
-      projectId,
-      primaryNativeTerminal,
-      controller,
-      fundAccessLimits,
-      rulesets,
-      tokens,
-      splits,
-      contractAddress,
-    ],
+    [projectId, primaryNativeTerminal, controller, contractAddress],
   );
 
   return <JBContractContext.Provider value={value}>{children}</JBContractContext.Provider>;

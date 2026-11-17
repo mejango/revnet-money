@@ -28,27 +28,27 @@ test("pending routing shows ready, cooldown, and final attempts above activity",
   });
   await page.route("**/api/bendystraw/mainnet/query", async (route) => {
     const body = route.request().postDataJSON();
-    if (body.operation !== "router-pending-calls.v1") {
+    if (body.operation !== "router-pending-calls.v2") {
       await route.fallback();
       return;
     }
-    const current = protocolRollout.chains["1"].contracts.JBRouterTerminalGateway.toLowerCase();
+    // One read covers every gateway generation.
+    const generations = protocolRollout.chains["1"];
     expect(body.variables).toEqual({
-      chainId: 1,
-      projectId: 1,
-      gateway: body.variables.gateway,
+      projects: [{ AND: [{ chainId: 1 }, { projectId: 1 }] }],
+      gateways: [
+        ...new Set(
+          [
+            generations.contracts.JBRouterTerminalGateway,
+            ...Object.values(generations.history.JBRouterTerminalGateway ?? {}),
+          ]
+            .filter((address): address is string => Boolean(address))
+            .map((address) => address.toLowerCase()),
+        ),
+      ],
       limit: 100,
       offset: 0,
     });
-    // Every gateway generation is read; only the current one holds these payments.
-    if (body.variables.gateway !== current) {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ data: { routerPendingCalls: { items: [], totalCount: 0 } } }),
-      });
-      return;
-    }
     pendingReads += 1;
     await route.fulfill({
       status: 200,

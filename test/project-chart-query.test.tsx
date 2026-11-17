@@ -102,13 +102,18 @@ describe("project chart query reuse", () => {
     await waitFor(() => expect(mocks.read).toHaveBeenCalledTimes(2));
   });
 
-  it("refreshes after the 15-second chart freshness window", async () => {
+  it("refreshes after the 30-second chart freshness window, not before", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const rendered = render(view(client));
     expect(await screen.findByText("price 9")).toBeInTheDocument();
     rendered.unmount();
-    now.mockReturnValue(1_015_001);
+    now.mockReturnValue(1_029_999);
+    const early = render(view(client));
+    expect(await screen.findByText("price 9")).toBeInTheDocument();
+    expect(mocks.read).toHaveBeenCalledTimes(1);
+    early.unmount();
+    now.mockReturnValue(1_030_001);
     mocks.read.mockResolvedValueOnce(history(3));
     render(view(client));
     expect(await screen.findByText("price 3")).toBeInTheDocument();

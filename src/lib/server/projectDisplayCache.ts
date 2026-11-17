@@ -40,6 +40,27 @@ export async function cachedIndexedDisplay<T>(
   }
 }
 
+/**
+ * One display read shared by every request for `staleTime`: concurrent callers wait on the same
+ * read, and a failed one is never kept. `keep` refuses to retain an answer, such as a partial one.
+ * Never for a read that feeds a wallet prompt, an authority check or a proof.
+ */
+export async function sharedDisplayRead<T>(
+  key: readonly unknown[],
+  read: () => Promise<T>,
+  { staleTime = 30_000, keep }: { staleTime?: number; keep?: (value: T) => boolean } = {},
+): Promise<T> {
+  const queryKey = ["shared", ...key];
+  const value = await displayCache.fetchQuery({
+    queryKey,
+    queryFn: read,
+    staleTime,
+    gcTime: 2 * staleTime,
+  });
+  if (keep && !keep(value)) displayCache.removeQueries({ queryKey, exact: true });
+  return value;
+}
+
 export type ProjectDisplayRef = { chainId: number; projectId: number; groupId?: string };
 
 /**

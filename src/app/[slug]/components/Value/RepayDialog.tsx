@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { SkeletonLines } from "@/components/ui/skeleton";
 import { SummaryRow, TxProgress } from "@/components/ui/TxProgress";
 import { useToast } from "@/components/ui/use-toast";
+import { refreshLoansAfterWrite } from "@/hooks/useCompleteBendystrawLists";
 import {
   failedLine,
   reviewedCall,
@@ -32,7 +33,7 @@ import { getTokenConfigForChain, getTokenSymbolFromAddress, isNativeToken } from
 import { formatTokenSymbol, formatWalletError } from "@/lib/utils";
 import { getRevnetLoanContract, revLoansAbi } from "@bananapus/nana-sdk-core";
 import { approvalIntent, loanIntent, writeIntentKey } from "@bananapus/nana-sdk-core/review";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Address, erc20Abi, formatUnits, isAddressEqual, parseUnits } from "viem";
 import {
@@ -141,11 +142,12 @@ export function RepayDialog({
     return repayCeilingFor(loanData.amount, accruedSourceFee);
   }, [loanData, accruedSourceFee]);
 
-  // Get project data to find sucker group ID using the project ID
+  // Get project data to find sucker group ID using the project ID. The group and its tokens do
+  // not change: read once.
   const { data: projectData } = useBendystrawQuery(
     ProjectOperation,
     { chainId: Number(currentChainId), projectId: Number(projectId), version: 6 },
-    { enabled: !!currentChainId && !!projectId, pollInterval: 10000 },
+    { enabled: !!currentChainId && !!projectId },
   );
 
   const suckerGroupId = projectData?.project?.suckerGroupId;
@@ -154,7 +156,7 @@ export function RepayDialog({
   const { data: suckerGroupData } = useBendystrawQuery(
     SuckerGroupOperation,
     { id: suckerGroupId ?? "" },
-    { enabled: !!suckerGroupId, pollInterval: 10000, chainId: Number(currentChainId) },
+    { enabled: !!suckerGroupId, chainId: Number(currentChainId) },
   );
 
   // The loan's revnet, token, decimals and currency, as the loans contract reports them
@@ -213,6 +215,7 @@ export function RepayDialog({
 
   // Repay loan hook
   const repay = useReviewedAction();
+  const queryClient = useQueryClient();
   const isRepaying = repay.busy && repay.status !== "receipt";
 
   // Transaction status tracking: the repayment's own transaction, once sent.
@@ -569,6 +572,7 @@ export function RepayDialog({
       setReview(null);
     }
     if (result?.status === "failed") throw new ReviewRefusal(failedLine(result));
+    if (result?.status === "done") refreshLoansAfterWrite(queryClient);
     if (result?.status === "proposed") {
       setRepayStatus("proposed");
       toast({ title: "Safe proposal submitted", description: SAFE_PROPOSAL_PENDING_LINE });

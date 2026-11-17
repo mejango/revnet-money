@@ -1,5 +1,6 @@
 import { useToast } from "@/components/ui/use-toast";
 import { useBorrowableAmountFrom } from "@/hooks/useBorrowableAmountFrom";
+import { refreshLoansAfterWrite } from "@/hooks/useCompleteBendystrawLists";
 import { useProjectBaseToken } from "@/hooks/useProjectBaseToken";
 import {
   failedLine,
@@ -43,7 +44,7 @@ import {
   MIN_PREPAID_FEE_PERCENT,
   REV_PREPAID_FEE_PERCENT,
 } from "@bananapus/nana-sdk-core/v6/loan-math";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatUnits, isAddressEqual, parseUnits } from "viem";
 import { useAccount, usePublicClient, useReadContract, useWalletClient } from "wagmi";
@@ -179,18 +180,18 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   // Get base token information
   const baseToken = useProjectBaseToken();
 
-  // Get sucker group data for token mapping
+  // Get sucker group data for token mapping. The group and its tokens do not change: read once.
   const { data: projectData } = useBendystrawQuery(
     ProjectOperation,
     { chainId: Number(chainId), projectId: Number(projectId), version: 6 },
-    { enabled: !!chainId && !!projectId, pollInterval: 30000 },
+    { enabled: !!chainId && !!projectId },
   );
   const suckerGroupId = projectData?.project?.suckerGroupId;
 
   const { data: suckerGroupData } = useBendystrawQuery(
     SuckerGroupOperation,
     { id: suckerGroupId ?? "" },
-    { enabled: !!suckerGroupId, pollInterval: 30000, chainId: Number(chainId) },
+    { enabled: !!suckerGroupId, chainId: Number(chainId) },
   );
 
   const revLoansContractAddress = cashOutChainId
@@ -409,6 +410,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
   });
 
   // Transaction hooks
+  const queryClient = useQueryClient();
   const borrow = useReviewedAction();
   const reallocation = useReviewedAction();
   // The runner the attempt sends with.
@@ -660,6 +662,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
         calls: [...(grant ? [grant] : []), grant ? { ...loan, dependsOnPrior: true } : loan],
       });
       if (!result) return "closed" as const;
+      if (result.status === "done") refreshLoansAfterWrite(queryClient);
       if (result.status === "proposed")
         setAttempt((now) =>
           now.status === "sending" && now.runner === kind ? { ...now, proposed: true } : now,
@@ -672,7 +675,7 @@ export function useBorrowDialog({ projectId, selectedLoan, defaultTab }: UseBorr
       }
       return result.status;
     },
-    [address, borrow, reallocation, toast],
+    [address, borrow, queryClient, reallocation, toast],
   );
 
   const handleBorrow = useCallback(

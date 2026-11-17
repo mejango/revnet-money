@@ -1,3 +1,29 @@
+# Lean network: ask less often, never twice (2026-11-16)
+
+jango's rule: a page loads what it needs once, then refreshes about every 30 seconds or on a distinct user action; faster only for a short window after the user sends a transaction. Bendystraw allows 100 requests per minute per IP and every browser query shares the server's budget.
+
+- [x] N1 Price chart: the server action's answer is shared for 10 s (`sharedDisplayRead`, in memory, never serving a stale answer), an answer missing a source is not kept, the client refreshes every 30 s. The `tokenOf` read is removed instead of cached: its result was never used.
+- [x] N2 Loans: 30 s, and every 3 s for the 30 s after a confirmed borrow, reallocation or repayment (`refreshLoansAfterWrite`); project and sucker group load once where only fixed token fields are read; the supply display (`useTotalOutstandingTokens`) refreshes the group every 30 s.
+- [x] N3 Activity polls the newest page and merges by id, paging all again on a gap, a count mismatch, or after five minutes. Holders poll the first page; a longer list keeps its rows while the total and first page are unchanged, for at most five minutes.
+- [x] N4 Pending routing: one inventory query for all chains and gateway generations (`router-pending-calls.v2`, checked against both live indexers); verification reads one block per chain per pass and keeps the retry delay and token labels. A send still reads everything itself.
+- [x] N5 One client retry for any read, none for a 429 from the proxy (`retryUnlessRateLimited`); the proxy answers a rate limit as 429 with Retry-After.
+- [x] N6 The proxy shares identical activity and participant reads for 5 s; every other operation always reaches the indexer.
+- [x] N7 The project context drops four controller constants nobody read. No global multicall batch and no grouping: the remaining protocol reads depend on each other or belong to a third-party token.
+- [x] N8 Market chart 30 s without focus refetch; base token and borrow dialog load the project once.
+
+## Review
+- Gate: `test/poll-pace.test.ts` refuses any fixed `refetchInterval` or `pollInterval` under 30 s in `src`.
+- Not done: the Market chart's server action still pages all swaps on each 30 s poll (one line with `sharedDisplayRead` if wanted); explicit `retry: 1` on other queries is unchanged; live request counts after the change are not measured.
+
+## Plan refinement
+
+- **Objective:** Cut idle requests on a project page (measured 22 Bendystraw requests and 32 Base RPC calls per idle minute) without removing or weakening any read that guards money, authority or a proof. Success is fewer requests per finding, each held by a test.
+- **System fit:** Display reads only: polling hooks, the Bendystraw proxy route, the chart server action and the project context. Pre-prompt reads, Safe policy checks, `projectRouteQuery`, RedeemDialog reads and `preparePendingRouterPayment` keep their own uncached reads; juicebox.money is changed by another worker.
+- **Reuse and simplicity:** Reuse the `projectDisplayCache` QueryClient for the chart and the proxy, wagmi's `useReadContracts`, and react-query's previous data for merges. No global multicall batch, because third-party token reads would then share a batch with proof reads (`read-each.ts`).
+- **Evidence and unknowns:** Findings come from a read-only audit at f36ae774, each re-read in code before a change. The combined pending-routing filter is checked against the live schema by `bendystraw-schema.test.ts`; live request counts after the change are not measured here.
+- **Verification:** One vitest per behavior change, one source gate that refuses a fixed poll under 30 s, then `PLAYWRIGHT_APP_PORT=3191 npm run check` until it exits 0.
+- **Resource budget:** One worktree, one commit per finding, edits in this session, no push. Replan if a finding needs an SDK or indexer change; skip it and report instead.
+
 # Parity with juicebox.money for revnet actions (2026-11-13)
 
 jango: "make sure revnet money is also aligned with juicebox money, though be mindful it is scoped only to revnet projects."

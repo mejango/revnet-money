@@ -69,3 +69,7 @@
 ## 2026-11-06 — Review proposals are hypotheses until checked three ways
 - Correction: jango saw that some review fixes were wrong and asked for a triple check before changes. Two more of my claims then failed: a memo "no cap" answer rested on one contract grep, and a voting-units fix assumed a read flag that does not exist.
 - Rule: before changing code from a review, confirm the symptom in the source, confirm the correct behavior from the authority (contract, live data, sibling client) with file and line, and prove the fix with a test or render. Search the concept across every repo on the path before saying a limit does not exist. An unconfirmed item is reported, not changed.
+
+## 2026-11-16: A shared query key is only as fresh as its liveliest reader
+- Correction: removing "static" project and sucker-group polls froze total supply and ownership percentages, because the supply display shared the key and relied on another hook's poll. Review also found retries removed for failures nothing else retries, a shared server answer stacked on a client poll, and a merge that trusted held rows without a time bound.
+- Rule: before removing a poll, list every reader of that query key and every field each reads; the reader that shows a moving value owns the refresh. Keep one client retry except for a rate limit. Count staleness as server lifetime plus client interval. Any list kept across refreshes gets a full reload bound.

@@ -1,10 +1,27 @@
-import { getBrowserOperationById } from "@/lib/bendystraw/operations";
+import {
+  ActivityEventsOperation,
+  getBrowserOperationById,
+  ParticipantsOperation,
+} from "@/lib/bendystraw/operations";
 import { queryBendystraw } from "@/lib/bendystraw/query.server";
+import { sharedDisplayRead } from "@/lib/server/projectDisplayCache";
 import { readBoundedBody } from "@/lib/server/readBoundedBody";
 import { BendystrawRequestError as BendystrawError } from "@bananapus/nana-sdk-core";
 import { NextRequest } from "next/server";
 
 const MAX_REQUEST_BYTES = 32 * 1024;
+
+/**
+ * Display lists that every visitor of a project polls with the same variables. Identical requests
+ * within five seconds share one indexer read. Only operations listed here are shared: anything
+ * that can feed a wallet prompt, an authority check, a balance or a list read again right after a
+ * write (projects, permissions, loans, pending routing) always reaches the indexer.
+ */
+const SHARED_DISPLAY_OPERATIONS: ReadonlySet<string> = new Set([
+  ActivityEventsOperation.id,
+  ParticipantsOperation.id,
+]);
+const SHARED_DISPLAY_MS = 5_000;
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ net: string }> }) {
   const { net } = await params;
@@ -51,11 +68,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ net
   // representative chain keeps the upstream address entirely server-owned.
   const representativeChainId = net === "testnet" ? 11155111 : 1;
   try {
-    const data = await queryBendystraw(
-      representativeChainId,
-      operation as never,
-      body.variables as never,
-    );
+    const read = () =>
+      queryBendystraw(representativeChainId, operation as never, body.variables as never);
+    const data = SHARED_DISPLAY_OPERATIONS.has(operation.id)
+      ? await sharedDisplayRead(["bendystraw", net, operation.id, body.variables], read, {
+          staleTime: SHARED_DISPLAY_MS,
+        })
+      : await read();
     return Response.json(
       { data },
       {
@@ -66,7 +85,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ net
       },
     );
   } catch (error) {
-    // The cause is logged, on one line, and never sent: the answer is one of three messages
+    // The cause is logged, on one line, and never sent: the answer is one of four messages
     // whatever failed. Control characters go too, so an indexer's text cannot start a terminal
     // sequence or forge a log line.
     console.error("Bendystraw relay failed:", String(error).replace(/[\p{Cc}\s]+/gu, " "));
@@ -76,7 +95,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ net
         : (error as { name?: string }).name === "TimeoutError"
           ? 504
           : 502;
-    const clientStatus = status >= 500 ? status : 400;
+    // A rate limit stays a rate limit, with the indexer's wait, so a browser backs off instead
+    // of reading it as a bad request.
+    const clientStatus = status >= 500 || status === 429 ? status : 400;
+    const retryAfter = (error as { retryAfter?: string }).retryAfter;
     return Response.json(
       {
         error:
@@ -84,9 +106,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ net
             ? "Bendystraw timed out"
             : clientStatus >= 500
               ? "Bendystraw unavailable"
-              : "invalid operation request",
+              : clientStatus === 429
+                ? "Bendystraw is busy"
+                : "invalid operation request",
       },
-      { status: clientStatus },
+      {
+        status: clientStatus,
+        headers: clientStatus === 429 && retryAfter ? { "retry-after": retryAfter } : undefined,
+      },
     );
   }
 }
