@@ -1342,7 +1342,7 @@ export function SafeQueueCard({
                   <label className="block text-sm">
                     Pay network fee on
                     <select
-                      className="mt-2 block w-fit max-w-full border border-melon-300 bg-white p-2"
+                      className="mt-2 block w-fit max-w-full border border-melon-300 bg-white p-2 pr-10"
                       value={batch.paymentChainId ?? ""}
                       disabled={batch.running}
                       onChange={(event) =>

@@ -331,7 +331,7 @@ export function EditItemMediaModal({
                     </label>
                     {selected ? (
                       <select
-                        className="min-w-0 max-w-full border-2 border-melon-300 bg-melon-25 p-2 text-sm"
+                        className="min-w-0 max-w-full border-2 border-melon-300 bg-melon-25 p-2 pr-10 text-sm"
                         aria-label={`Item on ${chainDisplayName(destination.chainId)}`}
                         value={targets[key] ?? ""}
                         onChange={(event) =>
@@ -390,7 +390,7 @@ export function EditItemMediaModal({
                       Media type
                       <select
                         aria-label="Replacement media type"
-                        className="mt-2 block border-2 border-melon-300 bg-melon-25 p-2"
+                        className="mt-2 block border-2 border-melon-300 bg-melon-25 p-2 pr-10"
                         value={mediaType}
                         onChange={(event) => setMediaType(event.target.value)}
                       >
