@@ -104,14 +104,14 @@ const routes = [
   // a write): /[slug] measures 603.6 and extras 622.1 KiB. Rounded up only.
   { route: "/[slug]", path: "/eth:1", kib: 604 },
   { route: "/[slug]/terms", path: "/eth:1/terms", kib: 603 },
-  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 685 },
+  { route: "/[slug]/operator", path: "/eth:1/operator", kib: 686 },
   // Configured Safe service boundary with SDK 6.7.0 measures owners 637.7 and extras 618.3 KiB.
   // Round only these two incremental route costs up; static and aggregate ceilings stay unchanged.
   // Loans, bridge sends and claims in the shared activity rows, and the pay review's notice and beneficiary:
   // owners measures 638.4, shop 606.2, extras 619.1 and /account/[id] 432.2 KiB. Rounded up only.
   // The re-band net-debit check at send time together with SDK 6.9.0: owners measures 641.1 KiB. Rounded up only.
   { route: "/[slug]/owners", path: "/eth:1/owners", kib: 642 },
-  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 609 },
+  { route: "/[slug]/shop", path: "/eth:1/shop", kib: 610 },
   { route: "/[slug]/extras", path: "/eth:1/extras", kib: 623 },
   { route: "/account/[id]", path: `/account/${account}`, kib: 433 },
   { route: "/account/[id]/holdings", path: `/account/${account}/holdings`, kib: 422 },

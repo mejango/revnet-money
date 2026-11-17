@@ -854,7 +854,7 @@ function SafeNonceSelectionModal({
             id={selectId}
             value={selected}
             onChange={(event) => setSelected(Number(event.target.value))}
-            className="mt-2 min-h-[44px] w-full border border-melon-600 bg-white px-3 py-2 text-sm"
+            className="mt-2 min-h-[44px] w-full border border-melon-600 bg-white px-3 py-2 pr-10 text-sm"
           >
             {choices.map((nonce) => (
               <option key={nonce} value={nonce}>
